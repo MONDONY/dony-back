@@ -1,0 +1,65 @@
+# ============================================================
+# SECRETS — JAMAIS COMMITTER
+# ============================================================
+
+# Firebase service account (clé privée)
+**/firebase-service-account.json
+
+# Firebase Android config
+**/google-services.json
+
+# Firebase iOS config
+**/GoogleService-Info.plist
+
+# Variables d'environnement Flutter
+env.dev.json
+env.prod.json
+**/env.*.json
+
+# Config Spring Boot production (mots de passe DB, clés API)
+**/application-prod.yml
+**/.env
+*.env
+
+# Clés et certificats
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# ============================================================
+# BUILD — dossiers générés
+# ============================================================
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+
+# ============================================================
+# IDE
+# ============================================================
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+.DS_Store
+
+# ============================================================
+# DIVERS
+# ============================================================
+*.log
+
+# VS Code Local History (peut contenir des secrets en copie)
+.history/

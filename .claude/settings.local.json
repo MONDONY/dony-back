@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(flutter create *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "Bash(java --version)",
+      "Bash(mvn --version)",
+      "Read(//tmp/**)",
+      "Bash(unzip -o dony-back.zip -d dony-back-extracted)",
+      "Bash(flutter run *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(./mvnw spring-boot:run *)",
+      "Bash(curl -s http://localhost:8080/api/v1/actuator/health)",
+      "Bash(python3 -m json.tool)",
+      "Bash(grep -v '^$')",
+      "Bash(adb -s 172.19.48.1:5555 reverse tcp:8080 tcp:8080)",
+      "Bash(dart analyze *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('project_id:', d['project_info']['project_id']\\); print\\('package:', d['client'][0]['client_info']['android_client_info']['package_name']\\)\")",
+      "Bash(python3 *)",
+      "Bash(./mvnw compile *)",
+      "Bash(./mvnw test *)",
+      "Bash(curl *)",
+      "Bash(pkill -f \"spring-boot:run\")",
+      "Bash(pkill -f \"DonyBackApplication\")",
+      "Bash(./mvnw spring-boot:run -Dspring.profiles.active=dev)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
