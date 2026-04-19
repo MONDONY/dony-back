@@ -39,7 +39,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - dony_db_prod_data:/var/lib/postgresql/data
-    # No ports exposed — accessible only via internal network
+    # Aucun port exposé — accessible uniquement via le réseau interne Docker
     networks:
       - dony_internal
     healthcheck:
