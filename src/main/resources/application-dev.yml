@@ -1,0 +1,41 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/dony_dev
+    username: dony
+    password: dony_dev_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    show-sql: true
+
+# Sentry disabled in dev
+sentry:
+  dsn: ""
+  enabled: false
+
+# Hetzner S3 (dev — local minio or real bucket)
+hetzner:
+  s3:
+    endpoint: ${HETZNER_S3_ENDPOINT:https://fsn1.your-objectstorage.com}
+    region: ${HETZNER_S3_REGION:eu-central}
+    bucket: ${HETZNER_S3_BUCKET:dony-dev}
+    access-key: ${HETZNER_S3_ACCESS_KEY:replace_me}
+    secret-key: ${HETZNER_S3_SECRET_KEY:replace_me}
+
+# Stripe (test keys)
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:sk_test_replace_me}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_replace_me}
+
+# Firebase
+firebase:
+  service-account-path: classpath:firebase-service-account.json
+
+logging:
+  level:
+    com.dony.api: DEBUG
+    org.springframework.security: DEBUG
