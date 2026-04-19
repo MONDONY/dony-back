@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/dony-app/dony-back:latest
+    image: ghcr.io/mondony/dony-back:latest
     container_name: dony_api
     restart: unless-stopped
     environment:
