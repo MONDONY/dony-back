@@ -9,6 +9,10 @@ on:
 env:
   JAVA_VERSION: '21'
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
 
   # ── Gate 1 : Tests unitaires ──────────────────────────────────────────
@@ -81,8 +85,6 @@ jobs:
   security-scan:
     name: 🔒 Trivy CVE Scan
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
 
     steps:
       - uses: actions/checkout@v4
