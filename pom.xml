@@ -185,7 +185,8 @@
 				</configuration>
 			</plugin>
 
-			<!-- SpotBugs: static analysis — HIGH priority bugs fail the build -->
+			<!-- SpotBugs: static analysis — invoqué explicitement par CI (spotbugs:check)
+			     Pas d'execution liée au cycle Maven pour ne pas bloquer ./mvnw verify -->
 			<plugin>
 				<groupId>com.github.spotbugs</groupId>
 				<artifactId>spotbugs-maven-plugin</artifactId>
@@ -196,11 +197,6 @@
 					<failOnError>true</failOnError>
 					<xmlOutput>true</xmlOutput>
 				</configuration>
-				<executions>
-					<execution>
-						<goals><goal>check</goal></goals>
-					</execution>
-				</executions>
 			</plugin>
 		</plugins>
 	</build>

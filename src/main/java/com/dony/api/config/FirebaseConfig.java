@@ -12,6 +12,7 @@ import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class FirebaseConfig {
@@ -49,7 +50,7 @@ public class FirebaseConfig {
         try {
             InputStream stream = new ClassPathResource(path).getInputStream();
             byte[] bytes = stream.readAllBytes();
-            String content = new String(bytes);
+            String content = new String(bytes, StandardCharsets.UTF_8);
             int idx = content.indexOf("\"project_id\"");
             if (idx == -1) return "unknown";
             int start = content.indexOf("\"", idx + 13) + 1;
