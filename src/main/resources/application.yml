@@ -73,3 +73,8 @@ dony:
   escrow-timeout-hours: 48
   dispute-sla-hours: 72
   max-declared-value-eur: 500
+
+# Encryption (AES-256 for KYC sensitive data)
+app:
+  encryption:
+    key: ${ENCRYPTION_KEY:dony-dev-encryption-key-change-in-prod}
