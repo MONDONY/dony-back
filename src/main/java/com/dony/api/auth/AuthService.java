@@ -1,0 +1,113 @@
+package com.dony.api.auth;
+
+import com.dony.api.auth.dto.RegisterRequest;
+import com.dony.api.auth.dto.UserResponse;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final AuditService auditService;
+
+    public AuthService(UserRepository userRepository, AuditService auditService) {
+        this.userRepository = userRepository;
+        this.auditService = auditService;
+    }
+
+    @Transactional
+    public UserResponse register(String firebaseUid, RegisterRequest request) {
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .map(this::toResponse)
+                .orElseGet(() -> createUser(firebaseUid, request));
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse getProfile(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        return toResponse(user);
+    }
+
+    private UserResponse createUser(String firebaseUid, RegisterRequest request) {
+        Set<Role> roles = parseRoles(request.roles());
+
+        if (roles.contains(Role.ADMIN)) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "forbidden-role",
+                    "Forbidden Role",
+                    "Le rôle ADMIN ne peut pas être auto-attribué"
+            );
+        }
+
+        if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT,
+                    "phone-already-exists",
+                    "Phone Number Already Registered",
+                    "Ce numéro est déjà associé à un compte"
+            );
+        }
+
+        UserEntity user = new UserEntity();
+        user.setFirebaseUid(firebaseUid);
+        user.setPhoneNumber(request.phoneNumber());
+        user.setStatus(UserStatus.ACTIVE);
+        user.setKycStatus(KycStatus.PENDING);
+        user.setRoles(roles);
+
+        UserEntity saved = userRepository.save(user);
+
+        auditService.log(
+                "USER",
+                saved.getId(),
+                "USER_CREATED",
+                saved.getId(),
+                Map.of("phoneNumber", request.phoneNumber(), "roles", request.roles())
+        );
+
+        return toResponse(saved);
+    }
+
+    private Set<Role> parseRoles(Set<String> rawRoles) {
+        return rawRoles.stream()
+                .map(r -> {
+                    try {
+                        return Role.valueOf(r.toUpperCase());
+                    } catch (IllegalArgumentException e) {
+                        throw new DonyBusinessException(
+                                HttpStatus.UNPROCESSABLE_ENTITY,
+                                "invalid-role",
+                                "Invalid Role",
+                                "Rôle invalide: " + r + ". Valeurs acceptées: SENDER, TRAVELER"
+                        );
+                    }
+                })
+                .collect(Collectors.toSet());
+    }
+
+    public UserResponse toResponse(UserEntity user) {
+        return new UserResponse(
+                user.getId(),
+                user.getPhoneNumber(),
+                user.getEmail(),
+                user.getRoles().stream().map(Role::name).collect(Collectors.toSet()),
+                user.getKycStatus().name(),
+                user.getStatus().name()
+        );
+    }
+}
