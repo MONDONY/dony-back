@@ -17,14 +17,13 @@ sentry:
   dsn: ""
   enabled: false
 
-# Hetzner S3 (dev — local minio or real bucket)
-hetzner:
+# Amazon S3 (dev)
+aws:
   s3:
-    endpoint: ${HETZNER_S3_ENDPOINT:https://fsn1.your-objectstorage.com}
-    region: ${HETZNER_S3_REGION:eu-central}
-    bucket: ${HETZNER_S3_BUCKET:dony-dev}
-    access-key: ${HETZNER_S3_ACCESS_KEY:replace_me}
-    secret-key: ${HETZNER_S3_SECRET_KEY:replace_me}
+    region: ${AWS_S3_REGION:eu-west-3}
+    bucket: ${AWS_S3_BUCKET:dony-dev}
+    access-key: ${AWS_S3_ACCESS_KEY:replace_me}
+    secret-key: ${AWS_S3_SECRET_KEY:replace_me}
 
 # Stripe (test keys)
 stripe:
