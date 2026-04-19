@@ -28,7 +28,9 @@ jobs:
           cache: maven
 
       - name: Tests unitaires (gate bloquant)
-        run: ./mvnw test -Dspring.profiles.active=test --no-transfer-progress
+        run: |
+          chmod +x mvnw
+          ./mvnw test -Dspring.profiles.active=test --no-transfer-progress
 
       - name: Rapport JaCoCo (optionnel — ne bloque pas le pipeline)
         run: ./mvnw jacoco:prepare-agent test jacoco:report -Dspring.profiles.active=test --no-transfer-progress
@@ -58,7 +60,9 @@ jobs:
           cache: maven
 
       - name: Compilation complète (sources + tests)
-        run: ./mvnw test-compile --no-transfer-progress
+        run: |
+          chmod +x mvnw
+          ./mvnw test-compile --no-transfer-progress
 
       - name: SpotBugs — bugs HIGH = échec
         run: ./mvnw spotbugs:check --no-transfer-progress

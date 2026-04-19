@@ -33,7 +33,9 @@ jobs:
           restore-keys: owasp-nvd-
 
       - name: OWASP — CVSS ≥ 7 = échec
-        run: ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
+        run: |
+          chmod +x mvnw
+          ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
 
       - name: Upload rapport HTML
         uses: actions/upload-artifact@v4
