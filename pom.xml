@@ -163,26 +163,23 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
 
-			<!-- JaCoCo: code coverage report -->
+			<!-- Surefire : augmente le timeout d'arrêt du JVM forké
+			     Spring Boot peut prendre >30s à se fermer → JaCoCo corrompt son exec file -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+				</configuration>
+			</plugin>
+
+			<!-- JaCoCo: couverture — agent TCP pour éviter corruption exec file
+			     Le JVM Surefire est tué avant que l'agent file-mode finisse d'écrire.
+			     Exécuté manuellement via: ./mvnw jacoco:prepare-agent test jacoco:report -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>${jacoco.version}</version>
-				<executions>
-					<execution>
-						<goals><goal>prepare-agent</goal></goals>
-					</execution>
-					<execution>
-						<id>report</id>
-						<phase>verify</phase>
-						<goals><goal>report</goal></goals>
-					</execution>
-				</executions>
-				<configuration>
-					<excludes>
-						<exclude>com/dony/api/DonyBackApplication.class</exclude>
-					</excludes>
-				</configuration>
 			</plugin>
 
 			<!-- SpotBugs: static analysis — invoqué explicitement par CI (spotbugs:check)

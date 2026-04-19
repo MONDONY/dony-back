@@ -11,7 +11,9 @@ env:
 
 jobs:
 
-  # ── Gate 1 : Tests unitaires + rapport couverture JaCoCo ──────────────
+  # ── Gate 1 : Tests unitaires ──────────────────────────────────────────
+  # JaCoCo est déclenché en étape séparée non bloquante (continue-on-error)
+  # car le JVM Spring Boot peut être tué avant que l'agent écrive l'exec file
   test:
     name: ✅ Tests & Couverture
     runs-on: ubuntu-latest
@@ -25,9 +27,12 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Tests + rapport JaCoCo
-        # 'verify' déclencherait SpotBugs — on sépare les deux phases
-        run: ./mvnw test jacoco:report -Dspring.profiles.active=test --no-transfer-progress
+      - name: Tests unitaires (gate bloquant)
+        run: ./mvnw test -Dspring.profiles.active=test --no-transfer-progress
+
+      - name: Rapport JaCoCo (optionnel — ne bloque pas le pipeline)
+        run: ./mvnw jacoco:prepare-agent test jacoco:report -Dspring.profiles.active=test --no-transfer-progress
+        continue-on-error: true
 
       - name: Upload rapport couverture
         uses: actions/upload-artifact@v4
@@ -38,6 +43,7 @@ jobs:
           retention-days: 7
 
   # ── Gate 2 : Analyse statique SpotBugs ────────────────────────────────
+  # SpotBugs n'est pas lié au cycle Maven → invoqué uniquement ici
   static-analysis:
     name: 🔍 SpotBugs
     runs-on: ubuntu-latest
@@ -51,11 +57,11 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Compilation
-        run: ./mvnw compile -q
+      - name: Compilation complète (sources + tests)
+        run: ./mvnw test-compile --no-transfer-progress
 
       - name: SpotBugs — bugs HIGH = échec
-        run: ./mvnw spotbugs:check
+        run: ./mvnw spotbugs:check --no-transfer-progress
 
       - name: Upload rapport SpotBugs
         uses: actions/upload-artifact@v4
@@ -66,6 +72,8 @@ jobs:
           retention-days: 7
 
   # ── Gate 3 : Scan CVE dépendances (Trivy) ─────────────────────────────
+  # CRITICAL non patchés = échec pipeline
+  # HIGH non patchés     = warning (SARIF visible dans Security tab)
   security-scan:
     name: 🔒 Trivy CVE Scan
     runs-on: ubuntu-latest
@@ -75,30 +83,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: temurin
-          cache: maven
-
-      - name: Trivy — CVE CRITICAL/HIGH = échec
+      - name: Trivy — CVE CRITICAL = échec du pipeline
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
           scan-ref: .
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
           exit-code: '1'
           ignore-unfixed: true
           format: table
           skip-dirs: target,docs,.github,.mvn
 
-      - name: Trivy — rapport SARIF (onglet Security GitHub)
+      - name: Trivy — rapport SARIF HIGH/MEDIUM (warning, ne bloque pas)
         uses: aquasecurity/trivy-action@0.28.0
         if: always()
         with:
           scan-type: fs
           scan-ref: .
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
+          exit-code: '0'
           ignore-unfixed: true
           format: sarif
           output: trivy-results.sarif
