@@ -62,7 +62,7 @@ public class KycService {
         try {
             VerificationSessionCreateParams params = VerificationSessionCreateParams.builder()
                     .setType(VerificationSessionCreateParams.Type.DOCUMENT)
-                    .setReturnUrl("dony://kyc/complete")
+                    .setReturnUrl("https://dony.app/kyc/complete")
                     .putMetadata("user_id", user.getId().toString())
                     .setOptions(
                             VerificationSessionCreateParams.Options.builder()

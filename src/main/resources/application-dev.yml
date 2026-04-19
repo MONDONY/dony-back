@@ -28,7 +28,7 @@ aws:
 # Stripe (test keys)
 stripe:
   secret-key: ${STRIPE_SECRET_KEY:sk_test_51TNuRo9i7EY14IsEB194KYZP3eXHa4zZy0zHwD4WO6oHxnsiFaYrkWiBp1LVlr4PhYMj1jVdzizDpDqLYQsBTlfP00lB5PmzDb}
-  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_replace_me}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_0268122c288f2424705f90cf22dec6c5d5d1f857e495d8c33851db5619f8a80e}
 
 # Firebase
 firebase:
