@@ -77,3 +77,11 @@ Implémentation du flux KYC complet via Stripe Identity : création de session d
 - **`setReturnUrl("dony://kyc/complete")`** : URL scheme custom interceptée par la WebView Flutter. Stripe redirige vers cette URL après vérification. La WebView intercepte et navigue vers `/kyc/status`.
 - **`requireLiveCapture + requireMatchingSelfie`** : options Stripe pour maximiser la sécurité de la vérification. Peut être assoupli si le taux de rejet est trop élevé.
 - **Pas de capture `selfieUrl` pour l'instant** : Stripe Identity gère le stockage des documents. On pourrait récupérer la selfie via l'API Stripe et la stocker chiffrée sur Hetzner, mais c'est hors scope MVP.
+
+## ⚠️ À configurer avant la mise en production
+
+- [ ] **Endpoint webhook Stripe** : enregistrer `https://api.dony.app/api/v1/kyc/webhook` dans le Dashboard Stripe → Developers → Webhooks → Add endpoint. Sélectionner les events `identity.verification_session.verified` et `identity.verification_session.requires_input`.
+- [ ] **Secret webhook de production** : copier le `whsec_xxx` généré par le Dashboard (pas celui de `stripe listen`) et le définir dans la variable d'environnement `STRIPE_WEBHOOK_SECRET` sur le serveur.
+- [ ] **Clé de chiffrement KYC** : remplacer la valeur par défaut `dony-dev-encryption-key-change-in-prod` par une clé aléatoire forte (min 32 caractères) dans la variable d'environnement `ENCRYPTION_KEY`. **Attention : si cette clé change après que des données KYC ont été chiffrées, elles ne pourront plus être déchiffrées.**
+- [ ] **Stripe Identity en mode live** : activer Stripe Identity sur le compte live (pas test) dans le Dashboard Stripe. Les clés `pk_live_xxx` / `sk_live_xxx` doivent remplacer les clés test dans `application-prod.yml`.
+- [ ] **Ne jamais utiliser `stripe listen`** en production — les webhooks doivent arriver directement de Stripe vers l'endpoint HTTPS public.
