@@ -13,6 +13,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
 import java.util.Map;
@@ -85,6 +86,14 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create(BASE_TYPE + ex.getErrorCode()));
         problem.setTitle(ex.getTitle());
         return ResponseEntity.status(ex.getStatus()).body(problem);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ProblemDetail> handleResponseStatus(ResponseStatusException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(ex.getStatusCode(), ex.getReason());
+        problem.setType(URI.create(BASE_TYPE + "business-error"));
+        problem.setTitle(ex.getReason() != null ? ex.getReason() : "Error");
+        return ResponseEntity.status(ex.getStatusCode()).body(problem);
     }
 
     @ExceptionHandler(Exception.class)
