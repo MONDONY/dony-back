@@ -53,11 +53,14 @@ public class BidService {
 
         UserEntity sender = findUserByFirebaseUid(firebaseUid);
 
+        /* 
+        // TODO: Réactiver avant mise en production (KYC bypass pour DEV)
         if (sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new DonyBusinessException(
                     HttpStatus.FORBIDDEN, "kyc-not-verified", "KYC Not Verified",
                     "Vérifiez votre identité pour envoyer un colis");
         }
+        */
 
         if (!sender.getRoles().contains(Role.SENDER)) {
             sender.getRoles().add(Role.SENDER);
@@ -76,6 +79,14 @@ public class BidService {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
+        }
+
+        boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
+                sender.getId(), announcementId, List.of(BidStatus.PENDING, BidStatus.ACCEPTED));
+        if (alreadyHasBid) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "already-bid", "Demande existante",
+                    "Vous avez déjà une demande en cours ou acceptée pour ce trajet");
         }
 
         if (request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
@@ -163,6 +174,7 @@ public class BidService {
     }
 
     @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
     public BidResponse acceptBid(UUID bidId, String firebaseUid) {
         BidEntity bid = findBid(bidId);
         AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
@@ -193,6 +205,7 @@ public class BidService {
     }
 
     @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
     public BidResponse rejectBid(UUID bidId, String firebaseUid, BidRejectRequest request) {
         BidEntity bid = findBid(bidId);
         AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
