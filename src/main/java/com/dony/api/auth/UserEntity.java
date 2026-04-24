@@ -46,6 +46,9 @@ public class UserEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private Set<Role> roles = new HashSet<>();
 
+    @Column(name = "cancellation_count", nullable = false)
+    private int cancellationCount = 0;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -66,4 +69,7 @@ public class UserEntity extends BaseEntity {
 
     public Set<Role> getRoles() { return roles; }
     public void setRoles(Set<Role> roles) { this.roles = roles; }
+
+    public int getCancellationCount() { return cancellationCount; }
+    public void setCancellationCount(int cancellationCount) { this.cancellationCount = cancellationCount; }
 }
