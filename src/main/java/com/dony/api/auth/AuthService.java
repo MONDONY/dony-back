@@ -42,6 +42,44 @@ public class AuthService {
         return toResponse(user);
     }
 
+    /**
+     * Supprime le compte : soft-delete en DB + suppression dans Firebase Auth.
+     */
+    @Transactional
+    public void deleteAccount(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+
+        auditService.log(
+                "USER",
+                user.getId(),
+                "ACCOUNT_DELETED",
+                user.getId(),
+                Map.of("phoneNumber", user.getPhoneNumber() != null ? user.getPhoneNumber() : "")
+        );
+
+        // Soft-delete en base (relations masquées via @Where deleted_at IS NULL)
+        user.softDelete();
+        userRepository.save(user);
+
+        // Suppression dans Firebase Auth
+        try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().deleteUser(firebaseUid);
+        } catch (com.google.firebase.auth.FirebaseAuthException e) {
+            throw new DonyBusinessException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "firebase-delete-failed",
+                    "Firebase Delete Failed",
+                    "Erreur suppression Firebase : " + e.getMessage()
+            );
+        }
+    }
+
     private UserResponse createUser(String firebaseUid, RegisterRequest request) {
         Set<Role> roles = parseRoles(request.roles());
 
