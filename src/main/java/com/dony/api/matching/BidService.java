@@ -1,0 +1,340 @@
+package com.dony.api.matching;
+
+import com.dony.api.auth.KycStatus;
+import com.dony.api.auth.Role;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.BidRejectRequest;
+import com.dony.api.matching.dto.BidRequest;
+import com.dony.api.matching.dto.BidResponse;
+import com.dony.api.matching.dto.HandoverRequest;
+import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.matching.events.BidRejectedEvent;
+import com.dony.api.matching.events.HandoverDefinedEvent;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+public class BidService {
+
+    private final BidRepository bidRepository;
+    private final AnnouncementRepository announcementRepository;
+    private final UserRepository userRepository;
+    private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
+                      UserRepository userRepository, AuditService auditService,
+                      ApplicationEventPublisher eventPublisher) {
+        this.bidRepository = bidRepository;
+        this.announcementRepository = announcementRepository;
+        this.userRepository = userRepository;
+        this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public BidResponse createBid(UUID announcementId, String firebaseUid,
+                                 BidRequest request, HttpServletRequest httpRequest) {
+
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+
+        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN, "kyc-not-verified", "KYC Not Verified",
+                    "Vérifiez votre identité pour envoyer un colis");
+        }
+
+        if (!sender.getRoles().contains(Role.SENDER)) {
+            sender.getRoles().add(Role.SENDER);
+            userRepository.save(sender);
+        }
+
+        AnnouncementEntity announcement = findAnnouncement(announcementId);
+
+        if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "announcement-not-active", "Announcement Not Active",
+                    "Cette annonce n'est plus disponible");
+        }
+
+        if (announcement.getTravelerId().equals(sender.getId())) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
+                    "Vous ne pouvez pas faire une demande sur votre propre annonce");
+        }
+
+        if (request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "weight-exceeds-capacity", "Weight Exceeds Capacity",
+                    "Poids demandé supérieur à la capacité disponible");
+        }
+
+        if (request.declaredValueEur().compareTo(BigDecimal.valueOf(500)) > 0) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "value-exceeds-limit", "Value Exceeds Limit",
+                    "Valeur maximum : 500 €");
+        }
+
+        if (Boolean.FALSE.equals(request.disclaimerSigned())) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "disclaimer-not-signed", "Disclaimer Not Signed",
+                    "Le disclaimer légal doit être accepté");
+        }
+
+        String clientIp = resolveClientIp(httpRequest);
+
+        BidEntity bid = new BidEntity();
+        bid.setAnnouncementId(announcementId);
+        bid.setSenderId(sender.getId());
+        bid.setWeightKg(request.weightKg());
+        bid.setDeclaredValueEur(request.declaredValueEur());
+        bid.setDescription(request.description());
+        bid.setContentCategory(request.contentCategory());
+        bid.setRecipientName(request.recipientName());
+        bid.setRecipientPhone(request.recipientPhone());
+        bid.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        bid.setDisclaimerSignedIp(clientIp);
+        bid.setStatus(BidStatus.PENDING);
+
+        BidEntity saved = bidRepository.save(bid);
+
+        auditService.log("BID", saved.getId(), "BID_CREATED", sender.getId(),
+                Map.of(
+                        "announcementId", announcementId.toString(),
+                        "weightKg", saved.getWeightKg().toString(),
+                        "declaredValueEur", saved.getDeclaredValueEur().toString(),
+                        "contentCategory", String.valueOf(saved.getContentCategory()),
+                        "disclaimerSignedAt", saved.getDisclaimerSignedAt().toString(),
+                        "disclaimerSignedIp", clientIp
+                ));
+
+        return toResponse(saved, sender);
+    }
+
+    @Transactional(readOnly = true)
+    public BidResponse getBidById(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity requester = findUserByFirebaseUid(firebaseUid);
+
+        // Accessible by the traveler who owns the announcement, or the sender
+        boolean isTraveler = announcement.getTravelerId().equals(requester.getId());
+        boolean isSender = bid.getSenderId().equals(requester.getId());
+
+        if (!isTraveler && !isSender) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Accès non autorisé à ce bid");
+        }
+
+        UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
+        return toResponse(bid, sender);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BidResponse> getBidsForAnnouncement(UUID announcementId, String firebaseUid) {
+        AnnouncementEntity announcement = findAnnouncement(announcementId);
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        if (!announcement.getTravelerId().equals(traveler.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à voir ces demandes");
+        }
+
+        return bidRepository.findByAnnouncementId(announcementId)
+                .stream().map(b -> {
+                    UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
+                    return toResponse(b, sender);
+                }).toList();
+    }
+
+    @Transactional
+    public BidResponse acceptBid(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        requireTravelerOwnsAnnouncement(traveler, announcement);
+        requireBidStatus(bid, BidStatus.PENDING);
+
+        if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",
+                    "Capacité insuffisante pour accepter cette demande");
+        }
+
+        bid.setStatus(BidStatus.ACCEPTED);
+        announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        announcementRepository.save(announcement);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_ACCEPTED", traveler.getId(),
+                Map.of("announcementId", announcement.getId().toString(),
+                       "weightKg", bid.getWeightKg().toString()));
+
+        eventPublisher.publishEvent(new BidAcceptedEvent(
+                bidId, bid.getSenderId(), traveler.getId(), announcement.getId()));
+
+        return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
+    }
+
+    @Transactional
+    public BidResponse rejectBid(UUID bidId, String firebaseUid, BidRejectRequest request) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        requireTravelerOwnsAnnouncement(traveler, announcement);
+        requireBidStatus(bid, BidStatus.PENDING);
+
+        bid.setStatus(BidStatus.REJECTED);
+        if (request != null) {
+            bid.setRejectionReason(request.reason());
+        }
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_REJECTED", traveler.getId(),
+                Map.of("reason", String.valueOf(bid.getRejectionReason())));
+
+        eventPublisher.publishEvent(new BidRejectedEvent(
+                bidId, bid.getSenderId(), bid.getRejectionReason()));
+
+        return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
+    }
+
+    @Transactional
+    public BidResponse setHandover(UUID bidId, String firebaseUid, HandoverRequest request) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        requireTravelerOwnsAnnouncement(traveler, announcement);
+
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "bid-not-accepted", "Bid Not Accepted",
+                    "La fenêtre de remise ne peut être définie que sur un bid accepté");
+        }
+
+        if (!request.windowEnd().isAfter(request.windowStart())) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-window",
+                    "Invalid Window", "La fin de la fenêtre doit être après le début");
+        }
+
+        bid.setHandoverLocation(request.location());
+        bid.setHandoverWindowStart(request.windowStart());
+        bid.setHandoverWindowEnd(request.windowEnd());
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "HANDOVER_DEFINED", traveler.getId(),
+                Map.of("location", request.location(),
+                       "windowStart", request.windowStart().toString(),
+                       "windowEnd", request.windowEnd().toString()));
+
+        eventPublisher.publishEvent(new HandoverDefinedEvent(
+                bidId, bid.getSenderId(), request.location(),
+                request.windowStart(), request.windowEnd()));
+
+        return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
+    }
+
+    @Transactional
+    public BidResponse confirmPresence(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        requireTravelerOwnsAnnouncement(traveler, announcement);
+
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "bid-not-accepted", "Bid Not Accepted",
+                    "Confirmation de présence uniquement pour les bids acceptés");
+        }
+
+        bid.setVoyageurConfirmed(true);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "PRESENCE_CONFIRMED", traveler.getId(), Map.of());
+
+        return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
+    }
+
+    // Called by scheduler — no auth check, transaction managed internally
+    @Transactional
+    public void markH2AlertSent(UUID bidId) {
+        bidRepository.findById(bidId).ifPresent(bid -> {
+            bid.setH2AlertSentAt(LocalDateTime.now(ZoneOffset.UTC));
+            bidRepository.save(bid);
+        });
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private UserEntity findUserByFirebaseUid(String firebaseUid) {
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+    }
+
+    private AnnouncementEntity findAnnouncement(UUID id) {
+        return announcementRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+    }
+
+    private BidEntity findBid(UUID id) {
+        return bidRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found", "Demande introuvable"));
+    }
+
+    private void requireTravelerOwnsAnnouncement(UserEntity traveler, AnnouncementEntity announcement) {
+        if (!announcement.getTravelerId().equals(traveler.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à effectuer cette action");
+        }
+    }
+
+    private void requireBidStatus(BidEntity bid, BidStatus expected) {
+        if (bid.getStatus() != expected) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-bid-status", "Invalid Bid Status",
+                    "Cette action n'est pas possible pour un bid en statut " + bid.getStatus());
+        }
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    BidResponse toResponse(BidEntity bid, UserEntity sender) {
+        String senderName = sender != null ? sender.getPhoneNumber() : null;
+        return new BidResponse(
+                bid.getId(), bid.getAnnouncementId(), bid.getSenderId(),
+                senderName,
+                bid.getWeightKg(), bid.getDeclaredValueEur(), bid.getDescription(),
+                bid.getContentCategory(), bid.getRecipientName(), bid.getRecipientPhone(),
+                bid.getStatus().name(), bid.getRejectionReason(),
+                bid.getHandoverLocation(), bid.getHandoverWindowStart(), bid.getHandoverWindowEnd(),
+                bid.isVoyageurConfirmed(),
+                bid.getDisclaimerSignedAt(),
+                bid.getCreatedAt(), bid.getUpdatedAt()
+        );
+    }
+}

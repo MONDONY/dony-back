@@ -1,6 +1,5 @@
 package com.dony.api.matching;
 
-import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -9,12 +8,22 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
+import com.dony.api.matching.dto.AnnouncementSearchResponse;
+import com.dony.api.matching.dto.TravelerProfileDto;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,7 +47,58 @@ public class AnnouncementService {
         this.auditService = auditService;
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    public Page<AnnouncementSearchResponse> searchAnnouncements(
+            String departureCity, String arrivalCity,
+            LocalDate departureDateFrom, LocalDate departureDateTo,
+            BigDecimal minAvailableKg, String sortBy, String sortDir, Pageable pageable) {
+
+        Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE);
+
+        if (departureCity != null && !departureCity.isBlank())
+            spec = spec.and(AnnouncementSpecification.hasDepartureCity(departureCity));
+        if (arrivalCity != null && !arrivalCity.isBlank())
+            spec = spec.and(AnnouncementSpecification.hasArrivalCity(arrivalCity));
+        if (departureDateFrom != null)
+            spec = spec.and(AnnouncementSpecification.departureDateFrom(departureDateFrom));
+        if (departureDateTo != null)
+            spec = spec.and(AnnouncementSpecification.departureDateTo(departureDateTo));
+        if (minAvailableKg != null)
+            spec = spec.and(AnnouncementSpecification.minAvailableKg(minAvailableKg));
+
+        Sort sort = buildSort(sortBy, sortDir);
+        Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+
+        return announcementRepository.findAll(spec, sortedPageable)
+                .map(this::toSearchResponse);
+    }
+
+    private Sort buildSort(String sortBy, String sortDir) {
+        Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
+        return switch (sortBy != null ? sortBy : "date") {
+            case "price" -> Sort.by(direction, "pricePerKg");
+            default -> Sort.by(direction, "departureDate");
+        };
+    }
+
+    private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
+        UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
+        TravelerProfileDto profile = traveler != null
+                ? new TravelerProfileDto(traveler.getId(), traveler.getPhoneNumber(), null, null, false)
+                : null;
+        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
+        return new AnnouncementSearchResponse(
+                entity.getId(), entity.getTravelerId(),
+                entity.getDepartureCity(), entity.getArrivalCity(),
+                entity.getDepartureDate(), entity.getAvailableKg(), entity.getPricePerKg(),
+                entity.getStatus().name(), bidsCount, profile,
+                entity.getCreatedAt(), entity.getUpdatedAt()
+        );
+    }
+
     @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
     public AnnouncementResponse createAnnouncement(String firebaseUid, AnnouncementRequest request) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -48,14 +108,15 @@ public class AnnouncementService {
                         "Utilisateur introuvable"
                 ));
 
-        if (user.getKycStatus() != KycStatus.VERIFIED) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "kyc-not-verified",
-                    "KYC Not Verified",
-                    "Vérifiez votre identité pour publier un trajet"
-            );
-        }
+        // TODO: Réactiver la vérification KYC avant la prod
+        // if (user.getKycStatus() != KycStatus.VERIFIED) {
+        //     throw new DonyBusinessException(
+        //             HttpStatus.FORBIDDEN,
+        //             "kyc-not-verified",
+        //             "KYC Not Verified",
+        //             "Vérifiez votre identité pour publier un trajet"
+        //     );
+        // }
 
         if (!user.getRoles().contains(Role.TRAVELER)) {
             user.getRoles().add(Role.TRAVELER);
@@ -103,16 +164,9 @@ public class AnnouncementService {
     public AnnouncementDetailResponse getAnnouncementDetail(UUID id, String firebaseUid) {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
-        
-        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
-
-        if (!announcement.getTravelerId().equals(user.getId())) {
-            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "Vous n'êtes pas autorisé à voir cette annonce");
-        }
 
         long bidsCount = bidRepository.countByAnnouncementId(id);
-        
+
         return new AnnouncementDetailResponse(
                 announcement.getId(),
                 announcement.getTravelerId(),
@@ -129,6 +183,7 @@ public class AnnouncementService {
     }
 
     @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
     public AnnouncementDetailResponse updateAnnouncement(UUID id, String firebaseUid, AnnouncementRequest request) {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
@@ -189,7 +244,42 @@ public class AnnouncementService {
         );
     }
 
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public void deleteAnnouncement(UUID id, String firebaseUid) {
+        AnnouncementEntity announcement = announcementRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+
+        if (!announcement.getTravelerId().equals(user.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "Vous n'êtes pas autorisé à supprimer cette annonce");
+        }
+
+        if (bidRepository.existsByAnnouncementIdAndStatus(id, BidStatus.ACCEPTED)) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "deletion-impossible", "Deletion Impossible", "Suppression impossible : des colis sont déjà acceptés pour ce trajet");
+        }
+
+        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatus(id, BidStatus.PENDING);
+        for (BidEntity bid : pendingBids) {
+            bid.setStatus(BidStatus.REJECTED);
+            bidRepository.save(bid);
+            auditService.log("BID", bid.getId(), "BID_REJECTED_ANNOUNCEMENT_DELETED", user.getId(),
+                    Map.of("announcementId", id.toString(), "senderId", bid.getSenderId().toString()));
+        }
+
+        announcement.softDelete();
+        announcementRepository.save(announcement);
+
+        auditService.log("ANNOUNCEMENT", user.getId(), "ANNOUNCEMENT_DELETED", id,
+                Map.of("departureCity", announcement.getDepartureCity(),
+                        "arrivalCity", announcement.getArrivalCity(),
+                        "rejectedBidsCount", String.valueOf(pendingBids.size())));
+    }
+
     private AnnouncementResponse toResponse(AnnouncementEntity entity) {
+        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),
@@ -199,6 +289,7 @@ public class AnnouncementService {
                 entity.getAvailableKg(),
                 entity.getPricePerKg(),
                 entity.getStatus().name(),
+                bidsCount,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

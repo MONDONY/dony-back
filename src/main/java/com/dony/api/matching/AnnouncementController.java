@@ -5,21 +5,27 @@ import com.dony.api.common.PageResponse;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
+import com.dony.api.matching.dto.AnnouncementSearchResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +36,23 @@ public class AnnouncementController {
 
     public AnnouncementController(AnnouncementService announcementService) {
         this.announcementService = announcementService;
+    }
+
+    @GetMapping
+    public ResponseEntity<PageResponse<AnnouncementSearchResponse>> searchAnnouncements(
+            @RequestParam(required = false) String departureCity,
+            @RequestParam(required = false) String arrivalCity,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateTo,
+            @RequestParam(required = false) BigDecimal minAvailableKg,
+            @RequestParam(defaultValue = "date") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir,
+            Pageable pageable
+    ) {
+        Page<AnnouncementSearchResponse> page = announcementService.searchAnnouncements(
+                departureCity, arrivalCity, departureDateFrom, departureDateTo,
+                minAvailableKg, sortBy, sortDir, pageable);
+        return ResponseEntity.ok(PageResponse.from(page));
     }
 
     @PostMapping
@@ -59,6 +82,13 @@ public class AnnouncementController {
     ) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(announcementService.updateAnnouncement(id, firebaseUid, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteAnnouncement(@PathVariable UUID id) {
+        String firebaseUid = requireFirebaseUid();
+        announcementService.deleteAnnouncement(id, firebaseUid);
+        return ResponseEntity.noContent().build();
     }
 
     private String requireFirebaseUid() {

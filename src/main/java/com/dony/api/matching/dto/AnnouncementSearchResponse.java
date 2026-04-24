@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-public record AnnouncementResponse(
+public record AnnouncementSearchResponse(
         UUID id,
         UUID travelerId,
         String departureCity,
@@ -15,6 +15,7 @@ public record AnnouncementResponse(
         BigDecimal pricePerKg,
         String status,
         long bidsCount,
+        TravelerProfileDto traveler,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}
