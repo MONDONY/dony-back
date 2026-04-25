@@ -97,7 +97,10 @@ public class CancellationService {
         }
 
         // Track cancellation count on traveler profile for reputation penalty
-        long cancellationCount = cancellationRepository.countByCancelledBy(traveler.getId());
+        traveler.setCancellationCount(traveler.getCancellationCount() + 1);
+        userRepository.save(traveler);
+        
+        long cancellationCount = traveler.getCancellationCount();
 
         auditService.log("ANNOUNCEMENT", request.announcementId(), "TRIP_CANCELLED", traveler.getId(),
                 Map.of("reason", request.reason(),
