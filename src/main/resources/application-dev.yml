@@ -17,13 +17,14 @@ sentry:
   dsn: ""
   enabled: false
 
-# Amazon S3 (dev)
+# Cloudflare R2 (S3-compatible)
 aws:
   s3:
-    region: ${AWS_S3_REGION:eu-west-3}
-    bucket: ${AWS_S3_BUCKET:dony-dev}
+    region: ${AWS_S3_REGION:auto}
+    bucket: ${AWS_S3_BUCKET:dony-app}
     access-key: ${AWS_S3_ACCESS_KEY:replace_me}
     secret-key: ${AWS_S3_SECRET_KEY:replace_me}
+    endpoint: ${AWS_S3_ENDPOINT:}
 
 # Stripe (test keys — définir STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET dans les variables d'env)
 stripe:

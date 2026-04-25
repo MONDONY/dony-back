@@ -24,5 +24,25 @@ services:
     depends_on:
       - db
 
+  # MinIO — S3-compatible local storage (remplace Cloudflare R2 en dev)
+  minio:
+    image: minio/minio:latest
+    container_name: dony_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: dony
+      MINIO_ROOT_PASSWORD: dony_dev_password
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web
+    volumes:
+      - dony_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   dony_db_data:
+  dony_minio_data:
