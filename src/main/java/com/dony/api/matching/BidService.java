@@ -379,6 +379,17 @@ public class BidService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    private String buildSenderName(UserEntity user) {
+        if (user == null) return null;
+        String first = user.getFirstName();
+        String last = user.getLastName();
+        if (first != null && !first.isBlank() && last != null && !last.isBlank())
+            return first.trim() + " " + last.trim();
+        if (first != null && !first.isBlank()) return first.trim();
+        if (last != null && !last.isBlank()) return last.trim();
+        return null;
+    }
+
     private UserEntity findUserByFirebaseUid(String firebaseUid) {
         return userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -420,7 +431,8 @@ public class BidService {
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender) {
-        String senderName = sender != null ? sender.getPhoneNumber() : "Utilisateur";
+        String senderName = buildSenderName(sender);
+        String senderPhone = sender != null ? sender.getPhoneNumber() : null;
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
@@ -434,6 +446,7 @@ public class BidService {
                 bid.getAnnouncementId(),
                 bid.getSenderId(),
                 senderName,
+                senderPhone,
                 bid.getWeightKg(),
                 bid.getDeclaredValueEur(),
                 bid.getDescription(),

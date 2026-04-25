@@ -90,7 +90,11 @@ public class AnnouncementService {
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
         UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
         TravelerProfileDto profile = traveler != null
-                ? new TravelerProfileDto(traveler.getId(), traveler.getPhoneNumber(), null, null, false)
+                ? new TravelerProfileDto(
+                        traveler.getId(),
+                        buildDisplayName(traveler),
+                        traveler.getPhoneNumber(),
+                        null, null, false)
                 : null;
         long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
         return new AnnouncementSearchResponse(
@@ -103,6 +107,16 @@ public class AnnouncementService {
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
+    }
+
+    private String buildDisplayName(UserEntity user) {
+        String first = user.getFirstName();
+        String last = user.getLastName();
+        if (first != null && !first.isBlank() && last != null && !last.isBlank())
+            return first.trim() + " " + last.trim();
+        if (first != null && !first.isBlank()) return first.trim();
+        if (last != null && !last.isBlank()) return last.trim();
+        return null;
     }
 
     @Transactional
