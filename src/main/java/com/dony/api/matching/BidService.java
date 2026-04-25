@@ -424,6 +424,10 @@ public class BidService {
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
+        java.time.LocalDate departureDate = announcement != null ? announcement.getDepartureDate() : null;
+        java.time.LocalTime departureTime = announcement != null ? announcement.getDepartureTime() : null;
+        java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
+        java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
 
         return new BidResponse(
                 bid.getId(),
@@ -446,7 +450,11 @@ public class BidService {
                 bid.getCreatedAt(),
                 bid.getUpdatedAt(),
                 departureCity,
-                arrivalCity
+                arrivalCity,
+                departureDate,
+                departureTime,
+                arrivalTime,
+                pricePerKg
         );
     }
 }

@@ -1,7 +1,9 @@
 package com.dony.api.matching.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.UUID;
 
 public record BidResponse(
@@ -25,5 +27,9 @@ public record BidResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         String departureCity,
-        String arrivalCity
+        String arrivalCity,
+        LocalDate departureDate,
+        LocalTime departureTime,
+        LocalTime arrivalTime,
+        BigDecimal pricePerKg
 ) {}
