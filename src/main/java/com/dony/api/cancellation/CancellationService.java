@@ -6,6 +6,7 @@ import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
 import com.dony.api.cancellation.events.TripCancelledEvent;
+import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -99,13 +100,21 @@ public class CancellationService {
         // Track cancellation count on traveler profile for reputation penalty
         traveler.setCancellationCount(traveler.getCancellationCount() + 1);
         userRepository.save(traveler);
-        
-        long cancellationCount = traveler.getCancellationCount();
+
+        int cancellationCount = traveler.getCancellationCount();
 
         auditService.log("ANNOUNCEMENT", request.announcementId(), "TRIP_CANCELLED", traveler.getId(),
                 Map.of("reason", request.reason(),
                        "affectedBids", String.valueOf(acceptedBids.size()),
                        "cancellationCount", String.valueOf(cancellationCount)));
+
+        if (cancellationCount >= 3) {
+            auditService.log("USER", traveler.getId(), "HIGH_CANCELLATION_ALERT", traveler.getId(),
+                    Map.of("cancellationCount", String.valueOf(cancellationCount),
+                           "triggeringAnnouncementId", request.announcementId().toString()));
+            eventPublisher.publishEvent(new TravelerHighCancellationEvent(
+                    traveler.getId(), cancellationCount, request.announcementId()));
+        }
 
         // Publish event for notifications (Epic 8)
         eventPublisher.publishEvent(new TripCancelledEvent(
