@@ -167,7 +167,9 @@ public class BidService {
         }
 
         return bidRepository.findByAnnouncementId(announcementId)
-                .stream().map(b -> {
+                .stream()
+                .filter(b -> !b.isDeletedByTraveler())
+                .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
                     return toResponse(b, sender);
                 }).toList();
@@ -342,6 +344,28 @@ public class BidService {
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_HIDDEN_BY_SENDER", sender.getId(), Map.of());
+    }
+
+    @Transactional
+    public void hideBidForTraveler(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+
+        if (!announcement.getTravelerId().equals(traveler.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à effectuer cette action");
+        }
+
+        if (bid.getStatus() != BidStatus.REJECTED && bid.getStatus() != BidStatus.CANCELLED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-bid-status", "Invalid Bid Status",
+                    "Seules les demandes refusées ou annulées peuvent être supprimées");
+        }
+
+        bid.setDeletedByTraveler(true);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_DISMISSED_BY_TRAVELER", traveler.getId(), Map.of());
     }
 
     // Called by scheduler — no auth check, transaction managed internally

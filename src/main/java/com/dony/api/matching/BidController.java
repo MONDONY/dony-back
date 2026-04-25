@@ -118,6 +118,13 @@ public class BidController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/bids/{bidId}/traveler")
+    public ResponseEntity<Void> dismissBidAsTraveler(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        bidService.hideBidForTraveler(bidId, firebaseUid);
+        return ResponseEntity.noContent().build();
+    }
+
     private String requireFirebaseUid() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {

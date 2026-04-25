@@ -75,6 +75,9 @@ public class BidEntity extends BaseEntity {
     @Column(name = "deleted_by_sender", nullable = false)
     private boolean deletedBySender = false;
 
+    @Column(name = "deleted_by_traveler", nullable = false)
+    private boolean deletedByTraveler = false;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -131,4 +134,7 @@ public class BidEntity extends BaseEntity {
 
     public boolean isDeletedBySender() { return deletedBySender; }
     public void setDeletedBySender(boolean deletedBySender) { this.deletedBySender = deletedBySender; }
+
+    public boolean isDeletedByTraveler() { return deletedByTraveler; }
+    public void setDeletedByTraveler(boolean deletedByTraveler) { this.deletedByTraveler = deletedByTraveler; }
 }
