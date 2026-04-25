@@ -10,6 +10,7 @@ import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
@@ -28,6 +29,18 @@ public class AnnouncementEntity extends BaseEntity {
 
     @Column(name = "departure_date", nullable = false)
     private LocalDate departureDate;
+
+    @Column(name = "departure_time")
+    private LocalTime departureTime;
+
+    @Column(name = "arrival_time")
+    private LocalTime arrivalTime;
+
+    @Column(name = "departure_location", length = 255)
+    private String departureLocation;
+
+    @Column(name = "arrival_location", length = 255)
+    private String arrivalLocation;
 
     @Column(name = "available_kg", nullable = false, precision = 5, scale = 2)
     private BigDecimal availableKg;
@@ -50,6 +63,18 @@ public class AnnouncementEntity extends BaseEntity {
 
     public LocalDate getDepartureDate() { return departureDate; }
     public void setDepartureDate(LocalDate departureDate) { this.departureDate = departureDate; }
+
+    public LocalTime getDepartureTime() { return departureTime; }
+    public void setDepartureTime(LocalTime departureTime) { this.departureTime = departureTime; }
+
+    public LocalTime getArrivalTime() { return arrivalTime; }
+    public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }
+
+    public String getDepartureLocation() { return departureLocation; }
+    public void setDepartureLocation(String departureLocation) { this.departureLocation = departureLocation; }
+
+    public String getArrivalLocation() { return arrivalLocation; }
+    public void setArrivalLocation(String arrivalLocation) { this.arrivalLocation = arrivalLocation; }
 
     public BigDecimal getAvailableKg() { return availableKg; }
     public void setAvailableKg(BigDecimal availableKg) { this.availableKg = availableKg; }

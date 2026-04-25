@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface RematchSuggestionRepository extends JpaRepository<RematchSuggestionEntity, UUID> {
     List<RematchSuggestionEntity> findByCancellationId(UUID cancellationId);
+    List<RematchSuggestionEntity> findByAnnouncementId(UUID announcementId);
 }

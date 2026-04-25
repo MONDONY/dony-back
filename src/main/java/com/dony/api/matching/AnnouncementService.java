@@ -10,8 +10,10 @@ import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
 import com.dony.api.matching.dto.AnnouncementSearchResponse;
 import com.dony.api.matching.dto.TravelerProfileDto;
+import com.dony.api.matching.events.AnnouncementDeletedEvent;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,17 +36,20 @@ public class AnnouncementService {
     private final BidRepository bidRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AnnouncementService(
             AnnouncementRepository announcementRepository,
             BidRepository bidRepository,
             UserRepository userRepository,
-            AuditService auditService
+            AuditService auditService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -91,7 +96,10 @@ public class AnnouncementService {
         return new AnnouncementSearchResponse(
                 entity.getId(), entity.getTravelerId(),
                 entity.getDepartureCity(), entity.getArrivalCity(),
-                entity.getDepartureDate(), entity.getAvailableKg(), entity.getPricePerKg(),
+                entity.getDepartureDate(),
+                entity.getDepartureTime(), entity.getArrivalTime(),
+                entity.getDepartureLocation(), entity.getArrivalLocation(),
+                entity.getAvailableKg(), entity.getPricePerKg(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
@@ -128,6 +136,10 @@ public class AnnouncementService {
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureDate(request.departureDate());
+        announcement.setDepartureTime(request.departureTime());
+        announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureLocation(request.departureLocation());
+        announcement.setArrivalLocation(request.arrivalLocation());
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
@@ -173,6 +185,10 @@ public class AnnouncementService {
                 announcement.getDepartureCity(),
                 announcement.getArrivalCity(),
                 announcement.getDepartureDate(),
+                announcement.getDepartureTime(),
+                announcement.getArrivalTime(),
+                announcement.getDepartureLocation(),
+                announcement.getArrivalLocation(),
                 announcement.getAvailableKg(),
                 announcement.getPricePerKg(),
                 announcement.getStatus().name(),
@@ -208,6 +224,10 @@ public class AnnouncementService {
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureDate(request.departureDate());
+        announcement.setDepartureTime(request.departureTime());
+        announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureLocation(request.departureLocation());
+        announcement.setArrivalLocation(request.arrivalLocation());
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
 
@@ -235,6 +255,10 @@ public class AnnouncementService {
                 saved.getDepartureCity(),
                 saved.getArrivalCity(),
                 saved.getDepartureDate(),
+                saved.getDepartureTime(),
+                saved.getArrivalTime(),
+                saved.getDepartureLocation(),
+                saved.getArrivalLocation(),
                 saved.getAvailableKg(),
                 saved.getPricePerKg(),
                 saved.getStatus().name(),
@@ -255,6 +279,32 @@ public class AnnouncementService {
 
         if (!announcement.getTravelerId().equals(user.getId())) {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "Vous n'êtes pas autorisé à supprimer cette annonce");
+        }
+
+        if (announcement.getStatus() == AnnouncementStatus.CANCELLED) {
+            // Soft-delete all associated bids (already CANCELLED from the cancellation flow)
+            List<BidEntity> bids = bidRepository.findByAnnouncementId(id);
+            for (BidEntity bid : bids) {
+                bid.softDelete();
+                bidRepository.save(bid);
+            }
+
+            announcement.softDelete();
+            announcementRepository.save(announcement);
+
+            // Notify cancellation package to clean up rematch suggestions
+            eventPublisher.publishEvent(new AnnouncementDeletedEvent(id, user.getId()));
+
+            auditService.log("ANNOUNCEMENT", user.getId(), "CANCELLED_ANNOUNCEMENT_DELETED", id,
+                    Map.of("departureCity", announcement.getDepartureCity(),
+                            "arrivalCity", announcement.getArrivalCity(),
+                            "deletedBidsCount", String.valueOf(bids.size())));
+            return;
+        }
+
+        if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "deletion-impossible", "Deletion Impossible",
+                    "Seuls les trajets actifs ou annulés peuvent être supprimés");
         }
 
         if (bidRepository.existsByAnnouncementIdAndStatus(id, BidStatus.ACCEPTED)) {
@@ -286,6 +336,10 @@ public class AnnouncementService {
                 entity.getDepartureCity(),
                 entity.getArrivalCity(),
                 entity.getDepartureDate(),
+                entity.getDepartureTime(),
+                entity.getArrivalTime(),
+                entity.getDepartureLocation(),
+                entity.getArrivalLocation(),
                 entity.getAvailableKg(),
                 entity.getPricePerKg(),
                 entity.getStatus().name(),
