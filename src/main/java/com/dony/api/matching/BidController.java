@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,12 @@ public class BidController {
         return ResponseEntity.ok(bidService.getBidById(bidId, firebaseUid));
     }
 
+    @GetMapping("/bids/me")
+    public ResponseEntity<List<BidResponse>> getMyBids() {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.getMyBids(firebaseUid));
+    }
+
     // ── Traveler accepts a bid ────────────────────────────────────────────────
 
     @PutMapping("/bids/{bidId}/accept")
@@ -96,6 +103,19 @@ public class BidController {
     public ResponseEntity<BidResponse> confirmPresence(@PathVariable UUID bidId) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.confirmPresence(bidId, firebaseUid));
+    }
+
+    @PutMapping("/bids/{bidId}/cancel")
+    public ResponseEntity<BidResponse> cancelBid(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.cancelBid(bidId, firebaseUid));
+    }
+
+    @DeleteMapping("/bids/{bidId}/me")
+    public ResponseEntity<Void> hideBid(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        bidService.hideBidForSender(bidId, firebaseUid);
+        return ResponseEntity.noContent().build();
     }
 
     private String requireFirebaseUid() {

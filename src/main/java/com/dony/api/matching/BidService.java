@@ -173,6 +173,16 @@ public class BidService {
                 }).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<BidResponse> getMyBids(String firebaseUid) {
+        UserEntity user = findUserByFirebaseUid(firebaseUid);
+        return bidRepository.findBySenderId(user.getId())
+                .stream()
+                .filter(b -> !b.isDeletedBySender())
+                .map(b -> toResponse(b, user))
+                .toList();
+    }
+
     @Transactional
     @CacheEvict(value = "announcements-search", allEntries = true)
     public BidResponse acceptBid(UUID bidId, String firebaseUid) {
@@ -285,6 +295,55 @@ public class BidService {
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }
 
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public BidResponse cancelBid(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+
+        if (!bid.getSenderId().equals(sender.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à annuler ce bid");
+        }
+
+        if (bid.getStatus() == BidStatus.CANCELLED || bid.getStatus() == BidStatus.REJECTED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-status", "Invalid Status", 
+                    "Impossible d'annuler un bid déjà terminé");
+        }
+
+        // Si le bid était déjà accepté, on rend le kilo au voyageur
+        if (bid.getStatus() == BidStatus.ACCEPTED) {
+            AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+            if (announcement != null) {
+                announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+                announcementRepository.save(announcement);
+            }
+        }
+
+        bid.setStatus(BidStatus.CANCELLED);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_CANCELLED", sender.getId(), Map.of());
+
+        return toResponse(bid, sender);
+    }
+
+    @Transactional
+    public void hideBidForSender(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+
+        if (!bid.getSenderId().equals(sender.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à masquer ce bid");
+        }
+
+        bid.setDeletedBySender(true);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_HIDDEN_BY_SENDER", sender.getId(), Map.of());
+    }
+
     // Called by scheduler — no auth check, transaction managed internally
     @Transactional
     public void markH2AlertSent(UUID bidId) {
@@ -337,17 +396,33 @@ public class BidService {
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender) {
-        String senderName = sender != null ? sender.getPhoneNumber() : null;
+        String senderName = sender != null ? sender.getPhoneNumber() : "Utilisateur";
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+        String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
+        String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
+
         return new BidResponse(
-                bid.getId(), bid.getAnnouncementId(), bid.getSenderId(),
+                bid.getId(),
+                bid.getAnnouncementId(),
+                bid.getSenderId(),
                 senderName,
-                bid.getWeightKg(), bid.getDeclaredValueEur(), bid.getDescription(),
-                bid.getContentCategory(), bid.getRecipientName(), bid.getRecipientPhone(),
-                bid.getStatus().name(), bid.getRejectionReason(),
-                bid.getHandoverLocation(), bid.getHandoverWindowStart(), bid.getHandoverWindowEnd(),
+                bid.getWeightKg(),
+                bid.getDeclaredValueEur(),
+                bid.getDescription(),
+                bid.getContentCategory(),
+                bid.getRecipientName(),
+                bid.getRecipientPhone(),
+                bid.getStatus().name(),
+                bid.getRejectionReason(),
+                bid.getHandoverLocation(),
+                bid.getHandoverWindowStart(),
+                bid.getHandoverWindowEnd(),
                 bid.isVoyageurConfirmed(),
                 bid.getDisclaimerSignedAt(),
-                bid.getCreatedAt(), bid.getUpdatedAt()
+                bid.getCreatedAt(),
+                bid.getUpdatedAt(),
+                departureCity,
+                arrivalCity
         );
     }
 }

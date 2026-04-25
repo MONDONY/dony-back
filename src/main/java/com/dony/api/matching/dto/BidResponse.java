@@ -23,5 +23,7 @@ public record BidResponse(
         boolean voyageurConfirmed,
         LocalDateTime disclaimerSignedAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String departureCity,
+        String arrivalCity
 ) {}

@@ -72,6 +72,9 @@ public class BidEntity extends BaseEntity {
     @Column(name = "h2_alert_sent_at")
     private LocalDateTime h2AlertSentAt;
 
+    @Column(name = "deleted_by_sender", nullable = false)
+    private boolean deletedBySender = false;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -125,4 +128,7 @@ public class BidEntity extends BaseEntity {
 
     public LocalDateTime getH2AlertSentAt() { return h2AlertSentAt; }
     public void setH2AlertSentAt(LocalDateTime h2AlertSentAt) { this.h2AlertSentAt = h2AlertSentAt; }
+
+    public boolean isDeletedBySender() { return deletedBySender; }
+    public void setDeletedBySender(boolean deletedBySender) { this.deletedBySender = deletedBySender; }
 }
