@@ -1,6 +1,7 @@
 package com.dony.api.auth;
 
 import com.dony.api.auth.dto.RegisterRequest;
+import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.DonyBusinessException;
 import jakarta.validation.Valid;
@@ -10,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,6 +38,12 @@ public class AuthController {
     public ResponseEntity<UserResponse> getProfile() {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(authService.getProfile(firebaseUid));
+    }
+
+    @PatchMapping("/me")
+    public ResponseEntity<UserResponse> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.updateProfile(firebaseUid, request));
     }
 
     @DeleteMapping("/me")

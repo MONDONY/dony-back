@@ -1,6 +1,7 @@
 package com.dony.api.auth;
 
 import com.dony.api.auth.dto.RegisterRequest;
+import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
@@ -40,6 +41,39 @@ public class AuthService {
                         "Utilisateur introuvable"
                 ));
         return toResponse(user);
+    }
+
+    @Transactional
+    public UserResponse updateProfile(String firebaseUid, UpdateProfileRequest request) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+
+        if (request.firstName() != null) {
+            String v = request.firstName().trim();
+            user.setFirstName(v.isEmpty() ? null : v);
+        }
+        if (request.lastName() != null) {
+            String v = request.lastName().trim();
+            user.setLastName(v.isEmpty() ? null : v);
+        }
+        if (request.email() != null) {
+            String v = request.email().trim();
+            user.setEmail(v.isEmpty() ? null : v);
+        }
+        if (request.birthDate() != null) {
+            user.setBirthDate(request.birthDate());
+        }
+        if (request.city() != null) {
+            String v = request.city().trim();
+            user.setCity(v.isEmpty() ? null : v);
+        }
+
+        return toResponse(userRepository.save(user));
     }
 
     /**
@@ -143,6 +177,10 @@ public class AuthService {
                 user.getId(),
                 user.getPhoneNumber(),
                 user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getBirthDate(),
+                user.getCity(),
                 user.getRoles().stream().map(Role::name).collect(Collectors.toSet()),
                 user.getKycStatus().name(),
                 user.getStatus().name()
