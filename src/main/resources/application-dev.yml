@@ -25,10 +25,10 @@ aws:
     access-key: ${AWS_S3_ACCESS_KEY:replace_me}
     secret-key: ${AWS_S3_SECRET_KEY:replace_me}
 
-# Stripe (test keys)
+# Stripe (test keys — définir STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET dans les variables d'env)
 stripe:
-  secret-key: ${STRIPE_SECRET_KEY:sk_test_51TNuRo9i7EY14IsEB194KYZP3eXHa4zZy0zHwD4WO6oHxnsiFaYrkWiBp1LVlr4PhYMj1jVdzizDpDqLYQsBTlfP00lB5PmzDb}
-  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_0268122c288f2424705f90cf22dec6c5d5d1f857e495d8c33851db5619f8a80e}
+  secret-key: ${STRIPE_SECRET_KEY}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET}
 
 # Firebase
 firebase:

@@ -43,6 +43,7 @@ public class SecurityConfig {
                     "/actuator/health",
                     "/actuator/info",
                     "/kyc/webhook",
+                    "/payments/webhook",
                     "/ratings/recipient",
                     "/tracking/public/**",
                     "/v3/api-docs/**",

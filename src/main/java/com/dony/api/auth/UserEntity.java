@@ -62,6 +62,12 @@ public class UserEntity extends BaseEntity {
     @Column(name = "cancellation_count", nullable = false)
     private int cancellationCount = 0;
 
+    @Column(name = "stripe_account_id", length = 64)
+    private String stripeAccountId;
+
+    @Column(name = "stripe_onboarded", nullable = false)
+    private boolean stripeOnboarded = false;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -97,4 +103,10 @@ public class UserEntity extends BaseEntity {
 
     public int getCancellationCount() { return cancellationCount; }
     public void setCancellationCount(int cancellationCount) { this.cancellationCount = cancellationCount; }
+
+    public String getStripeAccountId() { return stripeAccountId; }
+    public void setStripeAccountId(String stripeAccountId) { this.stripeAccountId = stripeAccountId; }
+
+    public boolean isStripeOnboarded() { return stripeOnboarded; }
+    public void setStripeOnboarded(boolean stripeOnboarded) { this.stripeOnboarded = stripeOnboarded; }
 }

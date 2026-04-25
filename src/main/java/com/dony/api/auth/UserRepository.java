@@ -8,8 +8,8 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByFirebaseUid(String firebaseUid);
+    Optional<UserEntity> findByStripeAccountId(String stripeAccountId);
 
     boolean existsByFirebaseUid(String firebaseUid);
-
     boolean existsByPhoneNumber(String phoneNumber);
 }

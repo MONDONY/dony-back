@@ -36,3 +36,4 @@ build/
 src/main/resources/firebase-service-account.json
 application-prod.yml
 *.env
+.env.dev
