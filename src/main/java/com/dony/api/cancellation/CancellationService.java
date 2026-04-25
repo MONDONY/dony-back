@@ -82,6 +82,7 @@ public class CancellationService {
                 request.announcementId(), BidStatus.ACCEPTED);
 
         List<UUID> affectedSenderIds = new ArrayList<>();
+        List<UUID> affectedBidIds = new ArrayList<>();
         List<CancellationEntity> cancellations = new ArrayList<>();
 
         for (BidEntity bid : acceptedBids) {
@@ -95,6 +96,7 @@ public class CancellationService {
             cancellations.add(cancellationRepository.save(cancellation));
 
             affectedSenderIds.add(bid.getSenderId());
+            affectedBidIds.add(bid.getId());
         }
 
         // Track cancellation count on traveler profile for reputation penalty
@@ -116,9 +118,10 @@ public class CancellationService {
                     traveler.getId(), cancellationCount, request.announcementId()));
         }
 
-        // Publish event for notifications (Epic 8)
+        // Publish event for notifications (Epic 8) and payment refunds (Story 6.7)
         eventPublisher.publishEvent(new TripCancelledEvent(
-                request.announcementId(), traveler.getId(), affectedSenderIds, request.reason()));
+                request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
+                affectedBidIds));
 
         // Generate rematch suggestions for each affected bid
         List<RematchSuggestionDto> suggestions = generateRematchSuggestions(

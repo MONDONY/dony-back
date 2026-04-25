@@ -17,6 +17,7 @@ import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
+import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.Webhook;
@@ -272,6 +273,8 @@ public class PaymentService {
             // payment_intent.amount_capturable_updated fires when card is authorized (capture_method=manual)
             case "payment_intent.amount_capturable_updated" -> handlePaymentEscrowActive(event);
             case "payment_intent.payment_failed" -> handlePaymentFailed(event);
+            // Story 6.7 — confirm refund initiated by TripCancelledEventListener
+            case "charge.refunded" -> handleChargeRefunded(event);
             default -> log.debug("Unhandled webhook event: {}", event.getType());
         }
     }
@@ -321,6 +324,31 @@ public class PaymentService {
                             Map.of("piId", pi.getId()));
                     log.warn("Payment {} FAILED (PI={})", payment.getId(), pi.getId());
                 }
+            });
+        });
+    }
+
+    private void handleChargeRefunded(Event event) {
+        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
+            Charge charge = (Charge) obj;
+            String piId = charge.getPaymentIntent();
+            if (piId == null) {
+                log.debug("charge.refunded event has no paymentIntent — ignoring");
+                return;
+            }
+            paymentRepository.findByStripePaymentIntentId(piId).ifPresent(payment -> {
+                if (payment.getStatus() == PaymentStatus.REFUNDED) {
+                    // Already marked REFUNDED by TripCancelledEventListener — idempotent, skip
+                    log.info("Refund confirmed by Stripe webhook for payment {} (already REFUNDED)", payment.getId());
+                    return;
+                }
+                log.info("Refund confirmed by Stripe webhook for payment {}", payment.getId());
+                // If for some reason the listener missed it, mark it now
+                payment.setStatus(PaymentStatus.REFUNDED);
+                paymentRepository.save(payment);
+                auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED",
+                        payment.getBidId(),
+                        Map.of("piId", piId, "source", "stripe_webhook"));
             });
         });
     }
