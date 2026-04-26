@@ -32,5 +32,6 @@ public record BidResponse(
         LocalDate departureDate,
         LocalTime departureTime,
         LocalTime arrivalTime,
-        BigDecimal pricePerKg
+        BigDecimal pricePerKg,
+        String trackingNumber
 ) {}

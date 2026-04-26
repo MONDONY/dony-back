@@ -27,7 +27,9 @@ import com.stripe.param.PaymentIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import com.dony.api.payments.events.PaymentEscrowReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +51,7 @@ public class PaymentService {
     private final AnnouncementRepository announcementRepository;
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
     private final String webhookSecret;
 
     @Value("${dony.stripe.return-url:https://dony.app/payments/onboarding/return}")
@@ -65,12 +68,14 @@ public class PaymentService {
                           AnnouncementRepository announcementRepository,
                           PaymentRepository paymentRepository,
                           AuditService auditService,
+                          ApplicationEventPublisher eventPublisher,
                           @Qualifier("stripeWebhookSecret") String webhookSecret) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
         this.webhookSecret = webhookSecret;
     }
 
@@ -307,6 +312,7 @@ public class PaymentService {
                             payment.getBidId(),
                             Map.of("piId", pi.getId(), "amountCapturable", pi.getAmountCapturable()));
                     log.info("Payment {} now in ESCROW (PI={})", payment.getId(), pi.getId());
+                    eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
                 }
             });
         });

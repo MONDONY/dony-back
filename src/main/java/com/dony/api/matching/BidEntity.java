@@ -54,6 +54,9 @@ public class BidEntity extends BaseEntity {
     @Column(name = "qr_token", unique = true, length = 255)
     private String qrToken;
 
+    @Column(name = "tracking_number", unique = true, length = 12)
+    private String trackingNumber;
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
@@ -113,6 +116,9 @@ public class BidEntity extends BaseEntity {
 
     public String getQrToken() { return qrToken; }
     public void setQrToken(String qrToken) { this.qrToken = qrToken; }
+
+    public String getTrackingNumber() { return trackingNumber; }
+    public void setTrackingNumber(String trackingNumber) { this.trackingNumber = trackingNumber; }
 
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }

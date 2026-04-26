@@ -78,3 +78,4 @@ dony:
 app:
   encryption:
     key: ${ENCRYPTION_KEY:dony-dev-encryption-key-change-in-prod}
+  base-url: ${APP_BASE_URL:http://localhost:8080}

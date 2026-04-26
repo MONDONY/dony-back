@@ -26,6 +26,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class BidService {
@@ -202,6 +203,12 @@ public class BidService {
         }
 
         bid.setStatus(BidStatus.ACCEPTED);
+        if (bid.getQrToken() == null) {
+            bid.setQrToken(UUID.randomUUID().toString());
+        }
+        if (bid.getTrackingNumber() == null) {
+            bid.setTrackingNumber(generateTrackingNumber());
+        }
         announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
         announcementRepository.save(announcement);
         bidRepository.save(bid);
@@ -430,6 +437,17 @@ public class BidService {
         return request.getRemoteAddr();
     }
 
+    private static final String TRACKING_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+    private String generateTrackingNumber() {
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        StringBuilder sb = new StringBuilder("DON-");
+        for (int i = 0; i < 6; i++) {
+            sb.append(TRACKING_CHARS.charAt(rng.nextInt(TRACKING_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
     BidResponse toResponse(BidEntity bid, UserEntity sender) {
         String senderName = buildSenderName(sender);
         String senderPhone = sender != null ? sender.getPhoneNumber() : null;
@@ -467,7 +485,8 @@ public class BidService {
                 departureDate,
                 departureTime,
                 arrivalTime,
-                pricePerKg
+                pricePerKg,
+                bid.getTrackingNumber()
         );
     }
 }
