@@ -318,8 +318,9 @@ public class BidService {
                     "Vous n'êtes pas autorisé à annuler ce bid");
         }
 
-        if (bid.getStatus() == BidStatus.CANCELLED || bid.getStatus() == BidStatus.REJECTED) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-status", "Invalid Status", 
+        if (bid.getStatus() == BidStatus.CANCELLED || bid.getStatus() == BidStatus.REJECTED
+                || bid.getStatus() == BidStatus.COMPLETED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-status", "Invalid Status",
                     "Impossible d'annuler un bid déjà terminé");
         }
 
@@ -468,6 +469,13 @@ public class BidService {
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
                 ? bid.getConfirmationCode() : null;
 
+        UserEntity traveler = (announcement != null)
+                ? userRepository.findById(announcement.getTravelerId()).orElse(null)
+                : null;
+        UUID travelerId = traveler != null ? traveler.getId() : null;
+        String travelerName = buildSenderName(traveler);
+        String travelerPhone = traveler != null ? traveler.getPhoneNumber() : null;
+
         return new BidResponse(
                 bid.getId(),
                 bid.getAnnouncementId(),
@@ -497,7 +505,10 @@ public class BidService {
                 pricePerKg,
                 bid.getTrackingNumber(),
                 bid.getTrackingToken(),
-                confirmationCode
+                confirmationCode,
+                travelerId,
+                travelerName,
+                travelerPhone
         );
     }
 }

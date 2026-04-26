@@ -1,0 +1,674 @@
+package com.dony.api.tracking;
+
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
+import com.dony.api.notifications.FcmService;
+import com.dony.api.payments.PaymentEntity;
+import com.dony.api.payments.PaymentRepository;
+import com.dony.api.payments.PaymentStatus;
+import com.dony.api.tracking.dto.ConfirmCodeResponse;
+import com.dony.api.tracking.dto.ConfirmDeliveryRequest;
+import com.dony.api.tracking.dto.QrScanRequest;
+import com.dony.api.tracking.dto.TrackingEventResponse;
+import com.dony.api.tracking.dto.TrackingSearchResponse;
+import com.dony.api.tracking.events.DeliveryConfirmedEvent;
+import org.assertj.core.api.ThrowableAssert;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class TrackingServiceTest {
+
+    @Mock BidRepository bidRepository;
+    @Mock PaymentRepository paymentRepository;
+    @Mock UserRepository userRepository;
+    @Mock AnnouncementRepository announcementRepository;
+    @Mock TrackingEventRepository trackingEventRepository;
+    @Mock AuditService auditService;
+    @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock StorageService storageService;
+    @Mock FcmService fcmService;
+
+    TrackingService service;
+
+    private final UUID senderId   = UUID.randomUUID();
+    private final UUID travelerId = UUID.randomUUID();
+    private final UUID bidId      = UUID.randomUUID();
+    private final UUID annId      = UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        service = new TrackingService(
+                bidRepository, paymentRepository, userRepository,
+                announcementRepository, trackingEventRepository,
+                auditService, eventPublisher, storageService, fcmService);
+        ReflectionTestUtils.setField(service, "appBaseUrl", "https://dony.app");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static void assertDonyError(ThrowableAssert.ThrowingCallable callable, String expectedErrorCode) {
+        Throwable thrown = catchThrowable(callable);
+        assertThat(thrown).isInstanceOf(DonyBusinessException.class);
+        assertThat(((DonyBusinessException) thrown).getErrorCode()).isEqualTo(expectedErrorCode);
+    }
+
+    private UserEntity buildUser(UUID id, String firebaseUid) {
+        UserEntity u = new UserEntity();
+        setId(u, id);
+        u.setFirebaseUid(firebaseUid);
+        return u;
+    }
+
+    private BidEntity buildBid(BidStatus status, String qrToken) {
+        BidEntity b = new BidEntity();
+        setId(b, bidId);
+        b.setAnnouncementId(annId);
+        b.setSenderId(senderId);
+        b.setWeightKg(BigDecimal.valueOf(5.0));
+        b.setStatus(status);
+        b.setQrToken(qrToken);
+        b.setTrackingNumber("TRK000001");
+        return b;
+    }
+
+    private AnnouncementEntity buildAnnouncement() {
+        AnnouncementEntity a = new AnnouncementEntity();
+        setId(a, annId);
+        a.setTravelerId(travelerId);
+        a.setDepartureCity("Paris");
+        a.setArrivalCity("Dakar");
+        a.setPricePerKg(BigDecimal.valueOf(5.0));
+        return a;
+    }
+
+    private void setId(Object entity, UUID id) {
+        try {
+            Class<?> clazz = entity.getClass();
+            Field f = null;
+            while (clazz != null) {
+                try {
+                    f = clazz.getDeclaredField("id");
+                    break;
+                } catch (NoSuchFieldException e) {
+                    clazz = clazz.getSuperclass();
+                }
+            }
+            if (f == null) throw new NoSuchFieldException("id not found in hierarchy of " + entity.getClass().getName());
+            f.setAccessible(true);
+            f.set(entity, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ── getQrCode ─────────────────────────────────────────────────────────────
+
+    @Test
+    void getQrCode_bidNotFound_throwsNotFound() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        assertDonyError(() -> service.getQrCode(bidId, "uid-001"), "bid-not-found");
+    }
+
+    @Test
+    void getQrCode_userNotFound_throwsUnauthorized() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(buildBid(BidStatus.ACCEPTED, "qr-token")));
+        when(userRepository.findByFirebaseUid("uid-001")).thenReturn(Optional.empty());
+        assertDonyError(() -> service.getQrCode(bidId, "uid-001"), "user-not-found");
+    }
+
+    @Test
+    void getQrCode_notSender_throwsForbidden() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qr-token");
+        UserEntity other = buildUser(UUID.randomUUID(), "uid-other");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(other));
+        assertDonyError(() -> service.getQrCode(bidId, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void getQrCode_qrTokenNull_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, null);
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        assertDonyError(() -> service.getQrCode(bidId, "uid-sender"), "qr-not-ready");
+    }
+
+    @Test
+    void getQrCode_success_returnsQrResponse() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qr-token-abc");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+
+        var resp = service.getQrCode(bidId, "uid-sender");
+
+        assertThat(resp.bidId()).isEqualTo(bidId);
+        assertThat(resp.scanUrl()).contains(bidId.toString());
+        assertThat(resp.qrCodeBase64()).isNotBlank();
+    }
+
+    // ── searchByTrackingNumber ────────────────────────────────────────────────
+
+    @Test
+    void searchByTrackingNumber_notFound_throwsNotFound() {
+        when(bidRepository.findByTrackingNumber("TRK999")).thenReturn(Optional.empty());
+        assertDonyError(() -> service.searchByTrackingNumber("TRK999"), "tracking-not-found");
+    }
+
+    @Test
+    void searchByTrackingNumber_pendingBid_returnsCorrectStep() {
+        BidEntity bid = buildBid(BidStatus.PENDING, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void searchByTrackingNumber_rejectedBid_returnsRejected() {
+        BidEntity bid = buildBid(BidStatus.REJECTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void searchByTrackingNumber_acceptedWithEscrow_returnsPaymentSecured() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus(PaymentStatus.ESCROW);
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("PAYMENT_SECURED");
+    }
+
+    @Test
+    void searchByTrackingNumber_hasArriveeEvent_returnsDelivered() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus(PaymentStatus.ESCROW);
+        TrackingEventEntity arriveeEvent = new TrackingEventEntity();
+        arriveeEvent.setEventType(TrackingEventType.ARRIVEE);
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(arriveeEvent));
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("DELIVERED");
+    }
+
+    // ── getEvents ─────────────────────────────────────────────────────────────
+
+    @Test
+    void getEvents_forbiddenUser_throwsForbidden() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity outsider = buildUser(UUID.randomUUID(), "uid-other");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(outsider));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        assertDonyError(() -> service.getEvents(bidId, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void getEvents_senderCanAccess_returnsEvents() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        TrackingEventEntity event = new TrackingEventEntity();
+        setId(event, UUID.randomUUID());
+        event.setBidId(bidId);
+        event.setEventType(TrackingEventType.DEPART);
+        event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(event));
+
+        List<TrackingEventResponse> events = service.getEvents(bidId, "uid-sender");
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).eventType()).isEqualTo("DEPART");
+    }
+
+    // ── processScan ───────────────────────────────────────────────────────────
+
+    @Test
+    void processScan_arriveEventType_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.ARRIVEE, null, null, null, null);
+        assertDonyError(() -> service.processScan(req, "uid-traveler"), "use-confirm-delivery");
+    }
+
+    @Test
+    void processScan_futureTimestamp_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        LocalDateTime future = LocalDateTime.now(ZoneOffset.UTC).plusHours(2);
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, future);
+        assertDonyError(() -> service.processScan(req, "uid-traveler"), "invalid-timestamp");
+    }
+
+    @Test
+    void processScan_departEvent_success_generatesConfirmationCode() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+        when(userRepository.findById(senderId)).thenReturn(Optional.empty()); // no FCM token
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.DEPART, null, null, null, null);
+        TrackingEventResponse resp = service.processScan(req, "uid-traveler");
+
+        assertThat(resp.eventType()).isEqualTo("DEPART");
+        assertThat(bid.getConfirmationCode()).hasSize(6);
+        verify(bidRepository).save(bid);
+    }
+
+    @Test
+    void processScan_transitEvent_success_noCodeGeneration() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, null);
+        TrackingEventResponse resp = service.processScan(req, "uid-traveler");
+
+        assertThat(resp.eventType()).isEqualTo("TRANSIT");
+        verify(bidRepository, never()).save(any());
+    }
+
+    // ── confirmDelivery ───────────────────────────────────────────────────────
+
+    @Test
+    void confirmDelivery_codeNotGenerated_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        ConfirmDeliveryRequest req = new ConfirmDeliveryRequest("123456");
+        assertDonyError(() -> service.confirmDelivery(bidId, req, "uid-traveler"), "code-not-generated");
+    }
+
+    @Test
+    void confirmDelivery_wrongCode_incrementsAttempts() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("654321");
+        bid.setConfirmationCodeAttempts(0);
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        ConfirmDeliveryRequest req = new ConfirmDeliveryRequest("000000");
+        assertDonyError(() -> service.confirmDelivery(bidId, req, "uid-traveler"), "code-incorrect");
+        assertThat(bid.getConfirmationCodeAttempts()).isEqualTo(1);
+    }
+
+    @Test
+    void confirmDelivery_tooManyAttempts_resetsCode() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("654321");
+        bid.setConfirmationCodeAttempts(3); // already at max
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        ConfirmDeliveryRequest req = new ConfirmDeliveryRequest("000000");
+        assertDonyError(() -> service.confirmDelivery(bidId, req, "uid-traveler"), "too-many-attempts");
+        assertThat(bid.getConfirmationCode()).isNull(); // code reset
+    }
+
+    @Test
+    void confirmDelivery_correctCode_publishesDeliveryConfirmedEvent() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("123456");
+        bid.setConfirmationCodeAttempts(0);
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+
+        ConfirmDeliveryRequest req = new ConfirmDeliveryRequest("123456");
+        TrackingEventResponse resp = service.confirmDelivery(bidId, req, "uid-traveler");
+
+        assertThat(resp.eventType()).isEqualTo("ARRIVEE");
+        assertThat(bid.getConfirmationCode()).isNull();
+        ArgumentCaptor<DeliveryConfirmedEvent> captor = ArgumentCaptor.forClass(DeliveryConfirmedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().getBidId()).isEqualTo(bidId);
+    }
+
+    // ── getConfirmationCode ───────────────────────────────────────────────────
+
+    @Test
+    void getConfirmationCode_notSender_throwsForbidden() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("999999");
+        UserEntity other = buildUser(UUID.randomUUID(), "uid-other");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(other));
+
+        assertDonyError(() -> service.getConfirmationCode(bidId, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void getConfirmationCode_senderGetsCode() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("888888");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+
+        ConfirmCodeResponse resp = service.getConfirmationCode(bidId, "uid-sender");
+
+        assertThat(resp.confirmationCode()).isEqualTo("888888");
+    }
+
+    // ── searchByTrackingNumber additional branches ────────────────────────────
+
+    @Test
+    void searchByTrackingNumber_cancelledBid_returnsCancelled() {
+        BidEntity bid = buildBid(BidStatus.CANCELLED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void searchByTrackingNumber_acceptedNoPayment_returnsAccepted() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void searchByTrackingNumber_voyageurConfirmedEscrow_returnsInTransit() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setVoyageurConfirmed(true);
+        AnnouncementEntity ann = buildAnnouncement();
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus(PaymentStatus.ESCROW);
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of());
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("IN_TRANSIT");
+    }
+
+    @Test
+    void searchByTrackingNumber_hasTransitEvent_returnsInTransit() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus(PaymentStatus.ESCROW);
+        TrackingEventEntity transitEvent = new TrackingEventEntity();
+        transitEvent.setEventType(TrackingEventType.TRANSIT);
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(transitEvent));
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("IN_TRANSIT");
+    }
+
+    @Test
+    void searchByTrackingNumber_hasDepartEvent_returnsDeparted() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStatus(PaymentStatus.ESCROW);
+        TrackingEventEntity departEvent = new TrackingEventEntity();
+        departEvent.setEventType(TrackingEventType.DEPART);
+        when(bidRepository.findByTrackingNumber("TRK000001")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(departEvent));
+
+        TrackingSearchResponse resp = service.searchByTrackingNumber("TRK000001");
+
+        assertThat(resp.currentStep()).isEqualTo("DEPARTED");
+    }
+
+    // ── processScan additional branches ──────────────────────────────────────
+
+    @Test
+    void processScan_scannerNotTraveler_throwsForbidden() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity outsider = buildUser(UUID.randomUUID(), "uid-other");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(outsider));
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, null);
+        assertDonyError(() -> service.processScan(req, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void processScan_bidNotAccepted_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.PENDING, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, null);
+        assertDonyError(() -> service.processScan(req, "uid-traveler"), "bid-not-accepted");
+    }
+
+    @Test
+    void processScan_withPastOfflineTimestamp_setsOfflineFields() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+
+        LocalDateTime past = LocalDateTime.now(ZoneOffset.UTC).minusHours(2);
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, past);
+        TrackingEventResponse resp = service.processScan(req, "uid-traveler");
+
+        assertThat(resp.eventType()).isEqualTo("TRANSIT");
+        ArgumentCaptor<TrackingEventEntity> captor = ArgumentCaptor.forClass(TrackingEventEntity.class);
+        verify(trackingEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getOfflineTimestamp()).isNotNull();
+        assertThat(captor.getValue().getSyncedAt()).isNotNull();
+    }
+
+    @Test
+    void processScan_departWithExistingCode_doesNotRegenerate() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("123456"); // already generated
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.DEPART, null, null, null, null);
+        service.processScan(req, "uid-traveler");
+
+        assertThat(bid.getConfirmationCode()).isEqualTo("123456"); // unchanged
+        verify(bidRepository, never()).save(any()); // not saved again
+    }
+
+    @Test
+    void processScan_departWithSenderFcm_sendsFcmNotification() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setFcmToken("fcm-sender-token");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(trackingEventRepository.save(any())).thenAnswer(inv -> {
+            TrackingEventEntity e = inv.getArgument(0);
+            setId(e, UUID.randomUUID());
+            return e;
+        });
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+
+        QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.DEPART, null, null, null, null);
+        service.processScan(req, "uid-traveler");
+
+        verify(fcmService).sendDataMessage(eq("fcm-sender-token"), eq("CONFIRMATION_CODE_READY"), any());
+    }
+
+    // ── getEvents additional branches ─────────────────────────────────────────
+
+    @Test
+    void getEvents_travelerCanAccess() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        TrackingEventEntity event = new TrackingEventEntity();
+        setId(event, UUID.randomUUID());
+        event.setBidId(bidId);
+        event.setEventType(TrackingEventType.TRANSIT);
+        event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(event));
+
+        List<TrackingEventResponse> events = service.getEvents(bidId, "uid-traveler");
+
+        assertThat(events).hasSize(1);
+    }
+
+    @Test
+    void getEvents_withHttpPhotoUrl_returnsUrlAsIs() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        TrackingEventEntity event = new TrackingEventEntity();
+        setId(event, UUID.randomUUID());
+        event.setBidId(bidId);
+        event.setEventType(TrackingEventType.DEPART);
+        event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
+        event.setPhotoUrl("https://storage.example.com/photo.jpg");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId)).thenReturn(List.of(event));
+
+        List<TrackingEventResponse> events = service.getEvents(bidId, "uid-sender");
+
+        assertThat(events.get(0).photoUrl()).isEqualTo("https://storage.example.com/photo.jpg");
+    }
+}

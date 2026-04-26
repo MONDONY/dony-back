@@ -21,6 +21,7 @@ public record AnnouncementDetailResponse(
         BigDecimal pricePerKg,
         String status,
         long bidsCount,
+        TravelerProfileDto traveler,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}

@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:dony_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    url: jdbc:h2:mem:dony_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;INIT=CREATE SCHEMA IF NOT EXISTS kyc_schema
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -22,6 +22,14 @@ firebase:
   service-account-path: ""
 
 hetzner:
+  s3:
+    endpoint: http://localhost:9000
+    region: eu-central
+    bucket: dony-test
+    access-key: test
+    secret-key: test
+
+aws:
   s3:
     endpoint: http://localhost:9000
     region: eu-central

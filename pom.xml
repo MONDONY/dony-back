@@ -166,6 +166,69 @@
 			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- ─── Cucumber E2E ──────────────────────────────────────────────────── -->
+		<dependency>
+			<groupId>io.cucumber</groupId>
+			<artifactId>cucumber-java</artifactId>
+			<version>7.18.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.cucumber</groupId>
+			<artifactId>cucumber-spring</artifactId>
+			<version>7.18.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.cucumber</groupId>
+			<artifactId>cucumber-junit-platform-engine</artifactId>
+			<version>7.18.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-suite</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-suite-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- ─── Testcontainers ───────────────────────────────────────────────── -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- ─── Embedded PostgreSQL (E2E — avoids Docker API version issues) ── -->
+		<dependency>
+			<groupId>io.zonky.test</groupId>
+			<artifactId>embedded-postgres</artifactId>
+			<version>2.0.7</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- ─── RestAssured ─────────────────────────────────────────────────── -->
+		<dependency>
+			<groupId>io.rest-assured</groupId>
+			<artifactId>rest-assured</artifactId>
+			<scope>test</scope>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-thymeleaf</artifactId>
@@ -186,16 +249,103 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
+					<!-- Force English locale so Cucumber's {double} uses '.' as decimal separator -->
+					<argLine>-Duser.language=en -Duser.country=US</argLine>
+					<environmentVariables>
+						<DOCKER_HOST>unix:///var/run/docker.sock</DOCKER_HOST>
+					</environmentVariables>
 				</configuration>
 			</plugin>
 
-			<!-- JaCoCo: couverture — agent TCP pour éviter corruption exec file
-			     Le JVM Surefire est tué avant que l'agent file-mode finisse d'écrire.
-			     Exécuté manuellement via: ./mvnw jacoco:prepare-agent test jacoco:report -->
+			<!-- JaCoCo: couverture — prépare l'agent, génère le rapport HTML, enforces 80% -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>${jacoco.version}</version>
+				<executions>
+					<!-- 1. Instrument JVM before tests -->
+					<execution>
+						<id>jacoco-prepare-agent</id>
+						<goals><goal>prepare-agent</goal></goals>
+					</execution>
+					<!-- 2. Generate HTML report in target/site/jacoco after tests -->
+					<execution>
+						<id>jacoco-report</id>
+						<phase>test</phase>
+						<goals><goal>report</goal></goals>
+					</execution>
+					<!-- 3. Build fails if service-layer coverage < 80% -->
+					<execution>
+						<id>jacoco-check</id>
+						<phase>verify</phase>
+						<goals><goal>check</goal></goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>INSTRUCTION</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.80</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.75</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+							<excludes>
+								<!-- Main app bootstrap -->
+								<exclude>com/dony/api/DonyBackApplication.class</exclude>
+								<!-- Spring configuration beans -->
+								<exclude>com/dony/api/config/**</exclude>
+								<!-- HTTP filter (requires FirebaseAuth + Spring context) -->
+								<exclude>com/dony/api/auth/FirebaseTokenFilter.class</exclude>
+								<!-- Infrastructure / stub-only services -->
+								<exclude>com/dony/api/notifications/FcmService.class</exclude>
+								<exclude>com/dony/api/notifications/SmsService.class</exclude>
+								<exclude>com/dony/api/common/StorageService.class</exclude>
+								<exclude>com/dony/api/common/StorageController.class</exclude>
+								<!-- Thin HTTP adapters (controllers) -->
+								<exclude>com/dony/api/**/*Controller.class</exclude>
+								<!-- Cron schedulers -->
+								<exclude>com/dony/api/**/*Scheduler.class</exclude>
+								<!-- Spring event listeners -->
+								<exclude>com/dony/api/**/*EventListener.class</exclude>
+								<!-- JPA entities -->
+								<exclude>com/dony/api/**/*Entity.class</exclude>
+								<exclude>com/dony/api/common/BaseEntity.class</exclude>
+								<!-- Spring Data repository interfaces -->
+								<exclude>com/dony/api/**/*Repository.class</exclude>
+								<!-- DTO classes (pure data) -->
+								<exclude>com/dony/api/**/dto/**</exclude>
+								<!-- Event POJOs -->
+								<exclude>com/dony/api/**/events/**</exclude>
+								<!-- Enums -->
+								<exclude>com/dony/api/auth/KycStatus.class</exclude>
+								<exclude>com/dony/api/auth/Role.class</exclude>
+								<exclude>com/dony/api/auth/UserStatus.class</exclude>
+								<exclude>com/dony/api/matching/BidStatus.class</exclude>
+								<exclude>com/dony/api/matching/AnnouncementStatus.class</exclude>
+								<exclude>com/dony/api/kyc/KycVerificationStatus.class</exclude>
+								<exclude>com/dony/api/tracking/TrackingEventType.class</exclude>
+								<exclude>com/dony/api/payments/PaymentStatus.class</exclude>
+								<!-- Thin exception wrappers and common utilities -->
+								<exclude>com/dony/api/common/DonyBusinessException.class</exclude>
+								<exclude>com/dony/api/common/DonyNotFoundException.class</exclude>
+								<exclude>com/dony/api/common/PageResponse.class</exclude>
+								<!-- Admin module -->
+								<exclude>com/dony/api/admin/**</exclude>
+								<!-- JPA Specification (lambda-only) -->
+								<exclude>com/dony/api/matching/AnnouncementSpecification.class</exclude>
+								<exclude>com/dony/api/matching/AnnouncementSpecification$*.class</exclude>
+							</excludes>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!-- SpotBugs: static analysis — invoqué explicitement par CI (spotbugs:check)

@@ -1,0 +1,529 @@
+package com.dony.api.matching;
+
+import com.dony.api.auth.Role;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.AnnouncementDetailResponse;
+import com.dony.api.matching.dto.AnnouncementRequest;
+import com.dony.api.matching.dto.AnnouncementResponse;
+import com.dony.api.matching.events.AnnouncementDeletedEvent;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.mockito.ArgumentMatchers;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("AnnouncementService — tests unitaires")
+class AnnouncementServiceTest {
+
+    @Mock private AnnouncementRepository announcementRepository;
+    @Mock private BidRepository bidRepository;
+    @Mock private UserRepository userRepository;
+    @Mock private AuditService auditService;
+    @Mock private ApplicationEventPublisher eventPublisher;
+
+    @InjectMocks private AnnouncementService announcementService;
+
+    private static final String FIREBASE_UID = "uid-traveler-001";
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID ANNOUNCEMENT_ID = UUID.randomUUID();
+
+    private static void setId(Object entity, UUID id) {
+        try {
+            Class<?> c = entity.getClass();
+            while (c != null) {
+                try {
+                    Field f = c.getDeclaredField("id");
+                    f.setAccessible(true);
+                    f.set(entity, id);
+                    return;
+                } catch (NoSuchFieldException e) {
+                    c = c.getSuperclass();
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private UserEntity buildTraveler() {
+        UserEntity u = new UserEntity();
+        u.setFirebaseUid(FIREBASE_UID);
+        u.setPhoneNumber("+33601020304");
+        u.getRoles().add(Role.TRAVELER);
+        setId(u, USER_ID);
+        return u;
+    }
+
+    private AnnouncementEntity buildAnnouncement(UserEntity traveler) {
+        AnnouncementEntity a = new AnnouncementEntity();
+        a.setTravelerId(traveler.getId());
+        a.setDepartureCity("Paris");
+        a.setArrivalCity("Dakar");
+        a.setDepartureDate(LocalDate.now().plusDays(10));
+        a.setAvailableKg(BigDecimal.valueOf(20));
+        a.setPricePerKg(BigDecimal.valueOf(5));
+        a.setStatus(AnnouncementStatus.ACTIVE);
+        setId(a, ANNOUNCEMENT_ID);
+        return a;
+    }
+
+    private AnnouncementRequest buildRequest() {
+        return new AnnouncementRequest(
+                "Paris", "Dakar",
+                LocalDate.now().plusDays(10),
+                LocalTime.of(10, 0), LocalTime.of(22, 0),
+                "CDG Terminal 2E", "Aéroport LSS",
+                BigDecimal.valueOf(20), BigDecimal.valueOf(5)
+        );
+    }
+
+    // ─── createAnnouncement ────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("createAnnouncement()")
+    class CreateTests {
+
+        @Test
+        @DisplayName("données valides → annonce créée + audit enregistré")
+        void create_validRequest_createsAndAudits() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+
+            AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            assertThat(result.departureCity()).isEqualTo("Paris");
+            assertThat(result.arrivalCity()).isEqualTo("Dakar");
+            assertThat(result.status()).isEqualTo("ACTIVE");
+            verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_CREATED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("utilisateur sans rôle TRAVELER → rôle ajouté automatiquement")
+        void create_userWithoutTravelerRole_addsTravelerRole() {
+            UserEntity user = new UserEntity();
+            user.setFirebaseUid(FIREBASE_UID);
+            setId(user, USER_ID);
+            // No TRAVELER role initially
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any(UserEntity.class))).thenReturn(user);
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+
+            announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            assertThat(user.getRoles()).contains(Role.TRAVELER);
+            verify(userRepository, atLeastOnce()).save(user);
+        }
+
+        @Test
+        @DisplayName("utilisateur introuvable → 404 NOT_FOUND")
+        void create_unknownUser_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, buildRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    // ─── getMyAnnouncements ────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getMyAnnouncements()")
+    class GetMyTests {
+
+        @Test
+        @DisplayName("voyageur avec annonces → page retournée")
+        void getMyAnnouncements_withAnnouncements_returnsPage() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countByAnnouncementId(any())).thenReturn(2L);
+            when(announcementRepository.findByTravelerId(eq(USER_ID), any()))
+                    .thenReturn(new PageImpl<>(List.of(a)));
+
+            Page<AnnouncementResponse> result = announcementService.getMyAnnouncements(
+                    FIREBASE_UID, PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).hasSize(1);
+            assertThat(result.getContent().get(0).departureCity()).isEqualTo("Paris");
+        }
+    }
+
+    // ─── getAnnouncementDetail ─────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getAnnouncementDetail()")
+    class DetailTests {
+
+        @Test
+        @DisplayName("annonce existante → retourne le détail")
+        void getDetail_existingAnnouncement_returnsDetail() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.departureCity()).isEqualTo("Paris");
+            assertThat(result.bidsCount()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("annonce introuvable → 404 NOT_FOUND")
+        void getDetail_unknownAnnouncement_throwsNotFound() {
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> announcementService.getAnnouncementDetail(ANNOUNCEMENT_ID, FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    // ─── updateAnnouncement ────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("updateAnnouncement()")
+    class UpdateTests {
+
+        @Test
+        @DisplayName("propriétaire + pas de bids acceptés → mise à jour réussie")
+        void update_ownerNoBids_updatesAndAudits() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(false);
+            when(announcementRepository.save(any())).thenReturn(a);
+            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Lyon", "Abidjan", LocalDate.now().plusDays(15),
+                    null, null, null, null,
+                    BigDecimal.valueOf(25), BigDecimal.valueOf(6)
+            );
+
+            AnnouncementDetailResponse result = announcementService.updateAnnouncement(
+                    ANNOUNCEMENT_ID, FIREBASE_UID, req);
+
+            assertThat(result.departureCity()).isEqualTo("Lyon");
+            assertThat(result.arrivalCity()).isEqualTo("Abidjan");
+            verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_UPDATED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("bids acceptés existants → 409 CONFLICT")
+        void update_withAcceptedBids_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(true);
+
+            assertThatThrownBy(() -> announcementService.updateAnnouncement(
+                    ANNOUNCEMENT_ID, FIREBASE_UID, buildRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("modification-impossible");
+                    });
+        }
+
+        @Test
+        @DisplayName("pas propriétaire → 403 FORBIDDEN")
+        void update_notOwner_throwsForbidden() {
+            UserEntity otherUser = new UserEntity();
+            otherUser.setFirebaseUid(FIREBASE_UID);
+            setId(otherUser, UUID.randomUUID()); // Different ID
+
+            AnnouncementEntity a = new AnnouncementEntity();
+            a.setTravelerId(UUID.randomUUID()); // Different traveler
+            setId(a, ANNOUNCEMENT_ID);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
+
+            assertThatThrownBy(() -> announcementService.updateAnnouncement(
+                    ANNOUNCEMENT_ID, FIREBASE_UID, buildRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+    }
+
+    // ─── deleteAnnouncement ────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("deleteAnnouncement()")
+    class DeleteTests {
+
+        @Test
+        @DisplayName("annonce active sans bids → soft-delete + audit")
+        void delete_activeNoBids_softDeletes() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(false);
+            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.PENDING))
+                    .thenReturn(List.of());
+
+            announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(a.getDeletedAt()).isNotNull();
+            verify(announcementRepository).save(a);
+            verify(auditService).log(eq("ANNOUNCEMENT"), any(), eq("ANNOUNCEMENT_DELETED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("annonce active avec bids PENDING → bids rejetés + soft-delete")
+        void delete_activeWithPendingBids_rejectsBidsAndDeletes() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+
+            BidEntity bid = new BidEntity();
+            bid.setAnnouncementId(ANNOUNCEMENT_ID);
+            bid.setSenderId(UUID.randomUUID());
+            bid.setStatus(BidStatus.PENDING);
+            setId(bid, UUID.randomUUID());
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(false);
+            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.PENDING))
+                    .thenReturn(List.of(bid));
+
+            announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.REJECTED);
+            verify(bidRepository).save(bid);
+            assertThat(a.getDeletedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("annonce active avec bids ACCEPTED → 409 CONFLICT")
+        void delete_activeWithAcceptedBids_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(true);
+
+            assertThatThrownBy(() -> announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("annonce CANCELLED → soft-delete des bids + event publié")
+        void delete_cancelledAnnouncement_deletesWithBidsAndPublishesEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setStatus(AnnouncementStatus.CANCELLED);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, UUID.randomUUID());
+            bid.setStatus(BidStatus.CANCELLED);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(List.of(bid));
+
+            announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(bid.getDeletedAt()).isNotNull();
+            assertThat(a.getDeletedAt()).isNotNull();
+            ArgumentCaptor<AnnouncementDeletedEvent> captor =
+                    ArgumentCaptor.forClass(AnnouncementDeletedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().announcementId()).isEqualTo(ANNOUNCEMENT_ID);
+        }
+
+        @Test
+        @DisplayName("pas propriétaire → 403 FORBIDDEN")
+        void delete_notOwner_throwsForbidden() {
+            UserEntity otherUser = new UserEntity();
+            setId(otherUser, UUID.randomUUID());
+            otherUser.setFirebaseUid(FIREBASE_UID);
+
+            AnnouncementEntity a = new AnnouncementEntity();
+            a.setTravelerId(UUID.randomUUID());
+            a.setStatus(AnnouncementStatus.ACTIVE);
+            setId(a, ANNOUNCEMENT_ID);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
+
+            assertThatThrownBy(() -> announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("annonce COMPLETED (pas ACTIVE ni CANCELLED) → 409 CONFLICT")
+        void delete_completedStatus_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setStatus(AnnouncementStatus.COMPLETED);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
+        }
+    }
+
+    // ── searchAnnouncements ────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("searchAnnouncements()")
+    class SearchTests {
+
+        @Test
+        @DisplayName("sans filtre + tri par date ASC → retourne la page")
+        void search_noFilters_sortByDate_returnsPage() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            traveler.setLastName("Diallo");
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, "date", "asc", PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("avec tous les filtres + tri par prix DESC")
+        void search_allFilters_sortByPriceDesc_returnsPage() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Fatou");
+            traveler.setLastName(null);
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(1L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    "Paris", "Dakar",
+                    LocalDate.now(), LocalDate.now().plusDays(30),
+                    BigDecimal.valueOf(5), "price", "desc", PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("voyageur sans prénom → displayName = nom de famille")
+        void search_travelerLastNameOnly_displayName() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName(null);
+            traveler.setLastName("Keita");
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, "asc", PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("voyageur introuvable → profil null")
+        void search_travelerNotFound_profileIsNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    "Paris", null, null, null, null, "date", "desc", PageRequest.of(0, 10));
+
+            assertThat(result.getContent()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("voyageur sans prénom ni nom → displayName null")
+        void search_travelerNeitherFirstNorLastName_displayNameNull() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName(null);
+            traveler.setLastName(null);
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
+                    null, "Dakar", LocalDate.now(), null, null, "price", "asc", PageRequest.of(0, 10)));
+        }
+    }
+}

@@ -85,6 +85,7 @@ public class GlobalExceptionHandler {
                 ex.getStatus(), ex.getMessage());
         problem.setType(URI.create(BASE_TYPE + ex.getErrorCode()));
         problem.setTitle(ex.getTitle());
+        problem.setProperty("code", ex.getErrorCode());
         return ResponseEntity.status(ex.getStatus()).body(problem);
     }
 

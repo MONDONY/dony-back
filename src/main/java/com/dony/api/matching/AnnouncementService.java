@@ -193,6 +193,15 @@ public class AnnouncementService {
 
         long bidsCount = bidRepository.countByAnnouncementId(id);
 
+        UserEntity traveler = userRepository.findById(announcement.getTravelerId()).orElse(null);
+        TravelerProfileDto travelerDto = traveler != null
+                ? new TravelerProfileDto(
+                        traveler.getId(),
+                        buildDisplayName(traveler),
+                        traveler.getPhoneNumber(),
+                        null, null, false)
+                : null;
+
         return new AnnouncementDetailResponse(
                 announcement.getId(),
                 announcement.getTravelerId(),
@@ -207,6 +216,7 @@ public class AnnouncementService {
                 announcement.getPricePerKg(),
                 announcement.getStatus().name(),
                 bidsCount,
+                travelerDto,
                 announcement.getCreatedAt(),
                 announcement.getUpdatedAt()
         );
@@ -263,6 +273,12 @@ public class AnnouncementService {
 
         long bidsCount = bidRepository.countByAnnouncementId(id);
 
+        TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
+                user.getId(),
+                buildDisplayName(user),
+                user.getPhoneNumber(),
+                null, null, false);
+
         return new AnnouncementDetailResponse(
                 saved.getId(),
                 saved.getTravelerId(),
@@ -277,6 +293,7 @@ public class AnnouncementService {
                 saved.getPricePerKg(),
                 saved.getStatus().name(),
                 bidsCount,
+                updatedTravelerDto,
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
         );

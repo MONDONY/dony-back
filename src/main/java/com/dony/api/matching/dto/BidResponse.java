@@ -35,5 +35,8 @@ public record BidResponse(
         BigDecimal pricePerKg,
         String trackingNumber,
         String trackingToken,
-        String confirmationCode
+        String confirmationCode,
+        UUID travelerId,
+        String travelerName,
+        String travelerPhone
 ) {}

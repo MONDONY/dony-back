@@ -390,6 +390,7 @@ public class TrackingService {
         bid.setConfirmationCode(null);
         bid.setConfirmationCodeExpiry(null);
         bid.setConfirmationCodeAttempts(0);
+        bid.setStatus(BidStatus.COMPLETED);
         bidRepository.save(bid);
 
         TrackingEventEntity event = new TrackingEventEntity();
