@@ -47,6 +47,7 @@ public class SecurityConfig {
                     "/ratings/recipient",
                     "/tracking/search",
                     "/tracking/public/**",
+                    "/tracking/*/confirm-delivery",
                     "/v3/api-docs/**",
                     "/swagger-ui/**",
                     "/swagger-ui.html"

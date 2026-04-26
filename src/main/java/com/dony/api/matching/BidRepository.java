@@ -27,6 +27,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     // For H-2 alert scheduler: ACCEPTED bids with handover starting in ≤ 2h, not yet alerted, not confirmed
     Optional<BidEntity> findByTrackingNumber(String trackingNumber);
 
+    Optional<BidEntity> findByTrackingToken(String trackingToken);
+
     @Query("SELECT b FROM BidEntity b WHERE b.status = 'ACCEPTED' " +
            "AND b.handoverWindowStart IS NOT NULL " +
            "AND b.handoverWindowStart <= :threshold " +

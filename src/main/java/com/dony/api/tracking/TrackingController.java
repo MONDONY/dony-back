@@ -1,15 +1,24 @@
 package com.dony.api.tracking;
 
+import com.dony.api.tracking.dto.ConfirmDeliveryRequest;
+import com.dony.api.tracking.dto.GenerateCodeResponse;
 import com.dony.api.tracking.dto.QrCodeResponse;
+import com.dony.api.tracking.dto.QrScanRequest;
+import com.dony.api.tracking.dto.TrackingEventResponse;
 import com.dony.api.tracking.dto.TrackingSearchResponse;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -32,5 +41,34 @@ public class TrackingController {
     @GetMapping("/search")
     public ResponseEntity<TrackingSearchResponse> search(@RequestParam String number) {
         return ResponseEntity.ok(trackingService.searchByTrackingNumber(number));
+    }
+
+    @PostMapping("/events")
+    public ResponseEntity<TrackingEventResponse> scan(
+            @Valid @RequestBody QrScanRequest request,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(trackingService.processScan(request, firebaseUid));
+    }
+
+    @GetMapping("/{bidId}/events")
+    public ResponseEntity<List<TrackingEventResponse>> getEvents(
+            @PathVariable UUID bidId,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(trackingService.getEvents(bidId, firebaseUid));
+    }
+
+    @PostMapping("/{bidId}/generate-confirmation-code")
+    public ResponseEntity<GenerateCodeResponse> generateConfirmationCode(
+            @PathVariable UUID bidId,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(trackingService.generateConfirmationCode(bidId, firebaseUid));
+    }
+
+    @PostMapping("/{bidId}/confirm-delivery")
+    public ResponseEntity<TrackingEventResponse> confirmDelivery(
+            @PathVariable UUID bidId,
+            @Valid @RequestBody ConfirmDeliveryRequest request) {
+        return ResponseEntity.ok(trackingService.confirmDelivery(bidId, request));
     }
 }

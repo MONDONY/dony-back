@@ -209,6 +209,9 @@ public class BidService {
         if (bid.getTrackingNumber() == null) {
             bid.setTrackingNumber(generateTrackingNumber());
         }
+        if (bid.getTrackingToken() == null) {
+            bid.setTrackingToken(java.util.UUID.randomUUID().toString());
+        }
         announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
         announcementRepository.save(announcement);
         bidRepository.save(bid);

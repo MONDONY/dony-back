@@ -57,6 +57,9 @@ public class BidEntity extends BaseEntity {
     @Column(name = "tracking_number", unique = true, length = 12)
     private String trackingNumber;
 
+    @Column(name = "tracking_token", unique = true, length = 36)
+    private String trackingToken;
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
@@ -71,6 +74,15 @@ public class BidEntity extends BaseEntity {
 
     @Column(name = "voyageur_confirmed", nullable = false)
     private boolean voyageurConfirmed = false;
+
+    @Column(name = "confirmation_code", length = 6)
+    private String confirmationCode;
+
+    @Column(name = "confirmation_code_expiry")
+    private LocalDateTime confirmationCodeExpiry;
+
+    @Column(name = "confirmation_code_attempts", nullable = false)
+    private int confirmationCodeAttempts = 0;
 
     @Column(name = "h2_alert_sent_at")
     private LocalDateTime h2AlertSentAt;
@@ -120,6 +132,9 @@ public class BidEntity extends BaseEntity {
     public String getTrackingNumber() { return trackingNumber; }
     public void setTrackingNumber(String trackingNumber) { this.trackingNumber = trackingNumber; }
 
+    public String getTrackingToken() { return trackingToken; }
+    public void setTrackingToken(String trackingToken) { this.trackingToken = trackingToken; }
+
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
@@ -134,6 +149,15 @@ public class BidEntity extends BaseEntity {
 
     public boolean isVoyageurConfirmed() { return voyageurConfirmed; }
     public void setVoyageurConfirmed(boolean voyageurConfirmed) { this.voyageurConfirmed = voyageurConfirmed; }
+
+    public String getConfirmationCode() { return confirmationCode; }
+    public void setConfirmationCode(String confirmationCode) { this.confirmationCode = confirmationCode; }
+
+    public LocalDateTime getConfirmationCodeExpiry() { return confirmationCodeExpiry; }
+    public void setConfirmationCodeExpiry(LocalDateTime confirmationCodeExpiry) { this.confirmationCodeExpiry = confirmationCodeExpiry; }
+
+    public int getConfirmationCodeAttempts() { return confirmationCodeAttempts; }
+    public void setConfirmationCodeAttempts(int confirmationCodeAttempts) { this.confirmationCodeAttempts = confirmationCodeAttempts; }
 
     public LocalDateTime getH2AlertSentAt() { return h2AlertSentAt; }
     public void setH2AlertSentAt(LocalDateTime h2AlertSentAt) { this.h2AlertSentAt = h2AlertSentAt; }
