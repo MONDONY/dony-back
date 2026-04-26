@@ -154,7 +154,7 @@ public class BidService {
         }
 
         UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
-        return toResponse(bid, sender);
+        return toResponse(bid, sender, requester.getId());
     }
 
     @Transactional(readOnly = true)
@@ -452,6 +452,10 @@ public class BidService {
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender) {
+        return toResponse(bid, sender, null);
+    }
+
+    BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
         String senderPhone = sender != null ? sender.getPhoneNumber() : null;
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
@@ -461,6 +465,8 @@ public class BidService {
         java.time.LocalTime departureTime = announcement != null ? announcement.getDepartureTime() : null;
         java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
         java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
+        String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
+                ? bid.getConfirmationCode() : null;
 
         return new BidResponse(
                 bid.getId(),
@@ -489,7 +495,8 @@ public class BidService {
                 departureTime,
                 arrivalTime,
                 pricePerKg,
-                bid.getTrackingNumber()
+                bid.getTrackingNumber(),
+                confirmationCode
         );
     }
 }

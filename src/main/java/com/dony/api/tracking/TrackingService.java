@@ -9,12 +9,12 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
-import com.dony.api.notifications.SmsService;
+import com.dony.api.notifications.FcmService;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
+import com.dony.api.tracking.dto.ConfirmCodeResponse;
 import com.dony.api.tracking.dto.ConfirmDeliveryRequest;
-import com.dony.api.tracking.dto.GenerateCodeResponse;
 import com.dony.api.tracking.dto.QrCodeResponse;
 import com.dony.api.tracking.dto.QrScanRequest;
 import com.dony.api.tracking.dto.TrackingEventResponse;
@@ -41,6 +41,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -54,7 +55,7 @@ public class TrackingService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final com.dony.api.common.StorageService storageService;
-    private final SmsService smsService;
+    private final FcmService fcmService;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int MAX_CODE_ATTEMPTS = 3;
@@ -70,7 +71,7 @@ public class TrackingService {
                            AuditService auditService,
                            ApplicationEventPublisher eventPublisher,
                            com.dony.api.common.StorageService storageService,
-                           SmsService smsService) {
+                           FcmService fcmService) {
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
@@ -79,7 +80,7 @@ public class TrackingService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
-        this.smsService = smsService;
+        this.fcmService = fcmService;
     }
 
     public QrCodeResponse getQrCode(UUID bidId, String firebaseUid) {
@@ -220,6 +221,12 @@ public class TrackingService {
                     "QR Not Ready", "Le QR code n'est pas encore disponible");
         }
 
+        if (request.eventType() == TrackingEventType.ARRIVEE) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "use-confirm-delivery",
+                    "Use Confirm Delivery",
+                    "L'arrivée doit être confirmée avec le code de confirmation fourni par l'expéditeur");
+        }
+
         if (request.offlineTimestamp() != null
                 && request.offlineTimestamp().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
             auditService.log("TRACKING_EVENT", bid.getId(), "FRAUD_FUTURE_TIMESTAMP",
@@ -246,6 +253,21 @@ public class TrackingService {
                         "bidId", bid.getId().toString(),
                         "eventType", request.eventType().name(),
                         "offline", String.valueOf(request.offlineTimestamp() != null)));
+
+        if (request.eventType() == TrackingEventType.DEPART && bid.getConfirmationCode() == null) {
+            String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+            bid.setConfirmationCode(code);
+            bid.setConfirmationCodeAttempts(0);
+            bidRepository.save(bid);
+
+            UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
+            if (sender != null && sender.getFcmToken() != null) {
+                fcmService.sendDataMessage(sender.getFcmToken(), "CONFIRMATION_CODE_READY",
+                        Map.of("bidId", bid.getId().toString()));
+            }
+            auditService.log("TRACKING_CONFIRMATION_CODE", bid.getId(), "CODE_GENERATED",
+                    traveler.getId(), Map.of("bidId", bid.getId().toString()));
+        }
 
         return toEventResponse(event, null);
     }
@@ -292,8 +314,28 @@ public class TrackingService {
         return storageService.generatePresignedUrl(photoKey, Duration.ofHours(1));
     }
 
+    public ConfirmCodeResponse getConfirmationCode(UUID bidId, String firebaseUid) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
+                        "Transaction introuvable"));
+
+        UserEntity currentUser = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "user-not-found", "User Not Found",
+                        "Utilisateur introuvable"));
+
+        if (!currentUser.getId().equals(bid.getSenderId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut consulter le code de confirmation");
+        }
+
+        return new ConfirmCodeResponse(bid.getConfirmationCode());
+    }
+
     @Transactional
-    public GenerateCodeResponse generateConfirmationCode(UUID bidId, String firebaseUid) {
+    public TrackingEventResponse confirmDelivery(UUID bidId, ConfirmDeliveryRequest request,
+                                                 String firebaseUid) {
         BidEntity bid = bidRepository.findById(bidId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
@@ -311,47 +353,8 @@ public class TrackingService {
 
         if (!announcement.getTravelerId().equals(traveler.getId())) {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
-                    "Seul le voyageur peut générer le code de confirmation");
+                    "Seul le voyageur de cette annonce peut confirmer la livraison");
         }
-
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
-                    "Bid Not Accepted", "Ce colis n'est pas dans un état permettant la confirmation");
-        }
-
-        if (bid.getRecipientPhone() == null || bid.getRecipientPhone().isBlank()) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "no-recipient-phone",
-                    "No Recipient Phone", "Aucun numéro de téléphone destinataire renseigné");
-        }
-
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        LocalDateTime expiry = LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15);
-
-        bid.setConfirmationCode(code);
-        bid.setConfirmationCodeExpiry(expiry);
-        bid.setConfirmationCodeAttempts(0);
-        bidRepository.save(bid);
-
-        String masked = bid.getRecipientPhone().replaceAll("(\\+?\\d{1,3})\\d+(\\d{2})", "$1*****$2");
-        smsService.send(bid.getRecipientPhone(),
-                "Votre code de confirmation dony : " + code +
-                " (valable 15 min). Ne le partagez jamais.");
-
-        auditService.log("TRACKING_CONFIRMATION_CODE", bid.getId(), "CODE_GENERATED",
-                traveler.getId(), Map.of("recipientPhone", masked));
-
-        return new GenerateCodeResponse(
-                "Code envoyé par SMS au destinataire",
-                masked,
-                expiry);
-    }
-
-    @Transactional
-    public TrackingEventResponse confirmDelivery(UUID bidId, ConfirmDeliveryRequest request) {
-        BidEntity bid = bidRepository.findById(bidId)
-                .orElseThrow(() -> new DonyBusinessException(
-                        HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
-                        "Transaction introuvable"));
 
         if (bid.getStatus() != BidStatus.ACCEPTED) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
@@ -360,16 +363,8 @@ public class TrackingService {
 
         if (bid.getConfirmationCode() == null) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-not-generated",
-                    "Code Not Generated", "Aucun code de confirmation n'a été généré");
-        }
-
-        if (bid.getConfirmationCodeExpiry() == null ||
-                LocalDateTime.now(ZoneOffset.UTC).isAfter(bid.getConfirmationCodeExpiry())) {
-            bid.setConfirmationCode(null);
-            bid.setConfirmationCodeAttempts(0);
-            bidRepository.save(bid);
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-expired",
-                    "Code Expired", "Le code de confirmation a expiré — demandez un nouveau code");
+                    "Code Not Generated",
+                    "Le code de confirmation n'est pas encore disponible — scannez d'abord le départ du colis");
         }
 
         if (bid.getConfirmationCodeAttempts() >= MAX_CODE_ATTEMPTS) {
@@ -377,7 +372,8 @@ public class TrackingService {
             bid.setConfirmationCodeAttempts(0);
             bidRepository.save(bid);
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "too-many-attempts",
-                    "Too Many Attempts", "Trop de tentatives — le code a expiré, demandez un nouveau code");
+                    "Too Many Attempts",
+                    "Trop de tentatives incorrectes — contactez l'expéditeur pour obtenir le code");
         }
 
         if (!bid.getConfirmationCode().equals(request.confirmationCode())) {
@@ -388,10 +384,9 @@ public class TrackingService {
                     "Code Incorrect",
                     remaining > 0
                             ? "Code incorrect — " + remaining + " tentative(s) restante(s)"
-                            : "Code incorrect — le code a expiré, demandez un nouveau code");
+                            : "Trop de tentatives — contactez l'expéditeur pour obtenir le code");
         }
 
-        // Code correct — clear it and create ARRIVEE event
         bid.setConfirmationCode(null);
         bid.setConfirmationCodeExpiry(null);
         bid.setConfirmationCodeAttempts(0);
@@ -406,7 +401,7 @@ public class TrackingService {
         eventPublisher.publishEvent(new DeliveryConfirmedEvent(bid.getId()));
 
         auditService.log("TRACKING_DELIVERY_CONFIRMED", event.getId(), "DELIVERY_CONFIRMED",
-                bid.getSenderId(), Map.of("bidId", bid.getId().toString()));
+                traveler.getId(), Map.of("bidId", bid.getId().toString()));
 
         return toEventResponse(event, null);
     }

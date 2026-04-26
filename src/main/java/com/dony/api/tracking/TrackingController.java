@@ -1,7 +1,7 @@
 package com.dony.api.tracking;
 
+import com.dony.api.tracking.dto.ConfirmCodeResponse;
 import com.dony.api.tracking.dto.ConfirmDeliveryRequest;
-import com.dony.api.tracking.dto.GenerateCodeResponse;
 import com.dony.api.tracking.dto.QrCodeResponse;
 import com.dony.api.tracking.dto.QrScanRequest;
 import com.dony.api.tracking.dto.TrackingEventResponse;
@@ -9,6 +9,7 @@ import com.dony.api.tracking.dto.TrackingSearchResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -44,6 +45,7 @@ public class TrackingController {
     }
 
     @PostMapping("/events")
+    @PreAuthorize("hasRole('TRAVELER')")
     public ResponseEntity<TrackingEventResponse> scan(
             @Valid @RequestBody QrScanRequest request,
             @AuthenticationPrincipal String firebaseUid) {
@@ -58,17 +60,20 @@ public class TrackingController {
         return ResponseEntity.ok(trackingService.getEvents(bidId, firebaseUid));
     }
 
-    @PostMapping("/{bidId}/generate-confirmation-code")
-    public ResponseEntity<GenerateCodeResponse> generateConfirmationCode(
+    @GetMapping("/{bidId}/confirmation-code")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<ConfirmCodeResponse> getConfirmationCode(
             @PathVariable UUID bidId,
             @AuthenticationPrincipal String firebaseUid) {
-        return ResponseEntity.ok(trackingService.generateConfirmationCode(bidId, firebaseUid));
+        return ResponseEntity.ok(trackingService.getConfirmationCode(bidId, firebaseUid));
     }
 
     @PostMapping("/{bidId}/confirm-delivery")
+    @PreAuthorize("hasRole('TRAVELER')")
     public ResponseEntity<TrackingEventResponse> confirmDelivery(
             @PathVariable UUID bidId,
-            @Valid @RequestBody ConfirmDeliveryRequest request) {
-        return ResponseEntity.ok(trackingService.confirmDelivery(bidId, request));
+            @Valid @RequestBody ConfirmDeliveryRequest request,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(trackingService.confirmDelivery(bidId, request, firebaseUid));
     }
 }
