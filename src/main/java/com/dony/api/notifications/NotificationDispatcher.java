@@ -72,7 +72,7 @@ public class NotificationDispatcher {
                 body,
                 Map.of("type", "BID_CREATED",
                         "bidId", event.getBidId().toString(),
-                        "announcementId", event.getBidId().toString()));
+                        "announcementId", event.getAnnouncementId().toString()));
     }
 
     @EventListener

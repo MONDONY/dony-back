@@ -53,7 +53,7 @@ class NotificationDispatcherTest {
     @Test
     void onBidCreated_notifiesTraveler() {
         BidCreatedEvent event = new BidCreatedEvent(
-                bidId, travelerId, senderId, "Mariama", BigDecimal.valueOf(3.5), "Paris → Dakar");
+                bidId, annId, travelerId, senderId, "Mariama", BigDecimal.valueOf(3.5), "Paris → Dakar");
         when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
 
         dispatcher.onBidCreated(event);

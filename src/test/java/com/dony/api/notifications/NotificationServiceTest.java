@@ -138,4 +138,42 @@ class NotificationServiceTest {
         assertThat(count).isEqualTo(3);
         verify(repository).markAllReadByUserId(eq(userId), any());
     }
+
+    // ── softDelete ──────────────────────────────────────────────────────────────
+
+    @Test
+    void softDelete_setsDeletedAtForOwner() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        var entity = new NotificationEntity(userId, "BID_CREATED", "T", "B", Map.of());
+        when(repository.findById(notifId)).thenReturn(Optional.of(entity));
+
+        service.softDelete(uid, notifId);
+
+        assertThat(entity.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    void softDelete_throwsNotFoundWhenMissing() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        when(repository.findById(notifId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.softDelete(uid, notifId))
+                .isInstanceOf(DonyBusinessException.class);
+    }
+
+    @Test
+    void softDelete_throwsForbiddenForWrongOwner() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        var entity = new NotificationEntity(UUID.randomUUID(), "BID_CREATED", "T", "B", Map.of());
+        when(repository.findById(notifId)).thenReturn(Optional.of(entity));
+
+        assertThatThrownBy(() -> service.softDelete(uid, notifId))
+                .isInstanceOf(DonyBusinessException.class);
+    }
 }

@@ -65,6 +65,18 @@ public class NotificationService {
         return repository.markAllReadByUserId(userId, LocalDateTime.now(ZoneOffset.UTC));
     }
 
+    public void softDelete(String firebaseUid, UUID notificationId) {
+        UUID userId = resolveUserId(firebaseUid);
+        var entity = repository.findById(notificationId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "not-found", "Not found", "Notification introuvable"));
+        if (!entity.getUserId().equals(userId)) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "Accès refusé");
+        }
+        entity.setDeletedAt(LocalDateTime.now(ZoneOffset.UTC));
+    }
+
     private UUID resolveUserId(String firebaseUid) {
         return userRepository.findByFirebaseUid(firebaseUid)
                 .map(UserEntity::getId)

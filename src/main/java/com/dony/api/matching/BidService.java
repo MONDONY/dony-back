@@ -139,7 +139,7 @@ public class BidService {
         String senderName = sender.getFirstName() != null ? sender.getFirstName() : "Un expéditeur";
         String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
         eventPublisher.publishEvent(new BidCreatedEvent(
-                saved.getId(), announcement.getTravelerId(), sender.getId(),
+                saved.getId(), announcement.getId(), announcement.getTravelerId(), sender.getId(),
                 senderName, saved.getWeightKg(), corridor));
 
         return toResponse(saved, sender);
