@@ -3,7 +3,9 @@ package com.dony.api.payments;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.common.AuditService;
 import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.RefundCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,44 +66,46 @@ public class TripCancelledEventListener {
 
         PaymentEntity payment = paymentOpt.get();
 
-        if (payment.getStatus() != PaymentStatus.ESCROW) {
-            // PENDING: card not charged yet — no refund needed
-            // RELEASED / REFUNDED / FAILED: nothing to refund here
-            log.info("Payment {} for bid {} has status {} — skipping refund",
-                    payment.getId(), bidId, payment.getStatus());
-            return;
-        }
-
         try {
-            RefundCreateParams refundParams = RefundCreateParams.builder()
-                    .setPaymentIntent(payment.getStripePaymentIntentId())
-                    .build();
-            Refund.create(refundParams);
-
-            payment.setStatus(PaymentStatus.REFUNDED);
-            paymentRepository.save(payment);
-
-            auditService.log(
-                    "PAYMENT",
-                    payment.getId(),
-                    "PAYMENT_REFUNDED",
-                    payment.getBidId(),
-                    Map.of(
-                            "bidId", bidId.toString(),
-                            "piId", payment.getStripePaymentIntentId(),
-                            "amount", payment.getAmount().toPlainString(),
-                            "reason", "trip_cancelled"
-                    )
-            );
-
-            log.info("Refund issued for payment {} (bid={}, PI={})",
-                    payment.getId(), bidId, payment.getStripePaymentIntentId());
-
+            switch (payment.getStatus()) {
+                case PENDING -> {
+                    // Carte non encore débitée → annuler le PaymentIntent
+                    PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+                    pi.cancel(PaymentIntentCancelParams.builder()
+                            .setCancellationReason(PaymentIntentCancelParams.CancellationReason.ABANDONED)
+                            .build());
+                    payment.setStatus(PaymentStatus.REFUNDED);
+                    paymentRepository.save(payment);
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_CANCELLED_TRIP_CANCELLED",
+                            payment.getBidId(),
+                            Map.of("bidId", bidId.toString(),
+                                    "piId", payment.getStripePaymentIntentId(),
+                                    "reason", "trip_cancelled_before_authorization"));
+                    log.info("PaymentIntent {} annulé (trip cancelled, bid={})", payment.getStripePaymentIntentId(), bidId);
+                }
+                case ESCROW -> {
+                    // Carte déjà débitée → remboursement Stripe
+                    Refund.create(RefundCreateParams.builder()
+                            .setPaymentIntent(payment.getStripePaymentIntentId())
+                            .build());
+                    payment.setStatus(PaymentStatus.REFUNDED);
+                    paymentRepository.save(payment);
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED",
+                            payment.getBidId(),
+                            Map.of("bidId", bidId.toString(),
+                                    "piId", payment.getStripePaymentIntentId(),
+                                    "amount", payment.getAmount().toPlainString(),
+                                    "reason", "trip_cancelled"));
+                    log.info("Remboursement émis pour payment {} (bid={}, PI={})",
+                            payment.getId(), bidId, payment.getStripePaymentIntentId());
+                }
+                default -> log.info("Payment {} (bid={}) en statut {} — aucune action",
+                        payment.getId(), bidId, payment.getStatus());
+            }
         } catch (StripeException e) {
-            log.error("Stripe refund failed for payment {} (bid={}, PI={}): {}",
-                    payment.getId(), bidId, payment.getStripePaymentIntentId(),
-                    e.getMessage(), e);
-            // Do not rethrow — other bids in this event still need to be processed
+            log.error("Stripe error pour payment {} (bid={}, PI={}): {}",
+                    payment.getId(), bidId, payment.getStripePaymentIntentId(), e.getMessage(), e);
+            // Ne pas rethrow — les autres bids du même event doivent être traités
         }
     }
 }

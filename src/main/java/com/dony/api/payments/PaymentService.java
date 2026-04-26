@@ -162,10 +162,14 @@ public class PaymentService {
                     "forbidden", "Forbidden", "Cette demande ne vous appartient pas");
         }
 
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
+        // Le paiement est autorisé dès que le bid est PENDING ou ACCEPTED.
+        // Si le voyageur refuse (REJECTED), le paiement sera annulé/remboursé automatiquement.
+        if (bid.getStatus() == BidStatus.REJECTED
+                || bid.getStatus() == BidStatus.CANCELLED
+                || bid.getStatus() == BidStatus.COMPLETED) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "bid-not-accepted", "Bid Not Accepted",
-                    "Cette demande doit être acceptée par le voyageur avant le paiement");
+                    "bid-not-payable", "Bid Not Payable",
+                    "Cette demande ne peut plus être payée (statut : " + bid.getStatus() + ")");
         }
 
         // Idempotency: reuse existing non-failed payment
