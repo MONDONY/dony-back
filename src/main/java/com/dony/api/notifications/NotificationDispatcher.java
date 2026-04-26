@@ -35,17 +35,21 @@ public class NotificationDispatcher {
     private final FcmService fcmService;
     private final SmsService smsService;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     public NotificationDispatcher(FcmService fcmService, SmsService smsService,
-                                  UserRepository userRepository) {
+                                  UserRepository userRepository,
+                                  NotificationService notificationService) {
         this.fcmService = fcmService;
         this.smsService = smsService;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     // ── Public API (for direct calls from within the package) ─────────────────
 
     public void notifyUser(UUID userId, String title, String body, Map<String, String> data) {
+        notificationService.persist(userId, data.getOrDefault("type", ""), title, body, data);
         boolean sent = fcmService.sendToUser(userId, title, body, data);
         if (!sent) {
             log.debug("[Dispatcher] FCM not sent for user={} (no token or error)", userId);

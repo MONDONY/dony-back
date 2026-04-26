@@ -34,6 +34,7 @@ class NotificationDispatcherTest {
     @Mock FcmService fcmService;
     @Mock SmsService smsService;
     @Mock UserRepository userRepository;
+    @Mock NotificationService notificationService;
 
     NotificationDispatcher dispatcher;
 
@@ -44,7 +45,7 @@ class NotificationDispatcherTest {
 
     @BeforeEach
     void setUp() {
-        dispatcher = new NotificationDispatcher(fcmService, smsService, userRepository);
+        dispatcher = new NotificationDispatcher(fcmService, smsService, userRepository, notificationService);
     }
 
     // ── BidCreatedEvent ───────────────────────────────────────────────────────
