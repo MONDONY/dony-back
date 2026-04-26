@@ -5,8 +5,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<NotificationEntity, UUID> {
@@ -18,4 +20,14 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     @Modifying
     @Query("UPDATE NotificationEntity n SET n.readAt = :now WHERE n.userId = :userId AND n.readAt IS NULL")
     int markAllReadByUserId(UUID userId, LocalDateTime now);
+
+    // Story 8.3 — SMS fallback: critical notifications with no ACK and no SMS after cutoff
+    @Query("""
+            SELECT n FROM NotificationEntity n
+            WHERE n.isCritical = true
+              AND n.ackedAt   IS NULL
+              AND n.smsSentAt IS NULL
+              AND n.createdAt  < :cutoff
+            """)
+    List<NotificationEntity> findPendingSmsFallbacks(@Param("cutoff") LocalDateTime cutoff);
 }

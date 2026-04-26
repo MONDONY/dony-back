@@ -16,15 +16,16 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Central notification dispatcher. All business services must go through this
- * class — never call FcmService or SmsService directly from outside this package.
+ * Central notification orchestrator. All business services must go through this class.
+ * Never call FcmService or SmsService directly from outside this package.
  *
- * For critical events (payment, delivery, dispute), the SMS fallback timer
- * is handled by Story 8.3.
+ * Critical events (PAYMENT_RELEASED, DELIVERY_CONFIRMED, DISPUTE_OPENED) are marked
+ * is_critical=true so SmsFallbackScheduler sends an SMS if no ACK arrives within 60s.
  */
 @Service
 public class NotificationDispatcher {
@@ -46,14 +47,25 @@ public class NotificationDispatcher {
         this.notificationService = notificationService;
     }
 
-    // ── Public API (for direct calls from within the package) ─────────────────
+    // ── Public API ───────────────────────────────────────────────────────────
 
     public void notifyUser(UUID userId, String title, String body, Map<String, String> data) {
-        notificationService.persist(userId, data.getOrDefault("type", ""), title, body, data);
-        boolean sent = fcmService.sendToUser(userId, title, body, data);
-        if (!sent) {
-            log.debug("[Dispatcher] FCM not sent for user={} (no token or error)", userId);
-        }
+        var saved = notificationService.persist(userId, data.getOrDefault("type", ""), title, body, data, false);
+        Map<String, String> dataWithId = withNotificationId(data, saved.getId());
+        fcmService.sendToUser(userId, title, body, dataWithId);
+    }
+
+    // Critical: persisted with is_critical=true → SmsFallbackScheduler sends SMS if no ACK in 60s
+    private void notifyCritical(UUID userId, String title, String body, Map<String, String> data) {
+        var saved = notificationService.persist(userId, data.getOrDefault("type", ""), title, body, data, true);
+        Map<String, String> dataWithId = withNotificationId(data, saved.getId());
+        fcmService.sendToUser(userId, title, body, dataWithId);
+    }
+
+    private static Map<String, String> withNotificationId(Map<String, String> original, UUID id) {
+        var copy = new HashMap<>(original);
+        copy.put("notificationId", id.toString());
+        return copy;
     }
 
     public void notifyBySms(String phoneNumber, String message) {
@@ -62,94 +74,74 @@ public class NotificationDispatcher {
 
     // ── Story 8.2 — Event listeners ──────────────────────────────────────────
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onBidCreated(BidCreatedEvent event) {
         String body = String.format("%s veut envoyer %.1f kg — %s",
                 event.getSenderFirstName(), event.getWeightKg().doubleValue(), event.getCorridor());
-        notifyUser(event.getTravelerId(),
-                "Nouvelle demande d'envoi",
-                body,
+        notifyUser(event.getTravelerId(), "Nouvelle demande d'envoi", body,
                 Map.of("type", "BID_CREATED",
-                        "bidId", event.getBidId().toString(),
-                        "announcementId", event.getAnnouncementId().toString()));
+                       "bidId", event.getBidId().toString(),
+                       "announcementId", event.getAnnouncementId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onBidAccepted(BidAcceptedEvent event) {
-        String travelerName = userRepository.findById(event.getTravelerId())
+        String name = userRepository.findById(event.getTravelerId())
                 .map(u -> u.getFirstName() != null ? u.getFirstName() : "Le voyageur")
                 .orElse("Le voyageur");
-        notifyUser(event.getSenderId(),
-                "Demande acceptée !",
-                travelerName + " accepte votre colis",
-                Map.of("type", "BID_ACCEPTED",
-                        "bidId", event.getBidId().toString()));
+        notifyUser(event.getSenderId(), "Demande acceptée !",
+                name + " accepte votre colis",
+                Map.of("type", "BID_ACCEPTED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onBidRejected(BidRejectedEvent event) {
-        notifyUser(event.getSenderId(),
-                "Demande refusée",
+        notifyUser(event.getSenderId(), "Demande refusée",
                 "Le voyageur a refusé votre demande",
-                Map.of("type", "BID_REJECTED",
-                        "bidId", event.getBidId().toString()));
+                Map.of("type", "BID_REJECTED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onHandoverDefined(HandoverDefinedEvent event) {
         String dateStr = event.getWindowStart() != null
                 ? event.getWindowStart().format(DATE_FMT) : "à confirmer";
         String location = event.getLocation() != null ? event.getLocation() : "lieu à confirmer";
-        notifyUser(event.getSenderId(),
-                "Point de remise défini",
+        notifyUser(event.getSenderId(), "Point de remise défini",
                 "Remise : " + location + " le " + dateStr,
-                Map.of("type", "HANDOVER_DEFINED",
-                        "bidId", event.getBidId().toString()));
+                Map.of("type", "HANDOVER_DEFINED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onTripCancelled(TripCancelledEvent event) {
         if (event.getAffectedSenderIds() == null) return;
         for (UUID senderId : event.getAffectedSenderIds()) {
-            notifyUser(senderId,
-                    "Trajet annulé",
+            notifyUser(senderId, "Trajet annulé",
                     "Le voyageur a annulé son trajet. Remboursement en cours.",
                     Map.of("type", "TRIP_CANCELLED"));
         }
     }
 
-    @EventListener
-    @Async
+    // Critical events — SMS fallback triggered by SmsFallbackScheduler after 60s without ACK
+
+    @EventListener @Async
     public void onDeliveryConfirmed(DeliveryConfirmedEvent event) {
-        notifyUser(event.getSenderId(),
-                "Livraison confirmée",
+        notifyCritical(event.getSenderId(), "Livraison confirmée",
                 "Votre colis est arrivé à destination",
-                Map.of("type", "DELIVERY_CONFIRMED",
-                        "bidId", event.getBidId().toString()));
+                Map.of("type", "DELIVERY_CONFIRMED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onPaymentReleased(PaymentReleasedEvent event) {
-        String amountStr = String.format(java.util.Locale.FRENCH, "%.2f €", event.getAmount().doubleValue());
-        notifyUser(event.getTravelerId(),
-                "Paiement reçu !",
-                amountStr + " — virement en cours, sous 24h",
-                Map.of("type", "PAYMENT_RELEASED",
-                        "bidId", event.getBidId().toString()));
+        String amount = String.format(java.util.Locale.FRENCH, "%.2f €", event.getAmount().doubleValue());
+        notifyCritical(event.getTravelerId(), "Paiement reçu !",
+                amount + " — virement en cours, sous 24h",
+                Map.of("type", "PAYMENT_RELEASED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener
-    @Async
+    @EventListener @Async
     public void onDisputeOpened(DisputeOpenedEvent event) {
-        Map<String, String> data = Map.of("type", "DISPUTE_OPENED",
-                "bidId", event.getBidId().toString());
-        notifyUser(event.getSenderId(),  "Litige ouvert", "Un incident a été signalé sur votre envoi", data);
-        notifyUser(event.getTravelerId(), "Litige ouvert", "Un incident a été signalé sur votre colis", data);
+        Map<String, String> data = Map.of("type", "DISPUTE_OPENED", "bidId", event.getBidId().toString());
+        notifyCritical(event.getSenderId(),  "Litige ouvert", "Un incident a été signalé sur votre envoi",  data);
+        notifyCritical(event.getTravelerId(), "Litige ouvert", "Un incident a été signalé sur votre colis", data);
     }
 }

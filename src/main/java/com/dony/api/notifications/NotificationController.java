@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,15 +32,13 @@ public class NotificationController {
     @GetMapping
     public ResponseEntity<PageResponse<NotificationDTO>> list(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "30") int size
-    ) {
+            @RequestParam(defaultValue = "30") int size) {
         return ResponseEntity.ok(notificationService.list(requireUid(), page, size));
     }
 
     @GetMapping("/unread-count")
     public ResponseEntity<Map<String, Long>> unreadCount() {
-        long count = notificationService.countUnread(requireUid());
-        return ResponseEntity.ok(Map.of("count", count));
+        return ResponseEntity.ok(Map.of("count", notificationService.countUnread(requireUid())));
     }
 
     @PatchMapping("/{id}/read")
@@ -57,6 +56,13 @@ public class NotificationController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         notificationService.softDelete(requireUid(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Story 8.3 — Flutter sends ACK on notification receipt to cancel SMS fallback
+    @PostMapping("/{id}/ack")
+    public ResponseEntity<Void> ack(@PathVariable UUID id) {
+        notificationService.ack(requireUid(), id);
         return ResponseEntity.noContent().build();
     }
 

@@ -36,23 +36,39 @@ public class NotificationEntity extends BaseEntity {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
+    @Column(name = "is_critical", nullable = false)
+    private boolean isCritical = false;
+
+    @Column(name = "acked_at")
+    private LocalDateTime ackedAt;
+
+    @Column(name = "sms_sent_at")
+    private LocalDateTime smsSentAt;
+
     protected NotificationEntity() {}
 
-    public NotificationEntity(UUID userId, String type, String title, String body, Map<String, String> data) {
+    public NotificationEntity(UUID userId, String type, String title, String body,
+                              Map<String, String> data, boolean isCritical) {
         this.userId = userId;
         this.type = type;
         this.title = title;
         this.body = body;
         this.data = data;
+        this.isCritical = isCritical;
     }
 
-    public UUID getUserId() { return userId; }
-    public String getType() { return type; }
-    public String getTitle() { return title; }
-    public String getBody() { return body; }
+    public UUID getUserId()              { return userId; }
+    public String getType()              { return type; }
+    public String getTitle()             { return title; }
+    public String getBody()              { return body; }
     public Map<String, String> getData() { return data; }
-    public LocalDateTime getReadAt() { return readAt; }
-    public boolean isRead() { return readAt != null; }
+    public LocalDateTime getReadAt()     { return readAt; }
+    public boolean isRead()              { return readAt != null; }
+    public boolean isCritical()          { return isCritical; }
+    public LocalDateTime getAckedAt()    { return ackedAt; }
+    public LocalDateTime getSmsSentAt()  { return smsSentAt; }
 
-    public void markRead(LocalDateTime at) { this.readAt = at; }
+    public void markRead(LocalDateTime at)    { this.readAt = at; }
+    public void markAcked(LocalDateTime at)   { this.ackedAt = at; }
+    public void markSmsSent(LocalDateTime at) { this.smsSentAt = at; }
 }

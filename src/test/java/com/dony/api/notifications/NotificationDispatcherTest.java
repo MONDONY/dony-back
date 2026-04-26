@@ -46,6 +46,22 @@ class NotificationDispatcherTest {
     @BeforeEach
     void setUp() {
         dispatcher = new NotificationDispatcher(fcmService, smsService, userRepository, notificationService);
+        // persist() must return an entity with a non-null ID (JPA doesn't run in unit tests)
+        var stubEntity = new NotificationEntity(UUID.randomUUID(), "STUB", "stub", "stub", Map.of(), false);
+        setEntityId(stubEntity, UUID.randomUUID());
+        // lenient: no-op tests don't call persist(), so avoid UnnecessaryStubbing failure
+        lenient().when(notificationService.persist(any(), any(), any(), any(), any(), anyBoolean())).thenReturn(stubEntity);
+        lenient().when(notificationService.persist(any(), any(), any(), any(), any())).thenReturn(stubEntity);
+    }
+
+    private void setEntityId(NotificationEntity entity, UUID id) {
+        try {
+            var field = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(entity, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // ── BidCreatedEvent ───────────────────────────────────────────────────────

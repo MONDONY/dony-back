@@ -10,7 +10,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,8 +30,8 @@ class NotificationServiceTest {
 
     NotificationService service;
 
-    private final String uid = "firebase-uid-123";
-    private final UUID userId = UUID.randomUUID();
+    private final String uid    = "firebase-uid-123";
+    private final UUID   userId = UUID.randomUUID();
     private UserEntity user;
 
     @BeforeEach
@@ -42,7 +41,6 @@ class NotificationServiceTest {
         user.setFirebaseUid(uid);
     }
 
-    // helper to set id via reflection since BaseEntity uses @GeneratedValue
     private void setId(UserEntity u, UUID id) {
         try {
             var field = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
@@ -53,10 +51,12 @@ class NotificationServiceTest {
         }
     }
 
+    // ── persist ─────────────────────────────────────────────────────────────
+
     @Test
     void persist_savesEntityWithCorrectFields() {
-        setId(user, userId);
         Map<String, String> data = Map.of("type", "BID_CREATED", "bidId", UUID.randomUUID().toString());
+        when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         service.persist(userId, "BID_CREATED", "Nouvelle demande", "Test body", data);
 
@@ -66,15 +66,28 @@ class NotificationServiceTest {
         assertThat(saved.getUserId()).isEqualTo(userId);
         assertThat(saved.getType()).isEqualTo("BID_CREATED");
         assertThat(saved.getTitle()).isEqualTo("Nouvelle demande");
-        assertThat(saved.getBody()).isEqualTo("Test body");
         assertThat(saved.isRead()).isFalse();
+        assertThat(saved.isCritical()).isFalse();
     }
+
+    @Test
+    void persist_withCriticalFlag_savesAsCritical() {
+        when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.persist(userId, "PAYMENT_RELEASED", "Paiement reçu !", "45,00 €", Map.of(), true);
+
+        var captor = ArgumentCaptor.forClass(NotificationEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().isCritical()).isTrue();
+    }
+
+    // ── list ─────────────────────────────────────────────────────────────────
 
     @Test
     void list_returnsPageForAuthenticatedUser() {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
-        var entity = new NotificationEntity(userId, "BID_ACCEPTED", "Accepté", "Corps", Map.of());
+        var entity = new NotificationEntity(userId, "BID_ACCEPTED", "Accepté", "Corps", Map.of(), false);
         when(repository.findByUserIdOrderByCreatedAtDesc(eq(userId), any()))
                 .thenReturn(new PageImpl<>(List.of(entity)));
 
@@ -93,12 +106,14 @@ class NotificationServiceTest {
                 .isInstanceOf(DonyBusinessException.class);
     }
 
+    // ── markRead ─────────────────────────────────────────────────────────────
+
     @Test
     void markRead_updatesReadAtForOwner() {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
         var notifId = UUID.randomUUID();
-        var entity = new NotificationEntity(userId, "BID_CREATED", "T", "B", Map.of());
+        var entity = new NotificationEntity(userId, "BID_CREATED", "T", "B", Map.of(), false);
         when(repository.findById(notifId)).thenReturn(Optional.of(entity));
 
         service.markRead(uid, notifId);
@@ -111,12 +126,14 @@ class NotificationServiceTest {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
         var notifId = UUID.randomUUID();
-        var entity = new NotificationEntity(UUID.randomUUID(), "BID_CREATED", "T", "B", Map.of());
+        var entity = new NotificationEntity(UUID.randomUUID(), "BID_CREATED", "T", "B", Map.of(), false);
         when(repository.findById(notifId)).thenReturn(Optional.of(entity));
 
         assertThatThrownBy(() -> service.markRead(uid, notifId))
                 .isInstanceOf(DonyBusinessException.class);
     }
+
+    // ── countUnread ──────────────────────────────────────────────────────────
 
     @Test
     void countUnread_returnsRepositoryCount() {
@@ -126,6 +143,8 @@ class NotificationServiceTest {
 
         assertThat(service.countUnread(uid)).isEqualTo(5L);
     }
+
+    // ── markAllRead ──────────────────────────────────────────────────────────
 
     @Test
     void markAllRead_callsRepository() {
@@ -139,14 +158,14 @@ class NotificationServiceTest {
         verify(repository).markAllReadByUserId(eq(userId), any());
     }
 
-    // ── softDelete ──────────────────────────────────────────────────────────────
+    // ── softDelete ───────────────────────────────────────────────────────────
 
     @Test
     void softDelete_setsDeletedAtForOwner() {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
         var notifId = UUID.randomUUID();
-        var entity = new NotificationEntity(userId, "BID_CREATED", "T", "B", Map.of());
+        var entity = new NotificationEntity(userId, "BID_CREATED", "T", "B", Map.of(), false);
         when(repository.findById(notifId)).thenReturn(Optional.of(entity));
 
         service.softDelete(uid, notifId);
@@ -158,10 +177,9 @@ class NotificationServiceTest {
     void softDelete_throwsNotFoundWhenMissing() {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
-        var notifId = UUID.randomUUID();
-        when(repository.findById(notifId)).thenReturn(Optional.empty());
+        when(repository.findById(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.softDelete(uid, notifId))
+        assertThatThrownBy(() -> service.softDelete(uid, UUID.randomUUID()))
                 .isInstanceOf(DonyBusinessException.class);
     }
 
@@ -170,10 +188,52 @@ class NotificationServiceTest {
         setId(user, userId);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
         var notifId = UUID.randomUUID();
-        var entity = new NotificationEntity(UUID.randomUUID(), "BID_CREATED", "T", "B", Map.of());
+        var entity = new NotificationEntity(UUID.randomUUID(), "BID_CREATED", "T", "B", Map.of(), false);
         when(repository.findById(notifId)).thenReturn(Optional.of(entity));
 
         assertThatThrownBy(() -> service.softDelete(uid, notifId))
+                .isInstanceOf(DonyBusinessException.class);
+    }
+
+    // ── ack (Story 8.3) ──────────────────────────────────────────────────────
+
+    @Test
+    void ack_setsAckedAtForOwner() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        var entity = new NotificationEntity(userId, "PAYMENT_RELEASED", "Paiement", "Corps", Map.of(), true);
+        when(repository.findById(notifId)).thenReturn(Optional.of(entity));
+
+        service.ack(uid, notifId);
+
+        assertThat(entity.getAckedAt()).isNotNull();
+    }
+
+    @Test
+    void ack_idempotent_doesNotUpdateIfAlreadyAcked() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        var entity = new NotificationEntity(userId, "PAYMENT_RELEASED", "Paiement", "Corps", Map.of(), true);
+        entity.markAcked(LocalDateTime.now().minusSeconds(10));
+        LocalDateTime firstAck = entity.getAckedAt();
+        when(repository.findById(notifId)).thenReturn(Optional.of(entity));
+
+        service.ack(uid, notifId);
+
+        assertThat(entity.getAckedAt()).isEqualTo(firstAck);
+    }
+
+    @Test
+    void ack_throwsForbiddenForWrongOwner() {
+        setId(user, userId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(user));
+        var notifId = UUID.randomUUID();
+        var entity = new NotificationEntity(UUID.randomUUID(), "PAYMENT_RELEASED", "P", "B", Map.of(), true);
+        when(repository.findById(notifId)).thenReturn(Optional.of(entity));
+
+        assertThatThrownBy(() -> service.ack(uid, notifId))
                 .isInstanceOf(DonyBusinessException.class);
     }
 }

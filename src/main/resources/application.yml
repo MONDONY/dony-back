@@ -79,3 +79,12 @@ app:
   encryption:
     key: ${ENCRYPTION_KEY:dony-dev-encryption-key-change-in-prod}
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  sms:
+    enabled: ${SMS_ENABLED:false}
+    africastalking:
+      api-key: ${AT_API_KEY:}
+      username: ${AT_USERNAME:sandbox}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      from: ${TWILIO_FROM:}
