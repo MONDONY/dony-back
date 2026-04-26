@@ -496,6 +496,7 @@ public class BidService {
                 arrivalTime,
                 pricePerKg,
                 bid.getTrackingNumber(),
+                bid.getTrackingToken(),
                 confirmationCode
         );
     }
