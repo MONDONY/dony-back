@@ -1,11 +1,13 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -28,11 +30,14 @@ public class DeliveryEventListener {
 
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DeliveryEventListener(PaymentRepository paymentRepository,
-                                 AuditService auditService) {
+                                 AuditService auditService,
+                                 ApplicationEventPublisher eventPublisher) {
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
     }
 
     @EventListener
@@ -77,6 +82,10 @@ public class DeliveryEventListener {
 
             log.info("Escrow released for payment {} (bid={}, PI={})",
                     payment.getId(), event.getBidId(), payment.getStripePaymentIntentId());
+
+            // Notify traveler of payout (Story 8.2)
+            eventPublisher.publishEvent(new PaymentReleasedEvent(
+                    payment.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
 
         } catch (StripeException e) {
             log.error("Stripe capture failed for payment {} (bid={}, PI={}): {}",

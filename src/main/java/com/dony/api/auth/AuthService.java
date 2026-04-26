@@ -80,6 +80,19 @@ public class AuthService {
         return toResponse(userRepository.save(user));
     }
 
+    @Transactional
+    public void updateFcmToken(String firebaseUid, String fcmToken) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        user.setFcmToken(fcmToken);
+        userRepository.save(user);
+    }
+
     /**
      * Supprime le compte : soft-delete en DB + suppression dans Firebase Auth.
      */

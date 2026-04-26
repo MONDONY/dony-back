@@ -10,7 +10,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
-import com.dony.api.notifications.FcmService;
+import com.dony.api.notifications.NotificationDispatcher;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
@@ -53,7 +53,7 @@ class TrackingServiceTest {
     @Mock AuditService auditService;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock StorageService storageService;
-    @Mock FcmService fcmService;
+    @Mock NotificationDispatcher notificationDispatcher;
 
     TrackingService service;
 
@@ -67,7 +67,7 @@ class TrackingServiceTest {
         service = new TrackingService(
                 bidRepository, paymentRepository, userRepository,
                 announcementRepository, trackingEventRepository,
-                auditService, eventPublisher, storageService, fcmService);
+                auditService, eventPublisher, storageService, notificationDispatcher);
         ReflectionTestUtils.setField(service, "appBaseUrl", "https://dony.app");
     }
 
@@ -320,8 +320,6 @@ class TrackingServiceTest {
             setId(e, UUID.randomUUID());
             return e;
         });
-        when(userRepository.findById(senderId)).thenReturn(Optional.empty()); // no FCM token
-
         QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.DEPART, null, null, null, null);
         TrackingEventResponse resp = service.processScan(req, "uid-traveler");
 
@@ -621,12 +619,10 @@ class TrackingServiceTest {
             setId(e, UUID.randomUUID());
             return e;
         });
-        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
-
         QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.DEPART, null, null, null, null);
         service.processScan(req, "uid-traveler");
 
-        verify(fcmService).sendDataMessage(eq("fcm-sender-token"), eq("CONFIRMATION_CODE_READY"), any());
+        verify(notificationDispatcher).notifyUser(eq(senderId), contains("livraison"), any(), argThat(d -> "CONFIRMATION_CODE_READY".equals(d.get("type"))));
     }
 
     // ── getEvents additional branches ─────────────────────────────────────────

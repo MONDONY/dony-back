@@ -9,7 +9,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
-import com.dony.api.notifications.FcmService;
+import com.dony.api.notifications.NotificationDispatcher;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
@@ -55,7 +55,7 @@ public class TrackingService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final com.dony.api.common.StorageService storageService;
-    private final FcmService fcmService;
+    private final NotificationDispatcher notificationDispatcher;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int MAX_CODE_ATTEMPTS = 3;
@@ -71,7 +71,7 @@ public class TrackingService {
                            AuditService auditService,
                            ApplicationEventPublisher eventPublisher,
                            com.dony.api.common.StorageService storageService,
-                           FcmService fcmService) {
+                           NotificationDispatcher notificationDispatcher) {
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
@@ -80,7 +80,7 @@ public class TrackingService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
-        this.fcmService = fcmService;
+        this.notificationDispatcher = notificationDispatcher;
     }
 
     public QrCodeResponse getQrCode(UUID bidId, String firebaseUid) {
@@ -260,11 +260,11 @@ public class TrackingService {
             bid.setConfirmationCodeAttempts(0);
             bidRepository.save(bid);
 
-            UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
-            if (sender != null && sender.getFcmToken() != null) {
-                fcmService.sendDataMessage(sender.getFcmToken(), "CONFIRMATION_CODE_READY",
-                        Map.of("bidId", bid.getId().toString()));
-            }
+            notificationDispatcher.notifyUser(
+                    bid.getSenderId(),
+                    "Code de livraison disponible",
+                    "Le voyageur est prêt à remettre votre colis. Partagez le code.",
+                    Map.of("type", "CONFIRMATION_CODE_READY", "bidId", bid.getId().toString()));
             auditService.log("TRACKING_CONFIRMATION_CODE", bid.getId(), "CODE_GENERATED",
                     traveler.getId(), Map.of("bidId", bid.getId().toString()));
         }
@@ -399,7 +399,7 @@ public class TrackingService {
         event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
         trackingEventRepository.save(event);
 
-        eventPublisher.publishEvent(new DeliveryConfirmedEvent(bid.getId()));
+        eventPublisher.publishEvent(new DeliveryConfirmedEvent(bid.getId(), bid.getSenderId(), traveler.getId()));
 
         auditService.log("TRACKING_DELIVERY_CONFIRMED", event.getId(), "DELIVERY_CONFIRMED",
                 traveler.getId(), Map.of("bidId", bid.getId().toString()));

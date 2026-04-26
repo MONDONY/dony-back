@@ -176,13 +176,15 @@ class PaymentServiceTest {
 
     @Test
     void createEscrow_bidNotAccepted_throwsUnprocessable() {
+        // PENDING and ACCEPTED bids are now both allowed (pay-before-accept flow).
+        // REJECTED and CANCELLED bids must still be rejected.
         UserEntity sender = buildUser(senderId, "uid-sender");
-        BidEntity bid = buildBid(BidStatus.PENDING);
+        BidEntity bid = buildBid(BidStatus.REJECTED);
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
         var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
         when(req.getBidId()).thenReturn(bidId);
-        assertDonyError(() -> service.createEscrow(req, "uid-sender"), "bid-not-accepted");
+        assertDonyError(() -> service.createEscrow(req, "uid-sender"), "bid-not-payable");
     }
 
     @Test

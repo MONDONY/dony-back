@@ -1,23 +1,21 @@
-package com.dony.api.tracking.events;
+package com.dony.api.disputes.events;
 
 import java.util.UUID;
 
-/**
- * Published by the tracking service when a delivery is confirmed.
- * The payments package listens to this event to capture the escrow.
- */
-public class DeliveryConfirmedEvent {
-
+public class DisputeOpenedEvent {
+    private final UUID disputeId;
     private final UUID bidId;
     private final UUID senderId;
     private final UUID travelerId;
 
-    public DeliveryConfirmedEvent(UUID bidId, UUID senderId, UUID travelerId) {
+    public DisputeOpenedEvent(UUID disputeId, UUID bidId, UUID senderId, UUID travelerId) {
+        this.disputeId = disputeId;
         this.bidId = bidId;
         this.senderId = senderId;
         this.travelerId = travelerId;
     }
 
+    public UUID getDisputeId()  { return disputeId; }
     public UUID getBidId()      { return bidId; }
     public UUID getSenderId()   { return senderId; }
     public UUID getTravelerId() { return travelerId; }
