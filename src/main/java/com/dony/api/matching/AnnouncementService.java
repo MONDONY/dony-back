@@ -94,7 +94,9 @@ public class AnnouncementService {
                         traveler.getId(),
                         buildDisplayName(traveler),
                         traveler.getPhoneNumber(),
-                        null, null, false)
+                        traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
+                        null,
+                        traveler.isKiloPro())
                 : null;
         long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
         return new AnnouncementSearchResponse(
@@ -199,7 +201,9 @@ public class AnnouncementService {
                         traveler.getId(),
                         buildDisplayName(traveler),
                         traveler.getPhoneNumber(),
-                        null, null, false)
+                        traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
+                        null,
+                        traveler.isKiloPro())
                 : null;
 
         return new AnnouncementDetailResponse(

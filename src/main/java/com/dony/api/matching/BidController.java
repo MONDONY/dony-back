@@ -5,10 +5,12 @@ import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
+import com.dony.api.matching.dto.RefuseParcelRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -109,6 +111,16 @@ public class BidController {
     public ResponseEntity<BidResponse> cancelBid(@PathVariable UUID bidId) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.cancelBid(bidId, firebaseUid));
+    }
+
+    // Story 9.4 — Voyageur refuse le colis lors de l'inspection
+    @PostMapping("/bids/{bidId}/refuse-parcel")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<BidResponse> refuseParcel(@PathVariable UUID bidId,
+                                                     @Valid @RequestBody RefuseParcelRequest request) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.refuseParcel(bidId, firebaseUid,
+                request.reason(), request.refusalPhotoUrl()));
     }
 
     @DeleteMapping("/bids/{bidId}/me")

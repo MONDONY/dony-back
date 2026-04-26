@@ -1,12 +1,15 @@
 package com.dony.api.notifications;
 
 import com.dony.api.auth.UserRepository;
+import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
+import com.dony.api.matching.events.ParcelRefusedEvent;
+import com.dony.api.matching.events.VoyageurNoShowEvent;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.slf4j.Logger;
@@ -143,5 +146,30 @@ public class NotificationDispatcher {
         Map<String, String> data = Map.of("type", "DISPUTE_OPENED", "bidId", event.getBidId().toString());
         notifyCritical(event.getSenderId(),  "Litige ouvert", "Un incident a été signalé sur votre envoi",  data);
         notifyCritical(event.getTravelerId(), "Litige ouvert", "Un incident a été signalé sur votre colis", data);
+    }
+
+    // Story 9.4 — Notification expéditeur : colis refusé
+    @EventListener @Async
+    public void onParcelRefused(ParcelRefusedEvent event) {
+        String reason = event.getReason() != null ? event.getReason() : "contenu non conforme";
+        notifyUser(event.getSenderId(), "Colis refusé",
+                "Votre colis a été refusé par le voyageur — raison : " + reason,
+                Map.of("type", "PARCEL_REFUSED", "bidId", event.getBidId().toString()));
+    }
+
+    // Story 9.6 — Notification expéditeur : voyageur no-show
+    @EventListener @Async
+    public void onVoyageurNoShow(VoyageurNoShowEvent event) {
+        notifyUser(event.getSenderId(), "Voyageur absent",
+                "Le voyageur ne s'est pas présenté à la remise. Remboursement en cours.",
+                Map.of("type", "TRIP_CANCELLED", "bidId", event.getBidId().toString()));
+    }
+
+    // Story 9.5 — Notification utilisateur : compte suspendu
+    @EventListener @Async
+    public void onUserSuspended(UserSuspendedEvent event) {
+        notifyUser(event.getUserId(), "Compte suspendu",
+                "Votre compte a été suspendu suite à des incidents répétés",
+                Map.of("type", "ACCOUNT_SUSPENDED"));
     }
 }

@@ -36,6 +36,7 @@ class AuthServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
+    @Mock private UserService userService;
 
     @InjectMocks private AuthService authService;
 
@@ -282,66 +283,20 @@ class AuthServiceTest {
     }
 
     // ─── deleteAccount ─────────────────────────────────────────────────────────
+    // Full GDPR logic tested in UserServiceTest; AuthService delegates to UserService.
 
     @Nested
     @DisplayName("deleteAccount()")
     class DeleteAccountTests {
 
         @Test
-        @DisplayName("utilisateur valide → soft-delete + audit + suppression Firebase")
-        void deleteAccount_existingUser_softDeletesAndLogs() throws Exception {
-            UserEntity user = buildUser();
-            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(userRepository.save(any(UserEntity.class))).thenReturn(user);
+        @DisplayName("délègue à UserService.deleteAccount()")
+        void deleteAccount_delegatesToUserService() {
+            doNothing().when(userService).deleteAccount(FIREBASE_UID);
 
-            try (MockedStatic<FirebaseAuth> fbMock = mockStatic(FirebaseAuth.class)) {
-                FirebaseAuth mockFb = mock(FirebaseAuth.class);
-                fbMock.when(FirebaseAuth::getInstance).thenReturn(mockFb);
-                doNothing().when(mockFb).deleteUser(anyString());
+            authService.deleteAccount(FIREBASE_UID);
 
-                authService.deleteAccount(FIREBASE_UID);
-
-                assertThat(user.getDeletedAt()).isNotNull();
-                verify(userRepository).save(user);
-                verify(auditService).log(eq("USER"), any(), eq("ACCOUNT_DELETED"), any(), any());
-                verify(mockFb).deleteUser(FIREBASE_UID);
-            }
-        }
-
-        @Test
-        @DisplayName("erreur Firebase → 500 INTERNAL_SERVER_ERROR")
-        void deleteAccount_firebaseError_throwsBusinessException() throws Exception {
-            UserEntity user = buildUser();
-            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(userRepository.save(any())).thenReturn(user);
-
-            try (MockedStatic<FirebaseAuth> fbMock = mockStatic(FirebaseAuth.class)) {
-                FirebaseAuth mockFb = mock(FirebaseAuth.class);
-                fbMock.when(FirebaseAuth::getInstance).thenReturn(mockFb);
-
-                FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
-                when(fbEx.getMessage()).thenReturn("user-not-found");
-                doThrow(fbEx).when(mockFb).deleteUser(anyString());
-
-                assertThatThrownBy(() -> authService.deleteAccount(FIREBASE_UID))
-                        .isInstanceOf(DonyBusinessException.class)
-                        .satisfies(e -> {
-                            DonyBusinessException ex = (DonyBusinessException) e;
-                            assertThat(ex.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-                            assertThat(ex.getErrorCode()).isEqualTo("firebase-delete-failed");
-                        });
-            }
-        }
-
-        @Test
-        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
-        void deleteAccount_unknownUser_throwsNotFound() {
-            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> authService.deleteAccount(FIREBASE_UID))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
-                            .isEqualTo(HttpStatus.NOT_FOUND));
+            verify(userService).deleteAccount(FIREBASE_UID);
         }
     }
 

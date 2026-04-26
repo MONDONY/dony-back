@@ -4,10 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.Optional;
-
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BidRepository extends JpaRepository<BidEntity, UUID> {
@@ -37,4 +36,20 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
            "AND b.h2AlertSentAt IS NULL")
     List<BidEntity> findBidsNeedingH2Alert(@Param("now") LocalDateTime now,
                                             @Param("threshold") LocalDateTime threshold);
+
+    // No-show detection: ACCEPTED bids with handoverWindowEnd > 1h ago, no DEPART scan, not yet marked NO_SHOW
+    @Query("SELECT b FROM BidEntity b WHERE b.status = 'ACCEPTED' " +
+           "AND b.handoverWindowEnd IS NOT NULL " +
+           "AND b.handoverWindowEnd < :cutoff " +
+           "AND b.noShowAt IS NULL " +
+           "AND b.deletedAt IS NULL " +
+           "AND NOT EXISTS (SELECT t FROM TrackingEventEntity t WHERE t.bidId = b.id AND t.eventType = 'DEPART')")
+    List<BidEntity> findNoShowBids(@Param("cutoff") LocalDateTime cutoff);
+
+    List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
+
+    // Completed deliveries for a given traveler (via announcement ownership)
+    @Query("SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id " +
+           "WHERE a.travelerId = :travelerId AND b.status = 'COMPLETED'")
+    List<BidEntity> findCompletedBidsByTravelerId(@Param("travelerId") UUID travelerId);
 }

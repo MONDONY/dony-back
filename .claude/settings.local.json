@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash scripts/start-server.sh --project-dir /home/a-diakite/Desktop/MyProject/my_app/dony_app)"
+    ]
+  }
+}

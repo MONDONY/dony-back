@@ -17,4 +17,7 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
 
     /** Story 6.5 — Find all payments in a given status whose escrow started before the given threshold. */
     List<PaymentEntity> findByStatusAndCreatedAtBefore(PaymentStatus status, LocalDateTime threshold);
+
+    /** Story 9.8 — GDPR: check active escrow payments for given bid IDs. */
+    boolean existsByBidIdInAndStatus(List<UUID> bidIds, PaymentStatus status);
 }

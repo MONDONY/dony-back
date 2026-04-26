@@ -5,5 +5,7 @@ public enum BidStatus {
     ACCEPTED,
     REJECTED,
     CANCELLED,
-    COMPLETED
+    COMPLETED,
+    NO_SHOW,
+    PARCEL_REFUSED
 }

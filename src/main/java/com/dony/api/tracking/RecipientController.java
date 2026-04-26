@@ -109,6 +109,7 @@ public class RecipientController {
         model.addAttribute("events", events);
         model.addAttribute("invalid", false);
         model.addAttribute("trackingToken", trackingToken);
+        model.addAttribute("isDelivered", bid.getStatus() == BidStatus.COMPLETED);
 
         return "recipient/tracking";
     }

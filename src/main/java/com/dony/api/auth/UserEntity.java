@@ -12,7 +12,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -68,6 +70,21 @@ public class UserEntity extends BaseEntity {
     @Column(name = "stripe_onboarded", nullable = false)
     private boolean stripeOnboarded = false;
 
+    @Column(name = "average_rating", precision = 3, scale = 2)
+    private BigDecimal averageRating;
+
+    @Column(name = "kilo_pro", nullable = false)
+    private boolean kiloPro = false;
+
+    @Column(name = "kilo_pro_granted_at")
+    private LocalDateTime kiloProGrantedAt;
+
+    @Column(name = "no_show_count", nullable = false)
+    private int noShowCount = 0;
+
+    @Column(name = "refused_count", nullable = false)
+    private int refusedCount = 0;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -109,4 +126,19 @@ public class UserEntity extends BaseEntity {
 
     public boolean isStripeOnboarded() { return stripeOnboarded; }
     public void setStripeOnboarded(boolean stripeOnboarded) { this.stripeOnboarded = stripeOnboarded; }
+
+    public BigDecimal getAverageRating() { return averageRating; }
+    public void setAverageRating(BigDecimal averageRating) { this.averageRating = averageRating; }
+
+    public boolean isKiloPro() { return kiloPro; }
+    public void setKiloPro(boolean kiloPro) { this.kiloPro = kiloPro; }
+
+    public LocalDateTime getKiloProGrantedAt() { return kiloProGrantedAt; }
+    public void setKiloProGrantedAt(LocalDateTime kiloProGrantedAt) { this.kiloProGrantedAt = kiloProGrantedAt; }
+
+    public int getNoShowCount() { return noShowCount; }
+    public void setNoShowCount(int noShowCount) { this.noShowCount = noShowCount; }
+
+    public int getRefusedCount() { return refusedCount; }
+    public void setRefusedCount(int refusedCount) { this.refusedCount = refusedCount; }
 }

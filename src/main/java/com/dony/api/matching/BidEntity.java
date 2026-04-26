@@ -93,6 +93,15 @@ public class BidEntity extends BaseEntity {
     @Column(name = "deleted_by_traveler", nullable = false)
     private boolean deletedByTraveler = false;
 
+    @Column(name = "refusal_reason", columnDefinition = "TEXT")
+    private String refusalReason;
+
+    @Column(name = "refusal_photo_url", columnDefinition = "TEXT")
+    private String refusalPhotoUrl;
+
+    @Column(name = "no_show_at")
+    private LocalDateTime noShowAt;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -167,4 +176,13 @@ public class BidEntity extends BaseEntity {
 
     public boolean isDeletedByTraveler() { return deletedByTraveler; }
     public void setDeletedByTraveler(boolean deletedByTraveler) { this.deletedByTraveler = deletedByTraveler; }
+
+    public String getRefusalReason() { return refusalReason; }
+    public void setRefusalReason(String refusalReason) { this.refusalReason = refusalReason; }
+
+    public String getRefusalPhotoUrl() { return refusalPhotoUrl; }
+    public void setRefusalPhotoUrl(String refusalPhotoUrl) { this.refusalPhotoUrl = refusalPhotoUrl; }
+
+    public LocalDateTime getNoShowAt() { return noShowAt; }
+    public void setNoShowAt(LocalDateTime noShowAt) { this.noShowAt = noShowAt; }
 }

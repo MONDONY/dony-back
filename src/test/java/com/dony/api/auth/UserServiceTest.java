@@ -1,0 +1,218 @@
+package com.dony.api.auth;
+
+import com.dony.api.auth.events.UserSuspendedEvent;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
+import com.dony.api.kyc.KycRepository;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.PaymentRepository;
+import com.dony.api.payments.PaymentStatus;
+import com.google.firebase.auth.FirebaseAuth;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("UserService — tests unitaires")
+class UserServiceTest {
+
+    @Mock private UserRepository userRepository;
+    @Mock private BidRepository bidRepository;
+    @Mock private PaymentRepository paymentRepository;
+    @Mock private KycRepository kycRepository;
+    @Mock private StorageService storageService;
+    @Mock private AuditService auditService;
+    @Mock private ApplicationEventPublisher eventPublisher;
+
+    @InjectMocks private UserService userService;
+
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final String FIREBASE_UID = "uid-user-001";
+
+    private UserEntity user;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        user = new UserEntity();
+        setId(user, USER_ID);
+        setField(user, "firebaseUid", FIREBASE_UID);
+        setField(user, "phoneNumber", "+33612345678");
+        setField(user, "email", "user@test.com");
+        setField(user, "status", UserStatus.ACTIVE);
+        setField(user, "refusedCount", 0);
+    }
+
+    @Nested
+    @DisplayName("checkAndSuspendSender()")
+    class CheckAndSuspendTests {
+
+        @Test
+        @DisplayName("refusedCount >= 2 → suspension + event publié")
+        void checkAndSuspend_thresholdReached_suspends() throws Exception {
+            setField(user, "refusedCount", 2);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.checkAndSuspendSender(USER_ID);
+
+            assertThat(user.getStatus()).isEqualTo(UserStatus.SUSPENDED);
+            verify(userRepository).save(user);
+            ArgumentCaptor<UserSuspendedEvent> captor = ArgumentCaptor.forClass(UserSuspendedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
+        }
+
+        @Test
+        @DisplayName("refusedCount < 2 → pas de suspension")
+        void checkAndSuspend_belowThreshold_noSuspension() throws Exception {
+            setField(user, "refusedCount", 1);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+            userService.checkAndSuspendSender(USER_ID);
+
+            assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("déjà suspendu → aucune action")
+        void checkAndSuspend_alreadySuspended_noOp() throws Exception {
+            setField(user, "status", UserStatus.SUSPENDED);
+            setField(user, "refusedCount", 3);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+            userService.checkAndSuspendSender(USER_ID);
+
+            verify(userRepository, never()).save(any());
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteAccount() — RGPD")
+    class DeleteAccountTests {
+
+        @Test
+        @DisplayName("utilisateur sans transaction active → pseudonymisation + revocation Firebase")
+        void deleteAccount_noActiveTransactions_pseudonymizes() throws Exception {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(bidRepository.findBySenderId(USER_ID)).thenReturn(List.of());
+            when(bidRepository.findCompletedBidsByTravelerId(USER_ID)).thenReturn(List.of());
+            when(kycRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+            when(userRepository.save(any())).thenReturn(user);
+
+            try (MockedStatic<FirebaseAuth> fbMock = mockStatic(FirebaseAuth.class)) {
+                FirebaseAuth mockFb = mock(FirebaseAuth.class);
+                fbMock.when(FirebaseAuth::getInstance).thenReturn(mockFb);
+                doNothing().when(mockFb).deleteUser(anyString());
+
+                userService.deleteAccount(FIREBASE_UID);
+
+                assertThat(user.getEmail()).contains("deleted_");
+                assertThat(user.getPhoneNumber()).isEqualTo("+00000000000");
+                assertThat(user.getFirstName()).isEqualTo("Utilisateur");
+                assertThat(user.getStatus()).isEqualTo(UserStatus.BANNED);
+                verify(mockFb).deleteUser(FIREBASE_UID);
+                verify(auditService).log(eq("USER"), any(), eq("USER_GDPR_DELETION"), any(), any());
+            }
+        }
+
+        @Test
+        @DisplayName("transaction active (ESCROW) → 422 UNPROCESSABLE_ENTITY")
+        void deleteAccount_activeEscrow_throws422() throws Exception {
+            UUID bidId = UUID.randomUUID();
+            com.dony.api.matching.BidEntity bid = new com.dony.api.matching.BidEntity();
+            setId(bid, bidId);
+
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(bidRepository.findBySenderId(USER_ID)).thenReturn(List.of(bid));
+            when(bidRepository.findCompletedBidsByTravelerId(USER_ID)).thenReturn(List.of());
+            when(paymentRepository.existsByBidIdInAndStatus(anyList(), eq(PaymentStatus.ESCROW)))
+                    .thenReturn(true);
+
+            assertThatThrownBy(() -> userService.deleteAccount(FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
+        void deleteAccount_unknownUser_throws404() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.deleteAccount(FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("unsuspendUser()")
+    class UnsuspendTests {
+
+        @Test
+        @DisplayName("utilisateur suspendu → status ACTIVE")
+        void unsuspend_suspendedUser_activates() throws Exception {
+            setField(user, "status", UserStatus.SUSPENDED);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.unsuspendUser(USER_ID);
+
+            assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(USER_ID), eq("USER_UNSUSPENDED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404")
+        void unsuspend_unknownUser_throws404() {
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.unsuspendUser(USER_ID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    // ─── Helpers ────────────────────────────────────────────────────────────────
+
+    private static void setId(Object obj, UUID id) throws Exception {
+        Field f = obj.getClass().getSuperclass().getDeclaredField("id");
+        f.setAccessible(true);
+        f.set(obj, id);
+    }
+
+    private static void setField(Object obj, String name, Object value) throws Exception {
+        Field f;
+        try {
+            f = obj.getClass().getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            f = obj.getClass().getSuperclass().getDeclaredField(name);
+        }
+        f.setAccessible(true);
+        f.set(obj, value);
+    }
+}

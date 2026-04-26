@@ -22,10 +22,12 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final UserService userService;
 
-    public AuthService(UserRepository userRepository, AuditService auditService) {
+    public AuthService(UserRepository userRepository, AuditService auditService, UserService userService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.userService = userService;
     }
 
     @Transactional
@@ -97,37 +99,9 @@ public class AuthService {
      * Supprime le compte : soft-delete en DB + suppression dans Firebase Auth.
      */
     @Transactional
+    // Story 9.8 — Delegates full GDPR deletion (pseudonymization, KYC cleanup, Firebase revoke)
     public void deleteAccount(String firebaseUid) {
-        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyBusinessException(
-                        HttpStatus.NOT_FOUND,
-                        "user-not-found",
-                        "User Not Found",
-                        "Utilisateur introuvable"
-                ));
-
-        auditService.log(
-                "USER",
-                user.getId(),
-                "ACCOUNT_DELETED",
-                user.getId(),
-                Map.of("phoneNumber", user.getPhoneNumber() != null ? user.getPhoneNumber() : "")
-        );
-
-        // Soft-delete en base (relations masquées via @Where deleted_at IS NULL)
-        user.softDelete();
-        userRepository.save(user);
-
-        try {
-            com.google.firebase.auth.FirebaseAuth.getInstance().deleteUser(firebaseUid);
-        } catch (Exception e) {
-            throw new DonyBusinessException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "firebase-delete-failed",
-                    "Firebase Deletion Failed",
-                    "La suppression du compte Firebase a échoué : " + e.getMessage()
-            );
-        }
+        userService.deleteAccount(firebaseUid);
     }
 
     private UserResponse createUser(String firebaseUid, RegisterRequest request) {

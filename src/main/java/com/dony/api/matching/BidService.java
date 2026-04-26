@@ -387,6 +387,42 @@ public class BidService {
     }
 
     // Called by scheduler — no auth check, transaction managed internally
+    // Story 9.4 — Refus de colis par le voyageur lors de l'inspection
+    @Transactional
+    public BidResponse refuseParcel(UUID bidId, String firebaseUid,
+                                    String reason, String refusalPhotoUrl) {
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+        BidEntity bid = findBid(bidId);
+
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        requireTravelerOwnsAnnouncement(traveler, announcement);
+
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-bid-status",
+                    "Unprocessable", "Le refus de colis n'est possible que sur un envoi accepté");
+        }
+
+        bid.setStatus(BidStatus.PARCEL_REFUSED);
+        bid.setRefusalReason(reason);
+        bid.setRefusalPhotoUrl(refusalPhotoUrl);
+        bidRepository.save(bid);
+
+        UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
+        if (sender != null) {
+            sender.setRefusedCount(sender.getRefusedCount() + 1);
+            userRepository.save(sender);
+        }
+
+        eventPublisher.publishEvent(new com.dony.api.matching.events.ParcelRefusedEvent(
+                bid.getId(), traveler.getId(), bid.getSenderId(), reason));
+
+        auditService.log("BID", bid.getId(), "PARCEL_REFUSED", traveler.getId(),
+                Map.of("reason", reason != null ? reason : "",
+                        "senderId", bid.getSenderId().toString()));
+
+        return toResponse(bid, sender);
+    }
+
     @Transactional
     public void markH2AlertSent(UUID bidId) {
         bidRepository.findById(bidId).ifPresent(bid -> {

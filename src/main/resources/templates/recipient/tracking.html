@@ -244,6 +244,23 @@
       <p>Le voyageur scannera le colis lors de la remise.<br>Revenez sur cette page pour suivre l'avancement.</p>
     </div>
 
+    <!-- Story 9.2 — Formulaire de notation (visible uniquement si livraison confirmée) -->
+    <div th:if="${isDelivered}" id="rating-section" style="margin-top:24px;background:#fff;border-radius:16px;border:1px solid #E9ECEF;padding:24px 20px;">
+      <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:#0D1B2A;">Notez votre voyageur</h3>
+      <p style="font-size:13px;color:#6B7A8D;margin-bottom:16px;">Votre avis aide la communauté dony.</p>
+      <div id="stars-row" style="display:flex;gap:8px;margin-bottom:16px;font-size:32px;cursor:pointer;">
+        <span data-v="1">☆</span><span data-v="2">☆</span><span data-v="3">☆</span>
+        <span data-v="4">☆</span><span data-v="5">☆</span>
+      </div>
+      <textarea id="comment" placeholder="Commentaire optionnel (200 caractères max)" maxlength="200"
+        style="width:100%;border:1px solid #E9ECEF;border-radius:10px;padding:10px 12px;font-size:14px;resize:none;height:80px;font-family:inherit;margin-bottom:14px;"></textarea>
+      <button id="submit-rating"
+        style="width:100%;background:#1E88E5;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">
+        Envoyer ma note
+      </button>
+      <div id="rating-feedback" style="display:none;margin-top:12px;text-align:center;font-size:14px;font-weight:600;color:#1E88E5;"></div>
+    </div>
+
   </th:block>
 
 </div>
@@ -290,6 +307,63 @@
       .then(function (data) { if (data) updateTimeline(data); })
       .catch(function () {});
   }, 12000);
+</script>
+
+<script th:if="${isDelivered}" th:inline="javascript">
+  const ratingToken = [[${trackingToken}]];
+  let selectedStars = 0;
+  const stars = document.querySelectorAll('#stars-row span');
+
+  stars.forEach(function(s) {
+    s.addEventListener('click', function() {
+      selectedStars = parseInt(s.dataset.v);
+      stars.forEach(function(x) {
+        x.textContent = parseInt(x.dataset.v) <= selectedStars ? '★' : '☆';
+        x.style.color = parseInt(x.dataset.v) <= selectedStars ? '#F59E0B' : '#ADB5BD';
+      });
+    });
+  });
+
+  document.getElementById('submit-rating').addEventListener('click', function() {
+    if (selectedStars === 0) { alert('Veuillez sélectionner une note entre 1 et 5 étoiles.'); return; }
+    const comment = document.getElementById('comment').value.trim();
+    const btn = document.getElementById('submit-rating');
+    btn.disabled = true;
+    btn.textContent = 'Envoi en cours…';
+
+    fetch('/api/v1/ratings/recipient', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackingToken: ratingToken, stars: selectedStars, comment: comment || null })
+    }).then(function(r) {
+      const feedback = document.getElementById('rating-feedback');
+      if (r.ok || r.status === 201) {
+        feedback.textContent = 'Merci pour votre note !';
+        feedback.style.color = '#1E88E5';
+        document.getElementById('rating-section').querySelector('h3').textContent = 'Note envoyée';
+        btn.style.display = 'none';
+        document.getElementById('stars-row').style.pointerEvents = 'none';
+        document.getElementById('comment').style.display = 'none';
+      } else if (r.status === 409) {
+        feedback.textContent = 'Vous avez déjà noté ce voyageur.';
+        feedback.style.color = '#E53935';
+        btn.style.display = 'none';
+      } else {
+        feedback.textContent = 'Une erreur est survenue. Réessayez plus tard.';
+        feedback.style.color = '#E53935';
+        btn.disabled = false;
+        btn.textContent = 'Envoyer ma note';
+      }
+      feedback.style.display = 'block';
+    }).catch(function() {
+      const feedback = document.getElementById('rating-feedback');
+      feedback.textContent = 'Erreur réseau. Réessayez plus tard.';
+      feedback.style.color = '#E53935';
+      feedback.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Envoyer ma note';
+    });
+  });
 </script>
 </body>
 </html>
