@@ -706,22 +706,66 @@ public class AnnouncementService {
 
 ---
 
-## Testing
+## Testing — OBLIGATOIRE après tout changement
 
-### Unit Tests
+> Après chaque feature, bug fix ou modification de code : vérifier les tests, corriger les cassés, ajouter ceux qui manquent. Couverture minimale : **90 %**.
+
+### Commandes
 
 ```bash
-# Run all tests
+# Lancer tous les tests (obligatoire avant tout commit)
 ./mvnw test
 
-# Run specific test class
+# Lancer un test spécifique
 ./mvnw test -Dtest=BidServiceTest
+./mvnw test -Dtest=BidServiceTest#testCreateBid_Success
 
-# Run with coverage
+# Générer le rapport de couverture JaCoCo
 ./mvnw test jacoco:report
+# Ouvrir : target/site/jacoco/index.html → couverture globale ≥ 90 %
+
+# Vérifier la couverture en ligne de commande
+./mvnw verify   # échoue si couverture < seuil configuré dans pom.xml
 ```
 
-### Integration Tests
+### Types de tests requis
+
+| Code introduit | Test requis |
+|---|---|
+| Nouveau Service (logique métier) | Unit test avec `@ExtendWith(MockitoExtension.class)`, mock des repositories |
+| Nouveau Controller (endpoint) | Integration test `@SpringBootTest` + `MockMvc`, mock `FirebaseAuth` |
+| Nouvelle règle de validation | Unit test couvrant cas valide + chaque cas invalide |
+| Nouvelle Flyway migration | Test sur base H2 ou PostgreSQL de test — migration appliquée sans erreur |
+| Bug fix | Test de régression reproduisant le bug avant le fix |
+| Nouveau Spring Event publié/écouté | Test vérifiant que l'event est publié et que le listener réagit correctement |
+
+### Règles
+
+1. **Tests cassés** → corriger avant tout commit. Ne jamais utiliser `@Disabled` sans raison documentée.
+2. **Nouveau code sans test** → non accepté. Les tests vont dans le même commit.
+3. **Couverture < 90 %** → ajouter des tests pour remonter avant de marquer la tâche complète.
+4. **Ne jamais builder avec `-DskipTests`** sauf pour un déploiement d'urgence explicitement autorisé.
+5. **Mocks** : `@MockBean` pour les dépendances Spring en integration test, `Mockito.mock()` en unit test. Ne jamais appeler une vraie DB/API externe dans les unit tests.
+6. **Profil de test** : toujours `@ActiveProfiles("test")` pour les integration tests — utilise H2 in-memory ou base PostgreSQL dédiée.
+
+### Structure des tests
+
+```
+src/test/java/com/dony/api/
+├── matching/
+│   ├── AnnouncementServiceTest.java    # unit — mock AnnouncementRepository
+│   ├── BidServiceTest.java             # unit — mock BidRepository, UserRepository
+│   └── BidControllerIntegrationTest.java  # integration — MockMvc
+├── tracking/
+│   ├── TrackingServiceTest.java
+│   └── TrackingControllerIntegrationTest.java
+├── payments/
+│   └── PaymentServiceTest.java
+└── auth/
+    └── AuthControllerIntegrationTest.java
+```
+
+### Exemple integration test (template)
 
 ```java
 @SpringBootTest
@@ -729,17 +773,13 @@ public class AnnouncementService {
 @AutoConfigureMockMvc
 public class BidControllerIntegrationTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
-    private FirebaseAuth firebaseAuth;
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+    @MockBean  private FirebaseAuth firebaseAuth;
 
     @Test
-    public void testCreateBid_Success() throws Exception {
-        // Mock Firebase token validation
-        when(firebaseAuth.verifyIdToken(anyString()))
-            .thenReturn(mockFirebaseToken());
+    void testCreateBid_Success() throws Exception {
+        when(firebaseAuth.verifyIdToken(anyString())).thenReturn(mockFirebaseToken());
 
         mockMvc.perform(post("/api/v1/bids")
             .header("Authorization", "Bearer fake-token")
@@ -747,6 +787,11 @@ public class BidControllerIntegrationTest {
             .content(objectMapper.writeValueAsString(bidRequest)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").exists());
+    }
+
+    @Test
+    void testCreateBid_DeclaredValueTooHigh_Returns422() throws Exception {
+        // ... test de la règle métier > 500€
     }
 }
 ```
@@ -846,6 +891,11 @@ Ce qu'il faut savoir pour ne pas casser cette feature en la modifiant :
 - [x] Given/When/Then 1 — comment c'est implémenté
 - [x] Given/When/Then 2 — comment c'est implémenté
 
+## Tests
+- `./mvnw test` → tous les tests passent (0 rouge)
+- `./mvnw test jacoco:report` → couverture ≥ 90 % (vérifiée sur le rapport)
+- Tests ajoutés : liste des classes de test créées ou modifiées
+
 ## Décisions techniques
 Pour chaque décision non triviale : le choix fait, les alternatives écartées, et pourquoi.
 ```
@@ -854,6 +904,8 @@ Pour chaque décision non triviale : le choix fait, les alternatives écartées,
 - Ne pas créer le fichier avant que la story soit 100% complète
 - Créer le dossier `docs/stories-done/` s'il n'existe pas
 - Toujours inclure les critères d'acceptation de la story originale
+- **`./mvnw test` doit passer à 0 rouge avant de créer ce fichier**
+- **Couverture JaCoCo ≥ 90 % obligatoire — indiquer le % dans la section Tests**
 - La section "Comment ça fonctionne" doit être assez détaillée pour qu'un développeur puisse maintenir la feature sans avoir à lire tout le code
 
 ---
