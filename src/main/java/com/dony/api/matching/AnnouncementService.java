@@ -95,7 +95,7 @@ public class AnnouncementService {
                         buildDisplayName(traveler),
                         traveler.getPhoneNumber(),
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
-                        null,
+                        traveler.getTotalTrips(),
                         traveler.isKiloPro())
                 : null;
         long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
@@ -107,6 +107,9 @@ public class AnnouncementService {
                 entity.getDepartureLocation(), entity.getArrivalLocation(),
                 entity.getAvailableKg(), entity.getPricePerKg(),
                 entity.getStatus().name(), bidsCount, profile,
+                entity.getDescription(),
+                entity.getAcceptedContentTypes(),
+                entity.getRefusedTypes(),
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
     }
@@ -159,6 +162,9 @@ public class AnnouncementService {
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
+        announcement.setDescription(request.description());
+        if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
+        if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -221,6 +227,9 @@ public class AnnouncementService {
                 announcement.getStatus().name(),
                 bidsCount,
                 travelerDto,
+                announcement.getDescription(),
+                announcement.getAcceptedContentTypes(),
+                announcement.getRefusedTypes(),
                 announcement.getCreatedAt(),
                 announcement.getUpdatedAt()
         );
@@ -258,6 +267,9 @@ public class AnnouncementService {
         announcement.setArrivalLocation(request.arrivalLocation());
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
+        announcement.setDescription(request.description());
+        if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
+        if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -298,6 +310,9 @@ public class AnnouncementService {
                 saved.getStatus().name(),
                 bidsCount,
                 updatedTravelerDto,
+                saved.getDescription(),
+                saved.getAcceptedContentTypes(),
+                saved.getRefusedTypes(),
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
         );
@@ -379,6 +394,9 @@ public class AnnouncementService {
                 entity.getPricePerKg(),
                 entity.getStatus().name(),
                 bidsCount,
+                entity.getDescription(),
+                entity.getAcceptedContentTypes(),
+                entity.getRefusedTypes(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

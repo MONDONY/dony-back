@@ -79,6 +79,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "kilo_pro_granted_at")
     private LocalDateTime kiloProGrantedAt;
 
+    @Column(name = "total_trips", nullable = false)
+    private int totalTrips = 0;
+
     @Column(name = "no_show_count", nullable = false)
     private int noShowCount = 0;
 
@@ -135,6 +138,9 @@ public class UserEntity extends BaseEntity {
 
     public LocalDateTime getKiloProGrantedAt() { return kiloProGrantedAt; }
     public void setKiloProGrantedAt(LocalDateTime kiloProGrantedAt) { this.kiloProGrantedAt = kiloProGrantedAt; }
+
+    public int getTotalTrips() { return totalTrips; }
+    public void setTotalTrips(int totalTrips) { this.totalTrips = totalTrips; }
 
     public int getNoShowCount() { return noShowCount; }
     public void setNoShowCount(int noShowCount) { this.noShowCount = noShowCount; }

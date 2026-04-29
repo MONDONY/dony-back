@@ -5,9 +5,11 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
 public record AnnouncementRequest(
         @NotBlank(message = "La ville de départ est obligatoire")
@@ -36,5 +38,12 @@ public record AnnouncementRequest(
 
         @NotNull(message = "Le prix par kg est obligatoire")
         @DecimalMin(value = "0.01", message = "Le prix doit être positif")
-        BigDecimal pricePerKg
+        BigDecimal pricePerKg,
+
+        @Size(max = 500, message = "La note ne peut pas dépasser 500 caractères")
+        String description,
+
+        List<String> acceptedContentTypes,
+
+        List<String> refusedTypes
 ) {}

@@ -1,16 +1,22 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.BaseEntity;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -52,6 +58,25 @@ public class AnnouncementEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private AnnouncementStatus status = AnnouncementStatus.ACTIVE;
 
+    @Column(name = "description", length = 500)
+    private String description;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "announcement_accepted_types",
+            joinColumns = @JoinColumn(name = "announcement_id")
+    )
+    @Column(name = "content_type", length = 100)
+    private List<String> acceptedContentTypes = new ArrayList<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "announcement_refused_types",
+            joinColumns = @JoinColumn(name = "announcement_id")
+    )
+    @Column(name = "content_type", length = 100)
+    private List<String> refusedTypes = new ArrayList<>();
+
     public UUID getTravelerId() { return travelerId; }
     public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }
 
@@ -84,4 +109,13 @@ public class AnnouncementEntity extends BaseEntity {
 
     public AnnouncementStatus getStatus() { return status; }
     public void setStatus(AnnouncementStatus status) { this.status = status; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+
+    public List<String> getAcceptedContentTypes() { return acceptedContentTypes; }
+    public void setAcceptedContentTypes(List<String> acceptedContentTypes) { this.acceptedContentTypes = acceptedContentTypes; }
+
+    public List<String> getRefusedTypes() { return refusedTypes; }
+    public void setRefusedTypes(List<String> refusedTypes) { this.refusedTypes = refusedTypes; }
 }

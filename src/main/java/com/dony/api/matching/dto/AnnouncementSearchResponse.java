@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 public record AnnouncementSearchResponse(
@@ -22,6 +23,9 @@ public record AnnouncementSearchResponse(
         String status,
         long bidsCount,
         TravelerProfileDto traveler,
+        String description,
+        List<String> acceptedContentTypes,
+        List<String> refusedTypes,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}
