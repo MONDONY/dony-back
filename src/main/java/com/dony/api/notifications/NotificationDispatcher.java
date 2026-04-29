@@ -35,6 +35,7 @@ public class NotificationDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM HH:mm");
+    private static final int MESSAGE_PREVIEW_MAX_LENGTH = 60;
 
     private final FcmService fcmService;
     private final SmsService smsService;
@@ -179,12 +180,17 @@ public class NotificationDispatcher {
                                          String conversationId) {
         var senderUser = userRepository.findByFirebaseUid(senderFirebaseUid).orElse(null);
 
-        if (senderUser == null) return;
+        if (senderUser == null) {
+            log.warn("sendMessageNotification: unknown senderFirebaseUid={}", senderFirebaseUid);
+            return;
+        }
 
         String senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
         UUID recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
 
-        String truncated = preview.length() > 60 ? preview.substring(0, 57) + "..." : preview;
+        String truncated = preview.length() > MESSAGE_PREVIEW_MAX_LENGTH
+                ? preview.substring(0, MESSAGE_PREVIEW_MAX_LENGTH - 3) + "..."
+                : preview;
         notifyUser(recipientId, "Message de " + senderName, truncated,
                 Map.of("type", "NEW_MESSAGE", "conversationId", conversationId));
     }
