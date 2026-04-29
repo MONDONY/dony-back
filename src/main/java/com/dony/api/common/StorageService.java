@@ -21,7 +21,7 @@ import java.util.UUID;
 @Service
 public class StorageService {
 
-    private static final Set<String> ALLOWED_PREFIXES = Set.of("tracking/", "users/");
+    private static final Set<String> ALLOWED_PREFIXES = Set.of("tracking/", "users/", "messaging/");
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp");

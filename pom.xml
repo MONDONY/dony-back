@@ -83,6 +83,15 @@
 			<artifactId>firebase-admin</artifactId>
 			<version>${firebase-admin.version}</version>
 		</dependency>
+		<!-- Force google-auth-library-credentials ≥ 1.29.0:
+		     google-cloud-firestore-3.28.0 (transitive via firebase-admin) requires
+		     com.google.auth.ApiKeyCredentials which was not present in 1.23.0.
+		     The Spring Boot BOM pins credentials to 1.23.0; this direct dep wins. -->
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-credentials</artifactId>
+			<version>1.29.0</version>
+		</dependency>
 
 		<!-- Stripe -->
 		<dependency>

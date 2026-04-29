@@ -3,6 +3,7 @@ package com.dony.api.e2e.config;
 import com.dony.api.auth.FirebaseTokenFilter;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.StorageService;
+import com.dony.api.messaging.FirestoreService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -38,6 +39,12 @@ public class E2EMockConfig {
                 new FilterRegistrationBean<>(firebaseTokenFilter);
         reg.setEnabled(false);
         return reg;
+    }
+
+    @Bean
+    @Primary
+    public FirestoreService firestoreService() {
+        return Mockito.mock(FirestoreService.class);
     }
 
     @Bean

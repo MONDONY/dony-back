@@ -102,7 +102,8 @@ class AnnouncementServiceTest {
                 LocalDate.now().plusDays(10),
                 LocalTime.of(10, 0), LocalTime.of(22, 0),
                 "CDG Terminal 2E", "Aéroport LSS",
-                BigDecimal.valueOf(20), BigDecimal.valueOf(5)
+                BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                null, null, null
         );
     }
 
@@ -244,7 +245,8 @@ class AnnouncementServiceTest {
             AnnouncementRequest req = new AnnouncementRequest(
                     "Lyon", "Abidjan", LocalDate.now().plusDays(15),
                     null, null, null, null,
-                    BigDecimal.valueOf(25), BigDecimal.valueOf(6)
+                    BigDecimal.valueOf(25), BigDecimal.valueOf(6),
+                    null, null, null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
