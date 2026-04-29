@@ -10,7 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,7 +57,7 @@ class MessagingNotifyControllerTest {
         UUID senderId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
         var conv = new ConversationEntity(UUID.randomUUID(), senderId, travelerId, "conv_bid1");
-        when(conversationRepository.findAll()).thenReturn(List.of(conv));
+        when(conversationRepository.findByFirestoreConversationId("conv_bid1")).thenReturn(Optional.of(conv));
 
         controller.notify("test-secret",
             new NotifyMessageRequest("conv_bid1", "uid-sender", "Hello!"));

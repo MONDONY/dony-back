@@ -177,18 +177,12 @@ public class NotificationDispatcher {
     public void sendMessageNotification(UUID senderId, UUID travelerId,
                                          String senderFirebaseUid, String preview,
                                          String conversationId) {
-        var senderUser = userRepository.findAll().stream()
-                .filter(u -> senderFirebaseUid.equals(u.getFirebaseUid()))
-                .findFirst().orElse(null);
+        var senderUser = userRepository.findByFirebaseUid(senderFirebaseUid).orElse(null);
 
-        UUID recipientId = null;
-        String senderName = "Un utilisateur";
-        if (senderUser != null) {
-            senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
-            recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
-        }
+        if (senderUser == null) return;
 
-        if (recipientId == null) return;
+        String senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
+        UUID recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
 
         String truncated = preview.length() > 60 ? preview.substring(0, 57) + "..." : preview;
         notifyUser(recipientId, "Message de " + senderName, truncated,
