@@ -35,6 +35,10 @@ stripe:
 firebase:
   service-account-path: classpath:firebase-service-account.json
 
+dony:
+  internal:
+    secret: local-dev-secret
+
 logging:
   level:
     com.dony.api: DEBUG
