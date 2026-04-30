@@ -25,4 +25,13 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
            "WHERE c.bidId = :bidId AND (c.senderId = :userId OR c.travelerId = :userId)")
     Optional<ConversationEntity> findByBidIdAndParticipant(
             @Param("bidId") UUID bidId, @Param("userId") UUID userId);
+
+    /**
+     * Native query bypassing the @Where filter — checks if a (soft-)deleted
+     * conversation ever existed for this bid. Used to block re-creation.
+     */
+    @Query(value = "SELECT EXISTS(SELECT 1 FROM conversations " +
+                   "WHERE bid_id = :bidId AND deleted_at IS NOT NULL)",
+           nativeQuery = true)
+    boolean existsDeletedConversationByBidId(@Param("bidId") UUID bidId);
 }

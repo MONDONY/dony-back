@@ -80,4 +80,17 @@ public class FirestoreService {
             throw new RuntimeException("Firestore softDeleteMessage failed", e);
         }
     }
+
+    public void markConversationDeleted(String conversationId) {
+        if (firestore == null) {
+            log.warn("Firestore disabled — skipping markConversationDeleted");
+            return;
+        }
+        try {
+            firestore.collection("conversations").document(conversationId)
+                     .update("deletedAt", Instant.now().toString()).get();
+        } catch (Exception e) {
+            log.warn("Firestore markConversationDeleted failed: {}", e.getMessage());
+        }
+    }
 }

@@ -7,7 +7,6 @@ import com.dony.api.common.StorageService;
 import com.dony.api.messaging.dto.ConversationResponse;
 import com.dony.api.messaging.dto.ImageUploadResponse;
 import com.dony.api.messaging.dto.LastMessageRequest;
-import com.dony.api.messaging.dto.ParticipantDTO;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -56,7 +55,7 @@ public class ConversationController {
         Page<ConversationEntity> page = conversationRepository
                 .findByParticipant(currentUser.getId(), pageable);
 
-        Page<ConversationResponse> responsePage = page.map(c -> toResponse(c, currentUser.getId()));
+        Page<ConversationResponse> responsePage = page.map(c -> conversationService.toResponse(c, currentUser.getId()));
         return ResponseEntity.ok(PageResponse.from(responsePage));
     }
 
@@ -71,7 +70,7 @@ public class ConversationController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
                         "Conversation not found or access denied"));
 
-        return ResponseEntity.ok(toResponse(conv, currentUser.getId()));
+        return ResponseEntity.ok(conversationService.toResponse(conv, currentUser.getId()));
     }
 
     // GET /conversations/bid/{bidId} — conversation liée à un bid (get or create)
@@ -81,7 +80,7 @@ public class ConversationController {
 
         UserEntity currentUser = resolveCurrentUser();
         ConversationEntity conv = conversationService.getOrCreateByBidId(bidId, currentUser.getId());
-        return ResponseEntity.ok(toResponse(conv, currentUser.getId()));
+        return ResponseEntity.ok(conversationService.toResponse(conv, currentUser.getId()));
     }
 
     // POST /conversations/{id}/last-message — update Firestore last message preview
@@ -98,6 +97,14 @@ public class ConversationController {
 
         conversationService.updateLastMessage(conv.getFirestoreConversationId(), body.preview());
 
+        return ResponseEntity.noContent().build();
+    }
+
+    // DELETE /conversations/{id} — soft-delete (bilateral: both parties lose access)
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteConversation(@PathVariable UUID id) {
+        UserEntity currentUser = resolveCurrentUser();
+        conversationService.deleteConversation(id, currentUser.getId());
         return ResponseEntity.noContent().build();
     }
 
@@ -137,7 +144,6 @@ public class ConversationController {
         return ResponseEntity.ok(new ImageUploadResponse(presignedUrl, key));
     }
 
-    // Helper: resolve the current authenticated user from the SecurityContext (UID-based)
     private UserEntity resolveCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
@@ -147,34 +153,5 @@ public class ConversationController {
         return userRepository.findByFirebaseUid(uid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                         "User not found for uid: " + uid));
-    }
-
-    // Helper: build ConversationResponse, resolving the "other" participant
-    private ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId) {
-        UUID otherUserId = conv.getSenderId().equals(currentUserId)
-                ? conv.getTravelerId()
-                : conv.getSenderId();
-
-        UserEntity other = userRepository.findById(otherUserId).orElse(null);
-        ParticipantDTO otherParticipant = buildParticipant(otherUserId, other);
-
-        return new ConversationResponse(
-                conv.getId(),
-                conv.getBidId(),
-                conv.getFirestoreConversationId(),
-                otherParticipant,
-                null,           // lastMessagePreview — lives in Firestore, not in SQL
-                conv.getUpdatedAt(),
-                false           // hasUnread — determined client-side via Firestore
-        );
-    }
-
-    private ParticipantDTO buildParticipant(UUID userId, UserEntity user) {
-        if (user == null) {
-            return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null);
-        }
-        String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
-                + (user.getLastName() != null ? user.getLastName() : "")).strip();
-        return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name, null);
     }
 }
