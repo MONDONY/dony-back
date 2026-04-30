@@ -35,6 +35,7 @@ public class NotificationDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM HH:mm");
+    private static final int MESSAGE_PREVIEW_MAX_LENGTH = 60;
 
     private final FcmService fcmService;
     private final SmsService smsService;
@@ -177,20 +178,19 @@ public class NotificationDispatcher {
     public void sendMessageNotification(UUID senderId, UUID travelerId,
                                          String senderFirebaseUid, String preview,
                                          String conversationId) {
-        var senderUser = userRepository.findAll().stream()
-                .filter(u -> senderFirebaseUid.equals(u.getFirebaseUid()))
-                .findFirst().orElse(null);
+        var senderUser = userRepository.findByFirebaseUid(senderFirebaseUid).orElse(null);
 
-        UUID recipientId = null;
-        String senderName = "Un utilisateur";
-        if (senderUser != null) {
-            senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
-            recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
+        if (senderUser == null) {
+            log.warn("sendMessageNotification: unknown senderFirebaseUid={}", senderFirebaseUid);
+            return;
         }
 
-        if (recipientId == null) return;
+        String senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
+        UUID recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
 
-        String truncated = preview.length() > 60 ? preview.substring(0, 57) + "..." : preview;
+        String truncated = preview.length() > MESSAGE_PREVIEW_MAX_LENGTH
+                ? preview.substring(0, MESSAGE_PREVIEW_MAX_LENGTH - 3) + "..."
+                : preview;
         notifyUser(recipientId, "Message de " + senderName, truncated,
                 Map.of("type", "NEW_MESSAGE", "conversationId", conversationId));
     }

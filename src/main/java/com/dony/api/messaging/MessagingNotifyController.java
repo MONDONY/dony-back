@@ -34,10 +34,10 @@ public class MessagingNotifyController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid internal secret");
         }
 
-        var conv = conversationRepository.findAll().stream()
-                .filter(c -> c.getFirestoreConversationId().equals(request.conversationId()))
-                .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        var conv = conversationRepository
+                .findByFirestoreConversationId(request.conversationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Conversation not found"));
 
         String preview = request.messagePreview() != null ? request.messagePreview() : "[Image]";
         notificationDispatcher.sendMessageNotification(
