@@ -81,6 +81,19 @@ public class FirestoreService {
         }
     }
 
+    public void clearConversationDeleted(String conversationId) {
+        if (firestore == null) {
+            log.warn("Firestore disabled — skipping clearConversationDeleted");
+            return;
+        }
+        try {
+            firestore.collection("conversations").document(conversationId)
+                     .update("deletedAt", null).get();
+        } catch (Exception e) {
+            log.warn("Firestore clearConversationDeleted failed: {}", e.getMessage());
+        }
+    }
+
     public void markConversationDeleted(String conversationId) {
         if (firestore == null) {
             log.warn("Firestore disabled — skipping markConversationDeleted");
@@ -91,6 +104,26 @@ public class FirestoreService {
                      .update("deletedAt", Instant.now().toString()).get();
         } catch (Exception e) {
             log.warn("Firestore markConversationDeleted failed: {}", e.getMessage());
+        }
+    }
+
+    // Purge définitive : supprime tous les messages puis le document conversation
+    public void purgeConversation(String conversationId) {
+        if (firestore == null) {
+            log.warn("Firestore disabled — skipping purgeConversation");
+            return;
+        }
+        try {
+            var messagesRef = firestore.collection("conversations")
+                                       .document(conversationId)
+                                       .collection("messages");
+            var messages = messagesRef.get().get();
+            for (var doc : messages.getDocuments()) {
+                doc.getReference().delete().get();
+            }
+            firestore.collection("conversations").document(conversationId).delete().get();
+        } catch (Exception e) {
+            log.warn("Firestore purgeConversation failed for {}: {}", conversationId, e.getMessage());
         }
     }
 }

@@ -14,7 +14,11 @@ public record ConversationResponse(
         // Trip fields — null until bid+announcement are available
         String tripOrigin,
         String tripDestination,
-        String tripDate,       // ISO LocalDate string, e.g. "2026-01-12"
-        Double tripWeightKg,   // kg from bid (package weight)
-        String bidStatus       // BID_ACCEPTED | DELIVERY_CONFIRMED | TRIP_CANCELLED | null
+        String tripDate,
+        Double tripWeightKg,
+        String bidStatus,
+        // True when the other party deleted: current user sees history but cannot send
+        boolean readOnly,
+        // True when the current user deleted their own copy (restorable via /restore)
+        boolean deletedBySelf
 ) {}

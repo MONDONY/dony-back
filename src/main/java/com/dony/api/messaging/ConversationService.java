@@ -50,29 +50,63 @@ public class ConversationService {
 
     @Transactional
     public ConversationEntity getOrCreateByBidId(UUID bidId, UUID requestingUserId) {
-        // Block re-creation if the conversation was previously (soft-)deleted
-        if (conversationRepository.existsDeletedConversationByBidId(bidId)) {
-            throw new ResponseStatusException(HttpStatus.GONE,
-                "Cette conversation a été supprimée et ne peut pas être recréée.");
+        // Return the conversation if it's still visible to the requesting user
+        Optional<ConversationEntity> accessible =
+            conversationRepository.findByBidIdAndParticipant(bidId, requestingUserId);
+        if (accessible.isPresent()) {
+            return accessible.get();
         }
 
-        return conversationRepository.findByBidIdAndParticipant(bidId, requestingUserId)
-            .orElseGet(() -> {
-                BidEntity bid = bidRepository.findById(bidId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bid not found"));
-                AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Announcement not found"));
+        // The requesting user deleted their copy — return it anyway with deletedBySelf flag
+        // so the caller can offer a "Restore" option instead of throwing GONE.
+        Optional<ConversationEntity> deletedBySelf =
+            conversationRepository.findByBidIdAndParticipantIgnoreDeleted(bidId, requestingUserId);
+        if (deletedBySelf.isPresent()) {
+            return deletedBySelf.get();
+        }
 
-                UUID senderId = bid.getSenderId();
-                UUID travelerId = announcement.getTravelerId();
+        // No conversation yet → create one (verify the user belongs to this bid)
+        BidEntity bid = bidRepository.findById(bidId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Bid not found"));
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Announcement not found"));
 
-                if (!requestingUserId.equals(senderId) && !requestingUserId.equals(travelerId)) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "Conversation not found or access denied");
-                }
+        UUID senderId  = bid.getSenderId();
+        UUID travelerId = announcement.getTravelerId();
 
-                return createConversationForBid(bidId, senderId, travelerId);
-            });
+        if (!requestingUserId.equals(senderId) && !requestingUserId.equals(travelerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Conversation not found or access denied");
+        }
+
+        return createConversationForBid(bidId, senderId, travelerId);
+    }
+
+    @Transactional
+    public ConversationEntity restoreConversation(UUID conversationId, UUID requestingUserId) {
+        ConversationEntity conv = conversationRepository
+            .findByIdAndParticipantIgnoreDeleted(conversationId, requestingUserId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Conversation not found or access denied"));
+
+        if (!conv.isDeletedByUser(requestingUserId)) {
+            return conv; // Nothing to restore
+        }
+
+        conv.restoreForUser(requestingUserId);
+        conversationRepository.save(conv);
+
+        auditService.log("conversation", conversationId, "CONVERSATION_RESTORED", requestingUserId,
+            Map.of("firestoreId", conv.getFirestoreConversationId()));
+
+        // Clear Firestore deletedAt so the other party's read-only state clears on next load
+        try {
+            firestoreService.clearConversationDeleted(conv.getFirestoreConversationId());
+        } catch (Exception e) {
+            log.warn("Firestore clearConversationDeleted failed for {}: {}", conversationId, e.getMessage());
+        }
+
+        return conv;
     }
 
     @Transactional
@@ -83,14 +117,12 @@ public class ConversationService {
             UserEntity sender   = userRepository.findById(senderId).orElseThrow();
             UserEntity traveler = userRepository.findById(travelerId).orElseThrow();
 
-            // Save DB entity first — so the conversation always exists even if Firestore init fails
             ConversationEntity entity = new ConversationEntity(bidId, senderId, travelerId, firestoreId);
-            ConversationEntity saved = conversationRepository.save(entity);
+            ConversationEntity saved  = conversationRepository.save(entity);
 
             auditService.log("conversation", saved.getId(), "CONVERSATION_CREATED", senderId,
                 Map.of("bidId", bidId.toString(), "firestoreId", firestoreId));
 
-            // Firestore is best-effort — failure must not roll back the DB transaction
             try {
                 String now = Instant.now().toString();
                 Map<String, Object> data = Map.of(
@@ -121,13 +153,25 @@ public class ConversationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
                 "Conversation not found or access denied"));
 
-        conv.softDelete();
-        conversationRepository.save(conv);
+        conv.deleteForUser(requestingUserId);
 
+        // Les deux parties ont supprimé → purge définitive
+        if (conv.getSenderDeletedAt() != null && conv.getTravelerDeletedAt() != null) {
+            conversationRepository.delete(conv);
+            auditService.log("conversation", conversationId, "CONVERSATION_PURGED", requestingUserId,
+                Map.of("firestoreId", conv.getFirestoreConversationId()));
+            try {
+                firestoreService.purgeConversation(conv.getFirestoreConversationId());
+            } catch (Exception e) {
+                log.warn("Firestore purgeConversation failed for {}: {}", conversationId, e.getMessage());
+            }
+            return;
+        }
+
+        conversationRepository.save(conv);
         auditService.log("conversation", conversationId, "CONVERSATION_DELETED", requestingUserId,
             Map.of("firestoreId", conv.getFirestoreConversationId()));
 
-        // Best-effort: mark deleted in Firestore so both clients detect it via real-time stream
         try {
             firestoreService.markConversationDeleted(conv.getFirestoreConversationId());
         } catch (Exception e) {
@@ -147,25 +191,24 @@ public class ConversationService {
         UserEntity other = userRepository.findById(otherUserId).orElse(null);
         ParticipantDTO otherParticipant = buildParticipant(otherUserId, other);
 
-        // Fetch trip fields from bid + announcement
-        String tripOrigin = null;
+        String tripOrigin      = null;
         String tripDestination = null;
-        String tripDate = null;
-        Double tripWeightKg = null;
-        String bidStatus = null;
+        String tripDate        = null;
+        Double tripWeightKg    = null;
+        String bidStatus       = null;
 
         Optional<BidEntity> bidOpt = bidRepository.findById(conv.getBidId());
         if (bidOpt.isPresent()) {
             BidEntity bid = bidOpt.get();
             tripWeightKg = bid.getWeightKg() != null ? bid.getWeightKg().doubleValue() : null;
-            bidStatus = mapBidStatus(bid.getStatus());
+            bidStatus    = mapBidStatus(bid.getStatus());
 
             Optional<AnnouncementEntity> annOpt = announcementRepository.findById(bid.getAnnouncementId());
             if (annOpt.isPresent()) {
                 AnnouncementEntity ann = annOpt.get();
-                tripOrigin = ann.getDepartureCity();
+                tripOrigin      = ann.getDepartureCity();
                 tripDestination = ann.getArrivalCity();
-                tripDate = ann.getDepartureDate() != null ? ann.getDepartureDate().toString() : null;
+                tripDate        = ann.getDepartureDate() != null ? ann.getDepartureDate().toString() : null;
             }
         }
 
@@ -174,14 +217,16 @@ public class ConversationService {
             conv.getBidId(),
             conv.getFirestoreConversationId(),
             otherParticipant,
-            null,    // lastMessagePreview — lives in Firestore, not SQL
+            null,   // lastMessagePreview — lives in Firestore
             conv.getUpdatedAt(),
-            false,   // hasUnread — determined client-side via Firestore
+            false,  // hasUnread — determined client-side via Firestore
             tripOrigin,
             tripDestination,
             tripDate,
             tripWeightKg,
-            bidStatus
+            bidStatus,
+            conv.isReadOnlyFor(currentUserId),
+            conv.isDeletedByUser(currentUserId)
         );
     }
 

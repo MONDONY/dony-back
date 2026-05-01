@@ -100,12 +100,20 @@ public class ConversationController {
         return ResponseEntity.noContent().build();
     }
 
-    // DELETE /conversations/{id} — soft-delete (bilateral: both parties lose access)
+    // DELETE /conversations/{id} — unilateral soft-delete (other party goes read-only)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteConversation(@PathVariable UUID id) {
         UserEntity currentUser = resolveCurrentUser();
         conversationService.deleteConversation(id, currentUser.getId());
         return ResponseEntity.noContent().build();
+    }
+
+    // POST /conversations/{id}/restore — restore the requesting user's deleted copy
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<ConversationResponse> restoreConversation(@PathVariable UUID id) {
+        UserEntity currentUser = resolveCurrentUser();
+        ConversationEntity conv = conversationService.restoreConversation(id, currentUser.getId());
+        return ResponseEntity.ok(conversationService.toResponse(conv, currentUser.getId()));
     }
 
     // POST /conversations/{id}/upload — upload image to S3

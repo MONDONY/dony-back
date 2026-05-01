@@ -2,13 +2,13 @@ package com.dony.api.messaging;
 
 import com.dony.api.common.BaseEntity;
 import jakarta.persistence.*;
-import org.hibernate.annotations.Where;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
 @Table(name = "conversations")
-@Where(clause = "deleted_at IS NULL")
 public class ConversationEntity extends BaseEntity {
 
     @Column(name = "bid_id", nullable = false, unique = true)
@@ -23,6 +23,12 @@ public class ConversationEntity extends BaseEntity {
     @Column(name = "firestore_conversation_id", nullable = false, unique = true)
     private String firestoreConversationId;
 
+    @Column(name = "sender_deleted_at")
+    private LocalDateTime senderDeletedAt;
+
+    @Column(name = "traveler_deleted_at")
+    private LocalDateTime travelerDeletedAt;
+
     public ConversationEntity() {}
 
     public ConversationEntity(UUID bidId, UUID senderId, UUID travelerId, String firestoreConversationId) {
@@ -32,8 +38,39 @@ public class ConversationEntity extends BaseEntity {
         this.firestoreConversationId = firestoreConversationId;
     }
 
+    public void deleteForUser(UUID userId) {
+        if (userId.equals(senderId)) {
+            this.senderDeletedAt = LocalDateTime.now(ZoneOffset.UTC);
+        } else if (userId.equals(travelerId)) {
+            this.travelerDeletedAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+    }
+
+    public void restoreForUser(UUID userId) {
+        if (userId.equals(senderId)) {
+            this.senderDeletedAt = null;
+        } else if (userId.equals(travelerId)) {
+            this.travelerDeletedAt = null;
+        }
+    }
+
+    public boolean isDeletedByUser(UUID userId) {
+        if (userId.equals(senderId)) return senderDeletedAt != null;
+        if (userId.equals(travelerId)) return travelerDeletedAt != null;
+        return false;
+    }
+
+    public boolean isReadOnlyFor(UUID userId) {
+        // Read-only when the OTHER party deleted, but current user hasn't
+        if (userId.equals(senderId)) return travelerDeletedAt != null && senderDeletedAt == null;
+        if (userId.equals(travelerId)) return senderDeletedAt != null && travelerDeletedAt == null;
+        return false;
+    }
+
     public UUID getBidId() { return bidId; }
     public UUID getSenderId() { return senderId; }
     public UUID getTravelerId() { return travelerId; }
     public String getFirestoreConversationId() { return firestoreConversationId; }
+    public LocalDateTime getSenderDeletedAt() { return senderDeletedAt; }
+    public LocalDateTime getTravelerDeletedAt() { return travelerDeletedAt; }
 }
