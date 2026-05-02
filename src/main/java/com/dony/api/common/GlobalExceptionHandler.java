@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -95,6 +96,15 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create(BASE_TYPE + "business-error"));
         problem.setTitle(ex.getReason() != null ? ex.getReason() : "Error");
         return ResponseEntity.status(ex.getStatusCode()).body(problem);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetail> handleNotReadable(HttpMessageNotReadableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Malformed request payload");
+        problem.setType(URI.create(BASE_TYPE + "malformed-request"));
+        problem.setTitle("Bad Request");
+        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(Exception.class)

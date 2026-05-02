@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -93,6 +94,7 @@ class AnnouncementServiceTest {
         a.setAvailableKg(BigDecimal.valueOf(20));
         a.setPricePerKg(BigDecimal.valueOf(5));
         a.setStatus(AnnouncementStatus.ACTIVE);
+        a.setTransportMode(TransportMode.PLANE);
         a.setPickupAddressLabel("CDG Terminal 2E");
         a.setPickupLat(BigDecimal.valueOf(49.009));
         a.setPickupLng(BigDecimal.valueOf(2.547));
@@ -104,6 +106,10 @@ class AnnouncementServiceTest {
     }
 
     private AnnouncementRequest buildRequest() {
+        return buildRequest(TransportMode.PLANE);
+    }
+
+    private AnnouncementRequest buildRequest(TransportMode mode) {
         return new AnnouncementRequest(
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(10),
@@ -111,6 +117,7 @@ class AnnouncementServiceTest {
                 new AddressDto("CDG Terminal 2E", 49.009, 2.547),
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                mode,
                 null, null, null
         );
     }
@@ -172,6 +179,26 @@ class AnnouncementServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("audit payload contient le transportMode")
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        void create_writesTransportModeToAuditPayload() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+
+            announcementService.createAnnouncement(FIREBASE_UID, buildRequest(TransportMode.TRAIN));
+
+            ArgumentCaptor<Map> captor = ArgumentCaptor.forClass(Map.class);
+            verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_CREATED"), any(), captor.capture());
+            assertThat(captor.getValue()).containsEntry("transportMode", "TRAIN");
         }
     }
 
@@ -256,6 +283,7 @@ class AnnouncementServiceTest {
                     new AddressDto("Gare Part-Dieu, Lyon", 45.760, 4.860),
                     new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
+                    TransportMode.PLANE,
                     null, null, null
             );
 

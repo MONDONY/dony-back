@@ -33,6 +33,7 @@ public record BidResponse(
         LocalTime departureTime,
         LocalTime arrivalTime,
         BigDecimal pricePerKg,
+        com.dony.api.matching.TransportMode transportMode,
         String trackingNumber,
         String trackingToken,
         String confirmationCode,

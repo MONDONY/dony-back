@@ -121,6 +121,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(), entity.getPricePerKg(),
+                entity.getTransportMode(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
@@ -180,6 +181,7 @@ public class AnnouncementService {
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
+        announcement.setTransportMode(request.transportMode());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
@@ -197,7 +199,8 @@ public class AnnouncementService {
                         "arrivalCity", saved.getArrivalCity(),
                         "departureDate", saved.getDepartureDate().toString(),
                         "availableKg", saved.getAvailableKg().toString(),
-                        "pricePerKg", saved.getPricePerKg().toString()
+                        "pricePerKg", saved.getPricePerKg().toString(),
+                        "transportMode", saved.getTransportMode().name()
                 )
         );
 
@@ -243,6 +246,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(announcement.getDeliveryAddressLabel(), announcement.getDeliveryLat().doubleValue(), announcement.getDeliveryLng().doubleValue()),
                 announcement.getAvailableKg(),
                 announcement.getPricePerKg(),
+                announcement.getTransportMode(),
                 announcement.getStatus().name(),
                 bidsCount,
                 travelerDto,
@@ -277,6 +281,8 @@ public class AnnouncementService {
             );
         }
 
+        final com.dony.api.matching.TransportMode oldTransportMode = announcement.getTransportMode();
+
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureDate(request.departureDate());
@@ -290,6 +296,7 @@ public class AnnouncementService {
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
+        announcement.setTransportMode(request.transportMode());
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
@@ -306,7 +313,9 @@ public class AnnouncementService {
                         "arrivalCity", saved.getArrivalCity(),
                         "departureDate", saved.getDepartureDate().toString(),
                         "availableKg", saved.getAvailableKg().toString(),
-                        "pricePerKg", saved.getPricePerKg().toString()
+                        "pricePerKg", saved.getPricePerKg().toString(),
+                        "transportMode_old", oldTransportMode.name(),
+                        "transportMode_new", saved.getTransportMode().name()
                 )
         );
 
@@ -330,6 +339,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(saved.getDeliveryAddressLabel(), saved.getDeliveryLat().doubleValue(), saved.getDeliveryLng().doubleValue()),
                 saved.getAvailableKg(),
                 saved.getPricePerKg(),
+                saved.getTransportMode(),
                 saved.getStatus().name(),
                 bidsCount,
                 updatedTravelerDto,
@@ -415,6 +425,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(),
                 entity.getPricePerKg(),
+                entity.getTransportMode(),
                 entity.getStatus().name(),
                 bidsCount,
                 entity.getDescription(),

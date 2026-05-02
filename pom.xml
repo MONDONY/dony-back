@@ -259,7 +259,8 @@
 				<configuration>
 					<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 					<!-- Force English locale so Cucumber's {double} uses '.' as decimal separator -->
-					<argLine>-Duser.language=en -Duser.country=US</argLine>
+					<!-- @{argLine} preserves JaCoCo's prepare-agent argLine so coverage is captured -->
+					<argLine>@{argLine} -Duser.language=en -Duser.country=US</argLine>
 					<environmentVariables>
 						<DOCKER_HOST>unix:///var/run/docker.sock</DOCKER_HOST>
 					</environmentVariables>

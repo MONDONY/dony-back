@@ -509,6 +509,7 @@ public class BidService {
         java.time.LocalTime departureTime = announcement != null ? announcement.getDepartureTime() : null;
         java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
         java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
+        com.dony.api.matching.TransportMode transportMode = announcement != null ? announcement.getTransportMode() : null;
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
                 ? bid.getConfirmationCode() : null;
 
@@ -546,6 +547,7 @@ public class BidService {
                 departureTime,
                 arrivalTime,
                 pricePerKg,
+                transportMode,
                 bid.getTrackingNumber(),
                 bid.getTrackingToken(),
                 confirmationCode,

@@ -42,6 +42,10 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "arrival_time")
     private LocalTime arrivalTime;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transport_mode", nullable = false, length = 20)
+    private TransportMode transportMode;
+
     @Column(name = "pickup_address_label", nullable = false, length = 500)
     private String pickupAddressLabel;
 
@@ -106,6 +110,9 @@ public class AnnouncementEntity extends BaseEntity {
 
     public LocalTime getArrivalTime() { return arrivalTime; }
     public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }
+
+    public TransportMode getTransportMode() { return transportMode; }
+    public void setTransportMode(TransportMode transportMode) { this.transportMode = transportMode; }
 
     public String getPickupAddressLabel() { return pickupAddressLabel; }
     public void setPickupAddressLabel(String v) { this.pickupAddressLabel = v; }

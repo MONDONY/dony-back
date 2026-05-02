@@ -43,6 +43,9 @@ public record AnnouncementRequest(
         @DecimalMin(value = "0.01", message = "Le prix doit être positif")
         BigDecimal pricePerKg,
 
+        @NotNull(message = "Le mode de transport est obligatoire")
+        com.dony.api.matching.TransportMode transportMode,
+
         @Size(max = 500, message = "La note ne peut pas dépasser 500 caractères")
         String description,
 

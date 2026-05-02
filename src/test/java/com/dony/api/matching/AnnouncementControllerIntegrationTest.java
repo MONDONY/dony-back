@@ -1,11 +1,14 @@
 package com.dony.api.matching;
 
 import com.dony.api.auth.UserRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
@@ -18,6 +21,8 @@ import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,6 +34,7 @@ class AnnouncementControllerIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired AnnouncementRepository announcementRepository;
     @Autowired UserRepository userRepository;
+    @Autowired ObjectMapper objectMapper;
 
     /**
      * Reuse the same traveler UUID across all tests (no UserEntity needed;
@@ -49,6 +55,7 @@ class AnnouncementControllerIntegrationTest {
     @BeforeEach
     void cleanDb() {
         announcementRepository.deleteAll();
+        userRepository.deleteAll();
     }
 
     // ─── Radius filter tests ──────────────────────────────────────────────────
@@ -110,7 +117,119 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$.content[0].departureCity").value("Paris"));
     }
 
+    // ─── Create — transportMode validation ────────────────────────────────────
+
+    @Test
+    void createAnnouncement_withMissingTransportMode_returns422() throws Exception {
+        // GIVEN: a valid create payload that OMITS transportMode
+        var body = """
+            {
+              "departureCity": "Paris",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "availableKg": 10,
+              "pricePerKg": 5,
+              "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447}
+            }
+            """.formatted(LocalDate.now().plusDays(10));
+
+        // WHEN: POST /announcements without transportMode
+        // THEN: validation rejects the payload (RFC 7807, 422 per GlobalExceptionHandler)
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isUnprocessableEntity());
+    }
+
+    // ─── Create — transportMode happy paths ───────────────────────────────────
+
+    @Test
+    void createAnnouncement_withEachTransportMode_returns201() throws Exception {
+        seedTraveler("uid-test-traveler");
+        for (var mode : List.of("PLANE", "CAR", "TRAIN", "BUS", "BOAT", "OTHER")) {
+            announcementRepository.deleteAll();
+            mockMvc.perform(post("/announcements")
+                    .with(authentication(authenticatedAs("uid-test-traveler")))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(validBodyWithMode(mode)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.transportMode").value(mode));
+        }
+    }
+
+    @Test
+    void createAnnouncement_withInvalidTransportMode_returns400() throws Exception {
+        seedTraveler("uid-test-traveler");
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBodyWithMode("BIKE")))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateAnnouncement_changesTransportMode_returns200() throws Exception {
+        seedTraveler("uid-test-traveler");
+        var createRes = mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBodyWithMode("PLANE")))
+            .andExpect(status().isCreated())
+            .andReturn();
+        JsonNode created = objectMapper.readTree(createRes.getResponse().getContentAsString());
+        String id = created.get("id").asText();
+
+        mockMvc.perform(put("/announcements/" + id)
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBodyWithMode("TRAIN")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.transportMode").value("TRAIN"));
+    }
+
+    @Test
+    void searchAnnouncements_returnsTransportModeInResults() throws Exception {
+        seedTraveler("uid-test-traveler");
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBodyWithMode("BOAT")))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].transportMode").value("BOAT"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    private String validBodyWithMode(String mode) {
+        return """
+            {
+              "departureCity": "Paris",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "availableKg": 10,
+              "pricePerKg": 5,
+              "transportMode": "%s",
+              "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447}
+            }
+            """.formatted(LocalDate.now().plusDays(10), mode);
+    }
+
+    private com.dony.api.auth.UserEntity seedTraveler(String firebaseUid) {
+        var user = new com.dony.api.auth.UserEntity();
+        user.setFirebaseUid(firebaseUid);
+        user.setPhoneNumber("+33600000000");
+        user.setStatus(com.dony.api.auth.UserStatus.ACTIVE);
+        user.setKycStatus(com.dony.api.auth.KycStatus.PENDING);
+        user.setRoles(new java.util.HashSet<>(List.of(com.dony.api.auth.Role.TRAVELER)));
+        return userRepository.save(user);
+    }
 
     private AnnouncementEntity seedAnnouncement(double lat, double lng, String dep, String arr) {
         AnnouncementEntity e = new AnnouncementEntity();
@@ -121,6 +240,7 @@ class AnnouncementControllerIntegrationTest {
         e.setAvailableKg(new BigDecimal("8"));
         e.setPricePerKg(new BigDecimal("12"));
         e.setStatus(AnnouncementStatus.ACTIVE);
+        e.setTransportMode(TransportMode.PLANE);
         e.setPickupAddressLabel("Test pickup");
         e.setPickupLat(BigDecimal.valueOf(lat));
         e.setPickupLng(BigDecimal.valueOf(lng));

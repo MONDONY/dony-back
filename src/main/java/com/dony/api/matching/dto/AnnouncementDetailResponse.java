@@ -20,6 +20,7 @@ public record AnnouncementDetailResponse(
         AddressDto deliveryAddress,
         BigDecimal availableKg,
         BigDecimal pricePerKg,
+        com.dony.api.matching.TransportMode transportMode,
         String status,
         long bidsCount,
         TravelerProfileDto traveler,
