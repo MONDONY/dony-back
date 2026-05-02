@@ -88,3 +88,11 @@ app:
       account-sid: ${TWILIO_ACCOUNT_SID:}
       auth-token: ${TWILIO_AUTH_TOKEN:}
       from: ${TWILIO_FROM:}
+  places:
+    api-key: ${GOOGLE_PLACES_API_KEY}
+    allowed-countries: FR,SN,CI,ML,CM,GN,BF,TG,BJ,NE,MR,CD,CG,GA,TD,MA,DZ,TN,MG,RE,MU,GP,MQ
+    rate-limit-per-minute: 100
+    daily-quota-autocomplete: 5000
+    daily-quota-details: 1000
+    daily-quota-reverse: 500
+    block-when-quota-exceeded: true

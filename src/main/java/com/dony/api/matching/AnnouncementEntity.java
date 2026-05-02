@@ -42,11 +42,23 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "arrival_time")
     private LocalTime arrivalTime;
 
-    @Column(name = "departure_location", length = 255)
-    private String departureLocation;
+    @Column(name = "pickup_address_label", nullable = false, length = 500)
+    private String pickupAddressLabel;
 
-    @Column(name = "arrival_location", length = 255)
-    private String arrivalLocation;
+    @Column(name = "pickup_lat", nullable = false, precision = 9, scale = 6)
+    private java.math.BigDecimal pickupLat;
+
+    @Column(name = "pickup_lng", nullable = false, precision = 9, scale = 6)
+    private java.math.BigDecimal pickupLng;
+
+    @Column(name = "delivery_address_label", nullable = false, length = 500)
+    private String deliveryAddressLabel;
+
+    @Column(name = "delivery_lat", nullable = false, precision = 9, scale = 6)
+    private java.math.BigDecimal deliveryLat;
+
+    @Column(name = "delivery_lng", nullable = false, precision = 9, scale = 6)
+    private java.math.BigDecimal deliveryLng;
 
     @Column(name = "available_kg", nullable = false, precision = 5, scale = 2)
     private BigDecimal availableKg;
@@ -95,11 +107,18 @@ public class AnnouncementEntity extends BaseEntity {
     public LocalTime getArrivalTime() { return arrivalTime; }
     public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }
 
-    public String getDepartureLocation() { return departureLocation; }
-    public void setDepartureLocation(String departureLocation) { this.departureLocation = departureLocation; }
-
-    public String getArrivalLocation() { return arrivalLocation; }
-    public void setArrivalLocation(String arrivalLocation) { this.arrivalLocation = arrivalLocation; }
+    public String getPickupAddressLabel() { return pickupAddressLabel; }
+    public void setPickupAddressLabel(String v) { this.pickupAddressLabel = v; }
+    public java.math.BigDecimal getPickupLat() { return pickupLat; }
+    public void setPickupLat(java.math.BigDecimal v) { this.pickupLat = v; }
+    public java.math.BigDecimal getPickupLng() { return pickupLng; }
+    public void setPickupLng(java.math.BigDecimal v) { this.pickupLng = v; }
+    public String getDeliveryAddressLabel() { return deliveryAddressLabel; }
+    public void setDeliveryAddressLabel(String v) { this.deliveryAddressLabel = v; }
+    public java.math.BigDecimal getDeliveryLat() { return deliveryLat; }
+    public void setDeliveryLat(java.math.BigDecimal v) { this.deliveryLat = v; }
+    public java.math.BigDecimal getDeliveryLng() { return deliveryLng; }
+    public void setDeliveryLng(java.math.BigDecimal v) { this.deliveryLng = v; }
 
     public BigDecimal getAvailableKg() { return availableKg; }
     public void setAvailableKg(BigDecimal availableKg) { this.availableKg = availableKg; }

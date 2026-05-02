@@ -20,10 +20,10 @@ sentry:
 # Cloudflare R2 (S3-compatible)
 aws:
   s3:
-    region: ${AWS_S3_REGION:auto}
-    bucket: ${AWS_S3_BUCKET:dony-app}
-    access-key: ${AWS_S3_ACCESS_KEY:replace_me}
-    secret-key: ${AWS_S3_SECRET_KEY:replace_me}
+    region: ${AWS_S3_REGION}
+    bucket: ${AWS_S3_BUCKET}
+    access-key: ${AWS_S3_ACCESS_KEY}
+    secret-key: ${AWS_S3_SECRET_KEY}
     endpoint: ${AWS_S3_ENDPOINT:}
 
 # Stripe (test keys — définir STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET dans les variables d'env)
@@ -43,3 +43,13 @@ logging:
   level:
     com.dony.api: DEBUG
     org.springframework.security: DEBUG
+
+app:
+  places:
+    api-key: ${GOOGLE_PLACES_API_KEY}
+    allowed-countries: ""
+    rate-limit-per-minute: 200
+    daily-quota-autocomplete: 10000
+    daily-quota-details: 2000
+    daily-quota-reverse: 1000
+    block-when-quota-exceeded: false

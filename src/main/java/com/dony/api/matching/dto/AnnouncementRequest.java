@@ -1,6 +1,7 @@
 package com.dony.api.matching.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
@@ -28,9 +29,11 @@ public record AnnouncementRequest(
         @JsonFormat(pattern = "HH:mm")
         LocalTime arrivalTime,
 
-        String departureLocation,
+        @Valid @NotNull(message = "L'adresse de remise est obligatoire")
+        AddressDto pickupAddress,
 
-        String arrivalLocation,
+        @Valid @NotNull(message = "L'adresse de récupération est obligatoire")
+        AddressDto deliveryAddress,
 
         @NotNull(message = "La capacité disponible est obligatoire")
         @DecimalMin(value = "1.0", message = "La capacité doit être d'au moins 1 kg")

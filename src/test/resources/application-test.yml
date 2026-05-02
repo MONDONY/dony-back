@@ -40,3 +40,13 @@ aws:
 stripe:
   secret-key: sk_test_dummy
   webhook-secret: whsec_dummy
+
+app:
+  places:
+    api-key: test-api-key
+    allowed-countries: ""
+    rate-limit-per-minute: 100
+    daily-quota-autocomplete: 999999
+    daily-quota-details: 999999
+    daily-quota-reverse: 999999
+    block-when-quota-exceeded: true

@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.AddressDto;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
@@ -92,6 +93,12 @@ class AnnouncementServiceTest {
         a.setAvailableKg(BigDecimal.valueOf(20));
         a.setPricePerKg(BigDecimal.valueOf(5));
         a.setStatus(AnnouncementStatus.ACTIVE);
+        a.setPickupAddressLabel("CDG Terminal 2E");
+        a.setPickupLat(BigDecimal.valueOf(49.009));
+        a.setPickupLng(BigDecimal.valueOf(2.547));
+        a.setDeliveryAddressLabel("Aéroport LSS");
+        a.setDeliveryLat(BigDecimal.valueOf(14.739));
+        a.setDeliveryLng(BigDecimal.valueOf(-17.490));
         setId(a, ANNOUNCEMENT_ID);
         return a;
     }
@@ -101,7 +108,8 @@ class AnnouncementServiceTest {
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(10),
                 LocalTime.of(10, 0), LocalTime.of(22, 0),
-                "CDG Terminal 2E", "Aéroport LSS",
+                new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 null, null, null
         );
@@ -244,7 +252,9 @@ class AnnouncementServiceTest {
 
             AnnouncementRequest req = new AnnouncementRequest(
                     "Lyon", "Abidjan", LocalDate.now().plusDays(15),
-                    null, null, null, null,
+                    null, null,
+                    new AddressDto("Gare Part-Dieu, Lyon", 45.760, 4.860),
+                    new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     null, null, null
             );

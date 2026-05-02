@@ -6,6 +6,7 @@ import com.dony.api.common.PageResponse;
 import com.dony.api.common.StorageService;
 import com.dony.api.messaging.dto.ConversationResponse;
 import com.dony.api.messaging.dto.ImageUploadResponse;
+import com.dony.api.messaging.dto.ParticipantDTO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -104,8 +106,15 @@ class ConversationControllerTest {
         Pageable pageable = PageRequest.of(0, 20);
         PageImpl<ConversationEntity> page = new PageImpl<>(List.of(conversation));
 
+        ConversationResponse fakeResponse = new ConversationResponse(
+                conversationId, conversation.getBidId(),
+                conversation.getFirestoreConversationId(),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null),
+                null, LocalDateTime.now(), false,
+                null, null, null, null, null, false, false);
+
         when(conversationRepository.findByParticipant(currentUserId, pageable)).thenReturn(page);
-        when(userRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId))).thenReturn(fakeResponse);
 
         ResponseEntity<PageResponse<ConversationResponse>> response =
                 controller.listConversations(pageable);
@@ -137,9 +146,17 @@ class ConversationControllerTest {
 
     @Test
     void getConversation_returns200_whenParticipant() {
+        ConversationResponse fakeResponse = new ConversationResponse(
+                conversationId, conversation.getBidId(),
+                conversation.getFirestoreConversationId(),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null),
+                null, LocalDateTime.now(), false,
+                null, null, null, null, null, false, false);
+
         when(conversationRepository.findByIdAndParticipant(conversationId, currentUserId))
                 .thenReturn(Optional.of(conversation));
-        when(userRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId)))
+                .thenReturn(fakeResponse);
 
         ResponseEntity<ConversationResponse> response =
                 controller.getConversation(conversationId);
@@ -277,9 +294,17 @@ class ConversationControllerTest {
     @Test
     void getConversationByBidId_returns200_whenParticipant() {
         UUID bidId = conversation.getBidId();
+        ConversationResponse fakeResponse = new ConversationResponse(
+                conversationId, bidId,
+                conversation.getFirestoreConversationId(),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null),
+                null, LocalDateTime.now(), false,
+                null, null, null, null, null, false, false);
+
         when(conversationService.getOrCreateByBidId(bidId, currentUserId))
                 .thenReturn(conversation);
-        when(userRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId)))
+                .thenReturn(fakeResponse);
 
         ResponseEntity<ConversationResponse> response =
                 controller.getConversationByBidId(bidId);
