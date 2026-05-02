@@ -53,11 +53,13 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
-            BigDecimal minAvailableKg, String sortBy, String sortDir, Pageable pageable) {
+            BigDecimal minAvailableKg,
+            Double userLat, Double userLng, Double radiusKm,
+            String sortBy, String sortDir, Pageable pageable) {
 
         Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE);
 
@@ -71,6 +73,18 @@ public class AnnouncementService {
             spec = spec.and(AnnouncementSpecification.departureDateTo(departureDateTo));
         if (minAvailableKg != null)
             spec = spec.and(AnnouncementSpecification.minAvailableKg(minAvailableKg));
+
+        // Radius filter: only active when ALL 3 params provided
+        if (userLat != null && userLng != null && radiusKm != null && radiusKm > 0) {
+            List<UUID> idsInRadius = announcementRepository.findIdsWithinPickupRadius(
+                            userLat, userLng, radiusKm)
+                    .stream()
+                    .map(UUID::fromString)
+                    .toList();
+            spec = spec
+                    .and(AnnouncementSpecification.hasPickupCoordinates())
+                    .and(AnnouncementSpecification.idIn(idsInRadius));
+        }
 
         Sort sort = buildSort(sortBy, sortDir);
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);

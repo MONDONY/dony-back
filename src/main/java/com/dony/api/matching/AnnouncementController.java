@@ -45,13 +45,17 @@ public class AnnouncementController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateTo,
             @RequestParam(required = false) BigDecimal minAvailableKg,
+            @RequestParam(required = false) Double userLat,
+            @RequestParam(required = false) Double userLng,
+            @RequestParam(required = false) Double radiusKm,
             @RequestParam(defaultValue = "date") String sortBy,
             @RequestParam(defaultValue = "asc") String sortDir,
             Pageable pageable
     ) {
         Page<AnnouncementSearchResponse> page = announcementService.searchAnnouncements(
                 departureCity, arrivalCity, departureDateFrom, departureDateTo,
-                minAvailableKg, sortBy, sortDir, pageable);
+                minAvailableKg, userLat, userLng, radiusKm,
+                sortBy, sortDir, pageable);
         return ResponseEntity.ok(PageResponse.from(page));
     }
 

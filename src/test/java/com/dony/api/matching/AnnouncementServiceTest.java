@@ -459,7 +459,7 @@ class AnnouncementServiceTest {
             when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, "date", "asc", PageRequest.of(0, 10));
+                    null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -480,7 +480,7 @@ class AnnouncementServiceTest {
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", "Dakar",
                     LocalDate.now(), LocalDate.now().plusDays(30),
-                    BigDecimal.valueOf(5), "price", "desc", PageRequest.of(0, 10));
+                    BigDecimal.valueOf(5), null, null, null, "price", "desc", PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -499,7 +499,7 @@ class AnnouncementServiceTest {
             when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, "asc", PageRequest.of(0, 10));
+                    null, null, null, null, null, null, null, null, null, "asc", PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -516,7 +516,7 @@ class AnnouncementServiceTest {
             when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    "Paris", null, null, null, null, "date", "desc", PageRequest.of(0, 10));
+                    "Paris", null, null, null, null, null, null, null, "date", "desc", PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -535,7 +535,7 @@ class AnnouncementServiceTest {
             when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
-                    null, "Dakar", LocalDate.now(), null, null, "price", "asc", PageRequest.of(0, 10)));
+                    null, "Dakar", LocalDate.now(), null, null, null, null, null, "price", "asc", PageRequest.of(0, 10)));
         }
     }
 }
