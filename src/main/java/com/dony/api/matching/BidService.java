@@ -513,6 +513,7 @@ public class BidService {
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
         String senderPhone = sender != null ? sender.getPhoneNumber() : null;
+        Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
@@ -537,6 +538,7 @@ public class BidService {
                 bid.getSenderId(),
                 senderName,
                 senderPhone,
+                senderTotalShipments,
                 bid.getWeightKg(),
                 bid.getDeclaredValueEur(),
                 bid.getDescription(),

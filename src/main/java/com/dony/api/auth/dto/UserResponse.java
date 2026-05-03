@@ -15,5 +15,6 @@ public record UserResponse(
     Set<String> roles,
     String kycStatus,
     String status,
-    int totalTrips
+    int totalTrips,
+    int totalShipments
 ) {}

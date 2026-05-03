@@ -174,7 +174,8 @@ public class AuthService {
                 user.getRoles().stream().map(Role::name).collect(Collectors.toSet()),
                 user.getKycStatus().name(),
                 user.getStatus().name(),
-                user.getTotalTrips()
+                user.getTotalTrips(),
+                user.getTotalShipments()
         );
     }
 }

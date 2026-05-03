@@ -82,6 +82,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "total_trips", nullable = false)
     private int totalTrips = 0;
 
+    @Column(name = "total_shipments", nullable = false)
+    private int totalShipments = 0;
+
     @Column(name = "no_show_count", nullable = false)
     private int noShowCount = 0;
 
@@ -141,6 +144,9 @@ public class UserEntity extends BaseEntity {
 
     public int getTotalTrips() { return totalTrips; }
     public void setTotalTrips(int totalTrips) { this.totalTrips = totalTrips; }
+
+    public int getTotalShipments() { return totalShipments; }
+    public void setTotalShipments(int totalShipments) { this.totalShipments = totalShipments; }
 
     public int getNoShowCount() { return noShowCount; }
     public void setNoShowCount(int noShowCount) { this.noShowCount = noShowCount; }

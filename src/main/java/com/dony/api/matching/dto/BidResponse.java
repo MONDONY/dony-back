@@ -12,6 +12,7 @@ public record BidResponse(
         UUID senderId,
         String senderName,
         String senderPhone,
+        Integer senderTotalShipments,
         BigDecimal weightKg,
         BigDecimal declaredValueEur,
         String description,

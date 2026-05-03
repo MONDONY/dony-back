@@ -108,6 +108,9 @@ public class BidEntity extends BaseEntity {
     @Column(name = "awaiting_payment_expires_at")
     private LocalDateTime awaitingPaymentExpiresAt;
 
+    @Column(name = "shipment_counted", nullable = false)
+    private boolean shipmentCounted = false;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -197,4 +200,7 @@ public class BidEntity extends BaseEntity {
 
     public LocalDateTime getAwaitingPaymentExpiresAt() { return awaitingPaymentExpiresAt; }
     public void setAwaitingPaymentExpiresAt(LocalDateTime awaitingPaymentExpiresAt) { this.awaitingPaymentExpiresAt = awaitingPaymentExpiresAt; }
+
+    public boolean isShipmentCounted() { return shipmentCounted; }
+    public void setShipmentCounted(boolean shipmentCounted) { this.shipmentCounted = shipmentCounted; }
 }
