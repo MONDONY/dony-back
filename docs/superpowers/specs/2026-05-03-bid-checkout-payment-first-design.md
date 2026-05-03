@@ -549,21 +549,55 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 **Risque résiduel** :
 - Les anciens PIs avec `transfer_data.destination` ont leur hold qui expire à **7 jours**. Si un voyage planifié à plus de 7 jours après la création du PI legacy n'est pas livré dans les temps → la capture échouera. **Mais ce risque existait déjà avant la v2** — il n'est pas introduit par cette refonte.
 
-**Action** : faire un audit avant le déploiement pour identifier les payments `ESCROW` avec `created_at < now() - 6 jours` et les notifier ou les capturer manuellement si la livraison est imminente.
+**Action — audit pré-déploiement** : identifier tous les payments `ESCROW` legacy dont **la date de livraison prévue** (lue sur `announcement.arrival_date` du bid lié, ou à défaut `announcement.departure_date`) est à **plus de 7 jours après la date du déploiement**. Ce sont les bids dont le hold Stripe expirera avant la date de livraison réelle — il faut soit les capturer manuellement, soit notifier sender + voyageur, soit les annuler avant qu'ils n'échouent silencieusement en prod.
 
-### Q4 — Gestion des remboursements partiels et litiges dans le nouveau modèle
+**Requête SQL d'audit (à exécuter le jour du déploiement, en remplaçant `:deployment_date`)** :
+
+```sql
+-- Payments en escrow avec un hold qui va expirer avant la date de livraison
+SELECT
+    p.id            AS payment_id,
+    p.bid_id,
+    p.created_at    AS pi_created_at,
+    p.amount,
+    p.stripe_payment_intent_id,
+    b.sender_id,
+    a.traveler_id,
+    a.departure_date,
+    a.arrival_date,
+    (a.arrival_date - DATE(:deployment_date)) AS days_until_arrival_after_deploy,
+    (a.arrival_date - DATE(p.created_at))      AS days_pi_to_arrival,
+    CASE
+        WHEN p.created_at < (NOW() - INTERVAL '6 days') THEN 'EXPIRING_SOON'
+        WHEN a.arrival_date > (DATE(:deployment_date) + INTERVAL '7 days') THEN 'WILL_EXPIRE_BEFORE_DELIVERY'
+        ELSE 'OK'
+    END AS risk
+FROM payments p
+JOIN bids b          ON b.id = p.bid_id
+JOIN announcements a ON a.id = b.announcement_id
+WHERE p.status = 'ESCROW'
+  AND p.legacy_destination_charge = true
+ORDER BY a.arrival_date ASC;
+```
+
+Pour chaque ligne avec `risk != 'OK'` : décision manuelle (capture immédiate, ou refund si livraison improbable, ou notif aux parties).
+
+### Q4 — Gestion des remboursements et litiges dans le nouveau modèle
 
 **Cas à traiter** :
 
-| Cas | Action côté Stripe | Frais perdus |
-|-----|---------------------|--------------|
-| Refus parcel à inspection (avant Transfer) | `Refund.create(charge_id)` — argent encore sur compte plateforme | ~0.70 € |
-| Litige tranché expéditeur après livraison (déjà transféré) | 1. `Transfer.createReversal()` pour récupérer l'argent du compte voyageur. 2. `Refund.create(charge_id)` pour rendre à la carte. | ~0.70 € + 0 € reversal |
-| Litige partiel (ex. 50 % remboursé) | `Refund.create(amount=50%)` — Stripe gère le partial. Si déjà transféré : reversal partiel d'abord. | proportionnel |
+| Cas | Action côté Stripe | Frais perdus | Scope |
+|-----|---------------------|--------------|-------|
+| Refus parcel à inspection (bid ACCEPTED, avant livraison/Transfer) | `Refund.create(charge_id)` — argent encore sur compte plateforme | ~0.70 € | **Inclus dans v2** (Task 9e) |
+| Annulation par le sender d'un bid ACCEPTED (avant livraison) | `Refund.create(charge_id)` | ~0.70 € | **Inclus dans v2** (Task 9g via réutilisation `BidRejectedEventListener`) |
+| Litige tranché expéditeur **après livraison** (déjà transféré au voyageur) | 1. `Transfer.createReversal()` pour récupérer l'argent du compte voyageur. 2. `Refund.create(charge_id)` pour rendre à la carte. | ~0.70 € + 0 € reversal | **Hors scope v2** — story ultérieure |
+| Litige partiel (ex. 50 % remboursé / partage entre voyageur et sender) | `Refund.create(amount=50%)`. Si déjà transféré : reversal partiel d'abord. | proportionnel | **Hors scope v2** — story ultérieure |
 
-**Question ouverte** : qui décide du remboursement ? Le `DisputeService` existe (Story 8.x) — vérifier qu'il sait piloter ces opérations ou créer une interface admin.
+**Périmètre v2 (à implémenter)** : les refunds **simples** (montant total) qui surviennent **avant** la livraison — c'est-à-dire avant que le `DeliveryEventListener` n'ait initié le `Transfer`. Dans ces cas, l'argent est encore sur le compte plateforme, un seul `Refund.create(charge_id)` suffit. Le code existant de `BidRejectedEventListener` gère déjà ce cas (ligne 84 — `Refund.create(...)`) ; il sera ré-utilisé tel quel via `BidRejectedEvent` avec différentes raisons (`PARCEL_REFUSED`, `CANCELLED_BY_SENDER`, etc.).
 
-**À ajouter dans une story ultérieure** (hors v2 : focus sur le happy path d'abord).
+**Hors scope v2 (story ultérieure)** : tout ce qui implique un `Transfer.createReversal` (l'argent a déjà quitté la plateforme) ou un refund partiel. Cela demande une interface admin dédiée et une coordination avec `DisputeService` (Story 8.x).
+
+**Action** : créer un ticket Linear/issue séparé pour la story "Litiges complexes & remboursements partiels post-livraison" — à planifier après le déploiement v2.
 
 ### Q5 — Impact comptabilité / facturation
 
@@ -582,13 +616,76 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 2. Vérifier la **TVA** : si Dony est intermédiaire transparent, OK ; si requalifié en intermédiaire opaque, la TVA s'applique sur le total et non sur la commission.
 3. Documenter le schéma des écritures dans `docs/accounting/` (à créer).
 
-### Q6 — Frais Stripe Transfer (gratuits en EUR ?)
+### Q6 — Frais Stripe Transfer EUR → comptes Connect zone CFA — **🚨 BLOCKER DEV**
 
 **Hypothèse de travail** : les Transfers Stripe entre comptes EUR sont gratuits dans la zone SEPA. Mais Dony cible la diaspora africaine : les voyageurs peuvent avoir des comptes connectés au Sénégal, Côte d'Ivoire, Mali, Cameroun.
 
-**Question** : quel est le coût d'un Transfer EUR → compte Stripe Connect d'un voyageur en zone CFA ?
+**Question critique** : quel est le coût d'un Transfer EUR → compte Stripe Connect d'un voyageur en zone CFA ?
 
-**Action** : confirmer auprès de Stripe support **avant prod**. Si non-gratuit, recalibrer la commission (actuellement 12 %) pour absorber les frais.
+**Pourquoi c'est un blocker DEV (et pas seulement prod)** :
+
+Le calcul du montant transféré au voyageur est **codé en dur dans `DeliveryEventListener` (Task 9d)** :
+```java
+BigDecimal net = payment.getAmount().subtract(commission);  // total - 12 %
+```
+
+Si les Transfers vers les comptes CFA ne sont pas gratuits, cette formule est **fausse**. Il faudra :
+```java
+BigDecimal net = payment.getAmount()
+    .subtract(commission)
+    .subtract(transferFees);  // ← à déterminer selon zone du voyageur
+```
+
+Sinon : soit Dony absorbe les frais (perte sur chaque livraison), soit le voyageur reçoit moins qu'annoncé (problème UX et juridique).
+
+**Action — à faire AVANT d'écrire le code de la Task 9d** :
+
+1. **Ouvrir un ticket Stripe support** (groupé avec Q1 et Q2 — voir section Actions à lancer ci-dessous).
+2. **Demander explicitement** :
+   - Coût d'un `Transfer.create` EUR → compte Connect Express dans chacun des pays cibles : Sénégal, Côte d'Ivoire, Mali, Cameroun.
+   - Existe-t-il des restrictions de devise (XOF/XAF) pour les Transfers ?
+   - Si non-gratuit : barème fixe ou pourcentage ?
+3. **Selon la réponse** :
+   - **Gratuit** → garder la formule actuelle, `transferFees = 0`.
+   - **Non-gratuit, fixe ou %** → ajouter une colonne `transfer_fees` sur `payments` populée à la création (avec un `StripeFeesCalculator` côté `PaymentService`), et utiliser `transferFees` dans `DeliveryEventListener`. **Recalibrer la commission** si nécessaire pour préserver la marge nette de Dony.
+   - **Restriction de devise** → potentiellement bloquant pour le pays concerné. Décider : soit on n'accepte que des voyageurs avec compte EUR-zone-européenne, soit on attend une autre solution (Wave / Orange Money via les services existants `WaveService` / `OrangeMoneyService` mentionnés dans l'architecture).
+
+**Statut** : tant que ce point n'est pas tranché, la **Task 9d ne peut pas être finalisée** (même si elle peut être ébauchée avec la formule simplifiée). Marquer le code avec `// TODO Q6 : adjust net amount based on transfer fees once Stripe support clarifies pricing for CFA zone`.
+
+---
+
+## Actions hors-code à lancer en parallèle du dev
+
+> Le développement v2 peut commencer en parallèle, en environnement **dev/staging avec test cards Stripe**. Pas de mise en production tant que les retours ci-dessous ne sont pas écrits dans `docs/compliance/`.
+
+### A1 — Ticket Stripe support (couvre Q1, Q2, Q6 d'un coup)
+
+**À ouvrir cette semaine.** Décrire :
+
+> Marketplace P2P (peer-to-peer) Dony — connecte voyageurs et expéditeurs de la diaspora africaine pour le transport de colis. Configuration actuelle : comptes Connect Express avec capability `transfers` activée. Migration prévue de "destination charges" (`transfer_data.destination` + `application_fee_amount`) vers "separate charges and transfers" (capture sur compte plateforme, Transfer manuel à la livraison).
+>
+> Questions :
+> 1. **Conformité** : nous prévoyons de détenir les fonds clients sur le compte plateforme entre l'acceptation du voyageur et la confirmation de livraison. Selon le profil de voyage, ce délai peut atteindre 2 mois (vol planifié à long terme). Est-ce compatible avec la licence Stripe sous laquelle nous opérons (Stripe Payments France / EU) ? Y a-t-il un seuil de durée ou de volume au-delà duquel un statut réglementaire complémentaire (Agent PSP, EME) est requis ?
+> 2. **Compatibilité comptes Connect** : nos voyageurs peuvent avoir des comptes Connect dans : France, Sénégal, Côte d'Ivoire, Mali, Cameroun. Confirmer que le pattern separate charges and transfers fonctionne pour ces destinations.
+> 3. **Frais de Transfer** : quel est le coût d'un `Transfer.create` en EUR vers un compte Connect Express dans chacun de ces pays ? Y a-t-il des restrictions de devise (XOF/XAF, conversion obligatoire) ?
+
+Conserver la réponse écrite (PDF/email) dans `docs/compliance/stripe-support-2026-XX.md`.
+
+### A2 — Avocat fintech (Q2 — DSP2 / ACPR)
+
+**À planifier cette semaine.** Avis écrit demandé sur :
+
+> 1. Notre marketplace P2P utilise Stripe Connect pour reverser les fonds aux voyageurs après livraison. Avec le nouveau modèle, les fonds restent sur le compte plateforme jusqu'à 2 mois entre encaissement et reversement. À quel volume ou durée moyenne ce schéma nécessite-t-il un statut Agent PSP ou Établissement de Monnaie Électronique en France ?
+> 2. La plateforme est-elle requalifiable en intermédiaire opaque pour la TVA ? Si oui, impact comptable.
+> 3. Y a-t-il des exigences spécifiques liées au transport de colis vers l'Afrique (lutte anti-blanchiment, déclarations douanières, agrément spécifique) ?
+
+Budget estimatif : 1500-3000 €. Garder la réponse écrite dans `docs/compliance/legal-opinion-2026-XX.pdf`.
+
+### A3 — Expert-comptable (Q5 — Comptabilité + TVA)
+
+**À planifier dans la foulée de A2** (l'avis fiscal de l'avocat oriente la consultation comptable). Décrire :
+
+> Migration du schéma comptable : avant, Dony percevait une commission via `application_fee_amount` (visible directement sur le compte plateforme Stripe). Désormais, Dony encaisse 100 % du montant et reverse une partie au voyageur. Quel est le bon schéma d'écritures comptables ? Quelle est l'incidence sur la déclaration de TVA si la plateforme est intermédiaire opaque vs transparent ?
 
 ---
 
