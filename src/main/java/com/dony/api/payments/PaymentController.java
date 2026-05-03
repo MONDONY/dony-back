@@ -45,6 +45,14 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.createOnboardingLink(requireFirebaseUid()));
     }
 
+    // Re-pulls the Stripe account state and syncs stripe_onboarded. Recovery path when the
+    // account.updated webhook was missed (local dev without Stripe CLI, transient outage).
+    @PostMapping("/connect/refresh")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<ConnectAccountResponse> refreshConnectAccount() {
+        return ResponseEntity.ok(paymentService.refreshConnectAccount(requireFirebaseUid()));
+    }
+
     // Story 6.3 — Créer un PaymentIntent en escrow pour un bid accepté
     @PostMapping
     @PreAuthorize("hasRole('SENDER')")

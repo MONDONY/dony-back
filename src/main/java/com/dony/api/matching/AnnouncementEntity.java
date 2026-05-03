@@ -93,6 +93,12 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "content_type", length = 100)
     private List<String> refusedTypes = new ArrayList<>();
 
+    @Column(name = "total_trips_counted", nullable = false)
+    private boolean totalTripsCounted = false;
+
+    public boolean isTotalTripsCounted() { return totalTripsCounted; }
+    public void setTotalTripsCounted(boolean totalTripsCounted) { this.totalTripsCounted = totalTripsCounted; }
+
     public UUID getTravelerId() { return travelerId; }
     public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }
 

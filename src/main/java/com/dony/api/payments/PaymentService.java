@@ -148,6 +148,48 @@ public class PaymentService {
         }
     }
 
+    /**
+     * Pulls the latest state of the user's Stripe Connect account from Stripe and syncs the
+     * local {@code stripe_onboarded} flag. Useful when the {@code account.updated} webhook
+     * was missed (e.g. local dev without Stripe CLI, or transient network issue in prod).
+     *
+     * <p>Authoritative source = Stripe ({@code account.charges_enabled}). We mirror it.
+     */
+    public ConnectAccountResponse refreshConnectAccount(String firebaseUid) {
+        UserEntity user = findUser(firebaseUid);
+
+        if (user.getStripeAccountId() == null || user.getStripeAccountId().isBlank()) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                    "stripe-account-required", "No Stripe Account",
+                    "Aucun compte Stripe à rafraîchir — créez-en un d'abord");
+        }
+
+        try {
+            Account account = Account.retrieve(user.getStripeAccountId());
+            boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
+
+            if (chargesEnabled != user.isStripeOnboarded()) {
+                user.setStripeOnboarded(chargesEnabled);
+                userRepository.save(user);
+                String action = chargesEnabled ? "STRIPE_ONBOARDING_COMPLETE" : "STRIPE_ONBOARDING_REVOKED";
+                auditService.log("USER", user.getId(), action, user.getId(),
+                        Map.of("stripeAccountId", account.getId(),
+                                "source", "manual-refresh"));
+                log.info("Stripe onboarding state synced for user {} : chargesEnabled={}",
+                        user.getId(), chargesEnabled);
+            }
+
+            return new ConnectAccountResponse(account.getId(), chargesEnabled);
+
+        } catch (StripeException e) {
+            log.error("Failed to refresh Stripe account {} for user {}",
+                    user.getStripeAccountId(), user.getId(), e);
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                    "stripe-refresh-failed", "Stripe Error",
+                    "Impossible de récupérer l'état du compte Stripe");
+        }
+    }
+
     // ── Story 6.3 : Paiement expéditeur avec création d'escrow ───────────────
 
     public PaymentResponse createEscrow(CreatePaymentRequest request, String firebaseUid) {

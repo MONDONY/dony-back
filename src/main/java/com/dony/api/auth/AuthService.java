@@ -173,7 +173,8 @@ public class AuthService {
                 user.getCity(),
                 user.getRoles().stream().map(Role::name).collect(Collectors.toSet()),
                 user.getKycStatus().name(),
-                user.getStatus().name()
+                user.getStatus().name(),
+                user.getTotalTrips()
         );
     }
 }
