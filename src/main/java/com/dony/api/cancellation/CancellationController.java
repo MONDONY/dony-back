@@ -42,8 +42,8 @@ public class CancellationController {
     public ResponseEntity<List<RematchSuggestionDto>> getRematchSuggestions(
             @PathVariable UUID cancellationId
     ) {
-        requireFirebaseUid();
-        return ResponseEntity.ok(cancellationService.getRematchSuggestions(cancellationId));
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(cancellationService.getRematchSuggestions(cancellationId, firebaseUid));
     }
 
     private String requireFirebaseUid() {

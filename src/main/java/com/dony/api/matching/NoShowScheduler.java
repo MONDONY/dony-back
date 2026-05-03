@@ -42,7 +42,7 @@ public class NoShowScheduler {
         this.eventPublisher = eventPublisher;
     }
 
-    @Scheduled(cron = "0 0 * * * *") // every hour
+    @Scheduled(cron = "0 0 * * * *", zone = "UTC") // every hour, UTC
     @Transactional
     public void detectNoShows() {
         LocalDateTime cutoff = LocalDateTime.now(ZoneOffset.UTC).minusHours(NO_SHOW_GRACE_HOURS);

@@ -72,6 +72,10 @@ public class CancellationService {
             throw new DonyBusinessException(HttpStatus.CONFLICT, "already-cancelled", "Already Cancelled",
                     "Ce trajet est déjà annulé");
         }
+        if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-status", "Invalid Status",
+                    "Seul un trajet ACTIVE peut être annulé");
+        }
 
         // Cancel the announcement
         announcement.setStatus(AnnouncementStatus.CANCELLED);
@@ -137,10 +141,30 @@ public class CancellationService {
     }
 
     @Transactional(readOnly = true)
-    public List<RematchSuggestionDto> getRematchSuggestions(UUID cancellationId) {
+    public List<RematchSuggestionDto> getRematchSuggestions(UUID cancellationId, String firebaseUid) {
         CancellationEntity cancellation = cancellationRepository.findById(cancellationId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "cancellation-not-found", "Not Found", "Annulation introuvable"));
+
+        UserEntity caller = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Utilisateur introuvable"));
+
+        BidEntity bid = bidRepository.findById(cancellation.getBidId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Not Found", "Annonce introuvable"));
+
+        boolean isParticipant = caller.getId().equals(bid.getSenderId())
+                || caller.getId().equals(announcement.getTravelerId())
+                || caller.getId().equals(cancellation.getCancelledBy());
+        if (!isParticipant) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "not-participant", "Forbidden",
+                    "Vous n'êtes pas concerné par cette annulation");
+        }
 
         return rematchSuggestionRepository.findByCancellationId(cancellationId)
                 .stream().map(s -> {

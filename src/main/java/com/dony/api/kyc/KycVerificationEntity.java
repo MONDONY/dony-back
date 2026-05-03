@@ -6,11 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Where;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "kyc_verifications", schema = "kyc_schema")
+@Where(clause = "deleted_at IS NULL")
 public class KycVerificationEntity extends BaseEntity {
 
     @Column(name = "user_id", nullable = false, unique = true)

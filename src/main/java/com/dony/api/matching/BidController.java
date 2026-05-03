@@ -82,7 +82,7 @@ public class BidController {
     @PutMapping("/bids/{bidId}/reject")
     public ResponseEntity<BidResponse> rejectBid(
             @PathVariable UUID bidId,
-            @RequestBody(required = false) BidRejectRequest request
+            @Valid @RequestBody(required = false) BidRejectRequest request
     ) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.rejectBid(bidId, firebaseUid, request));

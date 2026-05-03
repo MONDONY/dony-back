@@ -77,7 +77,7 @@ dony:
 # Encryption (AES-256 for KYC sensitive data)
 app:
   encryption:
-    key: ${ENCRYPTION_KEY:dony-dev-encryption-key-change-in-prod}
+    key: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (32-byte base64 or strong passphrase)}
   base-url: ${APP_BASE_URL:http://localhost:8080}
   sms:
     enabled: ${SMS_ENABLED:false}
