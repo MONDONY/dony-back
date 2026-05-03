@@ -174,6 +174,7 @@ public class BidService {
         return bidRepository.findByAnnouncementId(announcementId)
                 .stream()
                 .filter(b -> !b.isDeletedByTraveler())
+                .filter(b -> b.getStatus() != BidStatus.AWAITING_PAYMENT)
                 .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
                     return toResponse(b, sender);
