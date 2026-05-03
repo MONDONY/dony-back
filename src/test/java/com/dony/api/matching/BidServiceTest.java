@@ -10,6 +10,7 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -165,6 +166,9 @@ class BidServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
             verify(auditService).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
+            // Task 8: BidCreatedEvent is no longer published from createBid — the
+            // webhook (PaymentService.promoteBidOnPaymentAuthorized) does it now.
+            verify(eventPublisher, never()).publishEvent(any(BidCreatedEvent.class));
         }
 
         @Test

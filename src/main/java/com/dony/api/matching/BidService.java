@@ -11,7 +11,6 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -136,11 +135,9 @@ public class BidService {
                         "disclaimerSignedIp", clientIp
                 ));
 
-        String senderName = sender.getFirstName() != null ? sender.getFirstName() : "Un expéditeur";
-        String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
-        eventPublisher.publishEvent(new BidCreatedEvent(
-                saved.getId(), announcement.getId(), announcement.getTravelerId(), sender.getId(),
-                senderName, saved.getWeightKg(), corridor));
+        // Note: BidCreatedEvent is no longer published here. Traveler notification
+        // happens after the sender's payment is authorized — see
+        // PaymentService.promoteBidOnPaymentAuthorized().
 
         return toResponse(saved, sender);
     }
