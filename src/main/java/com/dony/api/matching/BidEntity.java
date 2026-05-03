@@ -102,6 +102,12 @@ public class BidEntity extends BaseEntity {
     @Column(name = "no_show_at")
     private LocalDateTime noShowAt;
 
+    @Column(name = "payment_intent_id", length = 255)
+    private String paymentIntentId;
+
+    @Column(name = "awaiting_payment_expires_at")
+    private LocalDateTime awaitingPaymentExpiresAt;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -185,4 +191,10 @@ public class BidEntity extends BaseEntity {
 
     public LocalDateTime getNoShowAt() { return noShowAt; }
     public void setNoShowAt(LocalDateTime noShowAt) { this.noShowAt = noShowAt; }
+
+    public String getPaymentIntentId() { return paymentIntentId; }
+    public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
+
+    public LocalDateTime getAwaitingPaymentExpiresAt() { return awaitingPaymentExpiresAt; }
+    public void setAwaitingPaymentExpiresAt(LocalDateTime awaitingPaymentExpiresAt) { this.awaitingPaymentExpiresAt = awaitingPaymentExpiresAt; }
 }
