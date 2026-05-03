@@ -278,6 +278,14 @@ public class PaymentService {
 
         log.info("Stripe webhook received: {}", event.getType());
 
+        dispatchWebhookEvent(event);
+    }
+
+    /**
+     * Dispatches a verified Stripe Event to the appropriate handler.
+     * Package-private to allow tests to invoke without constructing a signed payload.
+     */
+    void dispatchWebhookEvent(Event event) {
         switch (event.getType()) {
             case "account.updated" -> handleAccountUpdated(event);
             // payment_intent.amount_capturable_updated fires when card is authorized (capture_method=manual)
@@ -310,14 +318,28 @@ public class PaymentService {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             PaymentIntent pi = (PaymentIntent) obj;
             paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
+                boolean changed = false;
+
+                // Persist the Stripe Charge id for later Transfer.sourceTransaction reconciliation
+                // (Task 9b). Idempotent: only set once.
+                String chargeId = pi.getLatestCharge();
+                if (chargeId != null && payment.getStripeChargeId() == null) {
+                    payment.setStripeChargeId(chargeId);
+                    changed = true;
+                }
+
                 if (payment.getStatus() == PaymentStatus.PENDING) {
                     payment.setStatus(PaymentStatus.ESCROW);
-                    paymentRepository.save(payment);
+                    changed = true;
                     auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
                             payment.getBidId(),
                             Map.of("piId", pi.getId(), "amountCapturable", pi.getAmountCapturable()));
                     log.info("Payment {} now in ESCROW (PI={})", payment.getId(), pi.getId());
                     eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
+                }
+
+                if (changed) {
+                    paymentRepository.save(payment);
                 }
             });
             // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
