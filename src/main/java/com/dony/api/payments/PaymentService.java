@@ -385,7 +385,8 @@ public class PaymentService {
                 clientSecret,
                 payment.getAmount(),
                 payment.getCommissionAmount(),
-                payment.getStatus().name()
+                payment.getStatus().name(),
+                payment.getStripePaymentIntentId()
         );
     }
 
