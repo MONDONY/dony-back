@@ -30,6 +30,9 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
 
+    List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
+            BidStatus status, LocalDateTime threshold);
+
     @Query("SELECT b FROM BidEntity b WHERE b.status = 'ACCEPTED' " +
            "AND b.handoverWindowStart IS NOT NULL " +
            "AND b.handoverWindowStart <= :threshold " +
