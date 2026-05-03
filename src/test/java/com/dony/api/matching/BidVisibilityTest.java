@@ -52,6 +52,7 @@ class BidVisibilityTest {
         announcement.setTravelerId(traveler.getId());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
         announcement.setAvailableKg(new BigDecimal("10"));
+        announcement.setTotalKg(new BigDecimal("10"));
         announcement.setDepartureCity("Paris");
         announcement.setArrivalCity("Dakar");
 
