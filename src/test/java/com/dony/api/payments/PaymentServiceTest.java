@@ -270,7 +270,8 @@ class PaymentServiceTest {
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
         when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
-        when(paymentRepository.save(any())).thenAnswer(inv -> {
+        org.mockito.ArgumentCaptor<PaymentEntity> savedCaptor = org.mockito.ArgumentCaptor.forClass(PaymentEntity.class);
+        when(paymentRepository.save(savedCaptor.capture())).thenAnswer(inv -> {
             PaymentEntity p = inv.getArgument(0);
             setId(p, UUID.randomUUID());
             return p;
@@ -282,13 +283,28 @@ class PaymentServiceTest {
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getId()).thenReturn("pi_test_new");
             when(mockPi.getClientSecret()).thenReturn("pi_secret");
-            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+            org.mockito.ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor =
+                    org.mockito.ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+            piStatic.when(() -> PaymentIntent.create(paramsCaptor.capture())).thenReturn(mockPi);
 
             PaymentResponse resp = service.createEscrow(req, "uid-sender");
 
             assertThat(resp.getStatus()).isEqualTo("PENDING");
             assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
             verify(paymentRepository).save(any(PaymentEntity.class));
+
+            // Separate charges and transfers model: NO application_fee_amount, NO transfer_data.
+            PaymentIntentCreateParams params = paramsCaptor.getValue();
+            assertThat(params.getApplicationFeeAmount()).isNull();
+            assertThat(params.getTransferData()).isNull();
+            assertThat(params.getCaptureMethod())
+                    .isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+
+            // Persisted payment is non-legacy.
+            assertThat(savedCaptor.getValue().isLegacyDestinationCharge()).isFalse();
+            // Commission still tracked on the entity for later Transfer (release at delivery).
+            assertThat(savedCaptor.getValue().getCommissionAmount())
+                    .isEqualByComparingTo(new BigDecimal("3.00"));
         }
     }
 
@@ -628,6 +644,108 @@ class PaymentServiceTest {
         assertThat(resp).isPresent();
         assertThat(resp.get().getStatus()).isEqualTo("ESCROW");
         assertThat(resp.get().getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
+    }
+
+    // ── confirmBidPayment ─────────────────────────────────────────────────────
+
+    @Test
+    void confirmBidPayment_promotes_when_PI_requires_capture() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        AnnouncementEntity ann = buildAnnouncement();
+        ann.setDepartureCity("Paris");
+        ann.setArrivalCity("Dakar");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setFirstName("Marie");
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findByPaymentIntentId("pi_test")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isTrue();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PENDING);
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.BidCreatedEvent.class));
+        }
+    }
+
+    @Test
+    void confirmBidPayment_idempotent_when_already_PENDING() {
+        BidEntity bid = buildBid(BidStatus.PENDING);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isTrue();
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_bid_in_other_status() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_PI_status_unknown() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isFalse();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
+        }
+    }
+
+    @Test
+    void confirmBidPayment_throws_when_bid_not_found() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        assertDonyError(() -> service.confirmBidPayment(bidId), "bid-not-found");
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_no_payment_intent_id() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        // paymentIntentId left null
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_throws_502_when_stripe_fails() throws StripeException {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            StripeException ex = mock(StripeException.class);
+            when(ex.getMessage()).thenReturn("network down");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenThrow(ex);
+
+            assertDonyError(() -> service.confirmBidPayment(bidId), "stripe-error");
+        }
     }
 
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────

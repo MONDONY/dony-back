@@ -11,7 +11,6 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -136,13 +135,21 @@ public class BidService {
                         "disclaimerSignedIp", clientIp
                 ));
 
-        String senderName = sender.getFirstName() != null ? sender.getFirstName() : "Un expéditeur";
-        String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
-        eventPublisher.publishEvent(new BidCreatedEvent(
-                saved.getId(), announcement.getId(), announcement.getTravelerId(), sender.getId(),
-                senderName, saved.getWeightKg(), corridor));
+        // Note: BidCreatedEvent is no longer published here. Traveler notification
+        // happens after the sender's payment is authorized — see
+        // PaymentService.promoteBidOnPaymentAuthorized().
 
         return toResponse(saved, sender);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertSenderOwnsBid(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        UserEntity user = findUserByFirebaseUid(firebaseUid);
+        if (!bid.getSenderId().equals(user.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut confirmer le paiement");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -177,6 +184,7 @@ public class BidService {
         return bidRepository.findByAnnouncementId(announcementId)
                 .stream()
                 .filter(b -> !b.isDeletedByTraveler())
+                .filter(b -> b.getStatus() != BidStatus.AWAITING_PAYMENT)
                 .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
                     return toResponse(b, sender);
@@ -344,6 +352,9 @@ public class BidService {
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_CANCELLED", sender.getId(), Map.of());
+
+        eventPublisher.publishEvent(new BidRejectedEvent(
+                bid.getId(), bid.getSenderId(), "CANCELLED_BY_SENDER"));
 
         return toResponse(bid, sender);
     }

@@ -12,6 +12,23 @@
 
 ---
 
+## ⚠️ État d'avancement (v2 — 2026-05-03 après-midi)
+
+**Tasks 1-8 : ✅ COMPLÉTÉES** sur la branche `feat/bid-checkout-payment-first` (commits `8efba49`, `3b59ae8`, `cf8a04b`, `8926459`, `d48d3cd`, `28c0b8c`, `05590ef`, `23fb0d0`).
+
+**Tasks 9 à 14 : ⛔ SUSPENDUES**, en attente de re-validation utilisateur.
+
+**Pourquoi suspendu** : la spec a été révisée en v2 pour utiliser le pattern Stripe **separate charges and transfers** (vrai escrow plateforme) au lieu de **destination charges**. Cela impose :
+- une nouvelle migration `V38` (colonne `legacy_destination_charge` + `stripe_charge_id` sur `payments`),
+- une refonte de `PaymentService.createEscrow` pour ne plus poser `transfer_data` ni `application_fee_amount` sur les nouveaux PaymentIntents,
+- une nouvelle classe `BidAcceptedEventListener` qui capture le PI à l'acceptation (uniquement pour `legacy = false`),
+- une refonte de `DeliveryEventListener` pour brancher sur le flag legacy : `pi.capture()` (legacy) vs `Transfer.create()` (v2),
+- une refonte de `BidRejectedEventListener` pour gérer `cancel` (avant capture) vs `Refund` (après capture).
+
+**Les Tasks 9 à 14 ci-dessous sont donc remplacées / complétées par les Tasks 9a, 9b, 9c, 9d, 9e en PART 2 (à la fin du document).** Les anciennes Tasks 9-14 restent comme référence historique mais ne doivent **pas** être exécutées telles quelles.
+
+---
+
 ## File Structure
 
 **Création :**
@@ -1883,3 +1900,424 @@ git commit -m "docs: add story doc for bid checkout payment-first flow"
 - Le stub Stripe `cancelPaymentIntent` qui throw `payment_intent_unexpected_state` dans Task 11 est un peu artificiel — l'implémenteur devra peut-être adapter pour matcher l'API réelle de `StripeException`. Mentionné dans le test.
 - Task 12 : la requête `findPendingTimedOut` à raffiner selon le type exact de `departureDate` côté entité.
 - Si `PaymentResponse` n'expose pas `getPublishableKey()` aujourd'hui, l'ajouter aux DTO PaymentService (Step 4 Task 5).
+
+---
+
+# PART 2 — Plan v2 : Refonte de l'escrow (separate charges and transfers)
+
+> Cette partie remplace les Tasks 9 à 14 originales. Les ordres de Task ci-dessous sont 9a, 9b, 9c, 9d, 9e suivis de Tasks 10', 11', 12', 13', 14' (équivalents des originales mais adaptés au nouveau modèle).
+
+## Vue d'ensemble PART 2
+
+| Task | Sujet | Touche au mode legacy ? |
+|------|-------|--------------------------|
+| 9a | Migration V38 (`legacy_destination_charge`, `stripe_charge_id`) + champs `PaymentEntity` | Oui — base de la dual-path |
+| 9b | Webhook : populer `stripeChargeId` au `payment_intent.amount_capturable_updated` | Oui (utile pour les deux modes) |
+| 9c | `BidAcceptedEventListener` : capture le PI uniquement si `legacy = false` | Oui |
+| 9d | `DeliveryEventListener` : `pi.capture()` (legacy) vs `Transfer.create()` (v2) | Oui |
+| 9e | `BidRejectedEventListener` : `pi.cancel()` (avant capture) vs `Refund` (après capture) | Oui |
+| 9f | Refactor `PaymentService.createEscrow` : ne plus poser `transfer_data` ni `application_fee_amount` ; marquer `legacy_destination_charge = false` | Non (nouveaux paiements seulement) |
+| 9g | `BidCancelledByOwnerEvent` + listener : annuler le PI quand le sender annule un bid `PENDING` | Non |
+| 10' | Filtres visibilité voyageur (idem original Task 10) | Non |
+| 11' | `AwaitingPaymentCleanupScheduler` (idem original Task 11) | Non |
+| 12' | `BidTimeoutScheduler` (idem original Task 12) | Non |
+| 13' | Migration des tests cassés + couverture ≥ 90 % | Oui |
+| 14' | Documentation story (avec section legacy) | — |
+
+**Effort estimé PART 2** : ~10-12 h (vs ~7 h initialement).
+
+---
+
+## Task 9a : Migration V38 + champs `PaymentEntity`
+
+**Files:**
+- Create: `src/main/resources/db/migration/V38__payments_add_legacy_flag_and_charge_id.sql`
+- Modify: `src/main/java/com/dony/api/payments/PaymentEntity.java`
+- Test: `src/test/java/com/dony/api/payments/PaymentEntityV38MigrationTest.java`
+
+- [ ] **Step 1 : Test migration**
+
+```java
+@SpringBootTest
+@ActiveProfiles("test")
+class PaymentEntityV38MigrationTest {
+    @Autowired private JdbcTemplate jdbc;
+
+    @Test
+    void v38_adds_legacy_flag_and_charge_id() {
+        Integer count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM information_schema.columns " +
+            "WHERE table_name = 'payments' " +
+            "AND column_name IN ('legacy_destination_charge','stripe_charge_id')",
+            Integer.class);
+        assertThat(count).isEqualTo(2);
+    }
+}
+```
+
+- [ ] **Step 2 : Run, expect FAIL**
+
+`./mvnw test -Dtest=PaymentEntityV38MigrationTest` → FAIL.
+
+- [ ] **Step 3 : Migration V38**
+
+```sql
+ALTER TABLE payments
+  ADD COLUMN legacy_destination_charge BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN stripe_charge_id          VARCHAR(255);
+
+UPDATE payments SET legacy_destination_charge = true;
+
+CREATE INDEX idx_payments_stripe_charge_id ON payments (stripe_charge_id);
+
+COMMENT ON COLUMN payments.legacy_destination_charge IS 'true si le PaymentIntent a transfer_data.destination (capture transfère immédiatement). false pour separate-charges-and-transfers.';
+COMMENT ON COLUMN payments.stripe_charge_id IS 'Charge id, populé au webhook amount_capturable_updated. Nécessaire pour Transfer.create.';
+```
+
+- [ ] **Step 4 : Champs JPA dans `PaymentEntity.java`**
+
+```java
+@Column(name = "legacy_destination_charge", nullable = false)
+private boolean legacyDestinationCharge = false;
+
+@Column(name = "stripe_charge_id", length = 255)
+private String stripeChargeId;
+```
++ getters/setters.
+
+- [ ] **Step 5 : Tests passent**
+
+- [ ] **Step 6 : Commit**
+```
+git commit -m "feat(payments): V38 add legacy_destination_charge + stripe_charge_id (escrow refactor preparation)"
+```
+
+---
+
+## Task 9b : Webhook populer `stripeChargeId`
+
+**Files:**
+- Modify: `src/main/java/com/dony/api/payments/PaymentService.java` (méthode `handlePaymentEscrowActive`)
+- Test: `src/test/java/com/dony/api/payments/PaymentWebhookChargeIdTest.java`
+
+- [ ] **Step 1 : Test**
+
+Test que au webhook `payment_intent.amount_capturable_updated`, si `pi.getLatestCharge()` (ou `pi.getCharges().getData().get(0).getId()`) est non-null, on populé `payment.stripeChargeId` et on save.
+
+- [ ] **Step 2 : Implémenter**
+
+Dans `handlePaymentEscrowActive`, après `payment.setStatus(PaymentStatus.ESCROW)` :
+```java
+String chargeId = pi.getLatestCharge();  // available in Stripe Java SDK ≥ 22
+if (chargeId != null && payment.getStripeChargeId() == null) {
+    payment.setStripeChargeId(chargeId);
+}
+```
+
+Si `pi.getLatestCharge()` n'existe pas dans la version Stripe SDK utilisée, utiliser `pi.getCharges().getData().get(0).getId()` (vérifier la disponibilité).
+
+- [ ] **Step 3 : Test pass**
+
+- [ ] **Step 4 : Commit**
+```
+git commit -m "feat(payments): persist stripe_charge_id at webhook amount_capturable_updated"
+```
+
+---
+
+## Task 9c : `BidAcceptedEventListener` capture le PI (mode v2 seulement)
+
+**Files:**
+- Create: `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java`
+- Test: `src/test/java/com/dony/api/payments/BidAcceptedEventListenerTest.java`
+
+- [ ] **Step 1 : Test**
+
+Cas couverts :
+- Bid accepté + Payment `legacy = false` + statut `ESCROW` (hold posé) → `pi.capture()` appelé.
+- Bid accepté + Payment `legacy = true` → **PAS** d'appel à `capture()` (la capture historique reste à la livraison).
+- Bid accepté + Payment introuvable → log warn, no-op.
+- Bid accepté + Payment statut autre que `ESCROW` (ex. `RELEASED`) → no-op.
+
+- [ ] **Step 2 : Implémenter**
+
+```java
+@Component
+public class BidAcceptedEventListener {
+    private static final Logger log = LoggerFactory.getLogger(BidAcceptedEventListener.class);
+
+    private final PaymentRepository paymentRepository;
+    private final AuditService auditService;
+
+    public BidAcceptedEventListener(PaymentRepository paymentRepository, AuditService auditService) {
+        this.paymentRepository = paymentRepository;
+        this.auditService = auditService;
+    }
+
+    @EventListener
+    @Async
+    @Transactional
+    public void onBidAccepted(BidAcceptedEvent event) {
+        Optional<PaymentEntity> opt = paymentRepository.findByBidId(event.getBidId());
+        if (opt.isEmpty()) {
+            log.warn("BidAccepted but no payment found for bid {}", event.getBidId());
+            return;
+        }
+        PaymentEntity payment = opt.get();
+
+        if (payment.isLegacyDestinationCharge()) {
+            log.info("Bid {} accepted but payment is legacy — capture deferred to delivery", event.getBidId());
+            return;
+        }
+
+        if (payment.getStatus() != PaymentStatus.ESCROW) {
+            log.info("Bid {} accepted but payment status is {} — skipping capture", event.getBidId(), payment.getStatus());
+            return;
+        }
+
+        try {
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            pi.capture();
+            // Le statut payment reste ESCROW (signifie maintenant "captured on platform")
+            auditService.log("PAYMENT", payment.getId(), "PAYMENT_CAPTURED_ON_PLATFORM",
+                payment.getBidId(),
+                Map.of("piId", payment.getStripePaymentIntentId(),
+                       "bidId", event.getBidId().toString()));
+            log.info("PaymentIntent {} captured on platform for bid {}", payment.getStripePaymentIntentId(), event.getBidId());
+        } catch (StripeException e) {
+            log.error("Capture failed for bid {} (PI={}): {}", event.getBidId(), payment.getStripePaymentIntentId(), e.getMessage(), e);
+            // Sentry will catch
+        }
+    }
+}
+```
+
+- [ ] **Step 3 : Test pass**
+
+- [ ] **Step 4 : Commit**
+```
+git commit -m "feat(payments): capture PI on bid accept for non-legacy payments"
+```
+
+---
+
+## Task 9d : Refactor `DeliveryEventListener` (capture vs Transfer)
+
+**Files:**
+- Modify: `src/main/java/com/dony/api/payments/DeliveryEventListener.java`
+- Modify: `src/test/java/com/dony/api/payments/DeliveryEventListenerTest.java` (si existe, sinon créer)
+
+- [ ] **Step 1 : Test**
+
+Cas :
+- Delivery confirmed + Payment `legacy = true` + ESCROW → `pi.capture()` appelé (comportement actuel).
+- Delivery confirmed + Payment `legacy = false` + ESCROW (déjà capturé sur plateforme) → `Transfer.create` appelé avec `amount = total - 12 %` et `destination = traveler.stripeAccountId`.
+- Delivery confirmed + Payment `RELEASED` → no-op (idempotence).
+- Delivery confirmed + Payment introuvable → log warn, no-op.
+
+- [ ] **Step 2 : Implémenter**
+
+```java
+@EventListener @Async @Transactional
+public void handleDeliveryConfirmed(DeliveryConfirmedEvent event) {
+    Optional<PaymentEntity> opt = paymentRepository.findByBidId(event.getBidId());
+    if (opt.isEmpty()) { /* log + return */ }
+    PaymentEntity payment = opt.get();
+    if (payment.getStatus() != PaymentStatus.ESCROW) { /* idempotence — return */ }
+
+    UserEntity traveler = userRepository.findById(event.getTravelerId())
+        .orElseThrow(/* should not happen */);
+
+    try {
+        if (payment.isLegacyDestinationCharge()) {
+            // Ancien flow : capture transfère immédiatement au voyageur via transfer_data
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            pi.capture();
+            log.info("Legacy capture for bid {}", event.getBidId());
+        } else {
+            // Nouveau flow : Transfer du compte plateforme vers le voyageur
+            BigDecimal commission = payment.getCommissionAmount();
+            BigDecimal net = payment.getAmount().subtract(commission);
+            long netCents = net.multiply(BigDecimal.valueOf(100)).longValue();
+
+            TransferCreateParams.Builder tb = TransferCreateParams.builder()
+                .setAmount(netCents)
+                .setCurrency("eur")
+                .setDestination(traveler.getStripeAccountId())
+                .putMetadata("bid_id", event.getBidId().toString())
+                .putMetadata("payment_id", payment.getId().toString());
+            if (payment.getStripeChargeId() != null) {
+                tb.setSourceTransaction(payment.getStripeChargeId());
+            }
+            Transfer.create(tb.build());
+            log.info("Transfer of {}€ to traveler {} for bid {}", net, traveler.getId(), event.getBidId());
+        }
+
+        payment.setStatus(PaymentStatus.RELEASED);
+        payment.setEscrowReleasedAt(LocalDateTime.now(ZoneOffset.UTC));
+        paymentRepository.save(payment);
+
+        auditService.log(
+            "PAYMENT",
+            payment.getId(),
+            payment.isLegacyDestinationCharge() ? "ESCROW_RELEASED_LEGACY" : "ESCROW_RELEASED_TRANSFER",
+            payment.getBidId(),
+            Map.of("bidId", event.getBidId().toString(),
+                   "amount", payment.getAmount().toPlainString(),
+                   "legacy", payment.isLegacyDestinationCharge()));
+
+        eventPublisher.publishEvent(new PaymentReleasedEvent(
+            payment.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
+
+    } catch (StripeException e) {
+        log.error("Failed to release payment for bid {} (legacy={}): {}",
+            event.getBidId(), payment.isLegacyDestinationCharge(), e.getMessage(), e);
+    }
+}
+```
+
+- [ ] **Step 3 : Test pass** (les deux modes)
+
+- [ ] **Step 4 : Commit**
+```
+git commit -m "refactor(payments): branch DeliveryEventListener on legacy_destination_charge (capture vs Transfer)"
+```
+
+---
+
+## Task 9e : `BidRejectedEventListener` cancel vs Refund
+
+**Files:**
+- Modify: `src/main/java/com/dony/api/payments/BidRejectedEventListener.java` (existe déjà)
+- Modify ses tests
+
+Le code actuel gère déjà `cancel` (PI PENDING, hold actif) et `Refund` (PI ESCROW historique = capturé). Avec le mode v2, **`PaymentStatus.ESCROW`** signifie "captured on platform" pour les non-legacy → l'argent est sur la plateforme, donc `Refund` est correct (pas de besoin de Transfer Reversal car pas encore transféré). **Vérifier** que ce comportement est cohérent.
+
+Cas particulier : si la rejection arrive **après** la livraison + Transfer (status `RELEASED`), il faut `Transfer.createReversal` avant `Refund`. Mais ce cas est rare (rejection après livraison = c'est plus un litige que un reject) et est listé en Q4 du spec. Pour cette task, ne PAS l'implémenter, simplement logger et no-op.
+
+- [ ] **Step 1 : Tests** (couvrir : reject avant capture → cancel ; reject après capture non-legacy → refund ; reject status RELEASED → log warn no-op)
+
+- [ ] **Step 2 : Adapter le code existant** (le code actuel marche déjà pour les deux premiers cas — vérifier qu'il fonctionne bien avec `ESCROW` non-legacy = "captured on platform")
+
+- [ ] **Step 3 : Commit**
+
+---
+
+## Task 9f : Refactor `PaymentService.createEscrow` — modèle separate charges and transfers
+
+**Files:**
+- Modify: `src/main/java/com/dony/api/payments/PaymentService.java`
+- Modify: `src/test/java/com/dony/api/payments/PaymentServiceTest.java`
+
+- [ ] **Step 1 : Mettre à jour les tests existants**
+
+Les tests qui asseraient `application_fee_amount` ou `transfer_data.destination` sur le PaymentIntent doivent être mis à jour : ces params **ne sont plus posés** pour les nouveaux paiements.
+
+- [ ] **Step 2 : Adapter `createEscrow`**
+
+Retirer :
+```java
+.setApplicationFeeAmount(commissionCents)
+.setTransferData(PaymentIntentCreateParams.TransferData.builder()
+    .setDestination(traveler.getStripeAccountId())
+    .build())
+```
+
+Ajouter (juste avant le `paymentRepository.save`) :
+```java
+payment.setLegacyDestinationCharge(false);
+```
+
+La commission est conservée comme champ séparé (déjà géré par `payment.setCommissionAmount(commission)`) et sera utilisée plus tard pour calculer l'amount du Transfer à la livraison.
+
+- [ ] **Step 3 : Conserver `traveler.isStripeOnboarded()` check** (le voyageur doit toujours avoir un compte Connect pour pouvoir recevoir le Transfer plus tard)
+
+- [ ] **Step 4 : Tests passent**
+
+- [ ] **Step 5 : Commit**
+```
+git commit -m "refactor(payments): drop transfer_data and application_fee_amount from new PaymentIntents (escrow on platform)"
+```
+
+---
+
+## Task 9g : `BidCancelledByOwnerEvent` + listener
+
+**Files:**
+- Create: `src/main/java/com/dony/api/matching/events/BidCancelledByOwnerEvent.java`
+- Create: `src/main/java/com/dony/api/payments/BidCancelledByOwnerEventListener.java`
+- Modify: `src/main/java/com/dony/api/matching/BidService.java` (publier l'event dans `cancelBid`)
+- Tests
+
+Quand l'expéditeur annule son propre bid `PENDING` (déjà payé, hold actif) → libérer le hold via `pi.cancel()`. Pour les bids `ACCEPTED` (capturés), même logique que rejection après capture : `Refund` (à implémenter ou laisser au `BidRejectedEventListener` en publiant `BidRejectedEvent` ?).
+
+**Décision** : pour simplifier, faire publier `BidRejectedEvent` (pas `BidCancelledByOwnerEvent`) avec une raison explicite "CANCELLED_BY_SENDER". Réutiliser le listener existant.
+
+Donc en réalité Task 9g se réduit à :
+
+- [ ] **Step 1** : dans `BidService.cancelBid`, publier `BidRejectedEvent` avec raison `"CANCELLED_BY_SENDER"` (en plus de l'audit existant).
+- [ ] **Step 2** : test que `BidRejectedEventListener` réagit correctement (cancel ou refund selon état du payment).
+- [ ] **Step 3** : commit `feat(bid): publish BidRejectedEvent with reason CANCELLED_BY_SENDER on sender cancel`.
+
+(Pas de nouvelle classe `BidCancelledByOwnerEvent` créée, on réutilise l'event existant.)
+
+---
+
+## Task 10' : Filtres visibilité (idem original Task 10)
+
+Voir Task 10 originale (PART 1) — code identique, à exécuter tel quel.
+
+---
+
+## Task 11' : `AwaitingPaymentCleanupScheduler` (idem original Task 11)
+
+Voir Task 11 originale — code identique. **Note :** la race condition (PI déjà succeeded au moment du cleanup) reste valide dans le nouveau modèle.
+
+---
+
+## Task 12' : `BidTimeoutScheduler` (idem original Task 12)
+
+Voir Task 12 originale — code identique. **Note :** dans le nouveau modèle, l'auto-cancel d'un bid `PENDING` non répondu = `pi.cancel()` qui libère le hold (0 frais). Comportement inchangé.
+
+---
+
+## Task 13' : Migration tests existants + couverture
+
+Voir Task 13 originale, mais avec ces ajouts spécifiques v2 :
+- Vérifier que les tests existants de `PaymentService.createEscrow` ne s'attendent plus à `transfer_data` ou `application_fee_amount`.
+- Vérifier que `DeliveryEventListenerTest` couvre les deux flows (legacy et v2).
+- Vérifier que `BidRejectedEventListenerTest` couvre les trois états (PENDING/ESCROW-non-legacy/RELEASED).
+- Couverture JaCoCo ≥ 90 % obligatoire.
+
+---
+
+## Task 14' : Documentation story
+
+Voir Task 14 originale, mais ajouter une section **"Mode legacy"** expliquant :
+- Pourquoi le flag `legacy_destination_charge` existe
+- Comment identifier les payments legacy (créés avant le déploiement v2)
+- Quand le flag pourra être retiré (~3-6 mois après déploiement, quand tous les bids antérieurs seront résolus)
+- Lien vers les Questions Ouvertes du spec (Q1 à Q6)
+
+---
+
+## Self-review PART 2
+
+**Couverture spec v2** :
+- Migration V38 (Task 9a) ✅
+- `stripe_charge_id` populé (Task 9b) ✅
+- Capture à acceptation pour non-legacy (Task 9c) ✅
+- DeliveryEventListener dual-path (Task 9d) ✅
+- Reject avant/après capture (Task 9e) ✅
+- `createEscrow` ne pose plus transfer_data (Task 9f) ✅
+- Annulation par sender (Task 9g) ✅
+- Filtre visibilité (Task 10') ✅
+- Cleanup scheduler (Task 11') ✅
+- Timeout scheduler (Task 12') ✅
+- Tests + couverture (Task 13') ✅
+- Doc (Task 14') ✅
+
+**Risques résiduels v2** :
+- Le champ `pi.getLatestCharge()` dépend de la version Stripe SDK utilisée. Si non disponible, fallback sur `pi.getCharges().getData().get(0).getId()`. À vérifier au moment de Task 9b.
+- Les Questions Ouvertes Q1-Q6 du spec doivent être résolues **avant déploiement prod** (validation Stripe support + avocat fintech + expert-comptable).
+- Le mode legacy pourrait générer des comportements surprenants en CI si les tests utilisent un mix de `legacy=true` et `legacy=false`. Bien isoler les fixtures de test.

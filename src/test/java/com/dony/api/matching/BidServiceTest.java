@@ -10,6 +10,7 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -165,6 +166,9 @@ class BidServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
             verify(auditService).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
+            // Task 8: BidCreatedEvent is no longer published from createBid — the
+            // webhook (PaymentService.promoteBidOnPaymentAuthorized) does it now.
+            verify(eventPublisher, never()).publishEvent(any(BidCreatedEvent.class));
         }
 
         @Test
@@ -488,6 +492,28 @@ class BidServiceTest {
 
             assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("cancelBid publie BidRejectedEvent avec reason CANCELLED_BY_SENDER")
+        void cancelBid_publishes_BidRejectedEvent_with_CANCELLED_BY_SENDER_reason() {
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(
+                    Optional.of(buildAnnouncement()));
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getBidId()).isEqualTo(bid.getId());
+            assertThat(captor.getValue().getSenderId()).isEqualTo(bid.getSenderId());
+            assertThat(captor.getValue().getReason()).isEqualTo("CANCELLED_BY_SENDER");
         }
 
         @Test

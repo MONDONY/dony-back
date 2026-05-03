@@ -112,10 +112,25 @@ public class AnnouncementSteps extends AbstractSteps {
         body.put("departureDate", date);
         body.put("departureTime", "08:00");
         body.put("arrivalTime", "20:00");
-        body.put("departureLocation", from + " CDG");
-        body.put("arrivalLocation", to + " Airport");
+
+        // Pickup address (departure)
+        Map<String, Object> pickupAddress = new HashMap<>();
+        pickupAddress.put("label", from + " CDG");
+        pickupAddress.put("lat", 48.8566);
+        pickupAddress.put("lng", 2.3522);
+        body.put("pickupAddress", pickupAddress);
+
+        // Delivery address (arrival)
+        Map<String, Object> deliveryAddress = new HashMap<>();
+        deliveryAddress.put("label", to + " Airport");
+        deliveryAddress.put("lat", 14.7167);
+        deliveryAddress.put("lng", -17.4667);
+        body.put("deliveryAddress", deliveryAddress);
+
         body.put("availableKg", kg);
         body.put("pricePerKg", price);
+        body.put("transportMode", "PLANE");
+
         return body;
     }
 }

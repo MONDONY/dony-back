@@ -13,6 +13,16 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     long countByAnnouncementId(UUID announcementId);
 
+    /**
+     * Counts only bids that are currently visible to the traveler on their announcement
+     * (PENDING demands awaiting traveler action). Excludes AWAITING_PAYMENT (sender hasn't paid),
+     * CANCELLED, REJECTED, COMPLETED — none of which appear in the traveler's pending list.
+     */
+    @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.announcementId = :announcementId " +
+           "AND b.status = com.dony.api.matching.BidStatus.PENDING " +
+           "AND b.deletedByTraveler = false")
+    long countVisibleByAnnouncementId(@Param("announcementId") UUID announcementId);
+
     boolean existsByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);
 
     boolean existsBySenderIdAndAnnouncementIdAndStatusIn(UUID senderId, UUID announcementId, List<BidStatus> statuses);
@@ -27,6 +37,11 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     Optional<BidEntity> findByTrackingNumber(String trackingNumber);
 
     Optional<BidEntity> findByTrackingToken(String trackingToken);
+
+    Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
+
+    List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
+            BidStatus status, LocalDateTime threshold);
 
     @Query("SELECT b FROM BidEntity b WHERE b.status = 'ACCEPTED' " +
            "AND b.handoverWindowStart IS NOT NULL " +
@@ -52,4 +67,20 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id " +
            "WHERE a.travelerId = :travelerId AND b.status = 'COMPLETED'")
     List<BidEntity> findCompletedBidsByTravelerId(@Param("travelerId") UUID travelerId);
+
+    @Query("""
+        SELECT b FROM BidEntity b, AnnouncementEntity a
+        WHERE b.announcementId = a.id
+          AND b.status = com.dony.api.matching.BidStatus.PENDING
+          AND b.createdAt < :minGraceThreshold
+          AND (
+                b.createdAt < :twentyFourHoursAgo
+             OR a.departureDate <= :halfDayThresholdDate
+          )
+        """)
+    List<BidEntity> findPendingTimedOut(
+            @Param("twentyFourHoursAgo") LocalDateTime twentyFourHoursAgo,
+            @Param("halfDayThresholdDate") java.time.LocalDate halfDayThresholdDate,
+            @Param("minGraceThreshold") LocalDateTime minGraceThreshold
+    );
 }

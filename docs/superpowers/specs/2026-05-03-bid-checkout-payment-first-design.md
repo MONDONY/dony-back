@@ -1,8 +1,15 @@
 # Bid Checkout — Payment-First Reservation Flow
 
 **Date:** 2026-05-03
-**Status:** Spec validée, en attente d'implémentation
+**Status:** Spec v2 — en attente de re-validation (escrow plateforme ajouté)
 **Auteur:** Claude (brainstorming guidé)
+
+## Historique des révisions
+
+| Version | Date | Changements |
+|---------|------|-------------|
+| v1 | 2026-05-03 (matin) | Spec initiale : pré-autorisation Stripe, capture à l'acceptation, `transfer_data.destination` (le voyageur reçoit l'argent à l'acceptation). Implémentée Tasks 1-8. |
+| **v2** | 2026-05-03 (après-midi) | **Refonte de l'escrow** : modèle "separate charges and transfers". L'argent est capturé sur le compte plateforme à l'acceptation, puis transféré au voyageur **uniquement à la confirmation de livraison**. Compatible avec délais voyage > 7 jours. Migration nécessaire pour les `PaymentIntent` existants (mode legacy). |
 
 ---
 
@@ -29,11 +36,14 @@ Conséquences indésirables :
 | # | Question | Choix | Justification |
 |---|----------|-------|---------------|
 | 1 | Quand l'expéditeur paie ? | **Avant** que le voyageur voie la demande (modèle BlaBlaCar/Uber) | Engagement financier à la création → meilleure qualité de leads |
-| 2 | Capture immédiate ou pré-autorisation ? | **Pré-autorisation** (`capture_method=manual`, capture seulement à `acceptBid`) | 0 € de frais Stripe sur les refus voyageur (vs ~0.70 €/refus en capture immédiate). Hold expire à 7j max — compatible avec le timeout voyageur de 24h |
-| 3 | Délai max de réponse voyageur | `min(24h après création du bid, departureDate - 12h)` | Couvre réservation tardive ET très en avance |
+| 2 | Capture immédiate ou pré-autorisation ? | **Pré-autorisation** (`capture_method=manual`, capture à l'acceptation du voyageur) | 0 € de frais Stripe sur les refus voyageur (vs ~0.70 €/refus en capture immédiate) |
+| 3 | Délai max de réponse voyageur | `min(24h après création du bid, departureDate - 12h)` | Couvre réservation tardive ET très en avance. Garantit que la capture se produit bien avant les 7 jours d'expiration du hold Stripe |
 | 4 | Trace en BDD avant paiement | **Oui**, `status = AWAITING_PAYMENT`, **suppression physique** par scheduler 5 minutes après expiration (15 min après création) | Demandé explicitement par l'utilisateur. Ces bids n'ont jamais d'existence légale (jamais notifiés, jamais audités) → exception au "soft delete only" du CLAUDE.md, justifiée |
 | 5 | Visibilité côté voyageur | `AWAITING_PAYMENT` invisible dans toutes les listes voyageur | Cohérent avec l'objectif : aucune sollicitation tant que non payé |
 | 6 | Visibilité côté expéditeur | `AWAITING_PAYMENT` visible dans "Mes demandes" | Pour permettre la reprise du paiement si interruption |
+| **7** | **Modèle d'escrow Stripe** | **Separate charges and transfers (v2)** : à l'acceptation, capture vers le compte plateforme (PAS sur le compte voyageur). Transfer vers le voyageur **uniquement à la confirmation de livraison**. | La date de livraison peut être à 2 mois (selon le vol du voyageur). Le hold Stripe expire à 7 jours, donc capturer plus tard est impossible. Capturer plus tôt (à l'acceptation) tout en gardant l'argent sur la plateforme jusqu'à livraison = vrai escrow plateforme. |
+| **8** | **Frais commission (12%)** | Conservés sur le compte plateforme **avant** le Transfer (donc le Transfer envoie `total - commission` au voyageur). Pas de `application_fee_amount` Stripe — implémentation manuelle côté code. | Avec le pattern separate charges and transfers, `application_fee_amount` n'est plus utilisable. La commission est implicite : la plateforme ne transfère que `montant_net = total - 12%`. |
+| **9** | **Compatibilité avec les `PaymentIntent` existants** | **Mode legacy dual-path** : les payments créés avant le déploiement v2 ont le flag `legacy_destination_charge = true` → continuent d'utiliser l'ancien comportement (capture à la livraison via `transfer_data.destination`). Les nouveaux payments (`legacy = false`) suivent le nouveau modèle. | Évite de casser les bids en cours au moment du déploiement. Le mode legacy disparaît naturellement quand tous les payments antérieurs sont résolus. |
 
 ---
 
@@ -74,15 +84,135 @@ Expéditeur                Backend                    Stripe                Voya
     │                       │◄────────────────────────────────────────────────┤
     │                       │ paymentIntent.capture()  │                      │
     │                       ├─────────────────────────►│                      │
-    │                       │ → débit réel + escrow                           │
+    │                       │ → débit réel             │                      │
+    │                       │ → argent sur compte      │                      │
+    │                       │   PLATEFORME (PAS le     │                      │
+    │                       │   compte du voyageur)    │                      │
+    │                       │ → bid.status = ACCEPTED  │                      │
+    │                       │ → payment.status = ESCROW│                      │
+    │                       │                          │                      │
+    │                       │       (livraison confirmée — QR scan)           │
+    │                       │◄────────────────────────────────────────────────┤
+    │                       │ Transfer.create          │                      │
+    │                       │   amount = total - 12%   │                      │
+    │                       │   destination = voyageur │                      │
+    │                       ├─────────────────────────►│                      │
+    │                       │ → argent envoyé au       │                      │
+    │                       │   voyageur               │                      │
+    │                       │ → payment.status=RELEASED│                      │
 ```
 
 **Cas alternatifs** :
 
 - Expéditeur abandonne le checkout → scheduler supprime le bid + cancel le PaymentIntent à T+15min (0 frais).
-- Voyageur refuse → `paymentIntent.cancel()` → hold libéré (0 frais).
-- Voyageur ne répond pas dans `min(24h, departure-12h)` → scheduler timeout : bid CANCELLED + `paymentIntent.cancel()`.
+- Voyageur refuse **avant capture** (bid PENDING) → `paymentIntent.cancel()` → hold libéré (0 frais).
+- Voyageur ne répond pas dans `min(24h, departure-12h)` → scheduler timeout : bid CANCELLED + `paymentIntent.cancel()` (0 frais).
+- Voyageur refuse **après capture** (bid ACCEPTED, refus parcel à l'inspection) → `Refund.create()` → l'argent retourne sur la carte de l'expéditeur (frais Stripe ~0.70 € perdus).
+- Litige tranché en faveur de l'expéditeur après livraison → `Refund.create()` (frais perdus). L'argent est encore sur le compte plateforme (pas encore transféré) si pas livré ; après livraison + transfer, il faut un `Transfer.createReversal()` puis `Refund.create()`.
 - Race condition (scheduler vs webhook au même instant) : si Stripe répond `payment_intent_unexpected_state` au cancel et le PI est `succeeded`, on promeut le bid en `PENDING` (rattrapage).
+
+---
+
+## Architecture Stripe — Separate Charges and Transfers (v2)
+
+### Pourquoi changer l'architecture ?
+
+Le code v1 (encore en place avant cette refonte) utilise le pattern Stripe **destination charges** : chaque `PaymentIntent` est créé avec `transfer_data.destination = traveler.stripeAccountId` et `application_fee_amount = 12%`. Cela signifie que **dès la capture**, l'argent quitte la plateforme et arrive sur le compte Connect du voyageur.
+
+Conséquences inacceptables pour Dony :
+
+1. **Capture à l'acceptation = paiement immédiat au voyageur**, avant qu'il n'ait voyagé. Pas de séquestre réel.
+2. **Capture à la livraison** (l'autre option) impossible : le hold Stripe expire après **7 jours** alors qu'un voyage peut être planifié à **2 mois** d'écart.
+
+### Nouveau modèle : separate charges and transfers
+
+Le PaymentIntent ne référence **pas** le compte Connect du voyageur. L'argent est capturé sur le **compte plateforme**, puis transféré au voyageur via une opération Stripe distincte (`Transfer.create`) **uniquement à la confirmation de livraison**.
+
+```
+Acceptation                                Livraison confirmée
+    │                                              │
+    ▼                                              ▼
+PaymentIntent.capture()                  Transfer.create({
+    → argent débité de la carte sender     amount: total - 12%,
+    → arrive sur PLATEFORME                destination: traveler_stripe_id,
+    → payment.status = ESCROW              source_transaction: pi.charge_id
+                                          })
+                                            → argent envoyé au voyageur
+                                            → payment.status = RELEASED
+```
+
+### Configuration Stripe Connect requise
+
+| Élément | État actuel | Compatible nouveau modèle ? |
+|---------|-------------|------------------------------|
+| Type de compte voyageur | **Express** (`PaymentService.java:94`) | ✅ Oui |
+| Capability `transfers` | ✅ Activée (`PaymentService.java:98`) | ✅ Oui (suffisante pour recevoir des Transfers) |
+| Capability `card_payments` | Non requise | ✅ Pas nécessaire pour le voyageur dans ce modèle |
+
+**Aucun re-onboarding voyageur n'est nécessaire.** La capability `transfers` (déjà activée) est tout ce qu'il faut côté compte connecté.
+
+### Comparaison côté code
+
+```java
+// AVANT (v1, destination charge)
+PaymentIntentCreateParams params = builder
+    .setCaptureMethod(MANUAL)
+    .setApplicationFeeAmount(commissionCents)
+    .setTransferData(TransferData.builder()
+        .setDestination(traveler.getStripeAccountId())  // ← lien direct
+        .build())
+    .build();
+
+// APRÈS (v2, separate charges and transfers)
+PaymentIntentCreateParams params = builder
+    .setCaptureMethod(MANUAL)
+    // PAS d'application_fee_amount, PAS de transfer_data
+    .putMetadata("bid_id", bidId)
+    .putMetadata("traveler_id", travelerId)
+    .build();
+
+// Plus tard, à la livraison :
+TransferCreateParams transferParams = TransferCreateParams.builder()
+    .setAmount(amountToTraveler)  // total - 12% de commission
+    .setCurrency("eur")
+    .setDestination(traveler.getStripeAccountId())
+    .setSourceTransaction(payment.getStripeChargeId())  // lie le transfer à la charge
+    .putMetadata("bid_id", bidId.toString())
+    .build();
+Transfer.create(transferParams);
+```
+
+### Mode legacy (compatibilité avec les `PaymentIntent` existants)
+
+Au moment du déploiement v2, certains `Payment` rows existent déjà avec un `PaymentIntent` configuré en **destination charge**. Ces PIs vont continuer à se comporter à l'ancienne (capture → transfert immédiat au voyageur). Pour que le code post-déploiement gère correctement les deux flux :
+
+- **Nouvelle colonne** sur `payments` : `legacy_destination_charge BOOLEAN NOT NULL DEFAULT false`.
+- **Migration de données** : tous les `payments` créés *avant* le déploiement → `legacy_destination_charge = true`.
+- **`DeliveryEventListener`** branche sur ce flag :
+  - `legacy = true` → ancien comportement (`pi.capture()` à la livraison, qui transfère directement au voyageur via `transfer_data`).
+  - `legacy = false` → nouveau comportement (`Transfer.create()` à la livraison, capture déjà faite à l'acceptation).
+- **`BidAcceptedEventListener`** ne capture le PI que pour les `legacy = false`.
+
+Ce mode legacy disparaît naturellement quand tous les bids antérieurs sont résolus (livrés, refusés ou expirés). Il pourra être supprimé du code dans une PR ultérieure (~3-6 mois après le déploiement v2).
+
+### Implications côté `PaymentEntity` et `PaymentStatus`
+
+**Nouveau champ** sur `PaymentEntity` :
+```java
+@Column(name = "stripe_charge_id", length = 255)
+private String stripeChargeId;  // populé au webhook charge.succeeded ou via PI.charges.data[0]
+```
+
+`stripeChargeId` est nécessaire pour `setSourceTransaction(...)` lors du Transfer (lie le transfer à la charge originale, important pour la réconciliation comptable Stripe).
+
+**Statuts existants conservés** :
+- `PENDING` → PI créé, pas encore confirmé par carte
+- `ESCROW` → PI confirmé (hold posé) **OU** capturé sur compte plateforme (selon legacy ou non)
+- `RELEASED` → argent envoyé au voyageur (capture pour legacy, Transfer pour v2)
+- `REFUNDED` → remboursé à l'expéditeur
+- `FAILED` → échec carte ou Stripe
+
+Pas de nouveau statut requis. `ESCROW` couvre désormais deux situations : "hold actif" (legacy avant capture) et "captured sur plateforme" (v2 après capture, avant Transfer). La distinction est portée par `legacy_destination_charge`.
 
 ---
 
@@ -115,6 +245,32 @@ CREATE INDEX idx_bids_awaiting_payment
 
 CREATE INDEX idx_bids_payment_intent
   ON bids (payment_intent_id);
+```
+
+### Migration `V38__payments_add_legacy_flag_and_charge_id.sql` (NOUVEAU v2)
+
+```sql
+ALTER TABLE payments
+  ADD COLUMN legacy_destination_charge BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN stripe_charge_id          VARCHAR(255);
+
+-- Tous les payments existants au moment du déploiement utilisent l'ancien flow
+UPDATE payments SET legacy_destination_charge = true;
+
+CREATE INDEX idx_payments_stripe_charge_id ON payments (stripe_charge_id);
+
+COMMENT ON COLUMN payments.legacy_destination_charge IS 'true si le PaymentIntent a été créé avec transfer_data.destination (capture transfère directement au voyageur). false pour le nouveau modèle separate-charges-and-transfers.';
+COMMENT ON COLUMN payments.stripe_charge_id IS 'Stripe Charge id, populé au webhook payment_intent.amount_capturable_updated. Nécessaire pour Transfer.create avec source_transaction.';
+```
+
+### Champs ajoutés sur `PaymentEntity`
+
+```java
+@Column(name = "legacy_destination_charge", nullable = false)
+private boolean legacyDestinationCharge = false;  // false pour les nouveaux paiements
+
+@Column(name = "stripe_charge_id", length = 255)
+private String stripeChargeId;
 ```
 
 ### Filtre visibilité (modifications `BidRepository`)
@@ -175,9 +331,22 @@ Signature Stripe vérifiée (déjà obligatoire selon CLAUDE.md).
 
 ### Endpoints existants modifiés
 
-- `POST /api/v1/bids/{id}/accept` → ajoute `paymentService.capturePaymentIntent(bid.paymentIntentId)` après le changement de statut.
-- `POST /api/v1/bids/{id}/reject` → ajoute `paymentService.cancelPaymentIntent(bid.paymentIntentId)` après le changement de statut.
-- `POST /api/v1/bids/{id}/cancel` (annulation par l'expéditeur) → si bid `PENDING` (paiement déjà fait), ajoute `cancelPaymentIntent` pour libérer le hold.
+- `POST /api/v1/bids/{id}/accept` :
+  - Bid passe à `ACCEPTED` (inchangé)
+  - **NOUVEAU v2** : `BidAcceptedEventListener` capture le PI sur le compte plateforme (`pi.capture()`). Pour les payments `legacy_destination_charge = true`, **pas** de capture ici — la capture historique restera à la livraison via `DeliveryEventListener`.
+  - `Payment.status` passe de `ESCROW` (qui désormais signifie "captured on platform") → reste `ESCROW` (le statut couvre les deux situations).
+- `POST /api/v1/bids/{id}/reject` (avant capture, bid PENDING) → `paymentService.cancelPaymentIntent(...)` (libère le hold, 0 frais).
+- `POST /api/v1/bids/{id}/cancel` (annulation par l'expéditeur, bid PENDING) → idem `reject` côté Stripe.
+- **Refus parcel à l'inspection** (bid passe `PARCEL_REFUSED` après acceptation) → `Refund.create()` car la capture a déjà eu lieu (frais Stripe perdus).
+
+### Endpoint inchangé mais comportement modifié — Confirmation de livraison
+
+`DeliveryEventListener.handleDeliveryConfirmed` (Story 6.4) :
+
+- **`legacy_destination_charge = true`** (paiement créé avant le déploiement v2) → comportement actuel conservé : `pi.capture()` à la livraison, l'argent transite directement au voyageur via `transfer_data.destination`.
+- **`legacy_destination_charge = false`** (nouveau modèle) → `Transfer.create()` avec `amount = total - 12 %` et `destination = traveler.stripeAccountId`. La capture a déjà eu lieu à l'acceptation.
+
+Dans les deux cas, `Payment.status` passe à `RELEASED` à la fin du flux.
 
 L'ancien endpoint `POST /announcements/{id}/bids` est **supprimé** (breaking change). Le frontend Flutter devra migrer vers `/bids/checkout`.
 
@@ -233,7 +402,10 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 | `matching/dto/BidCheckoutRequest.java` | DTO entrée checkout (mêmes champs que `BidRequest`) |
 | `matching/dto/BidCheckoutResponse.java` | DTO sortie : bidId + clientSecret + publishableKey + expiresAt |
 | `payments/StripeWebhookController.java` *(si absent)* | Endpoint webhook Stripe avec vérif signature |
-| `db/migration/V37__bids_add_payment_intent.sql` | Migration BDD |
+| `db/migration/V37__bids_add_payment_intent.sql` | Migration BDD (déjà créé Tasks 1-8) |
+| **`db/migration/V38__payments_add_legacy_flag_and_charge_id.sql`** *(v2)* | Ajoute `legacy_destination_charge` + `stripe_charge_id` sur `payments` |
+| **`payments/BidAcceptedEventListener.java`** *(v2)* | Écoute `BidAcceptedEvent` ; capture le PI sur le compte plateforme (uniquement si `legacy = false`) |
+| **`payments/BidCancelledByOwnerEvent.java` + listener** *(v2)* | Annule le PI si l'expéditeur annule un bid `PENDING` |
 
 ### Fichiers modifiés
 
@@ -244,7 +416,10 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 | `matching/BidRepository.java` | Filtres + nouvelles requêtes scheduler |
 | `matching/BidService.java` | `acceptBid` capture, `rejectBid` cancel, `cancelBid` cancel, filtres listings |
 | `matching/BidController.java` | Endpoint `/checkout` ajouté ; ancien `POST /announcements/{id}/bids` retiré |
-| `payments/PaymentService.java` | Méthodes publiques `capturePaymentIntent(String)`, `cancelPaymentIntent(String)` |
+| `payments/PaymentService.java` | Méthodes publiques `capturePaymentIntent(String)`, `cancelPaymentIntent(String)` ; **v2 :** `createEscrow` adapté pour ne plus poser `transfer_data` ni `application_fee_amount` (modèle separate charges and transfers) |
+| **`payments/PaymentEntity.java`** *(v2)* | + `legacyDestinationCharge` (boolean) + `stripeChargeId` (String) |
+| **`payments/DeliveryEventListener.java`** *(v2)* | Branche sur `legacyDestinationCharge` : ancien `pi.capture()` pour legacy, nouveau `Transfer.create()` (avec `amount = total - 12 %`) pour les nouveaux paiements |
+| **`payments/BidRejectedEventListener.java`** *(v2)* | Si bid était `ACCEPTED` (capture déjà effectuée) → `Refund.create()` au lieu de `pi.cancel()` |
 
 ### Tests requis (couverture ≥ 90 %)
 
@@ -301,9 +476,11 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 | Scénario | Frais Stripe |
 |----------|--------------|
 | Bid créé puis abandonné par l'expéditeur (cleanup à 15min) | **0 €** (PaymentIntent jamais confirmé ou hold annulé) |
-| Bid payé puis voyageur refuse | **0 €** (cancel sur hold) |
+| Bid payé puis voyageur refuse avant acceptation | **0 €** (cancel sur hold) |
 | Bid payé puis voyageur ne répond pas (timeout) | **0 €** (cancel sur hold) |
-| Bid payé + voyageur accepte + livraison confirmée | ~1.5 % + 0.25 € (1 seule fois, sur capture) |
+| Bid payé + voyageur accepte + livraison confirmée | ~1.5 % + 0.25 € sur la **capture** + frais Stripe Transfer (généralement gratuit en EUR) — soit ~0.70 € sur 30 € |
+| Bid payé + voyageur accepte mais refus parcel à inspection | ~0.70 € (frais de capture perdus, refund ne récupère pas les frais Stripe) |
+| Litige tranché en faveur de l'expéditeur après livraison | ~0.70 € + frais Transfer Reversal (généralement gratuit) |
 
 ---
 
@@ -322,6 +499,193 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 - [ ] `./mvnw test` passe à 0 rouge
 - [ ] Couverture JaCoCo ≥ 90 %
 - [ ] Migration V37 testée sur base vierge
+- [ ] **(v2)** Migration V38 ajoute `legacy_destination_charge` + `stripe_charge_id` ; tous les `payments` existants au moment du déploiement sont marqués `legacy = true`
+- [ ] **(v2)** `BidAcceptedEventListener` capture le PI **uniquement** pour les payments `legacy = false`
+- [ ] **(v2)** `DeliveryEventListener` branche correctement sur `legacyDestinationCharge` (capture vs Transfer)
+- [ ] **(v2)** `BidRejectedEventListener` gère la double situation : `cancel` si PI pas encore capturé, `Refund` si déjà capturé
+- [ ] **(v2)** Tests des deux flows (legacy et nouveau) en parallèle pour vérifier la rétro-compatibilité
+
+---
+
+## Questions ouvertes / à valider
+
+> ⚠️ Cette section liste les points qui dépassent la simple décision technique et doivent être validés **avant la mise en production**, voire **avant la fin de l'implémentation v2** pour certains.
+
+### Q1 — Type de compte Stripe Connect actuel et compatibilité avec l'approche
+
+**État actuel** : comptes voyageurs en **Stripe Connect Express** avec capability `transfers` activée (`PaymentService.java:94-99`).
+
+**Compatibilité** : ✅ confirmée. Le pattern *separate charges and transfers* fonctionne avec Express, Standard et Custom. La capability `transfers` (déjà active) suffit pour recevoir un `Transfer.create`. Aucun re-onboarding voyageur nécessaire.
+
+**À valider** : confirmer auprès du **support Stripe** qu'il n'y a pas d'autres prérequis spécifiques au pays Sénégal/France (ex. KYB plateforme, identification fiscale). Ouvrir un ticket Stripe support avant prod.
+
+### Q2 — Implications conformité (détenir des fonds clients sur le compte plateforme)
+
+**Constat** : avec ce nouveau modèle, l'argent reste sur le compte Stripe de la plateforme entre l'acceptation et la livraison — potentiellement **2 mois** dans le pire cas (vol planifié à long terme).
+
+**Risque réglementaire France/UE** :
+- DSP2 / ACPR : la détention de fonds clients > "délai raisonnable" peut requérir un statut **Agent PSP** ou **Établissement de Monnaie Électronique (EME)**.
+- Stripe couvre une partie du risque via leur licence, mais le seuil exact dépend du volume et de la durée moyenne.
+
+**Action requise avant prod** :
+1. **Ouvrir un ticket avec le support Stripe** : décrire le use case (marketplace P2P, fonds détenus jusqu'à 2 mois) et demander confirmation que c'est OK avec leur licence et leurs conditions d'utilisation.
+2. **Consulter un avocat fintech** (compter ~1500-3000 €) pour un avis écrit sur la conformité ACPR. Si le volume reste < 1M€/an et la durée moyenne < 1 mois, généralement pas de requalification ; au-delà, il faut probablement un statut intermédiaire.
+3. **Documenter** la décision dans `docs/compliance/` (à créer).
+
+**Tant que ces deux validations ne sont pas faites, ne pas déployer en production.** Le développement peut continuer en environnement dev/staging avec test cards Stripe.
+
+### Q3 — Stratégie de migration pour les `PaymentIntent` existants
+
+**Décision proposée** : mode **dual-path** via le flag `legacy_destination_charge`.
+
+- Tous les payments créés avant le déploiement v2 → `legacy = true` → `DeliveryEventListener` continue d'utiliser `pi.capture()` (qui transfère directement au voyageur via `transfer_data.destination` posé à la création).
+- Tous les payments créés après le déploiement v2 → `legacy = false` → nouveau flow.
+
+**Avantages** :
+- ✅ Zéro disruption pour les bids en cours.
+- ✅ Pas de remboursement / re-création nécessaire.
+- ✅ Le mode legacy disparaît naturellement quand les anciens bids sont tous résolus (3-6 mois).
+
+**Risque résiduel** :
+- Les anciens PIs avec `transfer_data.destination` ont leur hold qui expire à **7 jours**. Si un voyage planifié à plus de 7 jours après la création du PI legacy n'est pas livré dans les temps → la capture échouera. **Mais ce risque existait déjà avant la v2** — il n'est pas introduit par cette refonte.
+
+**Action — audit pré-déploiement** : identifier tous les payments `ESCROW` legacy dont **la date de livraison prévue** (lue sur `announcement.arrival_date` du bid lié, ou à défaut `announcement.departure_date`) est à **plus de 7 jours après la date du déploiement**. Ce sont les bids dont le hold Stripe expirera avant la date de livraison réelle — il faut soit les capturer manuellement, soit notifier sender + voyageur, soit les annuler avant qu'ils n'échouent silencieusement en prod.
+
+**Requête SQL d'audit (à exécuter le jour du déploiement, en remplaçant `:deployment_date`)** :
+
+```sql
+-- Payments en escrow avec un hold qui va expirer avant la date de livraison
+SELECT
+    p.id            AS payment_id,
+    p.bid_id,
+    p.created_at    AS pi_created_at,
+    p.amount,
+    p.stripe_payment_intent_id,
+    b.sender_id,
+    a.traveler_id,
+    a.departure_date,
+    a.arrival_date,
+    (a.arrival_date - DATE(:deployment_date)) AS days_until_arrival_after_deploy,
+    (a.arrival_date - DATE(p.created_at))      AS days_pi_to_arrival,
+    CASE
+        WHEN p.created_at < (NOW() - INTERVAL '6 days') THEN 'EXPIRING_SOON'
+        WHEN a.arrival_date > (DATE(:deployment_date) + INTERVAL '7 days') THEN 'WILL_EXPIRE_BEFORE_DELIVERY'
+        ELSE 'OK'
+    END AS risk
+FROM payments p
+JOIN bids b          ON b.id = p.bid_id
+JOIN announcements a ON a.id = b.announcement_id
+WHERE p.status = 'ESCROW'
+  AND p.legacy_destination_charge = true
+ORDER BY a.arrival_date ASC;
+```
+
+Pour chaque ligne avec `risk != 'OK'` : décision manuelle (capture immédiate, ou refund si livraison improbable, ou notif aux parties).
+
+### Q4 — Gestion des remboursements et litiges dans le nouveau modèle
+
+**Cas à traiter** :
+
+| Cas | Action côté Stripe | Frais perdus | Scope |
+|-----|---------------------|--------------|-------|
+| Refus parcel à inspection (bid ACCEPTED, avant livraison/Transfer) | `Refund.create(charge_id)` — argent encore sur compte plateforme | ~0.70 € | **Inclus dans v2** (Task 9e) |
+| Annulation par le sender d'un bid ACCEPTED (avant livraison) | `Refund.create(charge_id)` | ~0.70 € | **Inclus dans v2** (Task 9g via réutilisation `BidRejectedEventListener`) |
+| Litige tranché expéditeur **après livraison** (déjà transféré au voyageur) | 1. `Transfer.createReversal()` pour récupérer l'argent du compte voyageur. 2. `Refund.create(charge_id)` pour rendre à la carte. | ~0.70 € + 0 € reversal | **Hors scope v2** — story ultérieure |
+| Litige partiel (ex. 50 % remboursé / partage entre voyageur et sender) | `Refund.create(amount=50%)`. Si déjà transféré : reversal partiel d'abord. | proportionnel | **Hors scope v2** — story ultérieure |
+
+**Périmètre v2 (à implémenter)** : les refunds **simples** (montant total) qui surviennent **avant** la livraison — c'est-à-dire avant que le `DeliveryEventListener` n'ait initié le `Transfer`. Dans ces cas, l'argent est encore sur le compte plateforme, un seul `Refund.create(charge_id)` suffit. Le code existant de `BidRejectedEventListener` gère déjà ce cas (ligne 84 — `Refund.create(...)`) ; il sera ré-utilisé tel quel via `BidRejectedEvent` avec différentes raisons (`PARCEL_REFUSED`, `CANCELLED_BY_SENDER`, etc.).
+
+**Hors scope v2 (story ultérieure)** : tout ce qui implique un `Transfer.createReversal` (l'argent a déjà quitté la plateforme) ou un refund partiel. Cela demande une interface admin dédiée et une coordination avec `DisputeService` (Story 8.x).
+
+**Action** : créer un ticket Linear/issue séparé pour la story "Litiges complexes & remboursements partiels post-livraison" — à planifier après le déploiement v2.
+
+### Q5 — Impact comptabilité / facturation
+
+**Avant (v1, destination charges)** :
+- La plateforme n'est techniquement qu'un facilitateur. La facture client (sender) est émise *par Stripe au nom de la plateforme*. Le voyageur reçoit son paiement net comme un revenu d'activité indépendante.
+- Les `application_fee_amount` apparaissent sur le compte plateforme comme commissions, faciles à comptabiliser.
+
+**Après (v2, separate charges and transfers)** :
+- La plateforme **encaisse** le montant total puis **reverse** au voyageur. Comptablement, c'est un flux différent :
+  - Côté plateforme : produit = montant total ; charge = montant transféré au voyageur ; produit net = commission.
+  - Risque de confusion sur la TVA si l'auto-liquidation s'applique (intermédiation transparente vs opaque).
+- Les Transfers Stripe vers les voyageurs n'apparaissent plus comme `application_fee_amount` mais comme des sorties d'argent de la plateforme.
+
+**Action requise** :
+1. Faire valider par un **expert-comptable** que ce schéma est compatible avec la comptabilité actuelle de la plateforme (ou s'il faut un nouveau plan comptable).
+2. Vérifier la **TVA** : si Dony est intermédiaire transparent, OK ; si requalifié en intermédiaire opaque, la TVA s'applique sur le total et non sur la commission.
+3. Documenter le schéma des écritures dans `docs/accounting/` (à créer).
+
+### Q6 — Frais Stripe Transfer EUR → comptes Connect zone CFA — **🚨 BLOCKER DEV**
+
+**Hypothèse de travail** : les Transfers Stripe entre comptes EUR sont gratuits dans la zone SEPA. Mais Dony cible la diaspora africaine : les voyageurs peuvent avoir des comptes connectés au Sénégal, Côte d'Ivoire, Mali, Cameroun.
+
+**Question critique** : quel est le coût d'un Transfer EUR → compte Stripe Connect d'un voyageur en zone CFA ?
+
+**Pourquoi c'est un blocker DEV (et pas seulement prod)** :
+
+Le calcul du montant transféré au voyageur est **codé en dur dans `DeliveryEventListener` (Task 9d)** :
+```java
+BigDecimal net = payment.getAmount().subtract(commission);  // total - 12 %
+```
+
+Si les Transfers vers les comptes CFA ne sont pas gratuits, cette formule est **fausse**. Il faudra :
+```java
+BigDecimal net = payment.getAmount()
+    .subtract(commission)
+    .subtract(transferFees);  // ← à déterminer selon zone du voyageur
+```
+
+Sinon : soit Dony absorbe les frais (perte sur chaque livraison), soit le voyageur reçoit moins qu'annoncé (problème UX et juridique).
+
+**Action — à faire AVANT d'écrire le code de la Task 9d** :
+
+1. **Ouvrir un ticket Stripe support** (groupé avec Q1 et Q2 — voir section Actions à lancer ci-dessous).
+2. **Demander explicitement** :
+   - Coût d'un `Transfer.create` EUR → compte Connect Express dans chacun des pays cibles : Sénégal, Côte d'Ivoire, Mali, Cameroun.
+   - Existe-t-il des restrictions de devise (XOF/XAF) pour les Transfers ?
+   - Si non-gratuit : barème fixe ou pourcentage ?
+3. **Selon la réponse** :
+   - **Gratuit** → garder la formule actuelle, `transferFees = 0`.
+   - **Non-gratuit, fixe ou %** → ajouter une colonne `transfer_fees` sur `payments` populée à la création (avec un `StripeFeesCalculator` côté `PaymentService`), et utiliser `transferFees` dans `DeliveryEventListener`. **Recalibrer la commission** si nécessaire pour préserver la marge nette de Dony.
+   - **Restriction de devise** → potentiellement bloquant pour le pays concerné. Décider : soit on n'accepte que des voyageurs avec compte EUR-zone-européenne, soit on attend une autre solution (Wave / Orange Money via les services existants `WaveService` / `OrangeMoneyService` mentionnés dans l'architecture).
+
+**Statut** : tant que ce point n'est pas tranché, la **Task 9d ne peut pas être finalisée** (même si elle peut être ébauchée avec la formule simplifiée). Marquer le code avec `// TODO Q6 : adjust net amount based on transfer fees once Stripe support clarifies pricing for CFA zone`.
+
+---
+
+## Actions hors-code à lancer en parallèle du dev
+
+> Le développement v2 peut commencer en parallèle, en environnement **dev/staging avec test cards Stripe**. Pas de mise en production tant que les retours ci-dessous ne sont pas écrits dans `docs/compliance/`.
+
+### A1 — Ticket Stripe support (couvre Q1, Q2, Q6 d'un coup)
+
+**À ouvrir cette semaine.** Décrire :
+
+> Marketplace P2P (peer-to-peer) Dony — connecte voyageurs et expéditeurs de la diaspora africaine pour le transport de colis. Configuration actuelle : comptes Connect Express avec capability `transfers` activée. Migration prévue de "destination charges" (`transfer_data.destination` + `application_fee_amount`) vers "separate charges and transfers" (capture sur compte plateforme, Transfer manuel à la livraison).
+>
+> Questions :
+> 1. **Conformité** : nous prévoyons de détenir les fonds clients sur le compte plateforme entre l'acceptation du voyageur et la confirmation de livraison. Selon le profil de voyage, ce délai peut atteindre 2 mois (vol planifié à long terme). Est-ce compatible avec la licence Stripe sous laquelle nous opérons (Stripe Payments France / EU) ? Y a-t-il un seuil de durée ou de volume au-delà duquel un statut réglementaire complémentaire (Agent PSP, EME) est requis ?
+> 2. **Compatibilité comptes Connect** : nos voyageurs peuvent avoir des comptes Connect dans : France, Sénégal, Côte d'Ivoire, Mali, Cameroun. Confirmer que le pattern separate charges and transfers fonctionne pour ces destinations.
+> 3. **Frais de Transfer** : quel est le coût d'un `Transfer.create` en EUR vers un compte Connect Express dans chacun de ces pays ? Y a-t-il des restrictions de devise (XOF/XAF, conversion obligatoire) ?
+
+Conserver la réponse écrite (PDF/email) dans `docs/compliance/stripe-support-2026-XX.md`.
+
+### A2 — Avocat fintech (Q2 — DSP2 / ACPR)
+
+**À planifier cette semaine.** Avis écrit demandé sur :
+
+> 1. Notre marketplace P2P utilise Stripe Connect pour reverser les fonds aux voyageurs après livraison. Avec le nouveau modèle, les fonds restent sur le compte plateforme jusqu'à 2 mois entre encaissement et reversement. À quel volume ou durée moyenne ce schéma nécessite-t-il un statut Agent PSP ou Établissement de Monnaie Électronique en France ?
+> 2. La plateforme est-elle requalifiable en intermédiaire opaque pour la TVA ? Si oui, impact comptable.
+> 3. Y a-t-il des exigences spécifiques liées au transport de colis vers l'Afrique (lutte anti-blanchiment, déclarations douanières, agrément spécifique) ?
+
+Budget estimatif : 1500-3000 €. Garder la réponse écrite dans `docs/compliance/legal-opinion-2026-XX.pdf`.
+
+### A3 — Expert-comptable (Q5 — Comptabilité + TVA)
+
+**À planifier dans la foulée de A2** (l'avis fiscal de l'avocat oriente la consultation comptable). Décrire :
+
+> Migration du schéma comptable : avant, Dony percevait une commission via `application_fee_amount` (visible directement sur le compte plateforme Stripe). Désormais, Dony encaisse 100 % du montant et reverse une partie au voyageur. Quel est le bon schéma d'écritures comptables ? Quelle est l'incidence sur la déclaration de TVA si la plateforme est intermédiaire opaque vs transparent ?
 
 ---
 
@@ -330,3 +694,5 @@ Fréquence : `@Scheduled(fixedRate = 300_000)` — toutes les 5 minutes.
 - Migration des bids existants (le moment du déploiement, prod aura déjà des bids `PENDING` créés sans paiement — soit on les laisse vivre tels quels, soit on les annule en bulk avec notification ; à décider à la livraison).
 - Adaptation du frontend Flutter (autre dépôt) : nouveau endpoint, intégration Stripe PaymentSheet, écran "paiement en cours / reprenez votre paiement".
 - Notifications expéditeur lors de l'auto-annulation par timeout (FCM "Votre voyageur n'a pas répondu, paiement libéré").
+- Interface admin pour piloter les refunds partiels et les Transfer Reversals (litiges complexes).
+- Suppression du mode legacy (`legacy_destination_charge`) une fois tous les anciens payments résolus (~3-6 mois post-déploiement v2).

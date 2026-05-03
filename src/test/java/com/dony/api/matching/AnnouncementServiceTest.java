@@ -138,7 +138,7 @@ class AnnouncementServiceTest {
                 setId(a, ANNOUNCEMENT_ID);
                 return a;
             });
-            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
 
@@ -162,7 +162,7 @@ class AnnouncementServiceTest {
                 setId(a, ANNOUNCEMENT_ID);
                 return a;
             });
-            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
 
             announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
 
@@ -192,7 +192,7 @@ class AnnouncementServiceTest {
                 setId(a, ANNOUNCEMENT_ID);
                 return a;
             });
-            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
 
             announcementService.createAnnouncement(FIREBASE_UID, buildRequest(TransportMode.TRAIN));
 
@@ -214,7 +214,7 @@ class AnnouncementServiceTest {
             UserEntity traveler = buildTraveler();
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countByAnnouncementId(any())).thenReturn(2L);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(2L);
             when(announcementRepository.findByTravelerId(eq(USER_ID), any()))
                     .thenReturn(new PageImpl<>(List.of(a)));
 
@@ -238,7 +238,7 @@ class AnnouncementServiceTest {
             UserEntity traveler = buildTraveler();
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
 
             AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
                     ANNOUNCEMENT_ID, FIREBASE_UID);
@@ -275,7 +275,7 @@ class AnnouncementServiceTest {
             when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
                     .thenReturn(false);
             when(announcementRepository.save(any())).thenReturn(a);
-            when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
 
             AnnouncementRequest req = new AnnouncementRequest(
                     "Lyon", "Abidjan", LocalDate.now().plusDays(15),
@@ -484,7 +484,7 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
             when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10));
@@ -503,7 +503,7 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
             when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(1L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(1L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", "Dakar",
@@ -524,7 +524,7 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
             when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, null, "asc", PageRequest.of(0, 10));
@@ -541,7 +541,7 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
             when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", null, null, null, null, null, null, null, "date", "desc", PageRequest.of(0, 10));
@@ -560,7 +560,7 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
             when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
                     null, "Dakar", LocalDate.now(), null, null, null, null, null, "price", "asc", PageRequest.of(0, 10)));
