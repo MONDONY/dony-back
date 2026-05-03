@@ -9,6 +9,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
@@ -319,6 +320,43 @@ public class PaymentService {
                     eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
                 }
             });
+            // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
+            promoteBidOnPaymentAuthorized(pi.getId());
+        });
+    }
+
+    /**
+     * Promotes a bid from AWAITING_PAYMENT → PENDING when the Stripe PaymentIntent
+     * has been authorized (capture_method=manual hold posted).
+     * Publishes BidCreatedEvent so the traveler is notified.
+     * Idempotent: silent no-op if bid not in AWAITING_PAYMENT.
+     */
+    @Transactional
+    public void promoteBidOnPaymentAuthorized(String paymentIntentId) {
+        bidRepository.findByPaymentIntentId(paymentIntentId).ifPresent(bid -> {
+            if (bid.getStatus() != BidStatus.AWAITING_PAYMENT) return;
+
+            bid.setStatus(BidStatus.PENDING);
+            bid.setAwaitingPaymentExpiresAt(null);
+            bidRepository.save(bid);
+
+            AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                    .orElseThrow(() -> new IllegalStateException("announcement not found for bid " + bid.getId()));
+            UserEntity sender = userRepository.findById(bid.getSenderId()).orElse(null);
+            String senderName = (sender != null && sender.getFirstName() != null && !sender.getFirstName().isBlank())
+                    ? sender.getFirstName() : "Un expéditeur";
+            String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
+
+            auditService.log("BID", bid.getId(), "BID_CREATED", bid.getSenderId(),
+                    Map.of("announcementId", bid.getAnnouncementId().toString(),
+                            "weightKg", bid.getWeightKg().toString(),
+                            "paymentIntentId", paymentIntentId));
+
+            eventPublisher.publishEvent(new BidCreatedEvent(
+                    bid.getId(), announcement.getId(), announcement.getTravelerId(), bid.getSenderId(),
+                    senderName, bid.getWeightKg(), corridor));
+
+            log.info("Bid {} promoted to PENDING (PI={})", bid.getId(), paymentIntentId);
         });
     }
 

@@ -28,6 +28,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     Optional<BidEntity> findByTrackingToken(String trackingToken);
 
+    Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
+
     @Query("SELECT b FROM BidEntity b WHERE b.status = 'ACCEPTED' " +
            "AND b.handoverWindowStart IS NOT NULL " +
            "AND b.handoverWindowStart <= :threshold " +
