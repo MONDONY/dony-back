@@ -39,17 +39,21 @@ public class BidTimeoutScheduler {
         this.eventPublisher = eventPublisher;
     }
 
+    /** Minimum bid age before auto-cancellation kicks in (regardless of departure date). */
+    static final int MIN_GRACE_MINUTES = 120;
+
     @Scheduled(fixedRate = 5 * 60 * 1000)
     @Transactional
     public void autoCancelUnansweredBids() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         LocalDateTime twentyFourHoursAgo = now.minusHours(24);
-        // Approximation : si departure_date <= demain, on est au plus tard à H-12
-        // (puisque H-12 = midi de la veille, donc dès qu'on est dans la journée
-        // précédant la date de départ, le seuil est franchi). Acceptable pour v1.
-        LocalDate tomorrow = now.toLocalDate().plusDays(1);
+        LocalDateTime minGraceThreshold = now.minusMinutes(MIN_GRACE_MINUTES);
+        // H-12 threshold: a PENDING bid is past H-12 once `now + 12h` has reached
+        // the start of `departureDate`. Equivalent to `departureDate <= (now + 12h).toLocalDate()`.
+        LocalDate halfDayThresholdDate = now.plusHours(12).toLocalDate();
 
-        List<BidEntity> timedOut = bidRepository.findPendingTimedOut(twentyFourHoursAgo, tomorrow);
+        List<BidEntity> timedOut = bidRepository.findPendingTimedOut(
+                twentyFourHoursAgo, halfDayThresholdDate, minGraceThreshold);
 
         for (BidEntity bid : timedOut) {
             bid.setStatus(BidStatus.CANCELLED);

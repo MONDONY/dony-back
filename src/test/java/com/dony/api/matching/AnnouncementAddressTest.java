@@ -87,7 +87,7 @@ class AnnouncementServiceAddressTest {
             com.dony.api.matching.AnnouncementEntity e = inv.getArgument(0);
             return e;
         });
-        when(bidRepository.countByAnnouncementId(any())).thenReturn(0L);
+        when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
 
         AnnouncementResponse response = announcementService.createAnnouncement(TRAVELER_UID, request);
 

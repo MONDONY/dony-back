@@ -112,7 +112,7 @@ public class AnnouncementService {
                         traveler.getTotalTrips(),
                         traveler.isKiloPro())
                 : null;
-        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         return new AnnouncementSearchResponse(
                 entity.getId(), entity.getTravelerId(),
                 entity.getDepartureCity(), entity.getArrivalCity(),
@@ -221,7 +221,7 @@ public class AnnouncementService {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
-        long bidsCount = bidRepository.countByAnnouncementId(id);
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
         UserEntity traveler = userRepository.findById(announcement.getTravelerId()).orElse(null);
         TravelerProfileDto travelerDto = traveler != null
@@ -319,7 +319,7 @@ public class AnnouncementService {
                 )
         );
 
-        long bidsCount = bidRepository.countByAnnouncementId(id);
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
                 user.getId(),
@@ -412,7 +412,7 @@ public class AnnouncementService {
     }
 
     private AnnouncementResponse toResponse(AnnouncementEntity entity) {
-        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),

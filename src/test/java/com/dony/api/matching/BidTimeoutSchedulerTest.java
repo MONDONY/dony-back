@@ -11,6 +11,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -44,7 +47,7 @@ class BidTimeoutSchedulerTest {
     @Test
     void cancels_timed_out_bids_and_publishes_event() {
         BidEntity bid = timedOutBid();
-        when(bidRepository.findPendingTimedOut(any(), any())).thenReturn(List.of(bid));
+        when(bidRepository.findPendingTimedOut(any(), any(), any())).thenReturn(List.of(bid));
 
         scheduler.autoCancelUnansweredBids();
 
@@ -64,7 +67,7 @@ class BidTimeoutSchedulerTest {
     void handles_multiple_bids() {
         BidEntity b1 = timedOutBid();
         BidEntity b2 = timedOutBid();
-        when(bidRepository.findPendingTimedOut(any(), any())).thenReturn(List.of(b1, b2));
+        when(bidRepository.findPendingTimedOut(any(), any(), any())).thenReturn(List.of(b1, b2));
 
         scheduler.autoCancelUnansweredBids();
 
@@ -74,8 +77,29 @@ class BidTimeoutSchedulerTest {
     }
 
     @Test
+    void passes_correct_thresholds_to_repository() {
+        when(bidRepository.findPendingTimedOut(any(), any(), any())).thenReturn(List.of());
+
+        scheduler.autoCancelUnansweredBids();
+
+        ArgumentCaptor<LocalDateTime> twentyFourCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDate> halfDayCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        ArgumentCaptor<LocalDateTime> graceCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(bidRepository).findPendingTimedOut(
+                twentyFourCaptor.capture(), halfDayCaptor.capture(), graceCaptor.capture());
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        // 24h threshold ≈ now - 24h
+        assertThat(twentyFourCaptor.getValue()).isBetween(now.minusHours(24).minusMinutes(1), now.minusHours(24).plusMinutes(1));
+        // grace threshold ≈ now - 120 minutes
+        assertThat(graceCaptor.getValue()).isBetween(now.minusMinutes(121), now.minusMinutes(119));
+        // half-day threshold = (now + 12h).toLocalDate()
+        assertThat(halfDayCaptor.getValue()).isEqualTo(now.plusHours(12).toLocalDate());
+    }
+
+    @Test
     void no_op_when_nothing_timed_out() {
-        when(bidRepository.findPendingTimedOut(any(), any())).thenReturn(List.of());
+        when(bidRepository.findPendingTimedOut(any(), any(), any())).thenReturn(List.of());
 
         scheduler.autoCancelUnansweredBids();
 
