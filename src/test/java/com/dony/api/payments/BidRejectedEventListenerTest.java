@@ -2,6 +2,8 @@ package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
 import com.dony.api.matching.events.BidRejectedEvent;
+import com.stripe.exception.ApiException;
+import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.param.PaymentIntentCancelParams;
@@ -128,6 +130,41 @@ class BidRejectedEventListenerTest {
         }
         // Statut inchangé, aucun side effect
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
+        verify(paymentRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void cancel_pending_swallows_stripe_exception() {
+        PaymentEntity p = payment(PaymentStatus.PENDING, false);
+        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+
+        StripeException stripeEx = new ApiException("boom", null, null, 500, null);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenThrow(stripeEx);
+
+            listener.handleBidRejected(eventFor(p.getBidId()));
+        }
+        // statut inchangé : on ne sauvegarde pas, on n'audite pas
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        verify(paymentRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void refund_escrow_swallows_stripe_exception() {
+        PaymentEntity p = payment(PaymentStatus.ESCROW, false);
+        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+
+        StripeException stripeEx = new ApiException("boom", null, null, 500, null);
+
+        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            refundStatic.when(() -> Refund.create(any(RefundCreateParams.class))).thenThrow(stripeEx);
+
+            listener.handleBidRejected(eventFor(p.getBidId()));
+        }
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.ESCROW);
         verify(paymentRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }

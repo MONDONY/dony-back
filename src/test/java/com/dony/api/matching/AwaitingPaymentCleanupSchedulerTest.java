@@ -96,6 +96,51 @@ class AwaitingPaymentCleanupSchedulerTest {
     }
 
     @Test
+    void leaves_bid_alone_when_unexpected_state_but_PI_not_in_capturable_status() throws StripeException {
+        BidEntity bid = expired("pi_other");
+        when(bidRepository.findByStatusAndAwaitingPaymentExpiresAtBefore(
+                eq(BidStatus.AWAITING_PAYMENT), any())).thenReturn(List.of(bid));
+
+        InvalidRequestException ex = mock(InvalidRequestException.class);
+        when(ex.getCode()).thenReturn("payment_intent_unexpected_state");
+        doThrow(ex).when(paymentService).cancelPaymentIntent("pi_other");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("canceled"); // not a captured/succeeded/processing state
+            piStatic.when(() -> PaymentIntent.retrieve("pi_other")).thenReturn(pi);
+
+            scheduler.cleanupUnpaidBids();
+        }
+
+        verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
+        verify(bidRepository, never()).deleteById(bid.getId());
+    }
+
+    @Test
+    void leaves_bid_alone_when_retrieve_throws_in_race_check() throws StripeException {
+        BidEntity bid = expired("pi_throw");
+        when(bidRepository.findByStatusAndAwaitingPaymentExpiresAtBefore(
+                eq(BidStatus.AWAITING_PAYMENT), any())).thenReturn(List.of(bid));
+
+        InvalidRequestException ex = mock(InvalidRequestException.class);
+        when(ex.getCode()).thenReturn("payment_intent_unexpected_state");
+        doThrow(ex).when(paymentService).cancelPaymentIntent("pi_throw");
+
+        InvalidRequestException retrieveEx = mock(InvalidRequestException.class);
+        when(retrieveEx.getMessage()).thenReturn("retrieve failed");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve("pi_throw")).thenThrow(retrieveEx);
+
+            scheduler.cleanupUnpaidBids();
+        }
+
+        verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
+        verify(bidRepository, never()).deleteById(bid.getId());
+    }
+
+    @Test
     void no_op_when_no_expired_bids() {
         when(bidRepository.findByStatusAndAwaitingPaymentExpiresAtBefore(
                 eq(BidStatus.AWAITING_PAYMENT), any())).thenReturn(List.of());
