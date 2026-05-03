@@ -381,6 +381,54 @@ public class PaymentService {
         });
     }
 
+    /**
+     * Synchronous safety net for clients that just confirmed payment via Stripe SDK.
+     * Retrieves the PaymentIntent from Stripe and, if authorized
+     * (requires_capture / succeeded / processing), promotes the bid to PENDING.
+     *
+     * This avoids depending on the Stripe webhook in environments where it
+     * cannot reach the backend (local dev) and acts as a redundant safety net
+     * in production. Idempotent: no-op if the bid is not in AWAITING_PAYMENT.
+     *
+     * @return true if the bid is now in PENDING state, false otherwise
+     */
+    @Transactional
+    public boolean confirmBidPayment(UUID bidId) {
+        BidEntity bid = bidRepository.findById(bidId).orElseThrow(() ->
+                new DonyBusinessException(HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
+                        "Bid introuvable"));
+
+        if (bid.getStatus() == BidStatus.PENDING) {
+            return true;
+        }
+        if (bid.getStatus() != BidStatus.AWAITING_PAYMENT) {
+            return false;
+        }
+
+        String piId = bid.getPaymentIntentId();
+        if (piId == null) {
+            log.warn("Bid {} in AWAITING_PAYMENT has no paymentIntentId", bidId);
+            return false;
+        }
+
+        try {
+            PaymentIntent pi = PaymentIntent.retrieve(piId);
+            String status = pi.getStatus();
+            if ("requires_capture".equals(status)
+                    || "succeeded".equals(status)
+                    || "processing".equals(status)) {
+                promoteBidOnPaymentAuthorized(piId);
+                return true;
+            }
+            log.info("Bid {} not promoted: PI {} status={}", bidId, piId, status);
+            return false;
+        } catch (StripeException e) {
+            log.error("Failed to retrieve PI {} for bid {}: {}", piId, bidId, e.getMessage());
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY, "stripe-error", "Stripe Error",
+                    "Impossible de vérifier le paiement auprès de Stripe");
+        }
+    }
+
     private void handlePaymentFailed(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             PaymentIntent pi = (PaymentIntent) obj;

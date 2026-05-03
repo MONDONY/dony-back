@@ -646,6 +646,108 @@ class PaymentServiceTest {
         assertThat(resp.get().getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
     }
 
+    // ── confirmBidPayment ─────────────────────────────────────────────────────
+
+    @Test
+    void confirmBidPayment_promotes_when_PI_requires_capture() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        AnnouncementEntity ann = buildAnnouncement();
+        ann.setDepartureCity("Paris");
+        ann.setArrivalCity("Dakar");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setFirstName("Marie");
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findByPaymentIntentId("pi_test")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isTrue();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PENDING);
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.BidCreatedEvent.class));
+        }
+    }
+
+    @Test
+    void confirmBidPayment_idempotent_when_already_PENDING() {
+        BidEntity bid = buildBid(BidStatus.PENDING);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isTrue();
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_bid_in_other_status() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_PI_status_unknown() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isFalse();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
+        }
+    }
+
+    @Test
+    void confirmBidPayment_throws_when_bid_not_found() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        assertDonyError(() -> service.confirmBidPayment(bidId), "bid-not-found");
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_no_payment_intent_id() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        // paymentIntentId left null
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_throws_502_when_stripe_fails() throws StripeException {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            StripeException ex = mock(StripeException.class);
+            when(ex.getMessage()).thenReturn("network down");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenThrow(ex);
+
+            assertDonyError(() -> service.confirmBidPayment(bidId), "stripe-error");
+        }
+    }
+
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────
 
     private Event buildEventWith(String type, Object stripeObj) {

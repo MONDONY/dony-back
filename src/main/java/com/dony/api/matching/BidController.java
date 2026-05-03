@@ -7,6 +7,7 @@ import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.dto.RefuseParcelRequest;
+import com.dony.api.payments.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -31,10 +32,14 @@ public class BidController {
 
     private final BidService bidService;
     private final BidCheckoutService bidCheckoutService;
+    private final PaymentService paymentService;
 
-    public BidController(BidService bidService, BidCheckoutService bidCheckoutService) {
+    public BidController(BidService bidService,
+                         BidCheckoutService bidCheckoutService,
+                         PaymentService paymentService) {
         this.bidService = bidService;
         this.bidCheckoutService = bidCheckoutService;
+        this.paymentService = paymentService;
     }
 
     // ── Sender creates a bid via payment-first checkout ───────────────────────
@@ -47,6 +52,16 @@ public class BidController {
         String firebaseUid = requireFirebaseUid();
         BidCheckoutResponse response = bidCheckoutService.checkout(firebaseUid, request, httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    // ── Sender confirms payment was authorized (safety net for missing webhook) ──
+
+    @PostMapping("/bids/{bidId}/confirm-payment")
+    public ResponseEntity<BidResponse> confirmPayment(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        bidService.assertSenderOwnsBid(bidId, firebaseUid);
+        paymentService.confirmBidPayment(bidId);
+        return ResponseEntity.ok(bidService.getBidById(bidId, firebaseUid));
     }
 
     // ── Traveler views bids on their announcement ─────────────────────────────

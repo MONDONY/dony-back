@@ -143,6 +143,16 @@ public class BidService {
     }
 
     @Transactional(readOnly = true)
+    public void assertSenderOwnsBid(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        UserEntity user = findUserByFirebaseUid(firebaseUid);
+        if (!bid.getSenderId().equals(user.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut confirmer le paiement");
+        }
+    }
+
+    @Transactional(readOnly = true)
     public BidResponse getBidById(UUID bidId, String firebaseUid) {
         BidEntity bid = findBid(bidId);
         AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
