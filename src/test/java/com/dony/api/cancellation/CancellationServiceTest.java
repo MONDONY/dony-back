@@ -287,23 +287,46 @@ class CancellationServiceTest {
             UUID cancellationId = UUID.randomUUID();
             when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> cancellationService.getRematchSuggestions(cancellationId))
+            assertThatThrownBy(() -> cancellationService.getRematchSuggestions(cancellationId, "uid"))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
         }
 
         @Test
-        @DisplayName("cancellation valide sans suggestions → liste vide")
+        @DisplayName("cancellation valide, caller participant, sans suggestions → liste vide")
         void getRematchSuggestions_noSuggestions_returnsEmpty() {
             UUID cancellationId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+            UUID userId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+
             CancellationEntity cancellation = new CancellationEntity();
             setId(cancellation, cancellationId);
+            cancellation.setBidId(bidId);
+            cancellation.setCancelledBy(travelerId);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, bidId);
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(userId);
+
+            AnnouncementEntity announcement = new AnnouncementEntity();
+            setId(announcement, announcementId);
+            announcement.setTravelerId(travelerId);
+
+            UserEntity caller = new UserEntity();
+            setId(caller, userId);
+            caller.setFirebaseUid("uid");
 
             when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
+            when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
             when(rematchSuggestionRepository.findByCancellationId(cancellationId)).thenReturn(List.of());
 
-            var result = cancellationService.getRematchSuggestions(cancellationId);
+            var result = cancellationService.getRematchSuggestions(cancellationId, "uid");
 
             assertThat(result).isEmpty();
         }

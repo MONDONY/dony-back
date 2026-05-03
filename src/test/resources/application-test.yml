@@ -42,6 +42,8 @@ stripe:
   webhook-secret: whsec_dummy
 
 app:
+  encryption:
+    key: dony-test-encryption-key-not-for-production-use-32-bytes
   places:
     api-key: test-api-key
     allowed-countries: ""

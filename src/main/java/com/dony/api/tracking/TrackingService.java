@@ -228,11 +228,28 @@ public class TrackingService {
         }
 
         if (request.offlineTimestamp() != null
-                && request.offlineTimestamp().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+                && request.offlineTimestamp().isAfter(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(5))) {
+            // 5-minute tolerance accounts for typical client clock skew while still
+            // rejecting clearly fraudulent backdating attempts.
             auditService.log("TRACKING_EVENT", bid.getId(), "FRAUD_FUTURE_TIMESTAMP",
                     traveler.getId(), Map.of("offlineTimestamp", request.offlineTimestamp().toString()));
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-timestamp",
                     "Invalid Timestamp", "Le timestamp du scan ne peut pas être dans le futur");
+        }
+
+        // photoUrl from client must be an internal S3 key (e.g. tracking/{bidId}/...).
+        // Reject absolute URLs to prevent attackers from injecting external content
+        // that would be displayed on the public recipient page.
+        String photoKey = request.photoUrl();
+        if (photoKey != null && !photoKey.isBlank()) {
+            String expectedPrefix = "tracking/" + bid.getId() + "/";
+            if (photoKey.startsWith("http://") || photoKey.startsWith("https://")
+                    || photoKey.contains("..")
+                    || !photoKey.startsWith(expectedPrefix)) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-photo-url", "Invalid Photo URL",
+                        "L'URL de la photo doit être une clé S3 valide pour ce bid");
+            }
         }
 
         TrackingEventEntity event = new TrackingEventEntity();
@@ -241,7 +258,7 @@ public class TrackingService {
         event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
         event.setGpsLat(request.gpsLat());
         event.setGpsLon(request.gpsLon());
-        event.setPhotoUrl(request.photoUrl());
+        event.setPhotoUrl(photoKey);
         if (request.offlineTimestamp() != null) {
             event.setOfflineTimestamp(request.offlineTimestamp());
             event.setSyncedAt(LocalDateTime.now(ZoneOffset.UTC));

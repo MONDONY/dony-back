@@ -43,6 +43,10 @@ stripe:
   secret-key: sk_test_dummy
   webhook-secret: whsec_dummy
 
+app:
+  encryption:
+    key: dony-e2e-encryption-key-not-for-production-use-32-bytes
+
 dony:
   stripe:
     return-url: https://dony.app/payments/onboarding/return

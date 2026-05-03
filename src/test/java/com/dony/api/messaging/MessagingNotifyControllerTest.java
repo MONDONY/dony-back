@@ -1,5 +1,6 @@
 package com.dony.api.messaging;
 
+import com.dony.api.common.DonyBusinessException;
 import com.dony.api.messaging.dto.NotifyMessageRequest;
 import com.dony.api.notifications.NotificationDispatcher;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -34,10 +34,10 @@ class MessagingNotifyControllerTest {
     void notify_returns401_whenSecretMissing() {
         var req = new NotifyMessageRequest("conv_1", "uid-1", "hello");
         assertThatThrownBy(() -> controller.notify(null, req))
-            .isInstanceOf(ResponseStatusException.class)
+            .isInstanceOf(DonyBusinessException.class)
             .satisfies(ex -> {
-                var e = (ResponseStatusException) ex;
-                assert e.getStatusCode().value() == 401;
+                var e = (DonyBusinessException) ex;
+                assert e.getStatus().value() == 401;
             });
     }
 
@@ -45,10 +45,10 @@ class MessagingNotifyControllerTest {
     void notify_returns401_whenSecretWrong() {
         var req = new NotifyMessageRequest("conv_1", "uid-1", "hello");
         assertThatThrownBy(() -> controller.notify("wrong-secret", req))
-            .isInstanceOf(ResponseStatusException.class)
+            .isInstanceOf(DonyBusinessException.class)
             .satisfies(ex -> {
-                var e = (ResponseStatusException) ex;
-                assert e.getStatusCode().value() == 401;
+                var e = (DonyBusinessException) ex;
+                assert e.getStatus().value() == 401;
             });
     }
 

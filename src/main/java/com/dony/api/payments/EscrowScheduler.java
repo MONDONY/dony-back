@@ -39,7 +39,7 @@ public class EscrowScheduler {
     }
 
     /** Every hour at minute 0. */
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 0 * * * *", zone = "UTC")
     @Transactional
     public void checkEscrowTimeouts() {
         LocalDateTime threshold = LocalDateTime.now(ZoneOffset.UTC).minusHours(ESCROW_TIMEOUT_HOURS);

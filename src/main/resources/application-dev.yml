@@ -2,7 +2,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/dony_dev
     username: dony
-    password: dony_dev_password
+    password: ${POSTGRES_PASSWORD:dony_dev_password}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5
@@ -37,7 +37,7 @@ firebase:
 
 dony:
   internal:
-    secret: local-dev-secret
+    secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
 
 logging:
   level:
