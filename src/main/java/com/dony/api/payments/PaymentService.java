@@ -388,4 +388,27 @@ public class PaymentService {
                 payment.getStatus().name()
         );
     }
+
+    /**
+     * Annule un PaymentIntent en mode pré-autorisation.
+     * No-op si paymentIntentId est null/blank.
+     * Throws StripeException pour permettre au scheduler de détecter la race condition (PI déjà succeeded).
+     */
+    public void cancelPaymentIntent(String paymentIntentId) throws StripeException {
+        if (paymentIntentId == null || paymentIntentId.isBlank()) return;
+        PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
+        pi.cancel();
+        log.info("PaymentIntent {} cancelled", paymentIntentId);
+    }
+
+    /**
+     * Capture un PaymentIntent pré-autorisé (manual capture).
+     * No-op si paymentIntentId est null/blank.
+     */
+    public void capturePaymentIntent(String paymentIntentId) throws StripeException {
+        if (paymentIntentId == null || paymentIntentId.isBlank()) return;
+        PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
+        pi.capture();
+        log.info("PaymentIntent {} captured", paymentIntentId);
+    }
 }
