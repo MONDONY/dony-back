@@ -57,4 +57,18 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id " +
            "WHERE a.travelerId = :travelerId AND b.status = 'COMPLETED'")
     List<BidEntity> findCompletedBidsByTravelerId(@Param("travelerId") UUID travelerId);
+
+    @Query("""
+        SELECT b FROM BidEntity b, AnnouncementEntity a
+        WHERE b.announcementId = a.id
+          AND b.status = com.dony.api.matching.BidStatus.PENDING
+          AND (
+                b.createdAt < :twentyFourHoursAgo
+             OR a.departureDate <= :tomorrow
+          )
+        """)
+    List<BidEntity> findPendingTimedOut(
+            @Param("twentyFourHoursAgo") LocalDateTime twentyFourHoursAgo,
+            @Param("tomorrow") java.time.LocalDate tomorrow
+    );
 }
