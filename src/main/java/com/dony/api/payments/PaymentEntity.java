@@ -36,6 +36,12 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "escrow_released_at")
     private LocalDateTime escrowReleasedAt;
 
+    @Column(name = "legacy_destination_charge", nullable = false)
+    private boolean legacyDestinationCharge = false;
+
+    @Column(name = "stripe_charge_id", length = 255)
+    private String stripeChargeId;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -53,4 +59,10 @@ public class PaymentEntity extends BaseEntity {
 
     public LocalDateTime getEscrowReleasedAt() { return escrowReleasedAt; }
     public void setEscrowReleasedAt(LocalDateTime escrowReleasedAt) { this.escrowReleasedAt = escrowReleasedAt; }
+
+    public boolean isLegacyDestinationCharge() { return legacyDestinationCharge; }
+    public void setLegacyDestinationCharge(boolean legacyDestinationCharge) { this.legacyDestinationCharge = legacyDestinationCharge; }
+
+    public String getStripeChargeId() { return stripeChargeId; }
+    public void setStripeChargeId(String stripeChargeId) { this.stripeChargeId = stripeChargeId; }
 }
