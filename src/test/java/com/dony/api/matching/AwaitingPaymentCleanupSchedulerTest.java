@@ -96,25 +96,49 @@ class AwaitingPaymentCleanupSchedulerTest {
     }
 
     @Test
-    void leaves_bid_alone_when_unexpected_state_but_PI_not_in_capturable_status() throws StripeException {
-        BidEntity bid = expired("pi_other");
+    void deletes_bid_when_PI_is_canceled() throws StripeException {
+        BidEntity bid = expired("pi_canceled");
         when(bidRepository.findByStatusAndAwaitingPaymentExpiresAtBefore(
                 eq(BidStatus.AWAITING_PAYMENT), any())).thenReturn(List.of(bid));
 
         InvalidRequestException ex = mock(InvalidRequestException.class);
         when(ex.getCode()).thenReturn("payment_intent_unexpected_state");
-        doThrow(ex).when(paymentService).cancelPaymentIntent("pi_other");
+        doThrow(ex).when(paymentService).cancelPaymentIntent("pi_canceled");
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
-            when(pi.getStatus()).thenReturn("canceled"); // not a captured/succeeded/processing state
-            piStatic.when(() -> PaymentIntent.retrieve("pi_other")).thenReturn(pi);
+            when(pi.getStatus()).thenReturn("canceled"); // payment was already canceled
+            piStatic.when(() -> PaymentIntent.retrieve("pi_canceled")).thenReturn(pi);
 
             scheduler.cleanupUnpaidBids();
         }
 
+        // Should delete the bid since payment is already canceled
+        verify(bidRepository).deleteById(bid.getId());
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
+    }
+
+    @Test
+    void retries_when_unexpected_state_with_unknown_PI_status() throws StripeException {
+        BidEntity bid = expired("pi_unknown");
+        when(bidRepository.findByStatusAndAwaitingPaymentExpiresAtBefore(
+                eq(BidStatus.AWAITING_PAYMENT), any())).thenReturn(List.of(bid));
+
+        InvalidRequestException ex = mock(InvalidRequestException.class);
+        when(ex.getCode()).thenReturn("payment_intent_unexpected_state");
+        doThrow(ex).when(paymentService).cancelPaymentIntent("pi_unknown");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("unknown_status"); // unknown state
+            piStatic.when(() -> PaymentIntent.retrieve("pi_unknown")).thenReturn(pi);
+
+            scheduler.cleanupUnpaidBids();
+        }
+
+        // Should not delete or promote when status is unknown (retry next time)
         verify(bidRepository, never()).deleteById(bid.getId());
+        verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
     }
 
     @Test

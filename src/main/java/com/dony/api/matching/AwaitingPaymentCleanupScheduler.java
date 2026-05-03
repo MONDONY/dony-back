@@ -50,9 +50,8 @@ public class AwaitingPaymentCleanupScheduler {
                 bidRepository.deleteById(bid.getId());
                 log.info("Bid {} (PI={}) deleted (unpaid timeout)", bid.getId(), piId);
             } catch (StripeException e) {
-                if ("payment_intent_unexpected_state".equals(e.getCode()) && isAlreadyCapturedOrSucceeded(piId)) {
-                    log.warn("Race condition for bid {}: PI succeeded — promoting to PENDING", bid.getId());
-                    paymentService.promoteBidOnPaymentAuthorized(piId);
+                if ("payment_intent_unexpected_state".equals(e.getCode())) {
+                    handlePaymentIntentUnexpectedState(bid, piId);
                 } else {
                     log.error("Cleanup failed for bid {} (PI={}): {}",
                         bid.getId(), piId, e.getMessage());
@@ -62,16 +61,30 @@ public class AwaitingPaymentCleanupScheduler {
         }
     }
 
-    private boolean isAlreadyCapturedOrSucceeded(String paymentIntentId) {
+    private void handlePaymentIntentUnexpectedState(BidEntity bid, String piId) {
         try {
-            PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
+            PaymentIntent pi = PaymentIntent.retrieve(piId);
             String status = pi.getStatus();
-            return "succeeded".equals(status)
-                || "requires_capture".equals(status)
-                || "processing".equals(status);
+
+            if ("succeeded".equals(status) || "requires_capture".equals(status)
+                || "processing".equals(status)) {
+                // Payment is authorized/captured — promote bid to PENDING
+                log.warn("Race condition for bid {}: PI status={} — promoting to PENDING",
+                    bid.getId(), status);
+                paymentService.promoteBidOnPaymentAuthorized(piId);
+            } else if ("canceled".equals(status) || "failed".equals(status)) {
+                // Payment was cancelled or failed — delete the bid
+                bidRepository.deleteById(bid.getId());
+                log.info("Bid {} (PI={}) deleted (PI status: {})", bid.getId(), piId, status);
+            } else {
+                // Unknown state — log and retry
+                log.warn("Bid {} (PI={}): unexpected PI status={} — will retry",
+                    bid.getId(), piId, status);
+            }
         } catch (StripeException e) {
-            log.warn("Could not retrieve PI {} for race-condition check: {}", paymentIntentId, e.getMessage());
-            return false;
+            log.error("Could not handle payment_intent_unexpected_state for bid {} (PI={}): {}",
+                bid.getId(), piId, e.getMessage());
         }
     }
+
 }
