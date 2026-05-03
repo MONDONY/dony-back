@@ -222,17 +222,15 @@ public class PaymentService {
                 .setScale(2, RoundingMode.HALF_UP);
         BigDecimal commission = amount.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
-        long commissionCents = commission.multiply(BigDecimal.valueOf(100)).longValue();
 
         try {
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(amountCents)
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
-                    .setApplicationFeeAmount(commissionCents)
-                    .setTransferData(PaymentIntentCreateParams.TransferData.builder()
-                            .setDestination(traveler.getStripeAccountId())
-                            .build())
+                    // No application_fee_amount, no transfer_data: separate charges and transfers model.
+                    // Funds stay on platform balance until DeliveryEventListener triggers Transfer.create
+                    // at delivery confirmation. Commission is held back implicitly (transfer = total - commission).
                     .putMetadata("bid_id", bidId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
@@ -246,6 +244,7 @@ public class PaymentService {
             payment.setAmount(amount);
             payment.setCommissionAmount(commission);
             payment.setStatus(PaymentStatus.PENDING);
+            payment.setLegacyDestinationCharge(false);
             paymentRepository.save(payment);
 
             auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_CREATED", sender.getId(),

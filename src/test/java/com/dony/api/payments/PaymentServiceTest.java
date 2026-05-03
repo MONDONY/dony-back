@@ -270,7 +270,8 @@ class PaymentServiceTest {
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
         when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
-        when(paymentRepository.save(any())).thenAnswer(inv -> {
+        org.mockito.ArgumentCaptor<PaymentEntity> savedCaptor = org.mockito.ArgumentCaptor.forClass(PaymentEntity.class);
+        when(paymentRepository.save(savedCaptor.capture())).thenAnswer(inv -> {
             PaymentEntity p = inv.getArgument(0);
             setId(p, UUID.randomUUID());
             return p;
@@ -282,13 +283,28 @@ class PaymentServiceTest {
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getId()).thenReturn("pi_test_new");
             when(mockPi.getClientSecret()).thenReturn("pi_secret");
-            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+            org.mockito.ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor =
+                    org.mockito.ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+            piStatic.when(() -> PaymentIntent.create(paramsCaptor.capture())).thenReturn(mockPi);
 
             PaymentResponse resp = service.createEscrow(req, "uid-sender");
 
             assertThat(resp.getStatus()).isEqualTo("PENDING");
             assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
             verify(paymentRepository).save(any(PaymentEntity.class));
+
+            // Separate charges and transfers model: NO application_fee_amount, NO transfer_data.
+            PaymentIntentCreateParams params = paramsCaptor.getValue();
+            assertThat(params.getApplicationFeeAmount()).isNull();
+            assertThat(params.getTransferData()).isNull();
+            assertThat(params.getCaptureMethod())
+                    .isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+
+            // Persisted payment is non-legacy.
+            assertThat(savedCaptor.getValue().isLegacyDestinationCharge()).isFalse();
+            // Commission still tracked on the entity for later Transfer (release at delivery).
+            assertThat(savedCaptor.getValue().getCommissionAmount())
+                    .isEqualByComparingTo(new BigDecimal("3.00"));
         }
     }
 
