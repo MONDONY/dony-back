@@ -495,6 +495,28 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("cancelBid publie BidRejectedEvent avec reason CANCELLED_BY_SENDER")
+        void cancelBid_publishes_BidRejectedEvent_with_CANCELLED_BY_SENDER_reason() {
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(
+                    Optional.of(buildAnnouncement()));
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getBidId()).isEqualTo(bid.getId());
+            assertThat(captor.getValue().getSenderId()).isEqualTo(bid.getSenderId());
+            assertThat(captor.getValue().getReason()).isEqualTo("CANCELLED_BY_SENDER");
+        }
+
+        @Test
         @DisplayName("bid ACCEPTED annulé → kg restitués à l'annonce")
         void cancelBid_acceptedBid_restoresKg() {
             UserEntity sender = buildSender();

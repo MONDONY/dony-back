@@ -342,6 +342,9 @@ public class BidService {
 
         auditService.log("BID", bidId, "BID_CANCELLED", sender.getId(), Map.of());
 
+        eventPublisher.publishEvent(new BidRejectedEvent(
+                bid.getId(), bid.getSenderId(), "CANCELLED_BY_SENDER"));
+
         return toResponse(bid, sender);
     }
 
