@@ -211,6 +211,14 @@ public class BidService {
         requireTravelerOwnsAnnouncement(traveler, announcement);
         requireBidStatus(bid, BidStatus.PENDING);
 
+        if (announcement.getStatus() == AnnouncementStatus.IN_PROGRESS
+                || announcement.getStatus() == AnnouncementStatus.COMPLETED
+                || announcement.getStatus() == AnnouncementStatus.CANCELLED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                    "announcement-not-accepting", "Announcement Not Accepting",
+                    "Le voyageur est déjà parti, ce trajet n'accepte plus de colis");
+        }
+
         if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",

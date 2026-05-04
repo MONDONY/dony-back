@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.events.ParcelRefusedEvent;
+import com.dony.api.matching.events.VoyageurNoShowEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,18 +14,22 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Transitions an {@link AnnouncementEntity} to {@link AnnouncementStatus#COMPLETED} the moment
- * its last in-flight bid is delivered. Côté UX traveler "Mes trajets", l'annonce bascule alors
- * de l'onglet "À venir" vers "Historique" sans attendre la date de départ.
+ * Transitions an {@link AnnouncementEntity} to {@link AnnouncementStatus#COMPLETED} when all
+ * in-flight bids are resolved. Triggers on three events:
+ * <ul>
+ *   <li>{@link DeliveryConfirmedEvent} — last ACCEPTED bid delivered via QR scan</li>
+ *   <li>{@link VoyageurNoShowEvent} — traveler no-showed, bid → NO_SHOW</li>
+ *   <li>{@link ParcelRefusedEvent} — traveler refused parcel, bid → PARCEL_REFUSED</li>
+ * </ul>
  *
- * <p>Règle : un trajet est terminé dès qu'il n'existe plus aucun bid en statut
- * {@link BidStatus#ACCEPTED} sur l'annonce. PENDING et AWAITING_PAYMENT ne sont pas pris
- * en compte (ce sont des engagements pré-acceptation, pas des colis en cours de livraison).
+ * <p>Rule: a trip is done when no bid on the announcement remains in ACCEPTED status.
+ * PENDING/EXPIRED are not counted (pre-departure commitments, not in-flight).
  *
- * <p>Listens AFTER_COMMIT pour qu'un rollback de la transaction tracking ne produise pas une
- * transition fantôme. Idempotent : la même annonce déjà en COMPLETED ne sera pas re-loguée.
+ * <p>Idempotent: COMPLETED/CANCELLED announcements are silently skipped.
+ * Uses AFTER_COMMIT to prevent phantom transitions on rollback.
  */
 @Component
 public class AnnouncementCompletionListener {
@@ -47,16 +53,39 @@ public class AnnouncementCompletionListener {
     public void onDeliveryConfirmed(DeliveryConfirmedEvent event) {
         Optional<BidEntity> bidOpt = bidRepository.findById(event.getBidId());
         if (bidOpt.isEmpty()) {
-            log.warn("DeliveryConfirmedEvent received for unknown bidId={} — skipping announcement completion check",
-                    event.getBidId());
+            log.warn("DeliveryConfirmedEvent for unknown bidId={} — skipping", event.getBidId());
             return;
         }
+        checkAndCompleteIfDone(bidOpt.get().getAnnouncementId(), event.getBidId());
+    }
 
-        BidEntity bid = bidOpt.get();
-        Optional<AnnouncementEntity> announcementOpt = announcementRepository.findById(bid.getAnnouncementId());
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onVoyageurNoShow(VoyageurNoShowEvent event) {
+        Optional<BidEntity> bidOpt = bidRepository.findById(event.getBidId());
+        if (bidOpt.isEmpty()) {
+            log.warn("VoyageurNoShowEvent for unknown bidId={} — skipping", event.getBidId());
+            return;
+        }
+        checkAndCompleteIfDone(bidOpt.get().getAnnouncementId(), event.getBidId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onParcelRefused(ParcelRefusedEvent event) {
+        Optional<BidEntity> bidOpt = bidRepository.findById(event.getBidId());
+        if (bidOpt.isEmpty()) {
+            log.warn("ParcelRefusedEvent for unknown bidId={} — skipping", event.getBidId());
+            return;
+        }
+        checkAndCompleteIfDone(bidOpt.get().getAnnouncementId(), event.getBidId());
+    }
+
+    private void checkAndCompleteIfDone(UUID announcementId, UUID triggeringBidId) {
+        Optional<AnnouncementEntity> announcementOpt = announcementRepository.findById(announcementId);
         if (announcementOpt.isEmpty()) {
-            log.warn("DeliveryConfirmedEvent for bidId={} references unknown announcementId={} — skipping",
-                    bid.getId(), bid.getAnnouncementId());
+            log.warn("Completion check for unknown announcementId={} (triggering bid={}) — skipping",
+                    announcementId, triggeringBidId);
             return;
         }
 
@@ -64,14 +93,12 @@ public class AnnouncementCompletionListener {
 
         if (announcement.getStatus() == AnnouncementStatus.COMPLETED
                 || announcement.getStatus() == AnnouncementStatus.CANCELLED) {
-            // Idempotence : déjà finalisé ou annulé, on ne touche pas.
             return;
         }
 
         boolean stillHasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(
-                announcement.getId(), BidStatus.ACCEPTED);
+                announcementId, BidStatus.ACCEPTED);
         if (stillHasAcceptedBids) {
-            // Au moins un colis encore à livrer : on garde le trajet en cours.
             return;
         }
 
@@ -86,11 +113,11 @@ public class AnnouncementCompletionListener {
                 announcement.getId(),
                 Map.of(
                         "previousStatus", previousStatus.name(),
-                        "lastDeliveredBidId", bid.getId().toString()
+                        "lastDeliveredBidId", triggeringBidId.toString()
                 )
         );
 
-        log.info("Announcement {} transitioned to COMPLETED (last delivered bid={}, previousStatus={})",
-                announcement.getId(), bid.getId(), previousStatus);
+        log.info("Announcement {} → COMPLETED (triggering bid={}, previousStatus={})",
+                announcement.getId(), triggeringBidId, previousStatus);
     }
 }

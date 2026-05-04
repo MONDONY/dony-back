@@ -96,8 +96,14 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "content_type", length = 100)
     private List<String> refusedTypes = new ArrayList<>();
 
+    @Column(name = "timezone", nullable = false, length = 50)
+    private String timezone = "Europe/Paris";
+
     @Column(name = "total_trips_counted", nullable = false)
     private boolean totalTripsCounted = false;
+
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
 
     public boolean isTotalTripsCounted() { return totalTripsCounted; }
     public void setTotalTripsCounted(boolean totalTripsCounted) { this.totalTripsCounted = totalTripsCounted; }
