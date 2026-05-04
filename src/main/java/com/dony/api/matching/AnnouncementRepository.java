@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +15,24 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
         JpaSpecificationExecutor<AnnouncementEntity> {
 
     Page<AnnouncementEntity> findByTravelerId(UUID travelerId, Pageable pageable);
+
+    /**
+     * Finds ACTIVE or FULL announcements whose departure time has been reached,
+     * based on today's date and current time in the announcement's timezone (pre-resolved by caller).
+     * Announcements without departure_time are treated as departing at 00:00.
+     */
+    @Query("""
+        SELECT a FROM AnnouncementEntity a
+        WHERE a.status IN ('ACTIVE', 'FULL')
+        AND (
+            a.departureDate < :today
+            OR (a.departureDate = :today AND (a.departureTime IS NULL OR a.departureTime <= :nowTime))
+        )
+    """)
+    List<AnnouncementEntity> findDepartedActiveAnnouncements(
+        @Param("today") LocalDate today,
+        @Param("nowTime") LocalTime nowTime
+    );
 
     /**
      * Returns IDs of announcements whose pickup coordinates fall within {@code radiusKm}

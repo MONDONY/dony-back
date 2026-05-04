@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.events.ParcelRefusedEvent;
+import com.dony.api.matching.events.VoyageurNoShowEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +62,22 @@ class AnnouncementCompletionListenerTest {
         return bid;
     }
 
+    private BidEntity noShowBid() {
+        BidEntity bid = new BidEntity();
+        setId(bid, bidId);
+        bid.setAnnouncementId(announcementId);
+        bid.setStatus(BidStatus.NO_SHOW);
+        return bid;
+    }
+
+    private BidEntity refusedBid() {
+        BidEntity bid = new BidEntity();
+        setId(bid, bidId);
+        bid.setAnnouncementId(announcementId);
+        bid.setStatus(BidStatus.PARCEL_REFUSED);
+        return bid;
+    }
+
     private AnnouncementEntity announcement(AnnouncementStatus status) {
         AnnouncementEntity a = new AnnouncementEntity();
         setId(a, announcementId);
@@ -68,9 +86,19 @@ class AnnouncementCompletionListenerTest {
         return a;
     }
 
-    private DeliveryConfirmedEvent event() {
+    private DeliveryConfirmedEvent deliveryEvent() {
         return new DeliveryConfirmedEvent(bidId, UUID.randomUUID(), travelerId);
     }
+
+    private VoyageurNoShowEvent noShowEvent() {
+        return new VoyageurNoShowEvent(bidId, travelerId, UUID.randomUUID(), 1);
+    }
+
+    private ParcelRefusedEvent refusedEvent() {
+        return new ParcelRefusedEvent(bidId, travelerId, UUID.randomUUID(), "contenu non conforme");
+    }
+
+    // ── DeliveryConfirmedEvent ───────────────────────────────────────────────
 
     @Test
     @DisplayName("dernier bid livré + plus aucun ACCEPTED → annonce COMPLETED + audit")
@@ -81,7 +109,7 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
                 .thenReturn(false);
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.COMPLETED);
         verify(announcementRepository).save(ann);
@@ -107,7 +135,7 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
                 .thenReturn(true);
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.FULL);
         verify(announcementRepository, never()).save(any());
@@ -121,7 +149,7 @@ class AnnouncementCompletionListenerTest {
         AnnouncementEntity ann = announcement(AnnouncementStatus.COMPLETED);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         verify(announcementRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
@@ -135,7 +163,7 @@ class AnnouncementCompletionListenerTest {
         AnnouncementEntity ann = announcement(AnnouncementStatus.CANCELLED);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         verify(announcementRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
@@ -146,7 +174,7 @@ class AnnouncementCompletionListenerTest {
     void unknownBid_skips() {
         when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         verify(announcementRepository, never()).findById(any());
         verify(announcementRepository, never()).save(any());
@@ -159,9 +187,69 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(completedBid()));
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.empty());
 
-        listener.onDeliveryConfirmed(event());
+        listener.onDeliveryConfirmed(deliveryEvent());
 
         verify(announcementRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    // ── VoyageurNoShowEvent ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("no-show sur dernier bid ACCEPTED → annonce IN_PROGRESS → COMPLETED")
+    void noShow_lastBid_completesAnnouncement() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(noShowBid()));
+        AnnouncementEntity ann = announcement(AnnouncementStatus.IN_PROGRESS);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+                .thenReturn(false);
+
+        listener.onVoyageurNoShow(noShowEvent());
+
+        assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.COMPLETED);
+        verify(announcementRepository).save(ann);
+    }
+
+    @Test
+    @DisplayName("no-show sur annonce ACTIVE avec bids ACCEPTED restants → annonce inchangée")
+    void noShow_remainingAccepted_keepsStatus() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(noShowBid()));
+        AnnouncementEntity ann = announcement(AnnouncementStatus.ACTIVE);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+                .thenReturn(true);
+
+        listener.onVoyageurNoShow(noShowEvent());
+
+        assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+        verify(announcementRepository, never()).save(any());
+    }
+
+    // ── ParcelRefusedEvent ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("parcel refused sur dernier bid ACCEPTED → annonce COMPLETED")
+    void parcelRefused_lastBid_completesAnnouncement() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(refusedBid()));
+        AnnouncementEntity ann = announcement(AnnouncementStatus.IN_PROGRESS);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+                .thenReturn(false);
+
+        listener.onParcelRefused(refusedEvent());
+
+        assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.COMPLETED);
+        verify(announcementRepository).save(ann);
+    }
+
+    @Test
+    @DisplayName("parcel refused bid inconnu → no-op")
+    void parcelRefused_unknownBid_skips() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        listener.onParcelRefused(refusedEvent());
+
+        verify(announcementRepository, never()).findById(any());
+        verify(announcementRepository, never()).save(any());
     }
 }

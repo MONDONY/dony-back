@@ -4,8 +4,10 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
+import com.dony.api.matching.events.AnnouncementInProgressEvent;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidCreatedEvent;
+import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.matching.events.ParcelRefusedEvent;
@@ -164,6 +166,24 @@ public class NotificationDispatcher {
         notifyUser(event.getSenderId(), "Voyageur absent",
                 "Le voyageur ne s'est pas présenté à la remise. Remboursement en cours.",
                 Map.of("type", "TRIP_CANCELLED", "bidId", event.getBidId().toString()));
+    }
+
+    // Trajet en cours — notif voyageur "Bon voyage"
+    @EventListener @Async
+    public void onAnnouncementInProgress(AnnouncementInProgressEvent event) {
+        notifyUser(event.getTravelerId(), "Bon voyage !",
+                "N'oublie pas de scanner les QR codes à la remise et à la livraison.",
+                Map.of("type", "TRIP_IN_PROGRESS",
+                       "announcementId", event.getAnnouncementId().toString()));
+    }
+
+    // Bid expiré au départ — notif expéditeur "Demande expirée"
+    @EventListener @Async
+    public void onBidExpiredOnDeparture(BidExpiredOnDepartureEvent event) {
+        notifyUser(event.getSenderId(), "Demande expirée",
+                "Le voyageur est parti avant d'avoir accepté votre demande. Remboursement en cours.",
+                Map.of("type", "BID_EXPIRED",
+                       "bidId", event.getBidId().toString()));
     }
 
     // Story 9.5 — Notification utilisateur : compte suspendu
