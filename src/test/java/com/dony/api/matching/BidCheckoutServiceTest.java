@@ -57,6 +57,7 @@ class BidCheckoutServiceTest {
         announcement.setTravelerId(UUID.randomUUID());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
         announcement.setAvailableKg(new BigDecimal("10.00"));
+        announcement.setTotalKg(new BigDecimal("10.00"));
 
         req = new BidCheckoutRequest(
             announcement.getId(),
@@ -112,6 +113,7 @@ class BidCheckoutServiceTest {
     @Test
     void rejects_weight_exceeding_capacity() {
         announcement.setAvailableKg(new BigDecimal("1.00"));
+        announcement.setTotalKg(new BigDecimal("1.00"));
         assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
             .isInstanceOf(DonyBusinessException.class);
     }

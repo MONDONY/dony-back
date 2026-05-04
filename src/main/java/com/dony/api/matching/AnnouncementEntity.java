@@ -67,6 +67,9 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "available_kg", nullable = false, precision = 5, scale = 2)
     private BigDecimal availableKg;
 
+    @Column(name = "total_kg", nullable = false, precision = 5, scale = 2)
+    private BigDecimal totalKg;
+
     @Column(name = "price_per_kg", nullable = false, precision = 10, scale = 2)
     private BigDecimal pricePerKg;
 
@@ -135,6 +138,9 @@ public class AnnouncementEntity extends BaseEntity {
 
     public BigDecimal getAvailableKg() { return availableKg; }
     public void setAvailableKg(BigDecimal availableKg) { this.availableKg = availableKg; }
+
+    public BigDecimal getTotalKg() { return totalKg; }
+    public void setTotalKg(BigDecimal totalKg) { this.totalKg = totalKg; }
 
     public BigDecimal getPricePerKg() { return pricePerKg; }
     public void setPricePerKg(BigDecimal pricePerKg) { this.pricePerKg = pricePerKg; }

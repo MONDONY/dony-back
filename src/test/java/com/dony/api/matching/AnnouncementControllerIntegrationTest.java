@@ -238,6 +238,7 @@ class AnnouncementControllerIntegrationTest {
         e.setArrivalCity(arr);
         e.setDepartureDate(LocalDate.now().plusDays(7));
         e.setAvailableKg(new BigDecimal("8"));
+        e.setTotalKg(new BigDecimal("8"));
         e.setPricePerKg(new BigDecimal("12"));
         e.setStatus(AnnouncementStatus.ACTIVE);
         e.setTransportMode(TransportMode.PLANE);

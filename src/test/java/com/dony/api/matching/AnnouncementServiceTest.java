@@ -92,6 +92,7 @@ class AnnouncementServiceTest {
         a.setArrivalCity("Dakar");
         a.setDepartureDate(LocalDate.now().plusDays(10));
         a.setAvailableKg(BigDecimal.valueOf(20));
+        a.setTotalKg(BigDecimal.valueOf(20));
         a.setPricePerKg(BigDecimal.valueOf(5));
         a.setStatus(AnnouncementStatus.ACTIVE);
         a.setTransportMode(TransportMode.PLANE);
@@ -179,6 +180,26 @@ class AnnouncementServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("création → totalKg = availableKg")
+        void create_setsTotalKgEqualToAvailableKg() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+
+            AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            AnnouncementEntity saved = captor.getValue();
+            assertThat(saved.getTotalKg()).isEqualByComparingTo(saved.getAvailableKg());
+            assertThat(result.totalKg()).isEqualByComparingTo(result.availableKg());
         }
 
         @Test
@@ -313,6 +334,37 @@ class AnnouncementServiceTest {
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
                         assertThat(ex.getErrorCode()).isEqualTo("modification-impossible");
                     });
+        }
+
+        @Test
+        @DisplayName("update sans bids acceptés → totalKg synchronisé avec availableKg")
+        void update_setsTotalKgEqualToAvailableKg() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            // Existing announcement starts at 20 kg total
+            assertThat(a.getTotalKg()).isEqualByComparingTo("20");
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+                    .thenReturn(false);
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", LocalDate.now().plusDays(15),
+                    null, null,
+                    new AddressDto("CDG", 49.009, 2.547),
+                    new AddressDto("DSS", 14.693, -17.447),
+                    BigDecimal.valueOf(35), BigDecimal.valueOf(6),
+                    TransportMode.PLANE,
+                    null, null, null
+            );
+
+            announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
+
+            assertThat(a.getAvailableKg()).isEqualByComparingTo("35");
+            assertThat(a.getTotalKg()).isEqualByComparingTo("35");
         }
 
         @Test

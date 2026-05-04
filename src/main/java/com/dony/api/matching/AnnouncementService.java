@@ -120,7 +120,7 @@ public class AnnouncementService {
                 entity.getDepartureTime(), entity.getArrivalTime(),
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
-                entity.getAvailableKg(), entity.getPricePerKg(),
+                entity.getAvailableKg(), entity.getTotalKg(), entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getDescription(),
@@ -180,6 +180,7 @@ public class AnnouncementService {
         announcement.setDeliveryLat(java.math.BigDecimal.valueOf(request.deliveryAddress().lat()));
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
+        announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
@@ -245,6 +246,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(announcement.getPickupAddressLabel(), announcement.getPickupLat().doubleValue(), announcement.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(announcement.getDeliveryAddressLabel(), announcement.getDeliveryLat().doubleValue(), announcement.getDeliveryLng().doubleValue()),
                 announcement.getAvailableKg(),
+                announcement.getTotalKg(),
                 announcement.getPricePerKg(),
                 announcement.getTransportMode(),
                 announcement.getStatus().name(),
@@ -295,6 +297,8 @@ public class AnnouncementService {
         announcement.setDeliveryLat(java.math.BigDecimal.valueOf(request.deliveryAddress().lat()));
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
+        // Update is blocked if any bid is ACCEPTED, so no booked weight to preserve → keep total in sync.
+        announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
         announcement.setDescription(request.description());
@@ -338,6 +342,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(saved.getPickupAddressLabel(), saved.getPickupLat().doubleValue(), saved.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(saved.getDeliveryAddressLabel(), saved.getDeliveryLat().doubleValue(), saved.getDeliveryLng().doubleValue()),
                 saved.getAvailableKg(),
+                saved.getTotalKg(),
                 saved.getPricePerKg(),
                 saved.getTransportMode(),
                 saved.getStatus().name(),
@@ -424,6 +429,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(),
+                entity.getTotalKg(),
                 entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(),

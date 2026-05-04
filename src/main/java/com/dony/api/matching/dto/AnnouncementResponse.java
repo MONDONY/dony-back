@@ -19,6 +19,7 @@ public record AnnouncementResponse(
         AddressDto pickupAddress,
         AddressDto deliveryAddress,
         BigDecimal availableKg,
+        BigDecimal totalKg,
         BigDecimal pricePerKg,
         com.dony.api.matching.TransportMode transportMode,
         String status,
