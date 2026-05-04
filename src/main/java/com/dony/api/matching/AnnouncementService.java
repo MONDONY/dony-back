@@ -11,6 +11,10 @@ import com.dony.api.matching.dto.AnnouncementResponse;
 import com.dony.api.matching.dto.AnnouncementSearchResponse;
 import com.dony.api.matching.dto.TravelerProfileDto;
 import com.dony.api.matching.events.AnnouncementDeletedEvent;
+import com.dony.api.matching.events.AnnouncementInProgressEvent;
+import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
@@ -25,12 +29,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class AnnouncementService {
+
+    private static final Logger log = LoggerFactory.getLogger(AnnouncementService.class);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Paris");
 
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
@@ -208,13 +218,82 @@ public class AnnouncementService {
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
-        
+
+        // Transition inline: before returning the list, check if any ACTIVE/FULL
+        // announcements have passed their departure time and update them immediately.
+        // This makes the "En cours" status appear as soon as the traveler opens the screen,
+        // without waiting for the hourly scheduler.
+        triggerInProgressTransitions();
+
         return announcementRepository.findByTravelerId(user.getId(), pageable)
                 .map(this::toResponse);
+    }
+
+    /**
+     * Checks all ACTIVE/FULL announcements whose departure time has passed and transitions
+     * them to IN_PROGRESS (or directly COMPLETED if no ACCEPTED bids remain).
+     * Called inline on each "Mes trajets" load, and also by the hourly scheduler as a safety net.
+     */
+    public void triggerInProgressTransitions() {
+        ZonedDateTime nowParis = ZonedDateTime.now(DEFAULT_ZONE);
+        LocalDate today = nowParis.toLocalDate();
+        LocalTime nowTime = nowParis.toLocalTime();
+
+        List<AnnouncementEntity> candidates =
+                announcementRepository.findDepartedActiveAnnouncements(today, nowTime);
+
+        for (AnnouncementEntity announcement : candidates) {
+            try {
+                applyInProgressTransition(announcement);
+            } catch (Exception e) {
+                log.error("Inline transition failed for announcement {}: {}",
+                        announcement.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void applyInProgressTransition(AnnouncementEntity announcement) {
+        AnnouncementStatus previous = announcement.getStatus();
+        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(
+                announcement.getId(), BidStatus.ACCEPTED);
+
+        if (!hasAcceptedBids) {
+            announcement.setStatus(AnnouncementStatus.COMPLETED);
+            announcementRepository.save(announcement);
+            auditService.log("ANNOUNCEMENT", announcement.getTravelerId(),
+                    "ANNOUNCEMENT_COMPLETED", announcement.getId(),
+                    Map.of("previousStatus", previous.name(), "trigger", "DEPARTURE_NO_ACCEPTED_BIDS"));
+            log.info("Announcement {} → COMPLETED (no ACCEPTED bids at departure)", announcement.getId());
+        } else {
+            announcement.setStatus(AnnouncementStatus.IN_PROGRESS);
+            announcementRepository.save(announcement);
+            auditService.log("ANNOUNCEMENT", announcement.getTravelerId(),
+                    "ANNOUNCEMENT_IN_PROGRESS", announcement.getId(),
+                    Map.of("previousStatus", previous.name()));
+            eventPublisher.publishEvent(
+                    new AnnouncementInProgressEvent(announcement.getId(), announcement.getTravelerId()));
+            log.info("Announcement {} → IN_PROGRESS", announcement.getId());
+        }
+
+        expirePendingBids(announcement);
+    }
+
+    private void expirePendingBids(AnnouncementEntity announcement) {
+        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatus(
+                announcement.getId(), BidStatus.PENDING);
+        for (BidEntity bid : pendingBids) {
+            bid.setStatus(BidStatus.EXPIRED);
+            bidRepository.save(bid);
+            auditService.log("BID", bid.getId(), "BID_EXPIRED_ON_DEPARTURE",
+                    announcement.getTravelerId(),
+                    Map.of("announcementId", announcement.getId().toString()));
+            eventPublisher.publishEvent(new BidExpiredOnDepartureEvent(
+                    bid.getId(), bid.getSenderId(), announcement.getId(), announcement.getTravelerId()));
+        }
     }
 
     @Transactional(readOnly = true)

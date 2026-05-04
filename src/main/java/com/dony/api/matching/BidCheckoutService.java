@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class BidCheckoutService {
@@ -79,9 +80,26 @@ public class BidCheckoutService {
                 "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
 
+        // Idempotency: if an AWAITING_PAYMENT bid exists (e.g. payment sheet crashed),
+        // resume it instead of creating a new one.
+        Optional<BidEntity> awaitingBid = bidRepository.findBySenderIdAndAnnouncementIdAndStatus(
+            sender.getId(), announcement.getId(), BidStatus.AWAITING_PAYMENT);
+        if (awaitingBid.isPresent()) {
+            BidEntity existing = awaitingBid.get();
+            CreatePaymentRequest resumeReq = new CreatePaymentRequest();
+            resumeReq.setBidId(existing.getId());
+            PaymentResponse resumed = paymentService.createEscrow(resumeReq, firebaseUid);
+            return new BidCheckoutResponse(
+                existing.getId(),
+                resumed.getClientSecret(),
+                stripePublishableKey,
+                existing.getAwaitingPaymentExpiresAt()
+            );
+        }
+
         boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
             sender.getId(), announcement.getId(),
-            List.of(BidStatus.AWAITING_PAYMENT, BidStatus.PENDING, BidStatus.ACCEPTED));
+            List.of(BidStatus.PENDING, BidStatus.ACCEPTED));
         if (alreadyHasBid) {
             throw new DonyBusinessException(HttpStatus.CONFLICT,
                 "already-bid", "Demande existante",

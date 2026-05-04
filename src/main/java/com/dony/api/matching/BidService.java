@@ -236,6 +236,9 @@ public class BidService {
             bid.setTrackingToken(java.util.UUID.randomUUID().toString());
         }
         announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+            announcement.setStatus(AnnouncementStatus.FULL);
+        }
         announcementRepository.save(announcement);
         bidRepository.save(bid);
 
@@ -352,6 +355,9 @@ public class BidService {
             AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
                 announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+                if (announcement.getStatus() == AnnouncementStatus.FULL) {
+                    announcement.setStatus(AnnouncementStatus.ACTIVE);
+                }
                 announcementRepository.save(announcement);
             }
         }

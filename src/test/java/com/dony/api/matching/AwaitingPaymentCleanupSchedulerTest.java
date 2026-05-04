@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -52,7 +53,8 @@ class AwaitingPaymentCleanupSchedulerTest {
         scheduler.cleanupUnpaidBids();
 
         verify(paymentService).cancelPaymentIntent("pi_xxx");
-        verify(bidRepository).deleteById(bid.getId());
+        assertThat(bid.getDeletedAt()).isNotNull();
+        verify(bidRepository).save(bid);
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
     }
 
@@ -76,7 +78,7 @@ class AwaitingPaymentCleanupSchedulerTest {
         }
 
         verify(paymentService).promoteBidOnPaymentAuthorized("pi_race");
-        verify(bidRepository, never()).deleteById(bid.getId());
+        assertThat(bid.getDeletedAt()).isNull();
     }
 
     @Test
@@ -91,7 +93,7 @@ class AwaitingPaymentCleanupSchedulerTest {
 
         scheduler.cleanupUnpaidBids();  // should NOT throw
 
-        verify(bidRepository, never()).deleteById(bid.getId());
+        assertThat(bid.getDeletedAt()).isNull();
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
     }
 
@@ -113,8 +115,9 @@ class AwaitingPaymentCleanupSchedulerTest {
             scheduler.cleanupUnpaidBids();
         }
 
-        // Should delete the bid since payment is already canceled
-        verify(bidRepository).deleteById(bid.getId());
+        // Soft-delete the bid since payment is already canceled
+        assertThat(bid.getDeletedAt()).isNotNull();
+        verify(bidRepository).save(bid);
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
     }
 
@@ -136,8 +139,8 @@ class AwaitingPaymentCleanupSchedulerTest {
             scheduler.cleanupUnpaidBids();
         }
 
-        // Should not delete or promote when status is unknown (retry next time)
-        verify(bidRepository, never()).deleteById(bid.getId());
+        // Should not soft-delete or promote when status is unknown (retry next time)
+        assertThat(bid.getDeletedAt()).isNull();
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
     }
 
@@ -161,7 +164,7 @@ class AwaitingPaymentCleanupSchedulerTest {
         }
 
         verify(paymentService, never()).promoteBidOnPaymentAuthorized(any());
-        verify(bidRepository, never()).deleteById(bid.getId());
+        assertThat(bid.getDeletedAt()).isNull();
     }
 
     @Test
@@ -172,6 +175,6 @@ class AwaitingPaymentCleanupSchedulerTest {
         scheduler.cleanupUnpaidBids();
 
         verifyNoInteractions(paymentService);
-        verify(bidRepository, never()).deleteById(any());
+        verify(bidRepository, never()).save(any());
     }
 }

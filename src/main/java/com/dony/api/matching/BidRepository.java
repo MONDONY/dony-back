@@ -27,6 +27,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     boolean existsBySenderIdAndAnnouncementIdAndStatusIn(UUID senderId, UUID announcementId, List<BidStatus> statuses);
 
+    Optional<BidEntity> findBySenderIdAndAnnouncementIdAndStatus(UUID senderId, UUID announcementId, BidStatus status);
+
     List<BidEntity> findByAnnouncementId(UUID announcementId);
 
     List<BidEntity> findByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);

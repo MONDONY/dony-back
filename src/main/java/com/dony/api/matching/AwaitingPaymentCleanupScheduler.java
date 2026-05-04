@@ -47,8 +47,9 @@ public class AwaitingPaymentCleanupScheduler {
             String piId = bid.getPaymentIntentId();
             try {
                 paymentService.cancelPaymentIntent(piId);
-                bidRepository.deleteById(bid.getId());
-                log.info("Bid {} (PI={}) deleted (unpaid timeout)", bid.getId(), piId);
+                bid.softDelete();
+                bidRepository.save(bid);
+                log.info("Bid {} (PI={}) soft-deleted (unpaid timeout)", bid.getId(), piId);
             } catch (StripeException e) {
                 if ("payment_intent_unexpected_state".equals(e.getCode())) {
                     handlePaymentIntentUnexpectedState(bid, piId);
@@ -73,9 +74,10 @@ public class AwaitingPaymentCleanupScheduler {
                     bid.getId(), status);
                 paymentService.promoteBidOnPaymentAuthorized(piId);
             } else if ("canceled".equals(status) || "failed".equals(status)) {
-                // Payment was cancelled or failed — delete the bid
-                bidRepository.deleteById(bid.getId());
-                log.info("Bid {} (PI={}) deleted (PI status: {})", bid.getId(), piId, status);
+                // Payment was cancelled or failed — soft-delete the bid
+                bid.softDelete();
+                bidRepository.save(bid);
+                log.info("Bid {} (PI={}) soft-deleted (PI status: {})", bid.getId(), piId, status);
             } else {
                 // Unknown state — log and retry
                 log.warn("Bid {} (PI={}): unexpected PI status={} — will retry",

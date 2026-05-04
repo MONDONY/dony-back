@@ -437,6 +437,27 @@ class BidServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
         }
+
+        @Test
+        @DisplayName("acceptBid remplit exactement la capacité → annonce passe FULL")
+        void acceptBid_fillsCapacity_becomesFulls() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAvailableKg(BigDecimal.valueOf(5)); // exact match avec le bid
+            BidEntity bid = buildBid(); // weightKg = 5
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.acceptBid(BID_ID, TRAVELER_UID);
+
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
+        }
     }
 
     // ─── rejectBid ─────────────────────────────────────────────────────────────
@@ -536,6 +557,27 @@ class BidServiceTest {
             assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(25)); // 20+5
             verify(announcementRepository).save(announcement);
+        }
+
+        @Test
+        @DisplayName("bid ACCEPTED annulé sur annonce FULL → annonce repasse ACTIVE")
+        void cancelBid_acceptedBidOnFullAnnouncement_reactivates() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAvailableKg(BigDecimal.ZERO);
+            announcement.setStatus(AnnouncementStatus.FULL);
+            BidEntity bid = buildBid(); // weightKg = 5
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
         }
 
         @Test
