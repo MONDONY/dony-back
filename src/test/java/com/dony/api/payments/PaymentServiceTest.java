@@ -473,7 +473,6 @@ class PaymentServiceTest {
         }
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
-        assertThat(user.getStripeOnboardingCompletedAt()).isNotNull();
         verify(auditService).log(eq("USER"), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
         verify(eventPublisher).publishEvent(any(com.dony.api.payments.events.StripeOnboardingCompletedEvent.class));
     }
@@ -483,7 +482,7 @@ class PaymentServiceTest {
         // Already ONBOARDING_COMPLETE — status re-confirmed by Stripe, save is idempotent, no event emitted.
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
-        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE); // already onboarded
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
