@@ -81,8 +81,6 @@ dony:
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
-  commission:
-    rate: 0.12
 
 # Encryption (AES-256 for KYC sensitive data)
 app:
