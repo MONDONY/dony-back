@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.dto.ConnectAccountResponse;
@@ -52,10 +53,9 @@ class PaymentServiceRefreshConnectAccountTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test");
+                "whsec_test",
+                PaymentServiceTestFactory.defaultConnectProperties());
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
-        ReflectionTestUtils.setField(service, "returnUrl", "https://dony.app/return");
-        ReflectionTestUtils.setField(service, "refreshUrl", "https://dony.app/refresh");
     }
 
     private UserEntity buildUser(String stripeAccountId, boolean onboarded) {
@@ -97,6 +97,7 @@ class PaymentServiceRefreshConnectAccountTest {
         Account account = mock(Account.class);
         when(account.getId()).thenReturn(ACCT_ID);
         when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
 
         try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
             mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
@@ -120,6 +121,7 @@ class PaymentServiceRefreshConnectAccountTest {
         Account account = mock(Account.class);
         when(account.getId()).thenReturn(ACCT_ID);
         when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
 
         try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
             mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);

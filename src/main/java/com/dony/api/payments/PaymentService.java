@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -15,6 +16,7 @@ import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentResponse;
+import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
@@ -55,12 +57,7 @@ public class PaymentService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final String webhookSecret;
-
-    @Value("${dony.stripe.return-url:https://dony.app/payments/onboarding/return}")
-    private String returnUrl;
-
-    @Value("${dony.stripe.refresh-url:https://dony.app/payments/onboarding/refresh}")
-    private String refreshUrl;
+    private final StripeConnectProperties stripeConnectProperties;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -71,7 +68,8 @@ public class PaymentService {
                           PaymentRepository paymentRepository,
                           AuditService auditService,
                           ApplicationEventPublisher eventPublisher,
-                          @Qualifier("stripeWebhookSecret") String webhookSecret) {
+                          @Qualifier("stripeWebhookSecret") String webhookSecret,
+                          StripeConnectProperties stripeConnectProperties) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -79,6 +77,7 @@ public class PaymentService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.webhookSecret = webhookSecret;
+        this.stripeConnectProperties = stripeConnectProperties;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -93,13 +92,48 @@ public class PaymentService {
         try {
             AccountCreateParams params = AccountCreateParams.builder()
                     .setType(AccountCreateParams.Type.EXPRESS)
-                    .setCountry("FR")
+                    .setCountry(user.getCountry())
                     .setEmail(user.getEmail())
-                    .setCapabilities(AccountCreateParams.Capabilities.builder()
-                            .setTransfers(AccountCreateParams.Capabilities.Transfers.builder()
-                                    .setRequested(true)
-                                    .build())
-                            .build())
+                    .setBusinessType(
+                            user.isProAccount()
+                                    ? AccountCreateParams.BusinessType.COMPANY
+                                    : AccountCreateParams.BusinessType.INDIVIDUAL
+                    )
+                    .setCapabilities(
+                            AccountCreateParams.Capabilities.builder()
+                                    .setCardPayments(
+                                            AccountCreateParams.Capabilities.CardPayments.builder()
+                                                    .setRequested(true) // CRITICAL: required for on_behalf_of
+                                                    .build()
+                                    )
+                                    .setTransfers(
+                                            AccountCreateParams.Capabilities.Transfers.builder()
+                                                    .setRequested(true)
+                                                    .build()
+                                    )
+                                    .build()
+                    )
+                    .setBusinessProfile(
+                            AccountCreateParams.BusinessProfile.builder()
+                                    // TODO: validate MCC 4215 vs 4214 in Stripe sandbox for Express FR individual accounts before prod
+                                    .setMcc(stripeConnectProperties.mcc())
+                                    .setProductDescription(stripeConnectProperties.productDescription())
+                                    .setUrl(stripeConnectProperties.businessUrl())
+                                    .build()
+                    )
+                    .setSettings(
+                            AccountCreateParams.Settings.builder()
+                                    .setPayouts(
+                                            AccountCreateParams.Settings.Payouts.builder()
+                                                    .setSchedule(
+                                                            AccountCreateParams.Settings.Payouts.Schedule.builder()
+                                                                    .setInterval(AccountCreateParams.Settings.Payouts.Schedule.Interval.DAILY)
+                                                                    .build()
+                                                    )
+                                                    .build()
+                                    )
+                                    .build()
+                    )
                     .putMetadata("user_id", user.getId().toString())
                     .build();
 
@@ -107,7 +141,13 @@ public class PaymentService {
             user.setStripeAccountId(account.getId());
             user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
             user.setStripeAccountCreatedAt(java.time.Instant.now());
-            userRepository.save(user);
+            try {
+                userRepository.save(user);
+            } catch (Exception saveEx) {
+                log.error("Failed to save user after Stripe account creation. orphan_account_id={}, user_id={}",
+                        account.getId(), user.getId(), saveEx);
+                throw saveEx;
+            }
 
             auditService.log("USER", user.getId(), "STRIPE_ACCOUNT_CREATED", user.getId(),
                     Map.of("stripeAccountId", account.getId()));
@@ -135,8 +175,8 @@ public class PaymentService {
         try {
             AccountLinkCreateParams params = AccountLinkCreateParams.builder()
                     .setAccount(user.getStripeAccountId())
-                    .setReturnUrl(returnUrl)
-                    .setRefreshUrl(refreshUrl)
+                    .setReturnUrl(stripeConnectProperties.returnUrl())
+                    .setRefreshUrl(stripeConnectProperties.refreshUrl())
                     .setType(AccountLinkCreateParams.Type.ACCOUNT_ONBOARDING)
                     .build();
 
@@ -169,14 +209,13 @@ public class PaymentService {
 
         try {
             Account account = Account.retrieve(user.getStripeAccountId());
+            StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
             boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
-            StripeAccountStatus newStatus = chargesEnabled
-                    ? StripeAccountStatus.ONBOARDING_COMPLETE
-                    : StripeAccountStatus.PENDING_ONBOARDING;
 
             if (newStatus != user.getStripeAccountStatus()) {
                 user.setStripeAccountStatus(newStatus);
-                if (chargesEnabled && user.getStripeOnboardingCompletedAt() == null) {
+                if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                        && user.getStripeOnboardingCompletedAt() == null) {
                     user.setStripeOnboardingCompletedAt(java.time.Instant.now());
                 }
                 userRepository.save(user);
@@ -184,8 +223,8 @@ public class PaymentService {
                 auditService.log("USER", user.getId(), action, user.getId(),
                         Map.of("stripeAccountId", account.getId(),
                                 "source", "manual-refresh"));
-                log.info("Stripe onboarding state synced for user {} : chargesEnabled={}",
-                        user.getId(), chargesEnabled);
+                log.info("Stripe onboarding state synced for user {} : newStatus={}",
+                        user.getId(), newStatus);
             }
 
             return new ConnectAccountResponse(account.getId(), user.getStripeAccountStatus());
@@ -349,23 +388,56 @@ public class PaymentService {
     }
 
     private void handleAccountUpdated(Event event) {
-        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
-            Account account = (Account) obj;
-            if (Boolean.TRUE.equals(account.getChargesEnabled())) {
-                userRepository.findByStripeAccountId(account.getId()).ifPresent(user -> {
-                    if (user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-                        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
-                        if (user.getStripeOnboardingCompletedAt() == null) {
-                            user.setStripeOnboardingCompletedAt(java.time.Instant.now());
-                        }
-                        userRepository.save(user);
+        event.getDataObjectDeserializer().getObject().ifPresentOrElse(
+            obj -> {
+                Account account = (Account) obj;
+                String accountId = account.getId();
+
+                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+                    StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
+
+                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING) {
+                        return; // still pending, no state change
+                    }
+
+                    // Only emit event on first transition to ONBOARDING_COMPLETE
+                    if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                            && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+                        user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                        eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
                         auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
-                                user.getId(), Map.of("stripeAccountId", account.getId()));
+                                user.getId(), Map.of("stripeAccountId", accountId));
                         log.info("Stripe onboarding complete for user {}", user.getId());
                     }
+
+                    user.setStripeAccountStatus(newStatus);
+                    userRepository.save(user);
                 });
-            }
-        });
+            },
+            () -> log.warn("handleAccountUpdated: could not deserialize account object for event {}", event.getId())
+        );
+    }
+
+    /**
+     * Derives the {@link StripeAccountStatus} from a Stripe {@link Account} object.
+     * Single source of truth used by both {@code handleAccountUpdated} and {@code refreshConnectAccount}.
+     */
+    private StripeAccountStatus deriveStripeAccountStatus(Account account) {
+        boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
+        boolean payoutsEnabled = Boolean.TRUE.equals(account.getPayoutsEnabled());
+        String disabledReason = account.getRequirements() != null
+                ? account.getRequirements().getDisabledReason()
+                : null;
+
+        if (chargesEnabled && payoutsEnabled) {
+            return StripeAccountStatus.ONBOARDING_COMPLETE;
+        } else if (disabledReason != null && disabledReason.startsWith("rejected")) {
+            return StripeAccountStatus.REJECTED;
+        } else if (disabledReason != null) {
+            return StripeAccountStatus.DISABLED;
+        } else {
+            return StripeAccountStatus.PENDING_ONBOARDING;
+        }
     }
 
     private void handlePaymentEscrowActive(Event event) {
