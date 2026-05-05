@@ -1,26 +1,26 @@
-# Stripe Connect — Architecture & Integration Notes
+# Stripe Connect — Architecture & Notes d'intégration
 
-**Last updated:** 2026-05-05 (PR 5 — `on_behalf_of` migration)
+**Dernière mise à jour :** 2026-05-05 (PR 5 — migration `on_behalf_of`)
 
-This document covers the design decisions, lifecycle, and configuration of Stripe Connect on the Dony platform. For the end-to-end payment flow, see [`payments-flow.md`](./payments-flow.md).
+Ce document couvre les décisions de conception, le cycle de vie et la configuration de Stripe Connect sur la plateforme Dony. Pour le flux de paiement de bout en bout, voir [`payments-flow.md`](./payments-flow.md).
 
 ---
 
-## 1. Why `on_behalf_of`
+## 1. Pourquoi `on_behalf_of`
 
-### Fiscal / Legal
+### Fiscal / Légal
 
-Without `on_behalf_of`, the **platform** is the merchant of record. The traveler's Stripe account receives transfers, but Stripe and card networks attribute the sale to Dony. This is legally incorrect: the traveler is the one providing the courier service and taking on the liability for the goods.
+Sans `on_behalf_of`, la **plateforme** est le marchand de référence. Le compte Stripe du voyageur reçoit des virements, mais Stripe et les réseaux de cartes attribuent la vente à Dony. C'est juridiquement incorrect : c'est le voyageur qui fournit le service de transport et qui assume la responsabilité des marchandises.
 
-With `on_behalf_of=<traveler_connect_account_id>`, the **traveler's Connect account is the settlement merchant**. Stripe reports the traveler as the seller. This is the correct legal posture in France and in most West African jurisdictions where Dony operates (Dakar, Abidjan, Bamako, Douala).
+Avec `on_behalf_of=<id_compte_connect_voyageur>`, le **compte Connect du voyageur est le marchand de règlement**. Stripe déclare le voyageur comme vendeur. C'est la posture légale correcte en France et dans la plupart des juridictions d'Afrique de l'Ouest où Dony opère (Dakar, Abidjan, Bamako, Douala).
 
 ### UX
 
-The sender's bank statement shows the **traveler's business name** (or their name for Express individual accounts), not "Dony". This reduces chargebacks from confused senders who do not recognise a generic platform charge.
+Le relevé bancaire de l'expéditeur affiche le **nom de l'entreprise du voyageur** (ou son nom pour les comptes Express individuels), et non "Dony". Cela réduit les rétrofacturations des expéditeurs qui ne reconnaissent pas un prélèvement générique de la plateforme.
 
-### Regulatory / Stripe capability requirement
+### Exigence réglementaire / capacité Stripe
 
-`on_behalf_of` requires the connected account to have the **`card_payments` capability** active. This is why `AccountCreateParams` explicitly requests:
+`on_behalf_of` requiert que le compte Connect ait la capacité **`card_payments`** activée. C'est pourquoi `AccountCreateParams` demande explicitement :
 
 ```java
 .addCapability(AccountCreateParams.Capability.builder()
@@ -33,98 +33,98 @@ The sender's bank statement shows the **traveler's business name** (or their nam
     .build())
 ```
 
-Stripe will not accept a `PaymentIntent` with `on_behalf_of` unless `card_payments` is enabled on the destination account. Attempting to do so returns a Stripe `invalid_request_error`.
+Stripe refusera un `PaymentIntent` avec `on_behalf_of` si `card_payments` n'est pas activé sur le compte de destination. La tentative retourne une `invalid_request_error` Stripe.
 
 ---
 
-## 2. Connect Account Lifecycle
+## 2. Cycle de vie du compte Connect
 
-### State diagram
+### Diagramme d'états
 
 ```
-                   first trip creation
+                   création du premier trajet
 NOT_CREATED ─────────────────────────────► PENDING_ONBOARDING
                                                   │
                            webhook account.updated │
                       (chargesEnabled=true         │
-                       AND payoutsEnabled=true)    │
+                       ET payoutsEnabled=true)     │
                                                    ▼
                                          ONBOARDING_COMPLETE
-                                         (bids can be placed)
+                                         (les offres peuvent être placées)
 
 PENDING_ONBOARDING ──────────────────────────────► REJECTED
-   (disabled_reason matches "rejected.*")
+   (disabled_reason commence par "rejected.*")
 
 PENDING_ONBOARDING ──────────────────────────────► DISABLED
-   (other disabled_reason present)
+   (autre disabled_reason présent)
 ```
 
-### State descriptions
+### Description des statuts
 
-| Status | Meaning | What is blocked |
-|--------|---------|-----------------|
-| `NOT_CREATED` | Traveler has no Stripe Express account yet | Cannot create trips |
-| `PENDING_ONBOARDING` | Account created; Stripe onboarding link sent | Bids blocked; PaymentIntent capture blocked |
-| `ONBOARDING_COMPLETE` | Both `charges_enabled` AND `payouts_enabled` are `true` | Nothing — full functionality |
-| `REJECTED` | Stripe rejected the account (`disabled_reason` starts with `rejected.*`) | All payment operations blocked; user must contact support |
-| `DISABLED` | Some other restriction applied | Capture blocked; `TravelerNotEligibleForPaymentException` (HTTP 422) on bid acceptance |
+| Statut | Signification | Ce qui est bloqué |
+|--------|--------------|------------------|
+| `NOT_CREATED` | Le voyageur n'a pas encore de compte Stripe Express | Impossible de créer des trajets |
+| `PENDING_ONBOARDING` | Compte créé ; lien d'onboarding Stripe envoyé | Offres bloquées ; capture du PaymentIntent bloquée |
+| `ONBOARDING_COMPLETE` | `charges_enabled` ET `payouts_enabled` sont à `true` | Rien — fonctionnalité complète |
+| `REJECTED` | Stripe a rejeté le compte (`disabled_reason` commence par `rejected.*`) | Toutes les opérations de paiement bloquées ; l'utilisateur doit contacter le support |
+| `DISABLED` | Une autre restriction s'applique | Capture bloquée ; `TravelerNotEligibleForPaymentException` (HTTP 422) à l'acceptation de l'offre |
 
-### Trigger: `NOT_CREATED` → `PENDING_ONBOARDING`
+### Déclencheur : `NOT_CREATED` → `PENDING_ONBOARDING`
 
-Called by `ConnectService.createOrRetrieveOnboardingLink()` when a traveler creates their first trip. The link is generated once and surfaced to the Flutter app as a deep link into the Stripe Express onboarding flow.
+Appelé par `ConnectService.createOrRetrieveOnboardingLink()` quand un voyageur crée son premier trajet. Le lien est généré une seule fois et transmis à l'application Flutter comme un deep link vers le flux d'onboarding Stripe Express.
 
-### Trigger: `PENDING_ONBOARDING` → `ONBOARDING_COMPLETE`
+### Déclencheur : `PENDING_ONBOARDING` → `ONBOARDING_COMPLETE`
 
-Driven by the `account.updated` Stripe webhook. The handler calls `deriveStripeAccountStatus(Account)`, which returns `ONBOARDING_COMPLETE` only when:
+Piloté par le webhook Stripe `account.updated`. Le handler appelle `deriveStripeAccountStatus(Account)`, qui retourne `ONBOARDING_COMPLETE` uniquement quand :
 
 ```java
 account.getChargesEnabled() && account.getPayoutsEnabled()
 ```
 
-On the **first** transition to `ONBOARDING_COMPLETE`, a `StripeOnboardingCompletedEvent` Spring event is published so downstream listeners (e.g., notification service) can act without coupling.
+À la **première** transition vers `ONBOARDING_COMPLETE`, un Spring event `StripeOnboardingCompletedEvent` est publié pour que les listeners en aval (ex. service de notifications) puissent réagir sans couplage direct.
 
-### Pre-capture re-verification
+### Re-vérification pré-capture
 
-Even after a bid is accepted, `BidAcceptedEventListener` re-calls `refreshConnectAccount()` immediately before `pi.capture()`. This guards against edge cases where a traveler's account is disabled between bid acceptance and payment capture.
+Même après l'acceptation d'une offre, `BidAcceptedEventListener` rappelle `refreshConnectAccount()` immédiatement avant `pi.capture()`. Cela protège contre les cas limites où le compte d'un voyageur est désactivé entre l'acceptation de l'offre et la capture du paiement.
 
 ---
 
-## 3. Individual vs Company (PRO Badge)
+## 3. Individuel vs Entreprise (badge PRO)
 
-### Default — `INDIVIDUAL`
+### Par défaut — `INDIVIDUAL`
 
-When a traveler creates their first trip and no Connect account exists, the platform creates an **Express account** with:
+Quand un voyageur crée son premier trajet et qu'aucun compte Connect n'existe, la plateforme crée un **compte Express** avec :
 
 ```java
 .setBusinessType(AccountCreateParams.BusinessType.INDIVIDUAL)
 ```
 
-This is the default for travellers acting as private individuals.
+C'est le paramètre par défaut pour les voyageurs agissant en tant que particuliers.
 
-### PRO Upgrade — `COMPANY`
+### Passage en PRO — `COMPANY`
 
-After `POST /api/v1/auth/me/upgrade-to-pro`, the user's `isProAccount` flag is set to `true` and `proCompanyName` / `proSiret` are stored. For **new** Connect account creation after this upgrade, the platform uses:
+Après `POST /api/v1/auth/me/upgrade-to-pro`, le flag `isProAccount` de l'utilisateur est mis à `true` et `proCompanyName` / `proSiret` sont enregistrés. Pour les **nouvelles** créations de compte Connect après ce passage en PRO, la plateforme utilise :
 
 ```java
 .setBusinessType(AccountCreateParams.BusinessType.COMPANY)
 ```
 
-### Known limitation: business_type is immutable after creation
+### Limitation connue : business_type est immuable après création
 
-Stripe does **not** allow changing `business_type` on an existing account. A traveler who:
+Stripe **ne permet pas** de changer le `business_type` sur un compte existant. Un voyageur qui :
 
-1. Created at least one trip (Connect account created as `INDIVIDUAL`), and then
-2. Upgraded to PRO
+1. A créé au moins un trajet (compte Connect créé en `INDIVIDUAL`), puis
+2. A upgradé en PRO
 
-will have a mismatched Connect account. The `POST /auth/me/upgrade-to-pro` endpoint detects this and responds with **HTTP 409 Conflict** to prevent silent inconsistency. The user must contact support to have the old account closed and a new one provisioned.
+aura un compte Connect en décalage. L'endpoint `POST /auth/me/upgrade-to-pro` détecte ce cas et répond avec **HTTP 409 Conflict** pour éviter une incohérence silencieuse. L'utilisateur doit contacter le support pour que l'ancien compte soit clôturé et qu'un nouveau soit provisionné.
 
-### PRO badge semantics (MVP)
+### Sémantique du badge PRO (MVP)
 
-The PRO badge is **purely cosmetic** in MVP. It signals to senders that the traveler is a verified business entity, which may increase trust and booking rates. No additional capabilities or fee tiers are unlocked by PRO status in the current version.
+Le badge PRO est **purement cosmétique** en MVP. Il indique aux expéditeurs que le voyageur est une entité commerciale vérifiée, ce qui peut accroître la confiance et les réservations. Aucune capacité supplémentaire ni grille tarifaire différente ne sont débloquées par le statut PRO dans la version actuelle.
 
 ---
 
-## 4. Webhook Events Handled (`account.*`)
+## 4. Événements webhook traités (`account.*`)
 
 ### Endpoint
 
@@ -132,7 +132,7 @@ The PRO badge is **purely cosmetic** in MVP. It signals to senders that the trav
 POST /api/v1/payments/webhook
 ```
 
-Public endpoint (no Firebase token required). Stripe signature is verified on every request:
+Endpoint public (aucun token Firebase requis). La signature Stripe est vérifiée à chaque requête :
 
 ```java
 Webhook.constructEvent(payload, stripeSignatureHeader, stripeWebhookSecret);
@@ -140,58 +140,58 @@ Webhook.constructEvent(payload, stripeSignatureHeader, stripeWebhookSecret);
 
 ### `account.updated`
 
-This is the **only** account-level event handled. All Connect account state transitions go through this single handler.
+C'est le **seul** événement au niveau du compte qui est traité. Toutes les transitions d'état du compte Connect passent par ce handler unique.
 
-**Handler chain:**
+**Chaîne du handler :**
 
 ```
 PaymentService.handleAccountUpdated(event)
     └─► deriveStripeAccountStatus(Account account)
             ├─ chargesEnabled && payoutsEnabled  →  ONBOARDING_COMPLETE
-            ├─ disabled_reason starts with "rejected."  →  REJECTED
-            ├─ disabled_reason present (other)  →  DISABLED
-            └─ (default)  →  PENDING_ONBOARDING
+            ├─ disabled_reason commence par "rejected."  →  REJECTED
+            ├─ disabled_reason présent (autre)  →  DISABLED
+            └─ (défaut)  →  PENDING_ONBOARDING
 ```
 
-**Idempotency:** `StripeOnboardingCompletedEvent` is published **only on the first transition** to `ONBOARDING_COMPLETE`. The handler compares the incoming derived status with the current persisted `StripeAccountStatus`. If already `ONBOARDING_COMPLETE`, the Spring event is not re-published and no audit log entry is written for a no-op update.
+**Idempotence :** `StripeOnboardingCompletedEvent` est publié **uniquement à la première transition** vers `ONBOARDING_COMPLETE`. Le handler compare le statut dérivé entrant avec le `StripeAccountStatus` persisté. Si déjà `ONBOARDING_COMPLETE`, le Spring event n'est pas republié et aucune entrée audit_log n'est écrite pour une mise à jour sans effet.
 
-**Audit log:** every status change (even PENDING → PENDING no-op excluded) is written to `audit_log` with `entity_type=STRIPE_ACCOUNT` and the new status as metadata.
+**Audit log :** chaque changement de statut (les no-ops PENDING → PENDING exclus) est écrit dans `audit_log` avec `entity_type=STRIPE_ACCOUNT` et le nouveau statut en métadonnées.
 
 ---
 
-## 5. Configuration Reference
+## 5. Référence de configuration
 
 ```yaml
-# application.yml (relevant excerpt)
+# application.yml (extrait pertinent)
 dony:
   stripe:
     connect:
-      mcc: "4215"                          # Courier Services
-                                           # TODO: validate vs 4214 (Delivery Services)
-                                           #       with legal before prod go-live
-      product-description: "Dony — P2P courier marketplace connecting African diaspora senders and travelers"
+      mcc: "4215"                          # Services de messagerie
+                                           # TODO: valider vs 4214 (Services de livraison)
+                                           #       avec le juridique avant la mise en prod
+      product-description: "Dony — Marketplace P2P de transport de colis connectant expéditeurs de la diaspora africaine et voyageurs"
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
-      # ^ dev: custom URI scheme (Android intent-filter / iOS URL scheme)
-      # ^ prod: must be migrated to HTTPS Universal Link (see docs/deep-links.md)
+      # ^ dev : schéma URI personnalisé (intent-filter Android / URL scheme iOS)
+      # ^ prod : doit migrer vers un Universal Link HTTPS (voir docs/deep-links.md)
       refresh-url: "dony://stripe/onboarding/refresh"
-      # ^ same note — prod requires HTTPS Universal Link
+      # ^ même remarque — prod nécessite un Universal Link HTTPS
 
   commission:
-    rate: 0.12    # 12 % — exposed read-only via GET /api/v1/config/commission-rate
+    rate: 0.12    # 12 % — exposé en lecture seule via GET /api/v1/config/commission-rate
 ```
 
-### Environment variables (never in code)
+### Variables d'environnement (jamais dans le code)
 
-| Variable | Purpose |
-|----------|---------|
-| `STRIPE_SECRET_KEY` | Platform secret key (sk_live_… / sk_test_…) |
-| `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /payments/webhook` |
+| Variable | Rôle |
+|----------|------|
+| `STRIPE_SECRET_KEY` | Clé secrète de la plateforme (sk_live_… / sk_test_…) |
+| `STRIPE_WEBHOOK_SECRET` | Secret de signature pour `POST /payments/webhook` |
 
-### MCC note
+### Note sur le MCC
 
-MCC `4215` (Courier Services, Air or Ground, Frieght) is used for MVP. MCC `4214` (Motor Freight Carriers and Trucking) may be more accurate depending on legal review. This must be confirmed with the Stripe account team and legal counsel **before production go-live**.
+Le MCC `4215` (Services de messagerie, aérien ou terrestre, fret) est utilisé pour le MVP. Le MCC `4214` (Transporteurs de fret routier et camionnage) pourrait être plus précis selon la revue juridique. Cela doit être confirmé avec l'équipe Stripe et le conseil juridique **avant la mise en production**.
 
-### Deep-link note
+### Note sur les deep links
 
-The `return-url` and `refresh-url` use the custom `dony://` URI scheme. Apple App Store and Google Play Store policies, as well as Stripe's own recommendations, require **HTTPS Universal Links** (iOS) and **Android App Links** (Android) in production. The `dony://` scheme is acceptable for local development and TestFlight/internal testing only. See `docs/deep-links.md` for the migration plan.
+Les `return-url` et `refresh-url` utilisent le schéma URI personnalisé `dony://`. Les politiques de l'App Store Apple et du Google Play Store, ainsi que les recommandations Stripe, exigent des **Universal Links HTTPS** (iOS) et des **Android App Links** (Android) en production. Le schéma `dony://` est acceptable uniquement pour le développement local et les tests internes (TestFlight / piste interne). Voir `docs/deep-links.md` pour le plan de migration.

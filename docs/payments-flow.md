@@ -1,148 +1,148 @@
-# Payments Flow — Dony Platform
+# Flux de paiement — Plateforme Dony
 
-**Last updated:** 2026-05-05 (PR 5 — Stripe Connect `on_behalf_of` migration)
-
----
-
-## 1. Overview
-
-Dony uses Stripe Connect's **Separate Charges and Transfers** model.
-
-- **Platform account** creates all `PaymentIntent` objects and holds funds after capture.
-- **Traveler's Connected account** is the **settlement merchant** (`on_behalf_of`): Stripe legally attributes the charge to the traveler, and their business name appears on the sender's bank statement.
-- After delivery is confirmed, the platform performs a **separate `Transfer`** from the platform balance to the traveler's connected account, retaining the 12 % commission.
-
-### Why not `transfer_data[destination]` on the PaymentIntent?
-
-Using `transfer_data[destination]` on the `PaymentIntent` would auto-transfer funds immediately on capture and route the `application_fee` incorrectly. The separate-transfer model gives the platform full control over the timing and amount of the payout, which is required for the escrow-then-release semantics.
+**Dernière mise à jour :** 2026-05-05 (PR 5 — migration Stripe Connect `on_behalf_of`)
 
 ---
 
-## 2. End-to-End Flow
+## 1. Vue d'ensemble
+
+Dony utilise le modèle **Charges séparées et Virements** de Stripe Connect.
+
+- Le **compte plateforme** crée tous les objets `PaymentIntent` et conserve les fonds après capture.
+- Le **compte Connect du voyageur** est le **marchand de règlement** (`on_behalf_of`) : Stripe attribue légalement la transaction au voyageur, et le nom de son entreprise apparaît sur le relevé bancaire de l'expéditeur.
+- Après confirmation de la livraison, la plateforme effectue un **`Transfer` séparé** depuis le solde de la plateforme vers le compte Connect du voyageur, en conservant la commission de 12 %.
+
+### Pourquoi ne pas utiliser `transfer_data[destination]` sur le PaymentIntent ?
+
+Utiliser `transfer_data[destination]` sur le `PaymentIntent` déclencherait un virement automatique à la capture et achéminerait incorrectement l'`application_fee`. Le modèle de virement séparé donne à la plateforme un contrôle total sur le moment et le montant du paiement, ce qui est nécessaire pour la sémantique d'escrow puis libération.
+
+---
+
+## 2. Flux de bout en bout
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Sender
+    actor Expéditeur
     participant Flutter
-    participant API as Dony API
+    participant API as API Dony
     participant Stripe
-    actor Traveler
+    actor Voyageur
 
-    Sender->>Flutter: Confirms booking (bid accepted)
+    Expéditeur->>Flutter: Confirme la réservation (offre acceptée)
     Flutter->>API: POST /payments/intent (bidId)
-    API->>Stripe: PaymentIntent.create(\n  amount, currency="eur",\n  capture_method="manual",\n  on_behalf_of=travelerConnectAccountId,\n  statement_descriptor_suffix="DONY"\n)
+    API->>Stripe: PaymentIntent.create(\n  amount, currency="eur",\n  capture_method="manual",\n  on_behalf_of=compteConnectVoyageur,\n  statement_descriptor_suffix="DONY"\n)
     Stripe-->>API: PaymentIntent (status=requires_payment_method)
     API-->>Flutter: { clientSecret }
 
     Flutter->>Stripe: confirmPayment(clientSecret)
-    Stripe-->>Flutter: payment_intent.amount_capturable_updated webhook
+    Stripe-->>Flutter: webhook payment_intent.amount_capturable_updated
     Stripe->>API: POST /payments/webhook\n[payment_intent.amount_capturable_updated]
-    Note over API: Stores PI id, status=AUTHORIZED
+    Note over API: Enregistre l'id du PI, status=AUTHORIZED
 
-    Note over API,Stripe: === Bid Accepted / Delivery phase ===
+    Note over API,Stripe: === Offre acceptée / Phase de livraison ===
 
-    API->>API: BidAcceptedEventListener:\n re-verify traveler eligibility\n(ONBOARDING_COMPLETE required)
-    alt Traveler NOT eligible
-        API-->>API: Cancel PI + throw TravelerNotEligibleForPaymentException (422)
-    else Traveler eligible
-        API->>Stripe: pi.capture() (captured on traveler's account via on_behalf_of)
+    API->>API: BidAcceptedEventListener :\n re-vérifie l'éligibilité du voyageur\n(ONBOARDING_COMPLETE requis)
+    alt Voyageur NON éligible
+        API-->>API: Annule le PI + lève TravelerNotEligibleForPaymentException (422)
+    else Voyageur éligible
+        API->>Stripe: pi.capture() (capturé sur le compte du voyageur via on_behalf_of)
         Note over API: PaymentEntity status=CAPTURED
     end
 
-    Note over API,Traveler: === Delivery Confirmed ===
+    Note over API,Voyageur: === Livraison confirmée ===
 
-    API->>API: DeliveryConfirmedEvent published\n(from tracking/ package)
-    API->>API: PaymentService listens via @EventListener
-    API->>Stripe: Transfer.create(\n  amount = capturedAmount * 0.88,\n  currency="eur",\n  destination=travelerConnectAccountId,\n  transfer_group=bidId\n)
-    Stripe-->>Traveler: Funds arrive in Connect account
-    Note over API: PaymentEntity status=TRANSFERRED\nCommission (12%) retained by platform
+    API->>API: DeliveryConfirmedEvent publié\n(depuis le package tracking/)
+    API->>API: PaymentService écoute via @EventListener
+    API->>Stripe: Transfer.create(\n  amount = montantCapturé × 0.88,\n  currency="eur",\n  destination=compteConnectVoyageur,\n  transfer_group=bidId\n)
+    Stripe-->>Voyageur: Fonds disponibles sur le compte Connect
+    Note over API: PaymentEntity status=TRANSFERRED\nCommission (12%) conservée par la plateforme
 
-    Note over API,Traveler: === J+48 Admin Fallback ===
+    Note over API,Voyageur: === Fallback admin J+48 ===
 
-    API->>API: EscrowScheduler checks CAPTURED payments\nolder than 48 h with no TRANSFERRED status
-    API->>Stripe: Transfer.create() (force-release)
-    Note over API: audit_log entry: ADMIN_FORCE_RELEASE
+    API->>API: EscrowScheduler vérifie les paiements CAPTURED\nde plus de 48 h sans statut TRANSFERRED
+    API->>Stripe: Transfer.create() (libération forcée)
+    Note over API: Entrée audit_log : ADMIN_FORCE_RELEASE
 ```
 
-### Simplified ASCII summary
+### Résumé ASCII simplifié
 
 ```
-Sender pays
-    └─► PaymentIntent (on_behalf_of=traveler, capture_method=manual)
+L'expéditeur paie
+    └─► PaymentIntent (on_behalf_of=voyageur, capture_method=manual)
             │
             ▼  [payment_intent.amount_capturable_updated]
         AUTHORIZED
             │
-            ▼  [BidAcceptedEvent + traveler eligible]
-        pi.capture()  →  CAPTURED  (funds on platform, settlement on traveler's account)
+            ▼  [BidAcceptedEvent + voyageur éligible]
+        pi.capture()  →  CAPTURED  (fonds sur la plateforme, règlement sur le compte du voyageur)
             │
             ▼  [DeliveryConfirmedEvent]
-        Transfer.create(amount × 0.88)  →  TRANSFERRED
-            │                         Platform retains 12 % commission
+        Transfer.create(montant × 0.88)  →  TRANSFERRED
+            │                         Plateforme conserve 12 % de commission
             ▼
-        Traveler receives payout
+        Le voyageur reçoit son paiement
 
-        ── OR ──
+        ── OU ──
 
-        CAPTURED  +  48 h elapsed, no delivery  →  EscrowScheduler force-release
+        CAPTURED  +  48 h écoulées, pas de livraison  →  EscrowScheduler libération forcée
 ```
 
 ---
 
-## 3. Key Invariants
+## 3. Invariants clés
 
-| Rule | Detail |
-|------|--------|
-| NO `transfer_data[destination]` on PaymentIntent | Would auto-route funds and break commission logic |
-| NO `application_fee_amount` on PaymentIntent | Incompatible with separate-transfer model; commission is retained implicitly |
-| `capture_method=manual` always | Funds are only captured after bid acceptance + traveler eligibility re-check |
-| Capture only after `DeliveryConfirmedEvent` (or J+48 admin) | `PaymentService` listens via `@EventListener`; no direct call from `tracking/` |
-| `on_behalf_of` must match the traveler on the bid | Verified at intent creation time; mismatch is a hard error |
-| `statement_descriptor_suffix="DONY"` | Ensures sender can identify the charge |
-| Commission = 12 % | Configured at `dony.commission.rate=0.12`; exposed via `GET /api/v1/config/commission-rate` |
-| Soft-delete only on `PaymentEntity` | Never DELETE; cancelled payments get `status=CANCELLED` |
+| Règle | Détail |
+|-------|--------|
+| PAS de `transfer_data[destination]` sur le PaymentIntent | Achéminerait les fonds automatiquement et casserait la logique de commission |
+| PAS d'`application_fee_amount` sur le PaymentIntent | Incompatible avec le modèle de virement séparé ; la commission est conservée implicitement |
+| `capture_method=manual` toujours | Les fonds ne sont capturés qu'après acceptation de l'offre et re-vérification de l'éligibilité du voyageur |
+| Capture uniquement après `DeliveryConfirmedEvent` (ou admin J+48) | `PaymentService` écoute via `@EventListener` ; pas d'appel direct depuis `tracking/` |
+| `on_behalf_of` doit correspondre au voyageur sur l'offre | Vérifié à la création du PaymentIntent ; toute incohérence est une erreur bloquante |
+| `statement_descriptor_suffix="DONY"` | Permet à l'expéditeur d'identifier le prélèvement |
+| Commission = 12 % | Configurée via `dony.commission.rate=0.12` ; exposée par `GET /api/v1/config/commission-rate` |
+| Soft-delete uniquement sur `PaymentEntity` | Jamais de DELETE ; les paiements annulés passent à `status=CANCELLED` |
 
 ---
 
-## 4. Webhook Events Handled
+## 4. Événements webhook traités
 
-All webhooks arrive at `POST /api/v1/payments/webhook` (public endpoint, Stripe signature verified).
+Tous les webhooks arrivent sur `POST /api/v1/payments/webhook` (endpoint public, signature Stripe vérifiée).
 
-| Event | Handler action |
-|-------|---------------|
-| `payment_intent.amount_capturable_updated` | Update `PaymentEntity` status to `AUTHORIZED`; log to `audit_log` |
-| `charge.refunded` | Update `PaymentEntity` status to `REFUNDED`; publish `ChargeRefundedEvent` if needed |
-| `account.updated` | Read `charges_enabled + payouts_enabled + requirements.disabled_reason`; derive `StripeAccountStatus`; publish `StripeOnboardingCompletedEvent` on first `ONBOARDING_COMPLETE` transition |
+| Événement | Action du handler |
+|-----------|------------------|
+| `payment_intent.amount_capturable_updated` | Met à jour le statut de `PaymentEntity` à `AUTHORIZED` ; écrit dans `audit_log` |
+| `charge.refunded` | Met à jour le statut de `PaymentEntity` à `REFUNDED` ; publie `ChargeRefundedEvent` si nécessaire |
+| `account.updated` | Lit `charges_enabled + payouts_enabled + requirements.disabled_reason` ; dérive le `StripeAccountStatus` ; publie `StripeOnboardingCompletedEvent` à la première transition vers `ONBOARDING_COMPLETE` |
 
-### Signature verification
+### Vérification de la signature
 
 ```java
 Webhook.constructEvent(payload, sigHeader, stripeWebhookSecret);
-// stripeWebhookSecret from env: STRIPE_WEBHOOK_SECRET
-// Never log raw payload in production
+// stripeWebhookSecret depuis l'env : STRIPE_WEBHOOK_SECRET
+// Ne jamais logger le payload brut en production
 ```
 
 ---
 
-## 5. Error Cases
+## 5. Cas d'erreur
 
-| Scenario | HTTP status | Exception |
+| Scénario | Statut HTTP | Exception |
 |----------|-------------|-----------|
-| Traveler's Connect account not `ONBOARDING_COMPLETE` at capture time | 422 | `TravelerNotEligibleForPaymentException` |
-| PaymentIntent capture fails (Stripe error) | 502 | Propagated via `GlobalExceptionHandler` as RFC 7807 |
-| Declared value > 500 € | 422 | `DeclaredValueExceededException` |
-| Webhook signature mismatch | 400 | Logged + rejected silently (no RFC 7807 body) |
+| Compte Connect du voyageur pas à `ONBOARDING_COMPLETE` au moment de la capture | 422 | `TravelerNotEligibleForPaymentException` |
+| Échec de la capture du PaymentIntent (erreur Stripe) | 502 | Propagée via `GlobalExceptionHandler` en RFC 7807 |
+| Valeur déclarée > 500 € | 422 | `DeclaredValueExceededException` |
+| Signature webhook invalide | 400 | Loggée + rejetée silencieusement (pas de corps RFC 7807) |
 
 ---
 
-## 6. Entities & Status Transitions
+## 6. Entités & transitions de statut
 
 ```
-PaymentEntity.status:
+PaymentEntity.status :
   PENDING → AUTHORIZED → CAPTURED → TRANSFERRED
-                    └──► CANCELLED  (traveler ineligible or manual cancel)
-                    └──► REFUNDED   (charge.refunded webhook)
+                    └──► CANCELLED  (voyageur inéligible ou annulation manuelle)
+                    └──► REFUNDED   (webhook charge.refunded)
 ```
 
-`audit_log` entries are written for every status transition. The `audit_log` table is immutable (INSERT only — trigger enforced at DB level).
+Les entrées `audit_log` sont écrites à chaque transition de statut. La table `audit_log` est immuable (INSERT uniquement — trigger PostgreSQL appliqué au niveau base de données).
