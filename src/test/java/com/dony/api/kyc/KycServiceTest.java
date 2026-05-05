@@ -173,6 +173,29 @@ class KycServiceTest {
         }
     }
 
+    @Test
+    void createSession_notStarted_transitionsToPendingAndCreatesKycRecord() {
+        UserEntity user = buildUser(KycStatus.NOT_STARTED);
+        when(userRepository.findByFirebaseUid("uid-001")).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(kycRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+        when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<VerificationSession> vsStatic = mockStatic(VerificationSession.class)) {
+            VerificationSession mockSession = mock(VerificationSession.class);
+            when(mockSession.getId()).thenReturn("vs_test_new");
+            when(mockSession.getUrl()).thenReturn("https://verify.stripe.com/start/vs_test_new");
+            vsStatic.when(() -> VerificationSession.create(any(VerificationSessionCreateParams.class)))
+                    .thenReturn(mockSession);
+
+            KycSessionResponse resp = service.createSession("uid-001");
+
+            assertThat(resp.sessionId()).isEqualTo("vs_test_new");
+            assertThat(user.getKycStatus()).isEqualTo(KycStatus.PENDING);
+            verify(userRepository).save(user);
+        }
+    }
+
     // ── processWebhook ────────────────────────────────────────────────────────
 
     @Test

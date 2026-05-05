@@ -100,7 +100,7 @@ class AuthServiceTest {
             UserResponse result = authService.register(FIREBASE_UID, req);
 
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
-            assertThat(result.kycStatus()).isEqualTo("PENDING");
+            assertThat(result.kycStatus()).isEqualTo("NOT_STARTED");
             assertThat(result.status()).isEqualTo("ACTIVE");
             verify(userRepository).save(any(UserEntity.class));
             verify(auditService).log(eq("USER"), any(), eq("USER_CREATED"), any(), any());

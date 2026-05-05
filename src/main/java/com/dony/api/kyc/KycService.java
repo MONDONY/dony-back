@@ -61,6 +61,12 @@ public class KycService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "KYC déjà vérifié");
         }
 
+        // Transition NOT_STARTED → PENDING when session is created
+        if (user.getKycStatus() == KycStatus.NOT_STARTED) {
+            user.setKycStatus(KycStatus.PENDING);
+            userRepository.save(user);
+        }
+
         try {
             VerificationSessionCreateParams params = VerificationSessionCreateParams.builder()
                     .setType(VerificationSessionCreateParams.Type.DOCUMENT)

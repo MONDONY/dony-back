@@ -1,5 +1,5 @@
 package com.dony.api.auth;
 
 public enum KycStatus {
-    PENDING, VERIFIED, REJECTED
+    NOT_STARTED, PENDING, VERIFIED, REJECTED
 }

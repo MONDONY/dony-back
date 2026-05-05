@@ -51,7 +51,7 @@ public class UserEntity extends BaseEntity {
 
     @Column(name = "kyc_status", nullable = false, length = 20)
     @Enumerated(EnumType.STRING)
-    private KycStatus kycStatus = KycStatus.PENDING;
+    private KycStatus kycStatus = KycStatus.NOT_STARTED;
 
     @Column(name = "fcm_token", length = 512)
     private String fcmToken;

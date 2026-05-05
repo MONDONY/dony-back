@@ -150,7 +150,7 @@ public class AuthService {
         user.setFirebaseUid(firebaseUid);
         user.setPhoneNumber(request.phoneNumber());
         user.setStatus(UserStatus.ACTIVE);
-        user.setKycStatus(KycStatus.PENDING);
+        user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
 
         UserEntity saved = userRepository.save(user);
