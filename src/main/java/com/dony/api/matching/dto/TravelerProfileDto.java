@@ -9,5 +9,6 @@ public record TravelerProfileDto(
         Double averageRating,
         Integer totalTrips,
         boolean kiloPro,
-        boolean isProAccount
+        boolean isProAccount,
+        boolean kycVerified
 ) {}

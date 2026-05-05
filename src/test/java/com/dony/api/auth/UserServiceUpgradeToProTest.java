@@ -3,7 +3,6 @@ package com.dony.api.auth;
 import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.PaymentRepository;
@@ -34,7 +33,6 @@ class UserServiceUpgradeToProTest {
     @Mock private BidRepository bidRepository;
     @Mock private PaymentRepository paymentRepository;
     @Mock private KycRepository kycRepository;
-    @Mock private StorageService storageService;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
 

@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -113,6 +114,7 @@ public class AnnouncementService {
 
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
         UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
+        boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto profile = traveler != null
                 ? new TravelerProfileDto(
                         traveler.getId(),
@@ -121,7 +123,8 @@ public class AnnouncementService {
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         traveler.getTotalTrips(),
                         traveler.isKiloPro(),
-                        traveler.isProAccount())
+                        traveler.isProAccount(),
+                        kycVerified)
                 : null;
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         return new AnnouncementSearchResponse(
@@ -305,6 +308,7 @@ public class AnnouncementService {
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
         UserEntity traveler = userRepository.findById(announcement.getTravelerId()).orElse(null);
+        boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto travelerDto = traveler != null
                 ? new TravelerProfileDto(
                         traveler.getId(),
@@ -313,7 +317,8 @@ public class AnnouncementService {
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         null,
                         traveler.isKiloPro(),
-                        traveler.isProAccount())
+                        traveler.isProAccount(),
+                        kycVerified)
                 : null;
 
         return new AnnouncementDetailResponse(
@@ -406,11 +411,12 @@ public class AnnouncementService {
 
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
+        boolean kycVerified = user.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
                 user.getId(),
                 buildDisplayName(user),
                 user.getPhoneNumber(),
-                null, null, false, user.isProAccount());
+                null, null, false, user.isProAccount(), kycVerified);
 
         return new AnnouncementDetailResponse(
                 saved.getId(),

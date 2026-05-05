@@ -275,6 +275,7 @@ public class TrackingService {
             String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
             bid.setConfirmationCode(code);
             bid.setConfirmationCodeAttempts(0);
+            bid.setConfirmationCodeExpiry(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15));
             bidRepository.save(bid);
 
             notificationDispatcher.notifyUser(
@@ -382,6 +383,17 @@ public class TrackingService {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-not-generated",
                     "Code Not Generated",
                     "Le code de confirmation n'est pas encore disponible — scannez d'abord le départ du colis");
+        }
+
+        if (bid.getConfirmationCodeExpiry() != null
+                && LocalDateTime.now(ZoneOffset.UTC).isAfter(bid.getConfirmationCodeExpiry())) {
+            bid.setConfirmationCode(null);
+            bid.setConfirmationCodeExpiry(null);
+            bid.setConfirmationCodeAttempts(0);
+            bidRepository.save(bid);
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-expired",
+                    "Code Expired",
+                    "Le code de confirmation a expiré — demandez à l'expéditeur de vous partager un nouveau code");
         }
 
         if (bid.getConfirmationCodeAttempts() >= MAX_CODE_ATTEMPTS) {

@@ -4,7 +4,6 @@ import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
 import com.dony.api.kyc.KycVerificationEntity;
 import com.dony.api.matching.BidEntity;
@@ -36,7 +35,6 @@ public class UserService {
     private final BidRepository bidRepository;
     private final PaymentRepository paymentRepository;
     private final KycRepository kycRepository;
-    private final StorageService storageService;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -44,14 +42,12 @@ public class UserService {
                        BidRepository bidRepository,
                        PaymentRepository paymentRepository,
                        KycRepository kycRepository,
-                       StorageService storageService,
                        AuditService auditService,
                        ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
         this.kycRepository = kycRepository;
-        this.storageService = storageService;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
     }
@@ -118,17 +114,9 @@ public class UserService {
         user.setStatus(UserStatus.BANNED);
         userRepository.save(user);
 
-        // Delete KYC files from storage
+        // Soft-delete KYC record (files live on Stripe — no local storage to clean up)
         Optional<KycVerificationEntity> kycOpt = kycRepository.findByUserId(user.getId());
         kycOpt.ifPresent(kyc -> {
-            String selfieUrl = kyc.getSelfieUrl();
-            if (selfieUrl != null && !selfieUrl.isBlank()) {
-                try {
-                    storageService.deleteFile(selfieUrl);
-                } catch (Exception e) {
-                    log.warn("Could not delete KYC selfie for user {}: {}", uid, e.getMessage());
-                }
-            }
             kyc.softDelete();
             kycRepository.save(kyc);
         });
@@ -171,6 +159,15 @@ public class UserService {
     @Transactional
     public UserEntity upgradeToPro(UserEntity user, UpgradeToProRequest request) {
         UUID userId = user.getId();
+
+        if (user.getStripeAccountId() != null && !user.getStripeAccountId().isBlank()) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT,
+                    "stripe-account-exists",
+                    "Stripe account already exists",
+                    "Un compte Stripe Connect est déjà associé à ce compte"
+            );
+        }
 
         if (request.siret() != null && !request.siret().isBlank()) {
             if (!request.siret().matches("\\d{14}")) {

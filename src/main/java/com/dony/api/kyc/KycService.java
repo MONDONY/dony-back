@@ -8,8 +8,9 @@ import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
 import com.dony.api.kyc.events.UserKycVerifiedEvent;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.exception.SignatureVerificationException;
-import com.stripe.model.StripeObject;
 import com.stripe.model.identity.VerificationSession;
 import com.stripe.net.Webhook;
 import com.stripe.model.Event;
@@ -36,6 +37,7 @@ public class KycService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
@@ -134,18 +136,26 @@ public class KycService {
         log.info("Stripe Identity webhook received: {}", eventType);
 
         if (!"identity.verification_session.verified".equals(eventType) &&
-                !"identity.verification_session.requires_input".equals(eventType)) {
+                !"identity.verification_session.requires_input".equals(eventType) &&
+                !"identity.verification_session.canceled".equals(eventType)) {
             return;
         }
 
-        Optional<StripeObject> stripeObjectOpt = event.getDataObjectDeserializer().getObject();
-        if (stripeObjectOpt.isEmpty()) {
-            log.warn("Could not deserialize Stripe webhook payload for event {}", eventType);
+        // Extract sessionId from raw JSON to avoid Stripe SDK API version mismatch
+        String rawJson = event.getDataObjectDeserializer().getRawJson();
+        String sessionId;
+        String lastErrorReason = null;
+        try {
+            JsonNode root = objectMapper.readTree(rawJson);
+            sessionId = root.get("id").asText();
+            JsonNode lastError = root.path("last_error");
+            if (!lastError.isMissingNode() && !lastError.isNull()) {
+                lastErrorReason = lastError.path("reason").asText(null);
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse Stripe webhook payload for event {}: {}", eventType, e.getMessage());
             return;
         }
-
-        VerificationSession session = (VerificationSession) stripeObjectOpt.get();
-        String sessionId = session.getId();
 
         KycVerificationEntity kyc = kycRepository.findByStripeVerificationSessionId(sessionId)
                 .orElse(null);
@@ -173,27 +183,18 @@ public class KycService {
             eventPublisher.publishEvent(new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
 
         } else {
-            // requires_input → rejected
-            kyc.setStatus(KycVerificationStatus.REQUIRES_INPUT);
-            kyc.setRejectionReason(extractRejectionReason(session));
+            // requires_input or canceled → REJECTED (user must re-submit)
+            kyc.setStatus(KycVerificationStatus.REJECTED);
+            kyc.setRejectionReason(lastErrorReason != null ? lastErrorReason : "verification_failed");
             user.setKycStatus(KycStatus.REJECTED);
 
-            auditService.log("kyc_verification", kyc.getId(), "KYC_REJECTED",
+            String auditAction = "identity.verification_session.canceled".equals(eventType) ? "KYC_CANCELED" : "KYC_REJECTED";
+            auditService.log("kyc_verification", kyc.getId(), auditAction,
                     user.getId(), Map.of("sessionId", sessionId,
-                            "reason", kyc.getRejectionReason() != null ? kyc.getRejectionReason() : "unknown"));
+                            "reason", kyc.getRejectionReason()));
         }
 
         kycRepository.save(kyc);
         userRepository.save(user);
-    }
-
-    private String extractRejectionReason(VerificationSession session) {
-        try {
-            if (session.getLastError() != null) {
-                return session.getLastError().getReason();
-            }
-        } catch (Exception ignored) {
-        }
-        return "requires_input";
     }
 }

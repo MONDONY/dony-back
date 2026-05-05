@@ -206,10 +206,8 @@ class KycServiceTest {
         Event mockEvent = mock(Event.class);
         when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        VerificationSession mockSession = mock(VerificationSession.class);
-        when(mockSession.getId()).thenReturn("vs_unknown");
         when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getObject()).thenReturn(Optional.of(mockSession));
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_unknown\"}");
         when(kycRepository.findByStripeVerificationSessionId("vs_unknown")).thenReturn(Optional.empty());
 
         try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
@@ -229,10 +227,8 @@ class KycServiceTest {
         Event mockEvent = mock(Event.class);
         when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        VerificationSession mockSession = mock(VerificationSession.class);
-        when(mockSession.getId()).thenReturn("vs_test_001");
         when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getObject()).thenReturn(Optional.of(mockSession));
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\"}");
         when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -259,11 +255,8 @@ class KycServiceTest {
         Event mockEvent = mock(Event.class);
         when(mockEvent.getType()).thenReturn("identity.verification_session.requires_input");
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        VerificationSession mockSession = mock(VerificationSession.class);
-        when(mockSession.getId()).thenReturn("vs_test_001");
-        when(mockSession.getLastError()).thenReturn(null);
         when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getObject()).thenReturn(Optional.of(mockSession));
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\",\"last_error\":null}");
         when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -276,9 +269,9 @@ class KycServiceTest {
             service.processWebhook("payload", "sig");
         }
 
-        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.REQUIRES_INPUT);
+        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.REJECTED);
         assertThat(user.getKycStatus()).isEqualTo(KycStatus.REJECTED);
-        assertThat(kyc.getRejectionReason()).isEqualTo("requires_input");
+        assertThat(kyc.getRejectionReason()).isEqualTo("verification_failed");
         verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_REJECTED"), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
@@ -290,10 +283,8 @@ class KycServiceTest {
         Event mockEvent = mock(Event.class);
         when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        VerificationSession mockSession = mock(VerificationSession.class);
-        when(mockSession.getId()).thenReturn("vs_test_001");
         when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getObject()).thenReturn(Optional.of(mockSession));
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\"}");
         when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
         when(userRepository.findById(kyc.getUserId())).thenReturn(Optional.empty());
 
