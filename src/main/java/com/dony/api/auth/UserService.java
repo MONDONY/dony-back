@@ -20,8 +20,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -173,15 +171,6 @@ public class UserService {
     @Transactional
     public UserEntity upgradeToPro(UserEntity user, UpgradeToProRequest request) {
         UUID userId = user.getId();
-
-        if (user.getStripeAccountId() != null) {
-            throw new DonyBusinessException(
-                    HttpStatus.CONFLICT,
-                    "stripe-account-exists",
-                    "Stripe Account Already Exists",
-                    "Un compte Stripe Connect existe déjà. La modification du type de compte nécessite une recréation, contacter le support."
-            );
-        }
 
         if (request.siret() != null && !request.siret().isBlank()) {
             if (!request.siret().matches("\\d{14}")) {
