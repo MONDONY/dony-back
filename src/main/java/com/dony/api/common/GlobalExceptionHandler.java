@@ -1,5 +1,6 @@
 package com.dony.api.common;
 
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import io.sentry.Sentry;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -105,6 +106,17 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create(BASE_TYPE + "malformed-request"));
         problem.setTitle("Bad Request");
         return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(TravelerNotEligibleForPaymentException.class)
+    public ResponseEntity<ProblemDetail> handleTravelerNotEligible(TravelerNotEligibleForPaymentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setType(URI.create(BASE_TYPE + "traveler-not-eligible"));
+        problem.setTitle("Traveler Not Eligible");
+        problem.setProperty("code", "traveler-not-eligible");
+        problem.setProperty("travelerId", ex.getTravelerId().toString());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

@@ -3,8 +3,10 @@ package com.dony.api.payments;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -70,10 +72,9 @@ class PaymentServiceTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test");
+                "whsec_test",
+                PaymentServiceTestFactory.defaultConnectProperties());
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
-        ReflectionTestUtils.setField(service, "returnUrl",  "https://dony.app/return");
-        ReflectionTestUtils.setField(service, "refreshUrl", "https://dony.app/refresh");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -245,7 +246,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void createEscrow_travelerNotOnboarded_throwsUnprocessable() {
+    void createEscrow_travelerNotOnboarded_throwsTravelerNotEligible() {
         UserEntity sender = buildUser(senderId, "uid-sender");
         BidEntity bid = buildBid(BidStatus.ACCEPTED);
         AnnouncementEntity ann = buildAnnouncement();
@@ -257,7 +258,10 @@ class PaymentServiceTest {
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
         var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
         when(req.getBidId()).thenReturn(bidId);
-        assertDonyError(() -> service.createEscrow(req, "uid-sender"), "traveler-not-onboarded");
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(req, "uid-sender"));
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
     }
 
     @Test
@@ -300,6 +304,8 @@ class PaymentServiceTest {
             assertThat(params.getTransferData()).isNull();
             assertThat(params.getCaptureMethod())
                     .isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler");
+            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
 
             // Persisted payment is non-legacy.
             assertThat(savedCaptor.getValue().isLegacyDestinationCharge()).isFalse();
@@ -453,6 +459,7 @@ class PaymentServiceTest {
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(true);
         when(mockAccount.getId()).thenReturn("acct_123");
 
         Event mockEvent = buildEventWith("account.updated", mockAccount);
@@ -467,20 +474,52 @@ class PaymentServiceTest {
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
         verify(auditService).log(eq("USER"), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
+        verify(eventPublisher).publishEvent(any(com.dony.api.payments.events.StripeOnboardingCompletedEvent.class));
     }
 
     @Test
-    void handleWebhook_accountUpdated_chargesEnabled_alreadyOnboarded_skips() {
+    void handleWebhook_accountUpdated_chargesEnabled_alreadyOnboarded_idempotent() {
+        // Already ONBOARDING_COMPLETE — status re-confirmed by Stripe, save is idempotent, no event emitted.
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE); // already onboarded
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(true);
         when(mockAccount.getId()).thenReturn("acct_123");
 
         Event mockEvent = buildEventWith("account.updated", mockAccount);
         when(userRepository.findByStripeAccountId("acct_123")).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
+            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                    .thenReturn(mockEvent);
+            service.handleWebhook("payload", "sig");
+        }
+
+        // No StripeOnboardingCompletedEvent emitted on idempotent re-confirmation
+        verify(eventPublisher, never()).publishEvent(any(com.dony.api.payments.events.StripeOnboardingCompletedEvent.class));
+        // save is called but no audit entry for STRIPE_ONBOARDING_COMPLETE
+        verify(auditService, never()).log(any(), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
+    }
+
+    @Test
+    void handleWebhook_accountUpdated_chargesDisabled_noDisabledReason_doesNothing() {
+        // charges=false, payouts=false, no disabledReason → still pending, early return — no save, no event.
+        UserEntity user = buildUser(senderId, "uid-sender");
+        user.setStripeAccountId("acct_pending");
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+
+        Account mockAccount = mock(Account.class);
+        when(mockAccount.getChargesEnabled()).thenReturn(false);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(false);
+        when(mockAccount.getId()).thenReturn("acct_pending");
+        when(mockAccount.getRequirements()).thenReturn(null);
+
+        Event mockEvent = buildEventWith("account.updated", mockAccount);
+        when(userRepository.findByStripeAccountId("acct_pending")).thenReturn(Optional.of(user));
 
         try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
             wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
@@ -489,21 +528,7 @@ class PaymentServiceTest {
         }
 
         verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    void handleWebhook_accountUpdated_chargesDisabled_doesNothing() {
-        Account mockAccount = mock(Account.class);
-        when(mockAccount.getChargesEnabled()).thenReturn(false);
-
-        Event mockEvent = buildEventWith("account.updated", mockAccount);
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-            service.handleWebhook("payload", "sig");
-        }
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test

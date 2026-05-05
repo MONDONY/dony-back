@@ -74,6 +74,15 @@ dony:
   escrow-timeout-hours: 48
   dispute-sla-hours: 72
   max-declared-value-eur: 500
+  stripe:
+    connect:
+      mcc: "4215"
+      product-description: "Transport de colis entre particuliers via la plateforme Dony"
+      business-url: "https://dony.app"
+      return-url: "dony://stripe/onboarding/complete"
+      refresh-url: "dony://stripe/onboarding/refresh"
+  commission:
+    rate: 0.12
 
 # Encryption (AES-256 for KYC sensitive data)
 app:
