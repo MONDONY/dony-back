@@ -208,17 +208,18 @@ class BidAcceptedEventListenerTest {
         BidEntity bid = new BidEntity();
         bid.setStatus(BidStatus.ACCEPTED);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-        when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
             when(pi.cancel()).thenThrow(mock(com.stripe.exception.InvalidRequestException.class));
             mocked.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
 
-            // Must not throw — error is swallowed + logged
+            // Must not throw — error is caught + logged
             assertThatNoException().isThrownBy(() -> listener.onBidAccepted(eventFor(bidId)));
-            // Bid still cancelled even if PI cancel fails
-            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            // Bid must NOT be cancelled — PI is still live; ops must reconcile via audit log
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+            // Audit log must be written so ops can see the irreconcilable PI
+            verify(auditService).log(eq("BID"), any(), eq("BID_CANCEL_PI_FAILED"), any(), any());
         }
     }
 }

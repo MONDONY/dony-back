@@ -76,23 +76,37 @@ public class BidAcceptedEventListener {
         if (traveler == null || traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
             log.warn("Bid {} cancelled: traveler {} lost Connect eligibility before capture",
                     event.getBidId(), event.getTravelerId());
+            String piId = payment.getStripePaymentIntentId();
             try {
-                PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+                PaymentIntent pi = PaymentIntent.retrieve(piId);
                 pi.cancel();
                 log.info("PaymentIntent {} cancelled due to traveler ineligibility (bid {})",
-                        payment.getStripePaymentIntentId(), event.getBidId());
-            } catch (StripeException e) {
-                log.error("Failed to cancel PI {} after traveler ineligibility (bid {}): {}",
-                        payment.getStripePaymentIntentId(), event.getBidId(), e.getMessage(), e);
+                        piId, event.getBidId());
+
+                // Fix 1: update PaymentEntity so it no longer stays in ESCROW
+                payment.setStatus(PaymentStatus.CANCELLED);
+                paymentRepository.save(payment);
+
+                bidRepository.findById(event.getBidId()).ifPresent(bid -> {
+                    bid.setStatus(BidStatus.CANCELLED);
+                    bidRepository.save(bid);
+                    auditService.log("BID", bid.getId(), "BID_CANCELLED_TRAVELER_INELIGIBLE",
+                            event.getTravelerId(),
+                            Map.of("reason", "traveler-connect-ineligible",
+                                    "piId", piId));
+                });
+            } catch (StripeException cancelEx) {
+                // Fix 2: write audit log so ops can reconcile the live PI manually
+                log.error("Could not cancel PI {} for ineligible traveler {} on bid {}",
+                        piId, event.getTravelerId(), event.getBidId(), cancelEx);
+                bidRepository.findById(event.getBidId()).ifPresent(bid ->
+                        auditService.log("BID", bid.getId(), "BID_CANCEL_PI_FAILED",
+                                event.getTravelerId(),
+                                Map.of("pi_id", piId,
+                                        "traveler_id", event.getTravelerId().toString(),
+                                        "reason", "traveler_not_eligible_pi_cancel_failed"))
+                );
             }
-            bidRepository.findById(event.getBidId()).ifPresent(bid -> {
-                bid.setStatus(BidStatus.CANCELLED);
-                bidRepository.save(bid);
-                auditService.log("BID", bid.getId(), "BID_CANCELLED_TRAVELER_INELIGIBLE",
-                        event.getTravelerId(),
-                        Map.of("reason", "traveler-connect-ineligible",
-                                "piId", payment.getStripePaymentIntentId()));
-            });
             return;
         }
 

@@ -24,6 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -106,6 +107,7 @@ class BidAcceptedCapturePrecheckTest {
         bid.setStatus(BidStatus.ACCEPTED);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
         when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -121,8 +123,54 @@ class BidAcceptedCapturePrecheckTest {
             // bid must be set to CANCELLED
             assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             verify(bidRepository).save(bid);
+            // payment entity must be set to CANCELLED (Fix 1)
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+            verify(paymentRepository).save(payment);
             // audit entry for the cancellation
             verify(auditService).log(eq("BID"), any(), eq("BID_CANCELLED_TRAVELER_INELIGIBLE"), any(), any());
+        }
+    }
+
+    // ── Scenario 3: pi.cancel() throws StripeException → audit log written ────
+
+    @Test
+    void traveler_ineligible_pi_cancel_throws_stripe_exception_audit_log_written() throws StripeException {
+        PaymentEntity payment = escrowPayment();
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+
+        UserEntity traveler = new UserEntity();
+        traveler.setStripeAccountId("acct_ok");
+        traveler.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        BidEntity bid = new BidEntity();
+        bid.setStatus(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.cancel()).thenThrow(mock(StripeException.class));
+            mocked.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            // Must not propagate the StripeException
+            assertThatNoException().isThrownBy(() -> listener.onBidAccepted(event()));
+
+            // PI cancel was attempted
+            verify(pi).cancel();
+            // Payment status must NOT have been changed (PI is still live)
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.ESCROW);
+            verify(paymentRepository, never()).save(any());
+            // Bid must NOT have been cancelled (inconsistent state — ops must intervene)
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+            // Audit log must be written with failure event so ops can reconcile (Fix 2)
+            verify(auditService).log(
+                    eq("BID"),
+                    any(),
+                    eq("BID_CANCEL_PI_FAILED"),
+                    eq(travelerId),
+                    argThat(map -> "traveler_not_eligible_pi_cancel_failed".equals(map.get("reason"))
+                            && "pi_test".equals(map.get("pi_id")))
+            );
         }
     }
 }
