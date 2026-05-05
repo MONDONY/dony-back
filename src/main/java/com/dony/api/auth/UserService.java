@@ -152,21 +152,27 @@ public class UserService {
     /**
      * Sets the user as a PRO account with optional company details.
      *
+     * <p>The caller must pass the already-loaded {@link UserEntity} to avoid a redundant
+     * DB lookup (AuthService already fetched the user by firebaseUid).
+     *
      * <p>Business rules:
      * <ul>
      *   <li>Any authenticated user can call this (SENDER or TRAVELER).</li>
      *   <li>If {@code stripeAccountId} is already set → HTTP 409 (cannot change account type
      *       once a Stripe Connect account exists).</li>
      *   <li>{@code siret}, when provided and non-blank, must be exactly 14 digits → HTTP 422.</li>
+     *   <li>Re-upgrade (user is already PRO) is allowed — it acts as an idempotent update of
+     *       {@code proCompanyName}/{@code proSiret}. The audit action changes to
+     *       {@code USER_PRO_PROFILE_UPDATED} to distinguish updates from the initial upgrade.</li>
      * </ul>
      *
+     * @param user    the already-loaded user entity (no extra DB hit)
+     * @param request the upgrade request with optional company details
      * @return the updated {@link UserEntity} (caller builds the response DTO)
      */
     @Transactional
-    public UserEntity upgradeToPro(UUID userId, UpgradeToProRequest request) {
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new DonyBusinessException(
-                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+    public UserEntity upgradeToPro(UserEntity user, UpgradeToProRequest request) {
+        UUID userId = user.getId();
 
         if (user.getStripeAccountId() != null) {
             throw new DonyBusinessException(
@@ -188,16 +194,25 @@ public class UserService {
             }
         }
 
+        // Determine audit action: re-upgrade updates company info without re-triggering
+        // USER_UPGRADED_TO_PRO, which would be misleading in the audit trail.
+        boolean alreadyPro = user.isProAccount();
+        String auditAction = alreadyPro ? "USER_PRO_PROFILE_UPDATED" : "USER_UPGRADED_TO_PRO";
+
         user.setProAccount(true);
         user.setProCompanyName(request.companyName());
         user.setProSiret(request.siret());
         UserEntity saved = userRepository.save(user);
 
-        auditService.log("USER", userId, "USER_UPGRADED_TO_PRO", userId,
+        auditService.log("USER", userId, auditAction, userId,
                 Map.of("companyName", request.companyName() != null ? request.companyName() : "",
                         "siret", request.siret() != null ? request.siret() : ""));
 
-        log.info("User {} upgraded to PRO account", userId);
+        if (alreadyPro) {
+            log.info("User {} PRO profile updated (companyName, siret)", userId);
+        } else {
+            log.info("User {} upgraded to PRO account", userId);
+        }
         return saved;
     }
 

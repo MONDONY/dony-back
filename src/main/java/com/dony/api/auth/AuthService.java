@@ -108,6 +108,9 @@ public class AuthService {
     /**
      * Upgrades the authenticated user to a PRO account.
      * Delegates business-rule enforcement to {@link UserService#upgradeToPro}.
+     *
+     * <p>The already-loaded {@link UserEntity} is passed directly to
+     * {@code UserService.upgradeToPro} to avoid a redundant DB lookup.
      */
     @Transactional
     public UserResponse upgradeToPro(String firebaseUid, UpgradeToProRequest request) {
@@ -118,7 +121,7 @@ public class AuthService {
                         "User Not Found",
                         "Utilisateur introuvable"
                 ));
-        UserEntity updated = userService.upgradeToPro(user.getId(), request);
+        UserEntity updated = userService.upgradeToPro(user, request);
         return toResponse(updated);
     }
 
@@ -193,7 +196,10 @@ public class AuthService {
                 user.getKycStatus().name(),
                 user.getStatus().name(),
                 user.getTotalTrips(),
-                user.getTotalShipments()
+                user.getTotalShipments(),
+                user.isProAccount(),
+                user.getStripeAccountStatus(),
+                user.getCountry()
         );
     }
 }

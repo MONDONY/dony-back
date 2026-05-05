@@ -1,5 +1,7 @@
 package com.dony.api.auth.dto;
 
+import com.dony.api.auth.StripeAccountStatus;
+
 import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
@@ -16,5 +18,8 @@ public record UserResponse(
     String kycStatus,
     String status,
     int totalTrips,
-    int totalShipments
+    int totalShipments,
+    Boolean isProAccount,
+    StripeAccountStatus stripeAccountStatus,
+    String country
 ) {}

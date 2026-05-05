@@ -84,6 +84,8 @@ public class UserEntity extends BaseEntity {
     @Column(name = "pro_company_name", length = 255)
     private String proCompanyName;
 
+    // TODO(security): proSiret stored unencrypted. Evaluate AES-256 encryption (like kyc_schema)
+    // before production — SIRET can identify individual entrepreneurs under GDPR.
     @Column(name = "pro_siret", length = 14)
     private String proSiret;
 

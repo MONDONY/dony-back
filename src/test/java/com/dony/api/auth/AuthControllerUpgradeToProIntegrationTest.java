@@ -76,7 +76,7 @@ class AuthControllerUpgradeToProIntegrationTest {
     }
 
     @Test
-    @DisplayName("200 OK with valid body → isProAccount=true in response")
+    @DisplayName("200 OK with valid body → isProAccount=true, stripeAccountStatus=NOT_CREATED, country=FR in response")
     void upgradeToPro_success_returns200() throws Exception {
         UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
 
@@ -86,7 +86,10 @@ class AuthControllerUpgradeToProIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").exists())
-                .andExpect(jsonPath("$.phoneNumber").value("+33612000001"));
+                .andExpect(jsonPath("$.phoneNumber").value("+33612000001"))
+                .andExpect(jsonPath("$.isProAccount").value(true))
+                .andExpect(jsonPath("$.stripeAccountStatus").value("NOT_CREATED"))
+                .andExpect(jsonPath("$.country").value("FR"));
     }
 
     @Test

@@ -64,7 +64,7 @@ public class AuthController {
     }
 
     @PostMapping("/me/upgrade-to-pro")
-    public ResponseEntity<UserResponse> upgradeToPro(@RequestBody UpgradeToProRequest request) {
+    public ResponseEntity<UserResponse> upgradeToPro(@Valid @RequestBody UpgradeToProRequest request) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(authService.upgradeToPro(firebaseUid, request));
     }
