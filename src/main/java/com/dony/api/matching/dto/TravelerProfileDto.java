@@ -8,5 +8,6 @@ public record TravelerProfileDto(
         String phoneNumber,
         Double averageRating,
         Integer totalTrips,
-        boolean kiloPro
+        boolean kiloPro,
+        boolean isProAccount
 ) {}
