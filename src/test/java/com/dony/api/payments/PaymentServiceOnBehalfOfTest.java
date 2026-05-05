@@ -1,0 +1,250 @@
+package com.dony.api.payments;
+
+import com.dony.api.auth.StripeAccountStatus;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
+import com.dony.api.config.StripeConnectProperties;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
+import com.dony.api.payments.dto.CreatePaymentRequest;
+import com.dony.api.payments.dto.PaymentResponse;
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
+import com.stripe.model.PaymentIntent;
+import com.stripe.param.PaymentIntentCreateParams;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests specifically covering the on_behalf_of PR-3 changes:
+ * - PaymentIntentCreateParams contains on_behalf_of = traveler.stripeAccountId
+ * - No transfer_data, no application_fee_amount (separate charges and transfers)
+ * - TravelerNotEligibleForPaymentException thrown for all non-ONBOARDING_COMPLETE statuses
+ *   or null/blank stripeAccountId
+ */
+@ExtendWith(MockitoExtension.class)
+class PaymentServiceOnBehalfOfTest {
+
+    @Mock UserRepository userRepository;
+    @Mock BidRepository bidRepository;
+    @Mock AnnouncementRepository announcementRepository;
+    @Mock PaymentRepository paymentRepository;
+    @Mock AuditService auditService;
+    @Mock ApplicationEventPublisher eventPublisher;
+
+    PaymentService service;
+
+    private final UUID senderId   = UUID.randomUUID();
+    private final UUID travelerId = UUID.randomUUID();
+    private final UUID bidId      = UUID.randomUUID();
+    private final UUID annId      = UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        StripeConnectProperties props = new StripeConnectProperties(
+                "4215",
+                "Transport de colis entre particuliers via la plateforme Dony",
+                "https://dony.app",
+                "dony://stripe/onboarding/complete",
+                "dony://stripe/onboarding/refresh"
+        );
+        service = new PaymentService(
+                userRepository, bidRepository, announcementRepository,
+                paymentRepository, auditService, eventPublisher,
+                "whsec_test", props);
+        ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void setId(Object entity, UUID id) {
+        try {
+            Class<?> clazz = entity.getClass();
+            Field f = null;
+            while (clazz != null) {
+                try { f = clazz.getDeclaredField("id"); break; }
+                catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
+            }
+            if (f == null) throw new NoSuchFieldException("id not found");
+            f.setAccessible(true);
+            f.set(entity, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private UserEntity buildSender() {
+        UserEntity u = new UserEntity();
+        setId(u, senderId);
+        u.setFirebaseUid("uid-sender");
+        return u;
+    }
+
+    private BidEntity buildBid() {
+        BidEntity b = new BidEntity();
+        setId(b, bidId);
+        b.setAnnouncementId(annId);
+        b.setSenderId(senderId);
+        b.setWeightKg(BigDecimal.valueOf(5.0));
+        b.setDeclaredValueEur(BigDecimal.valueOf(100.0));
+        b.setStatus(BidStatus.ACCEPTED);
+        return b;
+    }
+
+    private AnnouncementEntity buildAnnouncement() {
+        AnnouncementEntity ann = new AnnouncementEntity();
+        setId(ann, annId);
+        ann.setTravelerId(travelerId);
+        ann.setPricePerKg(BigDecimal.valueOf(5.0));
+        return ann;
+    }
+
+    private UserEntity buildTraveler(String stripeAccountId, StripeAccountStatus status) {
+        UserEntity t = new UserEntity();
+        setId(t, travelerId);
+        t.setFirebaseUid("uid-traveler");
+        t.setStripeAccountId(stripeAccountId);
+        t.setStripeAccountStatus(status);
+        return t;
+    }
+
+    private CreatePaymentRequest buildRequest() {
+        var req = mock(CreatePaymentRequest.class);
+        when(req.getBidId()).thenReturn(bidId);
+        return req;
+    }
+
+    private void stubCommonRepositories(UserEntity traveler) {
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(buildSender()));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(buildBid()));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(buildAnnouncement()));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+    }
+
+    // ── on_behalf_of success path ─────────────────────────────────────────────
+
+    @Test
+    void success_paymentIntent_has_onBehalfOf_and_no_transferData_no_appFee() {
+        UserEntity traveler = buildTraveler("acct_traveler_123", StripeAccountStatus.ONBOARDING_COMPLETE);
+        stubCommonRepositories(traveler);
+        when(paymentRepository.save(any())).thenAnswer(inv -> {
+            PaymentEntity p = inv.getArgument(0);
+            setId(p, UUID.randomUUID());
+            return p;
+        });
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor =
+                    ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_test_new");
+            when(mockPi.getClientSecret()).thenReturn("pi_secret");
+            piStatic.when(() -> PaymentIntent.create(paramsCaptor.capture())).thenReturn(mockPi);
+
+            PaymentResponse resp = service.createEscrow(buildRequest(), "uid-sender");
+
+            assertThat(resp.getStatus()).isEqualTo("PENDING");
+
+            PaymentIntentCreateParams params = paramsCaptor.getValue();
+            // on_behalf_of must be set to traveler's Stripe account
+            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler_123");
+            // statement descriptor suffix
+            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
+            // capture_method = manual (escrow)
+            assertThat(params.getCaptureMethod()).isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+            // CRITICAL: NO transfer_data, NO application_fee_amount — separate charges and transfers
+            assertThat(params.getTransferData()).isNull();
+            assertThat(params.getApplicationFeeAmount()).isNull();
+        }
+    }
+
+    // ── TravelerNotEligibleForPaymentException for all ineligible states ──────
+
+    @Test
+    void throws_TravelerNotEligible_when_status_PENDING_ONBOARDING() {
+        UserEntity traveler = buildTraveler("acct_traveler", StripeAccountStatus.PENDING_ONBOARDING);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void throws_TravelerNotEligible_when_status_REJECTED() {
+        UserEntity traveler = buildTraveler("acct_traveler", StripeAccountStatus.REJECTED);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void throws_TravelerNotEligible_when_status_NOT_CREATED() {
+        UserEntity traveler = buildTraveler(null, StripeAccountStatus.NOT_CREATED);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void throws_TravelerNotEligible_when_stripeAccountId_null_but_status_ONBOARDING_COMPLETE() {
+        // Edge case: status says complete but stripeAccountId is null — must still reject
+        UserEntity traveler = buildTraveler(null, StripeAccountStatus.ONBOARDING_COMPLETE);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void throws_TravelerNotEligible_when_stripeAccountId_blank_but_status_ONBOARDING_COMPLETE() {
+        UserEntity traveler = buildTraveler("   ", StripeAccountStatus.ONBOARDING_COMPLETE);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void throws_TravelerNotEligible_when_status_DISABLED() {
+        UserEntity traveler = buildTraveler("acct_traveler", StripeAccountStatus.DISABLED);
+        stubCommonRepositories(traveler);
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(buildRequest(), "uid-sender"));
+
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
+    }
+}

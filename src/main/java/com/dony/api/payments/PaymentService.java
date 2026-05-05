@@ -6,6 +6,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.config.StripeConnectProperties;
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -302,10 +303,9 @@ public class PaymentService {
                         "traveler-not-found", "Traveler Not Found", "Voyageur introuvable"));
 
         if (traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE
-                || traveler.getStripeAccountId() == null || traveler.getStripeAccountId().isBlank()) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "traveler-not-onboarded", "Traveler Not Onboarded",
-                    "Le voyageur n'a pas encore configuré son compte bancaire");
+                || traveler.getStripeAccountId() == null
+                || traveler.getStripeAccountId().isBlank()) {
+            throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
         BigDecimal amount = bid.getWeightKg()
@@ -319,6 +319,8 @@ public class PaymentService {
                     .setAmount(amountCents)
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
+                    .setOnBehalfOf(traveler.getStripeAccountId())
+                    .setStatementDescriptorSuffix("DONY")
                     // No application_fee_amount, no transfer_data: separate charges and transfers model.
                     // Funds stay on platform balance until DeliveryEventListener triggers Transfer.create
                     // at delivery confirmation. Commission is held back implicitly (transfer = total - commission).
