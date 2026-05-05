@@ -2,6 +2,7 @@ package com.dony.api.auth;
 
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
+import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
@@ -102,6 +103,23 @@ public class AuthService {
     // Story 9.8 — Delegates full GDPR deletion (pseudonymization, KYC cleanup, Firebase revoke)
     public void deleteAccount(String firebaseUid) {
         userService.deleteAccount(firebaseUid);
+    }
+
+    /**
+     * Upgrades the authenticated user to a PRO account.
+     * Delegates business-rule enforcement to {@link UserService#upgradeToPro}.
+     */
+    @Transactional
+    public UserResponse upgradeToPro(String firebaseUid, UpgradeToProRequest request) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        UserEntity updated = userService.upgradeToPro(user.getId(), request);
+        return toResponse(updated);
     }
 
     private UserResponse createUser(String firebaseUid, RegisterRequest request) {

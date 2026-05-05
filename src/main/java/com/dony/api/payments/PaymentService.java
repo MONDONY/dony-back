@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -86,7 +87,7 @@ public class PaymentService {
         UserEntity user = findUser(firebaseUid);
 
         if (user.getStripeAccountId() != null) {
-            return new ConnectAccountResponse(user.getStripeAccountId(), user.isStripeOnboarded());
+            return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
         }
 
         try {
@@ -104,13 +105,15 @@ public class PaymentService {
 
             Account account = Account.create(params);
             user.setStripeAccountId(account.getId());
+            user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+            user.setStripeAccountCreatedAt(java.time.Instant.now());
             userRepository.save(user);
 
             auditService.log("USER", user.getId(), "STRIPE_ACCOUNT_CREATED", user.getId(),
                     Map.of("stripeAccountId", account.getId()));
 
             log.info("Stripe Express account created for user {} : {}", user.getId(), account.getId());
-            return new ConnectAccountResponse(account.getId(), false);
+            return new ConnectAccountResponse(account.getId(), StripeAccountStatus.PENDING_ONBOARDING);
 
         } catch (Exception e) {
             log.error("Failed to create Stripe account for user {}", user.getId(), e);
@@ -167,9 +170,16 @@ public class PaymentService {
         try {
             Account account = Account.retrieve(user.getStripeAccountId());
             boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
+            StripeAccountStatus newStatus = chargesEnabled
+                    ? StripeAccountStatus.ONBOARDING_COMPLETE
+                    : StripeAccountStatus.PENDING_ONBOARDING;
 
-            if (chargesEnabled != user.isStripeOnboarded()) {
+            if (newStatus != user.getStripeAccountStatus()) {
+                user.setStripeAccountStatus(newStatus);
                 user.setStripeOnboarded(chargesEnabled);
+                if (chargesEnabled && user.getStripeOnboardingCompletedAt() == null) {
+                    user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                }
                 userRepository.save(user);
                 String action = chargesEnabled ? "STRIPE_ONBOARDING_COMPLETE" : "STRIPE_ONBOARDING_REVOKED";
                 auditService.log("USER", user.getId(), action, user.getId(),
@@ -179,7 +189,7 @@ public class PaymentService {
                         user.getId(), chargesEnabled);
             }
 
-            return new ConnectAccountResponse(account.getId(), chargesEnabled);
+            return new ConnectAccountResponse(account.getId(), user.getStripeAccountStatus());
 
         } catch (StripeException e) {
             log.error("Failed to refresh Stripe account {} for user {}",
@@ -253,7 +263,8 @@ public class PaymentService {
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "traveler-not-found", "Traveler Not Found", "Voyageur introuvable"));
 
-        if (!traveler.isStripeOnboarded() || traveler.getStripeAccountId() == null || traveler.getStripeAccountId().isBlank()) {
+        if (traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE
+                || traveler.getStripeAccountId() == null || traveler.getStripeAccountId().isBlank()) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "traveler-not-onboarded", "Traveler Not Onboarded",
                     "Le voyageur n'a pas encore configuré son compte bancaire");
@@ -343,8 +354,12 @@ public class PaymentService {
             Account account = (Account) obj;
             if (Boolean.TRUE.equals(account.getChargesEnabled())) {
                 userRepository.findByStripeAccountId(account.getId()).ifPresent(user -> {
-                    if (!user.isStripeOnboarded()) {
+                    if (user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+                        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
                         user.setStripeOnboarded(true);
+                        if (user.getStripeOnboardingCompletedAt() == null) {
+                            user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                        }
                         userRepository.save(user);
                         auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
                                 user.getId(), Map.of("stripeAccountId", account.getId()));

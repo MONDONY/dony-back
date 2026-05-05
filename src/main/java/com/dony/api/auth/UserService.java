@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
@@ -145,6 +146,59 @@ public class UserService {
                 Map.of("pseudonymized", true));
 
         log.info("GDPR deletion completed for user {}", uid);
+    }
+
+    // PR-1 — Upgrade to PRO account
+    /**
+     * Sets the user as a PRO account with optional company details.
+     *
+     * <p>Business rules:
+     * <ul>
+     *   <li>Any authenticated user can call this (SENDER or TRAVELER).</li>
+     *   <li>If {@code stripeAccountId} is already set → HTTP 409 (cannot change account type
+     *       once a Stripe Connect account exists).</li>
+     *   <li>{@code siret}, when provided and non-blank, must be exactly 14 digits → HTTP 422.</li>
+     * </ul>
+     *
+     * @return the updated {@link UserEntity} (caller builds the response DTO)
+     */
+    @Transactional
+    public UserEntity upgradeToPro(UUID userId, UpgradeToProRequest request) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        if (user.getStripeAccountId() != null) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT,
+                    "stripe-account-exists",
+                    "Stripe Account Already Exists",
+                    "Un compte Stripe Connect existe déjà. La modification du type de compte nécessite une recréation, contacter le support."
+            );
+        }
+
+        if (request.siret() != null && !request.siret().isBlank()) {
+            if (!request.siret().matches("\\d{14}")) {
+                throw new DonyBusinessException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-siret",
+                        "Invalid SIRET",
+                        "Le numéro SIRET doit contenir exactement 14 chiffres"
+                );
+            }
+        }
+
+        user.setProAccount(true);
+        user.setProCompanyName(request.companyName());
+        user.setProSiret(request.siret());
+        UserEntity saved = userRepository.save(user);
+
+        auditService.log("USER", userId, "USER_UPGRADED_TO_PRO", userId,
+                Map.of("companyName", request.companyName() != null ? request.companyName() : "",
+                        "siret", request.siret() != null ? request.siret() : ""));
+
+        log.info("User {} upgraded to PRO account", userId);
+        return saved;
     }
 
     // Story 9.5 — Admin unsuspend

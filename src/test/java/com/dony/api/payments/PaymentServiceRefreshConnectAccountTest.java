@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -69,6 +70,11 @@ class PaymentServiceRefreshConnectAccountTest {
         u.setFirebaseUid(FIREBASE_UID);
         u.setStripeAccountId(stripeAccountId);
         u.setStripeOnboarded(onboarded);
+        if (stripeAccountId != null) {
+            u.setStripeAccountStatus(onboarded
+                    ? StripeAccountStatus.ONBOARDING_COMPLETE
+                    : StripeAccountStatus.PENDING_ONBOARDING);
+        }
         return u;
     }
 
@@ -99,8 +105,9 @@ class PaymentServiceRefreshConnectAccountTest {
             ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
 
             assertThat(resp.stripeAccountId()).isEqualTo(ACCT_ID);
-            assertThat(resp.stripeOnboarded()).isTrue();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
             assertThat(user.isStripeOnboarded()).isTrue();
+            assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), eq(userId),
                     eq("STRIPE_ONBOARDING_COMPLETE"), eq(userId), any());
@@ -121,7 +128,7 @@ class PaymentServiceRefreshConnectAccountTest {
 
             ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
 
-            assertThat(resp.stripeOnboarded()).isTrue();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
             verify(userRepository, never()).save(any());
             verify(auditService, never()).log(any(), any(), any(), any(), any());
         }
@@ -141,8 +148,9 @@ class PaymentServiceRefreshConnectAccountTest {
 
             ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
 
-            assertThat(resp.stripeOnboarded()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             assertThat(user.isStripeOnboarded()).isFalse();
+            assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), eq(userId),
                     eq("STRIPE_ONBOARDING_REVOKED"), eq(userId), any());
@@ -163,7 +171,7 @@ class PaymentServiceRefreshConnectAccountTest {
 
             ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
 
-            assertThat(resp.stripeOnboarded()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             verify(userRepository, never()).save(any());
             verify(auditService, never()).log(any(), any(), any(), any(), any());
         }

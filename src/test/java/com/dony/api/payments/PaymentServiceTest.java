@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -105,6 +106,7 @@ class PaymentServiceTest {
         UserEntity t = buildUser(travelerId, "uid-traveler");
         t.setStripeAccountId(stripeAccountId);
         t.setStripeOnboarded(onboarded);
+        t.setStripeAccountStatus(onboarded ? StripeAccountStatus.ONBOARDING_COMPLETE : StripeAccountStatus.PENDING_ONBOARDING);
         return t;
     }
 
@@ -336,12 +338,13 @@ class PaymentServiceTest {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_existing");
         user.setStripeOnboarded(true);
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
 
         ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
 
         assertThat(resp.stripeAccountId()).isEqualTo("acct_existing");
-        assertThat(resp.stripeOnboarded()).isTrue();
+        assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
     }
 
     @Test
@@ -360,7 +363,7 @@ class PaymentServiceTest {
             ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
 
             assertThat(resp.stripeAccountId()).isEqualTo("acct_new_123");
-            assertThat(resp.stripeOnboarded()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), any(), eq("STRIPE_ACCOUNT_CREATED"), any(), any());
         }
@@ -449,6 +452,7 @@ class PaymentServiceTest {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
         user.setStripeOnboarded(false);
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
@@ -465,6 +469,7 @@ class PaymentServiceTest {
         }
 
         assertThat(user.isStripeOnboarded()).isTrue();
+        assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
         verify(auditService).log(eq("USER"), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
     }
 
@@ -473,6 +478,7 @@ class PaymentServiceTest {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
         user.setStripeOnboarded(true); // already onboarded
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
