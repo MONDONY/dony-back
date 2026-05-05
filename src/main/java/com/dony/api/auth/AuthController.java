@@ -3,6 +3,7 @@ package com.dony.api.auth;
 import com.dony.api.auth.dto.FcmTokenRequest;
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
+import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.DonyBusinessException;
 import jakarta.validation.Valid;
@@ -60,6 +61,12 @@ public class AuthController {
         String firebaseUid = requireFirebaseUid();
         authService.deleteAccount(firebaseUid);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/me/upgrade-to-pro")
+    public ResponseEntity<UserResponse> upgradeToPro(@Valid @RequestBody UpgradeToProRequest request) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.upgradeToPro(firebaseUid, request));
     }
 
     private String requireFirebaseUid() {

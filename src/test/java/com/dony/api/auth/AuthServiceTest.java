@@ -328,6 +328,10 @@ class AuthServiceTest {
             assertThat(resp.kycStatus()).isEqualTo("VERIFIED");
             assertThat(resp.status()).isEqualTo("ACTIVE");
             assertThat(resp.roles()).contains("SENDER");
+            // PRO fields — new in PR-1 review fix
+            assertThat(resp.isProAccount()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isNotNull();
+            assertThat(resp.country()).isEqualTo("FR");
         }
     }
 }
