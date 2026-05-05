@@ -1,6 +1,12 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.StripeAccountStatus;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -15,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,12 +32,16 @@ class BidAcceptedEventListenerTest {
 
     @Mock private PaymentRepository paymentRepository;
     @Mock private AuditService auditService;
+    @Mock private UserRepository userRepository;
+    @Mock private BidRepository bidRepository;
 
     private BidAcceptedEventListener listener;
 
+    private final UUID travelerId = UUID.randomUUID();
+
     @BeforeEach
     void setUp() {
-        listener = new BidAcceptedEventListener(paymentRepository, auditService);
+        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository);
     }
 
     private PaymentEntity paymentFor(UUID bidId, PaymentStatus status, boolean legacy) {
@@ -44,15 +55,26 @@ class BidAcceptedEventListenerTest {
         return p;
     }
 
+    /** Creates an event with the shared travelerId so userRepository can be stubbed centrally. */
     private BidAcceptedEvent eventFor(UUID bidId) {
-        return new BidAcceptedEvent(bidId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        return new BidAcceptedEvent(bidId, UUID.randomUUID(), travelerId, UUID.randomUUID());
     }
+
+    private UserEntity eligibleTraveler() {
+        UserEntity t = new UserEntity();
+        t.setStripeAccountId("acct_traveler");
+        t.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        return t;
+    }
+
+    // ── Existing behaviour ────────────────────────────────────────────────────
 
     @Test
     void captures_PI_for_non_legacy_payment_in_escrow() throws StripeException {
         UUID bidId = UUID.randomUUID();
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -105,6 +127,7 @@ class BidAcceptedEventListenerTest {
         UUID bidId = UUID.randomUUID();
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -112,6 +135,90 @@ class BidAcceptedEventListenerTest {
             mocked.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
 
             assertThatNoException().isThrownBy(() -> listener.onBidAccepted(eventFor(bidId)));
+        }
+    }
+
+    // ── New: pre-capture re-verification (PR-3) ───────────────────────────────
+
+    @Test
+    void cancels_PI_and_bid_when_traveler_reverted_to_pending_before_capture() throws StripeException {
+        UUID bidId = UUID.randomUUID();
+        PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+
+        UserEntity ineligibleTraveler = new UserEntity();
+        ineligibleTraveler.setStripeAccountId("acct_traveler");
+        ineligibleTraveler.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(ineligibleTraveler));
+
+        BidEntity bid = new BidEntity();
+        bid.setStatus(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.cancel()).thenReturn(pi);
+            mocked.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            listener.onBidAccepted(eventFor(bidId));
+
+            verify(pi).cancel();
+            verify(pi, never()).capture();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            verify(auditService).log(eq("BID"), any(), eq("BID_CANCELLED_TRAVELER_INELIGIBLE"), any(), any());
+        }
+    }
+
+    @Test
+    void cancels_PI_and_bid_when_traveler_not_found_before_capture() throws StripeException {
+        UUID bidId = UUID.randomUUID();
+        PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.empty());
+
+        BidEntity bid = new BidEntity();
+        bid.setStatus(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.cancel()).thenReturn(pi);
+            mocked.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            listener.onBidAccepted(eventFor(bidId));
+
+            verify(pi).cancel();
+            verify(pi, never()).capture();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+        }
+    }
+
+    @Test
+    void pi_cancel_stripe_error_does_not_throw_when_traveler_ineligible() throws StripeException {
+        UUID bidId = UUID.randomUUID();
+        PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+
+        UserEntity ineligibleTraveler = new UserEntity();
+        ineligibleTraveler.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(ineligibleTraveler));
+
+        BidEntity bid = new BidEntity();
+        bid.setStatus(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.cancel()).thenThrow(mock(com.stripe.exception.InvalidRequestException.class));
+            mocked.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            // Must not throw — error is swallowed + logged
+            assertThatNoException().isThrownBy(() -> listener.onBidAccepted(eventFor(bidId)));
+            // Bid still cancelled even if PI cancel fails
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
         }
     }
 }

@@ -3,6 +3,7 @@ package com.dony.api.payments;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.config.StripeConnectProperties;
@@ -245,7 +246,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void createEscrow_travelerNotOnboarded_throwsUnprocessable() {
+    void createEscrow_travelerNotOnboarded_throwsTravelerNotEligible() {
         UserEntity sender = buildUser(senderId, "uid-sender");
         BidEntity bid = buildBid(BidStatus.ACCEPTED);
         AnnouncementEntity ann = buildAnnouncement();
@@ -257,7 +258,10 @@ class PaymentServiceTest {
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
         var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
         when(req.getBidId()).thenReturn(bidId);
-        assertDonyError(() -> service.createEscrow(req, "uid-sender"), "traveler-not-onboarded");
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(req, "uid-sender"));
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
     }
 
     @Test
@@ -300,6 +304,8 @@ class PaymentServiceTest {
             assertThat(params.getTransferData()).isNull();
             assertThat(params.getCaptureMethod())
                     .isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler");
+            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
 
             // Persisted payment is non-legacy.
             assertThat(savedCaptor.getValue().isLegacyDestinationCharge()).isFalse();
