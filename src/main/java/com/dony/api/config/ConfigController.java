@@ -1,5 +1,6 @@
 package com.dony.api.config;
 
+import com.dony.api.config.dto.CommissionRateResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +20,4 @@ public class ConfigController {
     public ResponseEntity<CommissionRateResponse> getCommissionRate() {
         return ResponseEntity.ok(new CommissionRateResponse(config.commission().rate()));
     }
-
-    public record CommissionRateResponse(double rate) {}
 }
