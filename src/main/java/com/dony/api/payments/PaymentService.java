@@ -176,7 +176,6 @@ public class PaymentService {
 
             if (newStatus != user.getStripeAccountStatus()) {
                 user.setStripeAccountStatus(newStatus);
-                user.setStripeOnboarded(chargesEnabled);
                 if (chargesEnabled && user.getStripeOnboardingCompletedAt() == null) {
                     user.setStripeOnboardingCompletedAt(java.time.Instant.now());
                 }
@@ -356,7 +355,6 @@ public class PaymentService {
                 userRepository.findByStripeAccountId(account.getId()).ifPresent(user -> {
                     if (user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
                         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
-                        user.setStripeOnboarded(true);
                         if (user.getStripeOnboardingCompletedAt() == null) {
                             user.setStripeOnboardingCompletedAt(java.time.Instant.now());
                         }

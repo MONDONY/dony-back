@@ -105,7 +105,6 @@ class PaymentServiceTest {
     private UserEntity buildTraveler(String stripeAccountId, boolean onboarded) {
         UserEntity t = buildUser(travelerId, "uid-traveler");
         t.setStripeAccountId(stripeAccountId);
-        t.setStripeOnboarded(onboarded);
         t.setStripeAccountStatus(onboarded ? StripeAccountStatus.ONBOARDING_COMPLETE : StripeAccountStatus.PENDING_ONBOARDING);
         return t;
     }
@@ -337,7 +336,6 @@ class PaymentServiceTest {
     void createConnectAccount_alreadyHasStripeId_returnsExisting() {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_existing");
-        user.setStripeOnboarded(true);
         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
 
@@ -451,7 +449,6 @@ class PaymentServiceTest {
     void handleWebhook_accountUpdated_chargesEnabled_setsOnboarded() {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
-        user.setStripeOnboarded(false);
         user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
 
         Account mockAccount = mock(Account.class);
@@ -468,7 +465,6 @@ class PaymentServiceTest {
             service.handleWebhook("payload", "sig");
         }
 
-        assertThat(user.isStripeOnboarded()).isTrue();
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
         verify(auditService).log(eq("USER"), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
     }
@@ -477,8 +473,7 @@ class PaymentServiceTest {
     void handleWebhook_accountUpdated_chargesEnabled_alreadyOnboarded_skips() {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
-        user.setStripeOnboarded(true); // already onboarded
-        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE); // already onboarded
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);

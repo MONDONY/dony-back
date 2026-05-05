@@ -69,7 +69,6 @@ class PaymentServiceRefreshConnectAccountTest {
         }
         u.setFirebaseUid(FIREBASE_UID);
         u.setStripeAccountId(stripeAccountId);
-        u.setStripeOnboarded(onboarded);
         if (stripeAccountId != null) {
             u.setStripeAccountStatus(onboarded
                     ? StripeAccountStatus.ONBOARDING_COMPLETE
@@ -106,7 +105,6 @@ class PaymentServiceRefreshConnectAccountTest {
 
             assertThat(resp.stripeAccountId()).isEqualTo(ACCT_ID);
             assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
-            assertThat(user.isStripeOnboarded()).isTrue();
             assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), eq(userId),
@@ -149,7 +147,6 @@ class PaymentServiceRefreshConnectAccountTest {
             ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
 
             assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
-            assertThat(user.isStripeOnboarded()).isFalse();
             assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), eq(userId),

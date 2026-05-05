@@ -9,5 +9,5 @@ UPDATE users SET stripe_account_status = 'ONBOARDING_COMPLETE' WHERE stripe_onbo
 UPDATE users SET stripe_account_status = 'PENDING_ONBOARDING'
     WHERE stripe_account_id IS NOT NULL AND stripe_onboarded = FALSE;
 
--- Note: stripe_onboarded boolean is kept for backward compatibility during transition (PR-1).
--- It will be dropped in a future migration once all code paths use stripe_account_status.
+-- Remove legacy boolean — replaced by stripe_account_status enum
+ALTER TABLE users DROP COLUMN IF EXISTS stripe_onboarded;
