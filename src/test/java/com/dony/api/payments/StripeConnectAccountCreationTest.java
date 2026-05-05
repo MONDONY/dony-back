@@ -19,7 +19,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,28 +57,12 @@ class StripeConnectAccountCreationTest {
 
     private UserEntity buildUser(boolean isPro, String country) {
         UserEntity u = new UserEntity();
-        setId(u, userId);
+        PaymentServiceTestFactory.setId(u, userId);
         u.setFirebaseUid("uid-test");
         u.setEmail("test@dony.app");
         u.setProAccount(isPro);
         u.setCountry(country);
         return u;
-    }
-
-    private void setId(Object entity, UUID id) {
-        try {
-            Class<?> clazz = entity.getClass();
-            Field f = null;
-            while (clazz != null) {
-                try { f = clazz.getDeclaredField("id"); break; }
-                catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
-            }
-            if (f == null) throw new NoSuchFieldException("id not found in hierarchy");
-            f.setAccessible(true);
-            f.set(entity, id);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     @Test

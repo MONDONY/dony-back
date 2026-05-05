@@ -141,7 +141,13 @@ public class PaymentService {
             user.setStripeAccountId(account.getId());
             user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
             user.setStripeAccountCreatedAt(java.time.Instant.now());
-            userRepository.save(user);
+            try {
+                userRepository.save(user);
+            } catch (Exception saveEx) {
+                log.error("Failed to save user after Stripe account creation. orphan_account_id={}, user_id={}",
+                        account.getId(), user.getId(), saveEx);
+                throw saveEx;
+            }
 
             auditService.log("USER", user.getId(), "STRIPE_ACCOUNT_CREATED", user.getId(),
                     Map.of("stripeAccountId", account.getId()));
@@ -203,14 +209,13 @@ public class PaymentService {
 
         try {
             Account account = Account.retrieve(user.getStripeAccountId());
+            StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
             boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
-            StripeAccountStatus newStatus = chargesEnabled
-                    ? StripeAccountStatus.ONBOARDING_COMPLETE
-                    : StripeAccountStatus.PENDING_ONBOARDING;
 
             if (newStatus != user.getStripeAccountStatus()) {
                 user.setStripeAccountStatus(newStatus);
-                if (chargesEnabled && user.getStripeOnboardingCompletedAt() == null) {
+                if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                        && user.getStripeOnboardingCompletedAt() == null) {
                     user.setStripeOnboardingCompletedAt(java.time.Instant.now());
                 }
                 userRepository.save(user);
@@ -218,8 +223,8 @@ public class PaymentService {
                 auditService.log("USER", user.getId(), action, user.getId(),
                         Map.of("stripeAccountId", account.getId(),
                                 "source", "manual-refresh"));
-                log.info("Stripe onboarding state synced for user {} : chargesEnabled={}",
-                        user.getId(), chargesEnabled);
+                log.info("Stripe onboarding state synced for user {} : newStatus={}",
+                        user.getId(), newStatus);
             }
 
             return new ConnectAccountResponse(account.getId(), user.getStripeAccountStatus());
@@ -383,40 +388,56 @@ public class PaymentService {
     }
 
     private void handleAccountUpdated(Event event) {
-        Account account = (Account) event.getDataObjectDeserializer().getObject().orElseThrow();
-        String accountId = account.getId();
+        event.getDataObjectDeserializer().getObject().ifPresentOrElse(
+            obj -> {
+                Account account = (Account) obj;
+                String accountId = account.getId();
 
-        userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
-            boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
-            boolean payoutsEnabled = Boolean.TRUE.equals(account.getPayoutsEnabled());
-            String disabledReason = account.getRequirements() != null
-                    ? account.getRequirements().getDisabledReason()
-                    : null;
+                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+                    StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
 
-            StripeAccountStatus newStatus;
-            if (chargesEnabled && payoutsEnabled) {
-                newStatus = StripeAccountStatus.ONBOARDING_COMPLETE;
-            } else if (disabledReason != null && disabledReason.startsWith("rejected")) {
-                newStatus = StripeAccountStatus.REJECTED;
-            } else if (disabledReason != null) {
-                newStatus = StripeAccountStatus.DISABLED;
-            } else {
-                return; // still pending, no state change
-            }
+                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING) {
+                        return; // still pending, no state change
+                    }
 
-            // Only emit event on first transition to ONBOARDING_COMPLETE
-            if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
-                    && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-                user.setStripeOnboardingCompletedAt(java.time.Instant.now());
-                eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
-                auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
-                        user.getId(), Map.of("stripeAccountId", accountId));
-                log.info("Stripe onboarding complete for user {}", user.getId());
-            }
+                    // Only emit event on first transition to ONBOARDING_COMPLETE
+                    if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                            && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+                        user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                        eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
+                        auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
+                                user.getId(), Map.of("stripeAccountId", accountId));
+                        log.info("Stripe onboarding complete for user {}", user.getId());
+                    }
 
-            user.setStripeAccountStatus(newStatus);
-            userRepository.save(user);
-        });
+                    user.setStripeAccountStatus(newStatus);
+                    userRepository.save(user);
+                });
+            },
+            () -> log.warn("handleAccountUpdated: could not deserialize account object for event {}", event.getId())
+        );
+    }
+
+    /**
+     * Derives the {@link StripeAccountStatus} from a Stripe {@link Account} object.
+     * Single source of truth used by both {@code handleAccountUpdated} and {@code refreshConnectAccount}.
+     */
+    private StripeAccountStatus deriveStripeAccountStatus(Account account) {
+        boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
+        boolean payoutsEnabled = Boolean.TRUE.equals(account.getPayoutsEnabled());
+        String disabledReason = account.getRequirements() != null
+                ? account.getRequirements().getDisabledReason()
+                : null;
+
+        if (chargesEnabled && payoutsEnabled) {
+            return StripeAccountStatus.ONBOARDING_COMPLETE;
+        } else if (disabledReason != null && disabledReason.startsWith("rejected")) {
+            return StripeAccountStatus.REJECTED;
+        } else if (disabledReason != null) {
+            return StripeAccountStatus.DISABLED;
+        } else {
+            return StripeAccountStatus.PENDING_ONBOARDING;
+        }
     }
 
     private void handlePaymentEscrowActive(Event event) {

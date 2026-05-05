@@ -11,6 +11,26 @@ import static org.mockito.Mockito.mock;
 
 class PaymentServiceTestFactory {
 
+    /**
+     * Sets the {@code id} field on a {@link com.dony.api.common.BaseEntity} subclass via reflection.
+     * Walks the class hierarchy until it finds the field, consistent with how BaseEntity declares it.
+     */
+    static void setId(Object entity, java.util.UUID id) {
+        try {
+            Class<?> clazz = entity.getClass();
+            java.lang.reflect.Field f = null;
+            while (clazz != null) {
+                try { f = clazz.getDeclaredField("id"); break; }
+                catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
+            }
+            if (f == null) throw new NoSuchFieldException("id not found in class hierarchy");
+            f.setAccessible(true);
+            f.set(entity, id);
+        } catch (Exception e) {
+            throw new RuntimeException("Could not set id via reflection", e);
+        }
+    }
+
     static StripeConnectProperties defaultConnectProperties() {
         return new StripeConnectProperties(
                 "4215",

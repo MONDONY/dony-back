@@ -19,7 +19,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,27 +59,11 @@ class StripeConnectWebhookAccountUpdatedTest {
 
     private UserEntity buildUser(StripeAccountStatus status) {
         UserEntity u = new UserEntity();
-        setId(u, userId);
+        PaymentServiceTestFactory.setId(u, userId);
         u.setFirebaseUid("uid-test");
         u.setStripeAccountId(ACCOUNT_ID);
         u.setStripeAccountStatus(status);
         return u;
-    }
-
-    private void setId(Object entity, UUID id) {
-        try {
-            Class<?> clazz = entity.getClass();
-            Field f = null;
-            while (clazz != null) {
-                try { f = clazz.getDeclaredField("id"); break; }
-                catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
-            }
-            if (f == null) throw new NoSuchFieldException("id not found");
-            f.setAccessible(true);
-            f.set(entity, id);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private Event buildAccountUpdatedEvent(boolean chargesEnabled, boolean payoutsEnabled,

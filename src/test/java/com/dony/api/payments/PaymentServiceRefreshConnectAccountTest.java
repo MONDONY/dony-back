@@ -97,6 +97,7 @@ class PaymentServiceRefreshConnectAccountTest {
         Account account = mock(Account.class);
         when(account.getId()).thenReturn(ACCT_ID);
         when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
 
         try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
             mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
@@ -120,6 +121,7 @@ class PaymentServiceRefreshConnectAccountTest {
         Account account = mock(Account.class);
         when(account.getId()).thenReturn(ACCT_ID);
         when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
 
         try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
             mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
