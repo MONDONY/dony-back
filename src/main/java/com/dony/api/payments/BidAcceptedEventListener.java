@@ -12,11 +12,14 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -48,9 +51,9 @@ public class BidAcceptedEventListener {
         this.bidRepository = bidRepository;
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onBidAccepted(BidAcceptedEvent event) {
         Optional<PaymentEntity> opt = paymentRepository.findByBidId(event.getBidId());
         if (opt.isEmpty()) {
@@ -111,6 +114,13 @@ public class BidAcceptedEventListener {
         }
 
         try {
+            // Atomic capture-once guard: prevents double-capture on duplicate events
+            int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now());
+            if (updated == 0) {
+                log.info("Payment {} already captured or not in ESCROW — skipping", payment.getId());
+                return;
+            }
+
             PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
             pi.capture();
             // Note: payment.status reste ESCROW. Sa sémantique est désormais

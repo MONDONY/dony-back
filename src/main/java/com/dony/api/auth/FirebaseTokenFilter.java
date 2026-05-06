@@ -90,8 +90,9 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             setAuthentication(uid, authorities);
         } catch (Exception e) {
             log.warn("Could not load user from DB for uid {}: {}", uid, e.getMessage());
-            // Proceed with bare UID auth (DB may be temporarily unavailable)
-            setAuthentication(uid, List.of());
+            SecurityContextHolder.clearContext(); // do NOT grant access on DB failure
+            response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Service temporarily unavailable");
+            return true;
         }
 
         return false;

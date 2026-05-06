@@ -74,6 +74,7 @@ class BidAcceptedEventListenerTest {
         UUID bidId = UUID.randomUUID();
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
@@ -127,6 +128,7 @@ class BidAcceptedEventListenerTest {
         UUID bidId = UUID.randomUUID();
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {

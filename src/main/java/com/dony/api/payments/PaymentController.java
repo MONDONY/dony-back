@@ -61,11 +61,12 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.createEscrow(request, requireFirebaseUid()));
     }
 
-    // Statut paiement pour un bid — expéditeur ou voyageur
+    // Statut paiement pour un bid — expéditeur ou voyageur (ownership vérifiée dans le service)
     @GetMapping("/bid/{bidId}")
     @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<PaymentResponse> getPaymentForBid(@PathVariable UUID bidId) {
-        return paymentService.getPaymentStatusForBid(bidId)
+        String callerUid = requireFirebaseUid();
+        return paymentService.getPaymentStatusForBid(bidId, callerUid)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

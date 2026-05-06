@@ -36,15 +36,18 @@ firebase:
   service-account-path: classpath:firebase-service-account.json
 
 dony:
-  internal:
-    secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
+  kyc:
+    enforce: false
   stripe:
+    enforce: false
     connect:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Dony"
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
+  internal:
+    secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
   commission:
     rate: 0.12
 

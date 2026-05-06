@@ -12,10 +12,12 @@ import com.stripe.param.TransferCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -57,9 +59,9 @@ public class DeliveryEventListener {
         this.eventPublisher = eventPublisher;
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleDeliveryConfirmed(DeliveryConfirmedEvent event) {
         Optional<PaymentEntity> paymentOpt = paymentRepository.findByBidId(event.getBidId());
 

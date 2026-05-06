@@ -157,7 +157,9 @@ public class BidCheckoutService {
     private String resolveClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] parts = forwarded.split(",");
+            // Use the last value added by the trusted proxy — the client cannot spoof it
+            return parts[parts.length - 1].trim();
         }
         return request.getRemoteAddr();
     }

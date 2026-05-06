@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -169,6 +171,27 @@ class AnnouncementServiceTest {
 
             assertThat(user.getRoles()).contains(Role.TRAVELER);
             verify(userRepository, atLeastOnce()).save(user);
+        }
+
+        @Test
+        @DisplayName("compte Stripe non configuré → 403 stripe-onboarding-incomplete")
+        void create_stripeNotOnboarded_throwsForbidden() throws Exception {
+            UserEntity traveler = buildTraveler();
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            // stripeAccountStatus defaults to NOT_CREATED — Stripe not set up
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            Field enforceField = AnnouncementService.class.getDeclaredField("enforceStripeOnboarding");
+            enforceField.setAccessible(true);
+            enforceField.set(announcementService, true);
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, buildRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("stripe-onboarding-incomplete");
+                    });
         }
 
         @Test

@@ -316,7 +316,8 @@ class BidServiceTest {
 
             ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
             verify(bidRepository).save(captor.capture());
-            assertThat(captor.getValue().getDisclaimerSignedIp()).isEqualTo("203.0.113.1");
+            // Last hop in X-Forwarded-For is used (added by trusted proxy, not spoofable by client)
+            assertThat(captor.getValue().getDisclaimerSignedIp()).isEqualTo("198.51.100.2");
         }
 
         @Test

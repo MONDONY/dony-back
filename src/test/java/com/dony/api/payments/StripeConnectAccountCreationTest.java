@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
@@ -25,6 +26,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -40,6 +42,7 @@ class StripeConnectAccountCreationTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -51,7 +54,8 @@ class StripeConnectAccountCreationTest {
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties());
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
@@ -62,6 +66,8 @@ class StripeConnectAccountCreationTest {
         u.setEmail("test@dony.app");
         u.setProAccount(isPro);
         u.setCountry(country);
+        // createConnectAccount uses findByIdForUpdate for the pessimistic lock
+        lenient().when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(u));
         return u;
     }
 

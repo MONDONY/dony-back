@@ -3,6 +3,7 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -36,6 +37,7 @@ class PaymentWebhookBidPromotionTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ProcessedStripeEventRepository processedStripeEventRepository;
 
     private PaymentService service;
     private BidEntity bid;
@@ -46,7 +48,7 @@ class PaymentWebhookBidPromotionTest {
     void setUp() {
         service = new PaymentService(userRepository, bidRepository, announcementRepository,
             paymentRepository, auditService, eventPublisher, "whsec_test",
-            PaymentServiceTestFactory.defaultConnectProperties());
+            PaymentServiceTestFactory.defaultConnectProperties(), processedStripeEventRepository);
 
         bid = new BidEntity();
         ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());

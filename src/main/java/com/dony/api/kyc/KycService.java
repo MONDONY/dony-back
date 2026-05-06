@@ -5,6 +5,8 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.common.ProcessedStripeEvent;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
 import com.dony.api.kyc.events.UserKycVerifiedEvent;
@@ -37,6 +39,7 @@ public class KycService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProcessedStripeEventRepository processedStripeEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${stripe.webhook-secret}")
@@ -45,11 +48,13 @@ public class KycService {
     public KycService(KycRepository kycRepository,
                       UserRepository userRepository,
                       AuditService auditService,
-                      ApplicationEventPublisher eventPublisher) {
+                      ApplicationEventPublisher eventPublisher,
+                      ProcessedStripeEventRepository processedStripeEventRepository) {
         this.kycRepository = kycRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.processedStripeEventRepository = processedStripeEventRepository;
     }
 
     @Transactional
@@ -59,6 +64,20 @@ public class KycService {
 
         if (user.getKycStatus() == KycStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "KYC déjà vérifié");
+        }
+
+        // Idempotency: return existing session if already PENDING to avoid duplicate Stripe sessions
+        if (user.getKycStatus() == KycStatus.PENDING) {
+            Optional<KycVerificationEntity> existing = kycRepository.findByUserId(user.getId());
+            if (existing.isPresent() && existing.get().getStripeVerificationSessionId() != null) {
+                String existingSessionId = existing.get().getStripeVerificationSessionId();
+                try {
+                    VerificationSession existingSession = VerificationSession.retrieve(existingSessionId);
+                    return new KycSessionResponse(existingSession.getUrl(), existingSessionId, "PENDING");
+                } catch (Exception e) {
+                    log.warn("Could not retrieve existing KYC session {}, creating new one", existingSessionId);
+                }
+            }
         }
 
         // Transition NOT_STARTED → PENDING when session is created
@@ -122,7 +141,7 @@ public class KycService {
 
         String verificationStatus = kyc
                 .map(k -> k.getStatus().name())
-                .orElse("PENDING");
+                .orElse("NOT_STARTED");
 
         return new KycStatusResponse(user.getKycStatus().name(), verificationStatus);
     }
@@ -141,6 +160,13 @@ public class KycService {
         String eventType = event.getType();
         log.info("Stripe Identity webhook received: {}", eventType);
 
+        // Idempotency: skip already-processed events
+        if (processedStripeEventRepository.existsByEventId(event.getId())) {
+            log.info("Stripe KYC event {} already processed — skipping", event.getId());
+            return;
+        }
+        processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
+
         if (!"identity.verification_session.verified".equals(eventType) &&
                 !"identity.verification_session.requires_input".equals(eventType) &&
                 !"identity.verification_session.canceled".equals(eventType)) {
@@ -153,7 +179,12 @@ public class KycService {
         String lastErrorReason = null;
         try {
             JsonNode root = objectMapper.readTree(rawJson);
-            sessionId = root.get("id").asText();
+            JsonNode idNode = root.path("id");
+            if (idNode.isMissingNode() || idNode.isNull()) {
+                log.warn("Stripe webhook missing session id for event {}", eventType);
+                return;
+            }
+            sessionId = idNode.asText();
             JsonNode lastError = root.path("last_error");
             if (!lastError.isMissingNode() && !lastError.isNull()) {
                 lastErrorReason = lastError.path("reason").asText(null);
@@ -180,27 +211,31 @@ public class KycService {
         }
 
         if ("identity.verification_session.verified".equals(eventType)) {
-            kyc.setStatus(KycVerificationStatus.VERIFIED);
-            user.setKycStatus(KycStatus.VERIFIED);
+            // Idempotency: only update if not already VERIFIED
+            if (kyc.getStatus() != KycVerificationStatus.VERIFIED) {
+                kyc.setStatus(KycVerificationStatus.VERIFIED);
+                user.setKycStatus(KycStatus.VERIFIED);
+                kycRepository.save(kyc);
+                userRepository.save(user);
 
-            auditService.log("kyc_verification", kyc.getId(), "KYC_VERIFIED",
-                    user.getId(), Map.of("sessionId", sessionId));
+                auditService.log("kyc_verification", kyc.getId(), "KYC_VERIFIED",
+                        user.getId(), Map.of("sessionId", sessionId));
 
-            eventPublisher.publishEvent(new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
+                eventPublisher.publishEvent(new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
+            }
 
         } else {
             // requires_input or canceled → REJECTED (user must re-submit)
             kyc.setStatus(KycVerificationStatus.REJECTED);
             kyc.setRejectionReason(lastErrorReason != null ? lastErrorReason : "verification_failed");
             user.setKycStatus(KycStatus.REJECTED);
+            kycRepository.save(kyc);
+            userRepository.save(user);
 
             String auditAction = "identity.verification_session.canceled".equals(eventType) ? "KYC_CANCELED" : "KYC_REJECTED";
             auditService.log("kyc_verification", kyc.getId(), auditAction,
                     user.getId(), Map.of("sessionId", sessionId,
                             "reason", kyc.getRejectionReason()));
         }
-
-        kycRepository.save(kyc);
-        userRepository.save(user);
     }
 }

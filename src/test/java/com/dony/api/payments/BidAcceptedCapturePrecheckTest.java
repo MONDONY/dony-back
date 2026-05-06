@@ -72,6 +72,7 @@ class BidAcceptedCapturePrecheckTest {
     void traveler_onboarding_complete_capture_proceeds_normally() throws StripeException {
         PaymentEntity payment = escrowPayment();
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
 
         UserEntity traveler = new UserEntity();
         traveler.setStripeAccountId("acct_ok");
