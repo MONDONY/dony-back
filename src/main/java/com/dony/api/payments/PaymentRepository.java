@@ -32,4 +32,15 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     @Modifying
     @Query("UPDATE PaymentEntity p SET p.capturedAt = :now WHERE p.id = :id AND p.capturedAt IS NULL AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
     int markCapturedIfEscrow(@Param("id") UUID id, @Param("now") Instant now);
+
+    /** Story 9.8 — RGPD: check if the user has any active escrow payments (as sender or traveler). */
+    @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM PaymentEntity p " +
+           "WHERE p.bidId IN " +
+           "  (SELECT b.id FROM com.dony.api.matching.BidEntity b WHERE b.senderId = :userId " +
+           "   UNION " +
+           "   SELECT b2.id FROM com.dony.api.matching.BidEntity b2 " +
+           "   JOIN com.dony.api.matching.AnnouncementEntity a ON b2.announcementId = a.id " +
+           "   WHERE a.travelerId = :userId) " +
+           "AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
+    boolean hasActiveEscrowForUser(@Param("userId") UUID userId);
 }
