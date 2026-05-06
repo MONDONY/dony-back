@@ -118,6 +118,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "version")
     private Long version = 0L;
 
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -201,4 +204,7 @@ public class UserEntity extends BaseEntity {
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
+
+    public Instant getDeletionRequestedAt() { return deletionRequestedAt; }
+    public void setDeletionRequestedAt(Instant deletionRequestedAt) { this.deletionRequestedAt = deletionRequestedAt; }
 }
