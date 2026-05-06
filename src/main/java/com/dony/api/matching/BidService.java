@@ -14,6 +14,7 @@ import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -37,6 +38,9 @@ public class BidService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Value("${dony.kyc.enforce:true}")
+    private boolean enforceKyc;
+
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
                       ApplicationEventPublisher eventPublisher) {
@@ -54,14 +58,11 @@ public class BidService {
 
         UserEntity sender = findUserByFirebaseUid(firebaseUid);
 
-        /* 
-        // TODO: Réactiver avant mise en production (KYC bypass pour DEV)
-        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+        if (enforceKyc && sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new DonyBusinessException(
                     HttpStatus.FORBIDDEN, "kyc-not-verified", "KYC Not Verified",
-                    "Vérifiez votre identité pour envoyer un colis");
+                    "Vous devez compléter votre vérification d'identité pour effectuer cette action");
         }
-        */
 
         if (!sender.getRoles().contains(Role.SENDER)) {
             sender.getRoles().add(Role.SENDER);
@@ -504,7 +505,9 @@ public class BidService {
     private String resolveClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] parts = forwarded.split(",");
+            // Use the last value added by the trusted proxy — the client cannot spoof it
+            return parts[parts.length - 1].trim();
         }
         return request.getRemoteAddr();
     }

@@ -9,10 +9,12 @@ import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.RefundCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
 import java.util.List;
 import java.util.Map;
@@ -39,9 +41,9 @@ public class TripCancelledEventListener {
         this.auditService = auditService;
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleTripCancelled(TripCancelledEvent event) {
         List<UUID> bidIds = event.getAffectedBidIds();
         if (bidIds == null || bidIds.isEmpty()) {

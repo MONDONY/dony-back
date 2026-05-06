@@ -1,7 +1,11 @@
 package com.dony.api.payments;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -20,4 +24,23 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
 
     /** Story 9.8 — GDPR: check active escrow payments for given bid IDs. */
     boolean existsByBidIdInAndStatus(List<UUID> bidIds, PaymentStatus status);
+
+    /**
+     * Atomic capture-once CAS guard. Returns 1 if the row was updated (first capture),
+     * 0 if already captured or not in ESCROW status.
+     */
+    @Modifying
+    @Query("UPDATE PaymentEntity p SET p.capturedAt = :now WHERE p.id = :id AND p.capturedAt IS NULL AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
+    int markCapturedIfEscrow(@Param("id") UUID id, @Param("now") Instant now);
+
+    /** Story 9.8 — RGPD: check if the user has any active escrow payments (as sender or traveler). */
+    @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM PaymentEntity p " +
+           "WHERE p.bidId IN " +
+           "  (SELECT b.id FROM com.dony.api.matching.BidEntity b WHERE b.senderId = :userId " +
+           "   UNION " +
+           "   SELECT b2.id FROM com.dony.api.matching.BidEntity b2 " +
+           "   JOIN com.dony.api.matching.AnnouncementEntity a ON b2.announcementId = a.id " +
+           "   WHERE a.travelerId = :userId) " +
+           "AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
+    boolean hasActiveEscrowForUser(@Param("userId") UUID userId);
 }

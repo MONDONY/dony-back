@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
@@ -113,6 +114,13 @@ public class UserEntity extends BaseEntity {
     @Column(name = "refused_count", nullable = false)
     private int refusedCount = 0;
 
+    @Version
+    @Column(name = "version")
+    private Long version = 0L;
+
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -193,4 +201,10 @@ public class UserEntity extends BaseEntity {
 
     public int getRefusedCount() { return refusedCount; }
     public void setRefusedCount(int refusedCount) { this.refusedCount = refusedCount; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
+
+    public Instant getDeletionRequestedAt() { return deletionRequestedAt; }
+    public void setDeletionRequestedAt(Instant deletionRequestedAt) { this.deletionRequestedAt = deletionRequestedAt; }
 }

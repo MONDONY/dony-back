@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
@@ -41,6 +42,7 @@ class StripeConnectWebhookAccountUpdatedTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -53,7 +55,8 @@ class StripeConnectWebhookAccountUpdatedTest {
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties());
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

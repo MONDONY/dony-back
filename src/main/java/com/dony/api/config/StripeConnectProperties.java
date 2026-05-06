@@ -7,6 +7,8 @@ public record StripeConnectProperties(
         String mcc,
         String productDescription,
         String businessUrl,
-        String returnUrl,
-        String refreshUrl
+        String returnUrl,   // URL HTTPS backend → redirige vers deepLinkReturn
+        String refreshUrl,  // URL HTTPS backend → redirige vers deepLinkRefresh
+        String deepLinkReturn,
+        String deepLinkRefresh
 ) {}

@@ -2,6 +2,7 @@ package com.dony.api.matching;
 
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -16,6 +17,7 @@ import com.dony.api.matching.events.AnnouncementInProgressEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
@@ -48,6 +50,12 @@ public class AnnouncementService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Value("${dony.kyc.enforce:true}")
+    private boolean enforceKyc;
+
+    @Value("${dony.stripe.enforce:true}")
+    private boolean enforceStripeOnboarding;
 
     public AnnouncementService(
             AnnouncementRepository announcementRepository,
@@ -119,7 +127,6 @@ public class AnnouncementService {
                 ? new TravelerProfileDto(
                         traveler.getId(),
                         buildDisplayName(traveler),
-                        traveler.getPhoneNumber(),
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         traveler.getTotalTrips(),
                         traveler.isKiloPro(),
@@ -165,15 +172,23 @@ public class AnnouncementService {
                         "Utilisateur introuvable"
                 ));
 
-        // TODO: Réactiver la vérification KYC avant la prod
-        // if (user.getKycStatus() != KycStatus.VERIFIED) {
-        //     throw new DonyBusinessException(
-        //             HttpStatus.FORBIDDEN,
-        //             "kyc-not-verified",
-        //             "KYC Not Verified",
-        //             "Vérifiez votre identité pour publier un trajet"
-        //     );
-        // }
+        if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "kyc-not-verified",
+                    "KYC Not Verified",
+                    "Vous devez compléter votre vérification d'identité pour effectuer cette action"
+            );
+        }
+
+        if (enforceStripeOnboarding && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "stripe-onboarding-incomplete",
+                    "Stripe Onboarding Incomplete",
+                    "Vous devez compléter la configuration de votre compte bancaire pour publier un trajet"
+            );
+        }
 
         if (!user.getRoles().contains(Role.TRAVELER)) {
             user.getRoles().add(Role.TRAVELER);
@@ -313,7 +328,6 @@ public class AnnouncementService {
                 ? new TravelerProfileDto(
                         traveler.getId(),
                         buildDisplayName(traveler),
-                        traveler.getPhoneNumber(),
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         null,
                         traveler.isKiloPro(),
@@ -415,7 +429,6 @@ public class AnnouncementService {
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
                 user.getId(),
                 buildDisplayName(user),
-                user.getPhoneNumber(),
                 null, null, false, user.isProAccount(), kycVerified);
 
         return new AnnouncementDetailResponse(

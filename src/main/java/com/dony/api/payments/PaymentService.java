@@ -5,6 +5,8 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.ProcessedStripeEvent;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -59,6 +61,7 @@ public class PaymentService {
     private final ApplicationEventPublisher eventPublisher;
     private final String webhookSecret;
     private final StripeConnectProperties stripeConnectProperties;
+    private final ProcessedStripeEventRepository processedStripeEventRepository;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -70,7 +73,8 @@ public class PaymentService {
                           AuditService auditService,
                           ApplicationEventPublisher eventPublisher,
                           @Qualifier("stripeWebhookSecret") String webhookSecret,
-                          StripeConnectProperties stripeConnectProperties) {
+                          StripeConnectProperties stripeConnectProperties,
+                          ProcessedStripeEventRepository processedStripeEventRepository) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -79,6 +83,7 @@ public class PaymentService {
         this.eventPublisher = eventPublisher;
         this.webhookSecret = webhookSecret;
         this.stripeConnectProperties = stripeConnectProperties;
+        this.processedStripeEventRepository = processedStripeEventRepository;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -86,6 +91,12 @@ public class PaymentService {
     public ConnectAccountResponse createConnectAccount(String firebaseUid) {
         UserEntity user = findUser(firebaseUid);
 
+        // Lock the user row to prevent concurrent Stripe account creation (race condition guard)
+        user = userRepository.findByIdForUpdate(user.getId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "user-not-found", "User Not Found", "Utilisateur introuvable"));
+
+        // Re-check after acquiring lock — another thread may have created the account already
         if (user.getStripeAccountId() != null) {
             return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
         }
@@ -370,6 +381,13 @@ public class PaymentService {
 
         log.info("Stripe webhook received: {}", event.getType());
 
+        // Idempotency: skip already-processed events
+        if (processedStripeEventRepository.existsByEventId(event.getId())) {
+            log.info("Stripe payment event {} already processed — skipping", event.getId());
+            return;
+        }
+        processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
+
         dispatchWebhookEvent(event);
     }
 
@@ -601,7 +619,24 @@ public class PaymentService {
 
     // ── Story 6.3 : Statut paiement pour un bid ──────────────────────────────
 
-    public Optional<PaymentResponse> getPaymentStatusForBid(UUID bidId) {
+    public Optional<PaymentResponse> getPaymentStatusForBid(UUID bidId, String callerFirebaseUid) {
+        UserEntity caller = findUser(callerFirebaseUid);
+
+        BidEntity bid = bidRepository.findById(bidId).orElse(null);
+        if (bid == null) {
+            return Optional.empty();
+        }
+
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+
+        boolean isSender = bid.getSenderId().equals(caller.getId());
+        boolean isTraveler = announcement != null && announcement.getTravelerId().equals(caller.getId());
+
+        if (!isSender && !isTraveler) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "access-denied",
+                    "Access Denied", "Vous n'êtes pas autorisé à accéder à ce paiement");
+        }
+
         return paymentRepository.findByBidId(bidId)
                 .map(payment -> toPaymentResponse(payment, null));
     }

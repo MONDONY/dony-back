@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -51,6 +52,7 @@ class PaymentServiceOnBehalfOfTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -65,13 +67,15 @@ class PaymentServiceOnBehalfOfTest {
                 "4215",
                 "Transport de colis entre particuliers via la plateforme Dony",
                 "https://dony.app",
+                "http://localhost:8080/api/v1/payments/onboarding/return",
+                "http://localhost:8080/api/v1/payments/onboarding/refresh",
                 "dony://stripe/onboarding/complete",
                 "dony://stripe/onboarding/refresh"
         );
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test", props);
+                "whsec_test", props, processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

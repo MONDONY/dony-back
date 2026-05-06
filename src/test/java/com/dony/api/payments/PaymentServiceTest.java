@@ -6,6 +6,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -59,6 +60,7 @@ class PaymentServiceTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -73,7 +75,8 @@ class PaymentServiceTest {
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties());
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
@@ -344,6 +347,7 @@ class PaymentServiceTest {
         user.setStripeAccountId("acct_existing");
         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
 
         ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
 
@@ -357,6 +361,7 @@ class PaymentServiceTest {
         user.setStripeAccountId(null);
         user.setEmail("user@dony.app");
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
@@ -379,6 +384,7 @@ class PaymentServiceTest {
         user.setStripeAccountId(null);
         user.setEmail("user@dony.app");
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
 
         try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
             acctStatic.when(() -> Account.create(any(AccountCreateParams.class)))
@@ -657,16 +663,28 @@ class PaymentServiceTest {
 
     @Test
     void getPaymentStatusForBid_noPayment_returnsEmpty() {
+        UserEntity caller = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(caller));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
-        assertThat(service.getPaymentStatusForBid(bidId)).isEmpty();
+        assertThat(service.getPaymentStatusForBid(bidId, "uid-sender")).isEmpty();
     }
 
     @Test
     void getPaymentStatusForBid_withPayment_returnsResponse() {
+        UserEntity caller = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(caller));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         PaymentEntity payment = buildPayment(PaymentStatus.ESCROW, null);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
 
-        Optional<PaymentResponse> resp = service.getPaymentStatusForBid(bidId);
+        Optional<PaymentResponse> resp = service.getPaymentStatusForBid(bidId, "uid-sender");
 
         assertThat(resp).isPresent();
         assertThat(resp.get().getStatus()).isEqualTo("ESCROW");

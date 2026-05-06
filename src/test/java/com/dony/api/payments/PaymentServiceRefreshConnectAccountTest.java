@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
@@ -41,6 +42,7 @@ class PaymentServiceRefreshConnectAccountTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -54,7 +56,8 @@ class PaymentServiceRefreshConnectAccountTest {
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties());
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

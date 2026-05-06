@@ -63,6 +63,12 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/me/reactivate")
+    public ResponseEntity<UserResponse> reactivateAccount() {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.reactivateAccount(firebaseUid));
+    }
+
     @PostMapping("/me/upgrade-to-pro")
     public ResponseEntity<UserResponse> upgradeToPro(@Valid @RequestBody UpgradeToProRequest request) {
         String firebaseUid = requireFirebaseUid();
