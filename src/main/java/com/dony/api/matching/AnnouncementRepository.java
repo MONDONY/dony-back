@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
@@ -61,4 +62,10 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
         @Param("lng") double lng,
         @Param("radiusKm") double radiusKm
     );
+
+    @Modifying
+    @Query("UPDATE AnnouncementEntity a SET a.status = com.dony.api.matching.AnnouncementStatus.CANCELLED " +
+           "WHERE a.travelerId = :userId AND a.status IN " +
+           "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
+    int cancelOpenAnnouncementsByUserId(@Param("userId") UUID userId);
 }

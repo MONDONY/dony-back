@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -85,4 +86,21 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("halfDayThresholdDate") java.time.LocalDate halfDayThresholdDate,
             @Param("minGraceThreshold") LocalDateTime minGraceThreshold
     );
+
+    @Modifying
+    @Query("UPDATE BidEntity b SET b.status = com.dony.api.matching.BidStatus.CANCELLED " +
+           "WHERE b.senderId = :userId " +
+           "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
+           "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
+    int cancelOpenSenderBidsByUserId(@Param("userId") UUID userId);
+
+    @Modifying
+    @Query("UPDATE BidEntity b SET b.status = com.dony.api.matching.BidStatus.CANCELLED " +
+           "WHERE b.announcementId IN " +
+           "  (SELECT a.id FROM AnnouncementEntity a WHERE a.travelerId = :userId) " +
+           "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
+           "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
+    int cancelOpenTravelerBidsByUserId(@Param("userId") UUID userId);
 }
