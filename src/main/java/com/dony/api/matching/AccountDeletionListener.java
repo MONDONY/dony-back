@@ -2,6 +2,7 @@ package com.dony.api.matching;
 
 import com.dony.api.auth.events.AccountDeletionRequestedEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ public class AccountDeletionListener {
     }
 
     @EventListener
+    @Async
     @Transactional
     public void onDeletionRequested(AccountDeletionRequestedEvent event) {
         announcementRepository.cancelOpenAnnouncementsByUserId(event.getUserId());

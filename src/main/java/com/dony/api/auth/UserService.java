@@ -122,6 +122,7 @@ public class UserService {
     public void finalizeGdprDeletion(UserEntity user) {
         String uid = user.getId().toString();
 
+        // 1. Pseudonymise personal data
         user.setEmail("deleted_" + uid + "@dony.app");
         user.setPhoneNumber("+00000000000");
         user.setFirstName("Utilisateur");
@@ -130,21 +131,26 @@ public class UserService {
         user.setCity(null);
         user.setFcmToken(null);
         user.setStatus(UserStatus.BANNED);
-        user.softDelete();
-        userRepository.save(user);
 
+        // 2. Soft-delete KYC BEFORE flushing the user (RGPD safety + Hibernate ordering)
         Optional<KycVerificationEntity> kycOpt = kycRepository.findByUserId(user.getId());
         kycOpt.ifPresent(kyc -> {
             kyc.softDelete();
             kycRepository.save(kyc);
         });
 
+        // 3. Soft-delete the user and flush to DB
+        user.softDelete();
+        userRepository.save(user);
+
+        // 4. Remove Firebase identity
         try {
             FirebaseAuth.getInstance().deleteUser(user.getFirebaseUid());
         } catch (FirebaseAuthException e) {
             log.warn("Could not delete Firebase user {}: {}", user.getFirebaseUid(), e.getMessage());
         }
 
+        // 5. Immutable audit entry
         auditService.log("USER", user.getId(), "USER_GDPR_DELETION", user.getId(),
                 Map.of("pseudonymized", true));
         log.info("GDPR deletion finalized for user {}", uid);
