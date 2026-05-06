@@ -44,8 +44,12 @@ dony:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Dony"
       business-url: "https://dony.app"
-      return-url: "dony://stripe/onboarding/complete"
-      refresh-url: "dony://stripe/onboarding/refresh"
+      # Stripe n'accepte pas les deep links (dony://) — on passe par des endpoints HTTP intermédiaires
+      # Émulateur Android : 10.0.2.2 = localhost machine. Appareil physique : remplacer par l'IP locale
+      return-url: "http://10.0.2.2:8080/api/v1/payments/onboarding/return"
+      refresh-url: "http://10.0.2.2:8080/api/v1/payments/onboarding/refresh"
+      deep-link-return: "dony://stripe/onboarding/complete"
+      deep-link-refresh: "dony://stripe/onboarding/refresh"
   internal:
     secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
   commission:

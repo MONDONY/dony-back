@@ -67,6 +67,8 @@ class PaymentServiceOnBehalfOfTest {
                 "4215",
                 "Transport de colis entre particuliers via la plateforme Dony",
                 "https://dony.app",
+                "http://localhost:8080/api/v1/payments/onboarding/return",
+                "http://localhost:8080/api/v1/payments/onboarding/refresh",
                 "dony://stripe/onboarding/complete",
                 "dony://stripe/onboarding/refresh"
         );

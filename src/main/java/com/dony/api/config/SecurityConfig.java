@@ -54,7 +54,10 @@ public class SecurityConfig {
                     // Internal messaging notify: kept in permitAll because the caller (Firebase Functions)
                     // does not carry a Firebase user token. Security is enforced at the controller level
                     // via constant-time comparison of X-Internal-Secret header (option b from the fix spec).
-                    "/internal/messaging/notify"
+                    "/internal/messaging/notify",
+                    // Stripe redirige ici après onboarding — pas de token Firebase (browser Stripe)
+                    "/payments/onboarding/return",
+                    "/payments/onboarding/refresh"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
