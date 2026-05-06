@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,4 +26,10 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM UserEntity u WHERE u.id = :id")
     Optional<UserEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Finds users with a given status whose deletion grace period has expired.
+     * Used to identify accounts ready for final permanent deletion.
+     */
+    List<UserEntity> findByStatusAndDeletionRequestedAtBefore(UserStatus status, Instant cutoff);
 }
