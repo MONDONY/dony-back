@@ -106,6 +106,15 @@ public class AuthService {
     }
 
     /**
+     * Réactive un compte supprimé : restore status à ACTIVE et deletedAt à null.
+     */
+    @Transactional
+    public UserResponse reactivateAccount(String firebaseUid) {
+        userService.reactivateAccount(firebaseUid);
+        return getProfile(firebaseUid);
+    }
+
+    /**
      * Upgrades the authenticated user to a PRO account.
      * Delegates business-rule enforcement to {@link UserService#upgradeToPro}.
      *
