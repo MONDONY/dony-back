@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Root;
@@ -83,6 +84,31 @@ public class AnnouncementSpecification {
               .where(cb.isTrue(user.get("kiloPro")));
             return root.get("travelerId").in(sq);
         };
+    }
+
+    public static Specification<AnnouncementEntity> hasTransportMode(TransportMode mode) {
+        return (root, query, cb) -> cb.equal(root.get("transportMode"), mode);
+    }
+
+    /**
+     * Filters to travelers who have completed KYC verification.
+     * Uses a subquery on users table.
+     */
+    public static Specification<AnnouncementEntity> kycVerifiedOnly() {
+        return (root, query, cb) -> {
+            Subquery<UUID> sq = query.subquery(UUID.class);
+            Root<UserEntity> user = sq.from(UserEntity.class);
+            sq.select(user.<UUID>get("id"))
+              .where(cb.equal(user.get("kycStatus"), KycStatus.VERIFIED));
+            return root.get("travelerId").in(sq);
+        };
+    }
+
+    /**
+     * Filters announcements that accept a specific content type in their acceptedContentTypes list.
+     */
+    public static Specification<AnnouncementEntity> hasAcceptedContentType(String contentType) {
+        return (root, query, cb) -> cb.isMember(contentType, root.get("acceptedContentTypes"));
     }
 
     public static Specification<AnnouncementEntity> idIn(Collection<UUID> ids) {

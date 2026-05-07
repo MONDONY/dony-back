@@ -72,13 +72,14 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
             BigDecimal minAvailableKg, BigDecimal maxAvailableKg,
             BigDecimal maxPricePerKg, BigDecimal minRating,
             Boolean kiloProOnly, Boolean weekendOnly,
+            String transportMode, Boolean kycVerifiedOnly, String contentType,
             Double userLat, Double userLng, Double radiusKm,
             String sortBy, String sortDir, Pageable pageable) {
 
@@ -104,6 +105,18 @@ public class AnnouncementService {
             spec = spec.and(AnnouncementSpecification.minRating(minRating));
         if (Boolean.TRUE.equals(kiloProOnly))
             spec = spec.and(AnnouncementSpecification.kiloProOnly());
+        if (transportMode != null && !transportMode.isBlank()) {
+            try {
+                TransportMode mode = TransportMode.valueOf(transportMode.toUpperCase());
+                spec = spec.and(AnnouncementSpecification.hasTransportMode(mode));
+            } catch (IllegalArgumentException ignored) {
+                // invalid enum value → ignore filter, don't crash
+            }
+        }
+        if (Boolean.TRUE.equals(kycVerifiedOnly))
+            spec = spec.and(AnnouncementSpecification.kycVerifiedOnly());
+        if (contentType != null && !contentType.isBlank())
+            spec = spec.and(AnnouncementSpecification.hasAcceptedContentType(contentType));
 
         // Radius filter: only active when ALL 3 params provided
         if (userLat != null && userLng != null && radiusKm != null && radiusKm > 0) {

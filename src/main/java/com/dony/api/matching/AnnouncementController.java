@@ -50,6 +50,9 @@ public class AnnouncementController {
             @RequestParam(required = false) BigDecimal minRating,
             @RequestParam(required = false) Boolean kiloProOnly,
             @RequestParam(required = false) Boolean weekendOnly,
+            @RequestParam(required = false) String transportMode,
+            @RequestParam(required = false) Boolean kycVerifiedOnly,
+            @RequestParam(required = false) String contentType,
             @RequestParam(required = false) Double userLat,
             @RequestParam(required = false) Double userLng,
             @RequestParam(required = false) Double radiusKm,
@@ -60,6 +63,7 @@ public class AnnouncementController {
         Page<AnnouncementSearchResponse> page = announcementService.searchAnnouncements(
                 departureCity, arrivalCity, departureDateFrom, departureDateTo,
                 minAvailableKg, maxAvailableKg, maxPricePerKg, minRating, kiloProOnly, weekendOnly,
+                transportMode, kycVerifiedOnly, contentType,
                 userLat, userLng, radiusKm,
                 sortBy, sortDir, pageable);
         return ResponseEntity.ok(PageResponse.from(page));
