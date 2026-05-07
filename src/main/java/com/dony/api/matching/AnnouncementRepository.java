@@ -47,6 +47,7 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
     @Query(value = """
         SELECT CAST(id AS VARCHAR) FROM announcements
         WHERE deleted_at IS NULL
+          AND status = 'ACTIVE'
           AND pickup_lat IS NOT NULL
           AND pickup_lng IS NOT NULL
           AND (

@@ -45,6 +45,11 @@ public class AnnouncementController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDateTo,
             @RequestParam(required = false) BigDecimal minAvailableKg,
+            @RequestParam(required = false) BigDecimal maxAvailableKg,
+            @RequestParam(required = false) BigDecimal maxPricePerKg,
+            @RequestParam(required = false) BigDecimal minRating,
+            @RequestParam(required = false) Boolean kiloProOnly,
+            @RequestParam(required = false) Boolean weekendOnly,
             @RequestParam(required = false) Double userLat,
             @RequestParam(required = false) Double userLng,
             @RequestParam(required = false) Double radiusKm,
@@ -54,7 +59,8 @@ public class AnnouncementController {
     ) {
         Page<AnnouncementSearchResponse> page = announcementService.searchAnnouncements(
                 departureCity, arrivalCity, departureDateFrom, departureDateTo,
-                minAvailableKg, userLat, userLng, radiusKm,
+                minAvailableKg, maxAvailableKg, maxPricePerKg, minRating, kiloProOnly, weekendOnly,
+                userLat, userLng, radiusKm,
                 sortBy, sortDir, pageable);
         return ResponseEntity.ok(PageResponse.from(page));
     }

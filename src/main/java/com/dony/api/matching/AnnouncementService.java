@@ -72,11 +72,13 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
-            BigDecimal minAvailableKg,
+            BigDecimal minAvailableKg, BigDecimal maxAvailableKg,
+            BigDecimal maxPricePerKg, BigDecimal minRating,
+            Boolean kiloProOnly, Boolean weekendOnly,
             Double userLat, Double userLng, Double radiusKm,
             String sortBy, String sortDir, Pageable pageable) {
 
@@ -92,6 +94,16 @@ public class AnnouncementService {
             spec = spec.and(AnnouncementSpecification.departureDateTo(departureDateTo));
         if (minAvailableKg != null)
             spec = spec.and(AnnouncementSpecification.minAvailableKg(minAvailableKg));
+        if (maxAvailableKg != null)
+            spec = spec.and(AnnouncementSpecification.maxAvailableKg(maxAvailableKg));
+        if (maxPricePerKg != null)
+            spec = spec.and(AnnouncementSpecification.maxPricePerKg(maxPricePerKg));
+        if (Boolean.TRUE.equals(weekendOnly))
+            spec = spec.and(AnnouncementSpecification.weekendOnly());
+        if (minRating != null)
+            spec = spec.and(AnnouncementSpecification.minRating(minRating));
+        if (Boolean.TRUE.equals(kiloProOnly))
+            spec = spec.and(AnnouncementSpecification.kiloProOnly());
 
         // Radius filter: only active when ALL 3 params provided
         if (userLat != null && userLng != null && radiusKm != null && radiusKm > 0) {
