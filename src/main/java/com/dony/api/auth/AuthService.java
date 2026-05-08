@@ -158,6 +158,8 @@ public class AuthService {
                     "Veuillez vous ré-authentifier avant de supprimer votre compte définitivement");
         }
 
+        auditService.log("USER", user.getId(), "ACCOUNT_DELETE_IMMEDIATELY_REQUESTED",
+                user.getId(), Map.of("initiatedBy", "user"));
         accountFinalizationService.finalize(user, FinalizationReason.HARD_IMMEDIATE);
     }
 

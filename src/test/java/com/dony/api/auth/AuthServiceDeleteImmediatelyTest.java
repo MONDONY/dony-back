@@ -148,5 +148,7 @@ class AuthServiceDeleteImmediatelyTest {
         authService.deleteImmediately(FIREBASE_UID, new DeleteImmediatelyRequest(true));
 
         verify(accountFinalizationService).finalize(eq(user), eq(FinalizationReason.HARD_IMMEDIATE));
+        verify(auditService).log(eq("USER"), eq(USER_ID),
+                eq("ACCOUNT_DELETE_IMMEDIATELY_REQUESTED"), eq(USER_ID), any());
     }
 }
