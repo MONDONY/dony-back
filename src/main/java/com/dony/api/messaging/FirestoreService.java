@@ -126,4 +126,27 @@ public class FirestoreService {
             log.warn("Firestore purgeConversation failed for {}: {}", conversationId, e.getMessage());
         }
     }
+
+    public void anonymizeUser(String userId) {
+        if (firestore == null) return;
+        try {
+            firestore.collection("conversations")
+                    .whereEqualTo("senderId", userId)
+                    .get().get()
+                    .forEach(doc -> doc.getReference().update(
+                            "senderName", "Utilisateur supprimé",
+                            "senderFcmToken", null));
+
+            firestore.collection("conversations")
+                    .whereEqualTo("travelerId", userId)
+                    .get().get()
+                    .forEach(doc -> doc.getReference().update(
+                            "travelerName", "Utilisateur supprimé",
+                            "travelerFcmToken", null));
+
+            log.info("Firestore user data anonymized for userId={}", userId);
+        } catch (Exception e) {
+            log.warn("Firestore anonymizeUser failed for {}: {}", userId, e.getMessage());
+        }
+    }
 }
