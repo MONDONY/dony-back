@@ -5,7 +5,6 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
 import com.dony.api.kyc.KycVerificationEntity;
-import com.dony.api.payments.StripeCustomerService;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +31,6 @@ class AccountFinalizationServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private KycRepository kycRepository;
     @Mock private StorageService storageService;
-    @Mock private StripeCustomerService stripeCustomerService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AuditService auditService;
 
@@ -78,6 +76,9 @@ class AccountFinalizationServiceTest {
         assertThat(user.getDeletedAt()).isNotNull();
         assertThat(user.getEmail()).startsWith("deleted_");
         assertThat(user.getPhoneNumber()).isEqualTo("+00000000000");
+        assertThat(user.getFirstName()).isEqualTo("Utilisateur");
+        assertThat(user.getLastName()).isEqualTo("supprimé");
+        assertThat(user.getFcmToken()).isNull();
         assertThat(kyc.getDeletedAt()).isNotNull();
     }
 

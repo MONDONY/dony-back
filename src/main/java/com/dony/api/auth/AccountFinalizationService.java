@@ -4,7 +4,6 @@ import com.dony.api.auth.events.UserFinalizedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
-import com.dony.api.payments.StripeCustomerService;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import org.slf4j.Logger;
@@ -26,20 +25,17 @@ public class AccountFinalizationService {
     private final UserRepository userRepository;
     private final KycRepository kycRepository;
     private final StorageService storageService;
-    private final StripeCustomerService stripeCustomerService;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditService auditService;
 
     public AccountFinalizationService(UserRepository userRepository,
                                       KycRepository kycRepository,
                                       StorageService storageService,
-                                      StripeCustomerService stripeCustomerService,
                                       ApplicationEventPublisher eventPublisher,
                                       AuditService auditService) {
         this.userRepository = userRepository;
         this.kycRepository = kycRepository;
         this.storageService = storageService;
-        this.stripeCustomerService = stripeCustomerService;
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
     }
