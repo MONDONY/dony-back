@@ -128,21 +128,24 @@ public class FirestoreService {
     }
 
     public void anonymizeUser(String userId) {
-        if (firestore == null) return;
+        if (firestore == null) {
+            log.warn("Firestore disabled — skipping anonymizeUser for userId={}", userId);
+            return;
+        }
         try {
-            firestore.collection("conversations")
-                    .whereEqualTo("senderId", userId)
-                    .get().get()
-                    .forEach(doc -> doc.getReference().update(
-                            "senderName", "Utilisateur supprimé",
-                            "senderFcmToken", null));
+            for (var doc : firestore.collection("conversations")
+                    .whereEqualTo("senderId", userId).get().get().getDocuments()) {
+                doc.getReference().update(
+                        "senderName", "Utilisateur supprimé",
+                        "senderFcmToken", null).get();
+            }
 
-            firestore.collection("conversations")
-                    .whereEqualTo("travelerId", userId)
-                    .get().get()
-                    .forEach(doc -> doc.getReference().update(
-                            "travelerName", "Utilisateur supprimé",
-                            "travelerFcmToken", null));
+            for (var doc : firestore.collection("conversations")
+                    .whereEqualTo("travelerId", userId).get().get().getDocuments()) {
+                doc.getReference().update(
+                        "travelerName", "Utilisateur supprimé",
+                        "travelerFcmToken", null).get();
+            }
 
             log.info("Firestore user data anonymized for userId={}", userId);
         } catch (Exception e) {
