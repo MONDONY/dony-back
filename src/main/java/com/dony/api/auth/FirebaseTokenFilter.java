@@ -59,9 +59,10 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
     private boolean authenticateToken(String token, HttpServletResponse response) throws IOException {
         if (!isFirebaseReady()) return false;
 
+        FirebaseToken decoded;
         String uid;
         try {
-            FirebaseToken decoded = FirebaseAuth.getInstance().verifyIdToken(token);
+            decoded = FirebaseAuth.getInstance().verifyIdToken(token);
             uid = decoded.getUid();
         } catch (FirebaseAuthException e) {
             log.debug("Invalid Firebase token: {}", e.getMessage());
@@ -74,7 +75,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
             if (user == null) {
                 // New user — not yet registered; allow with empty roles (registration flow)
-                setAuthentication(uid, List.of());
+                setAuthentication(uid, null, List.of());
                 return false;
             }
 
@@ -87,7 +88,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
                     .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
                     .toList();
 
-            setAuthentication(uid, authorities);
+            setAuthentication(uid, decoded, authorities);
         } catch (Exception e) {
             log.warn("Could not load user from DB for uid {}: {}", uid, e.getMessage());
             SecurityContextHolder.clearContext(); // do NOT grant access on DB failure
@@ -98,9 +99,10 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         return false;
     }
 
-    private void setAuthentication(String uid, List<SimpleGrantedAuthority> authorities) {
+    private void setAuthentication(String uid, FirebaseToken decoded,
+                                   List<SimpleGrantedAuthority> authorities) {
         UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(uid, null, authorities);
+                new UsernamePasswordAuthenticationToken(uid, decoded, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
