@@ -259,6 +259,14 @@ public class AnnouncementService {
                 )
         );
 
+        eventPublisher.publishEvent(new com.dony.api.matching.events.AnnouncementCreatedEvent(
+            saved.getId(),
+            saved.getDepartureCity(),
+            "",
+            saved.getArrivalCity(),
+            ""
+        ));
+
         return toResponse(saved);
     }
 
