@@ -45,6 +45,8 @@ class AccountFinalizationServiceTest {
         u.setFirstName("Jean");
         u.setLastName("Dupont");
         u.setStatus(UserStatus.PENDING_DELETION);
+        u.setBirthDate(java.time.LocalDate.of(1990, 1, 1));
+        u.setCity("Paris");
         return u;
     }
 
@@ -60,7 +62,7 @@ class AccountFinalizationServiceTest {
 
     @Test
     @DisplayName("pseudonymise le user et soft-delete KYC")
-    void pseudonymizesUserAndSoftDeletesKyc() throws Exception {
+    void pseudonymizesUserAndSoftDeletesKyc() {
         UserEntity user = makeUser();
         UUID userId = user.getId();
         KycVerificationEntity kyc = new KycVerificationEntity();
@@ -80,11 +82,13 @@ class AccountFinalizationServiceTest {
         assertThat(user.getLastName()).isEqualTo("supprimé");
         assertThat(user.getFcmToken()).isNull();
         assertThat(kyc.getDeletedAt()).isNotNull();
+        assertThat(user.getBirthDate()).isNull();
+        assertThat(user.getCity()).isNull();
     }
 
     @Test
     @DisplayName("supprime les fichiers R2 du user")
-    void deletesR2Files() throws Exception {
+    void deletesR2Files() {
         UserEntity user = makeUser();
         when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
         com.google.firebase.auth.FirebaseAuth mockAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
@@ -99,7 +103,7 @@ class AccountFinalizationServiceTest {
 
     @Test
     @DisplayName("publie UserFinalizedEvent avec la bonne reason")
-    void publishesUserFinalizedEvent() throws Exception {
+    void publishesUserFinalizedEvent() {
         UserEntity user = makeUser();
         when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
         com.google.firebase.auth.FirebaseAuth mockAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
@@ -116,7 +120,7 @@ class AccountFinalizationServiceTest {
 
     @Test
     @DisplayName("crée une entrée audit log USER_GDPR_DELETION")
-    void createsAuditLog() throws Exception {
+    void createsAuditLog() {
         UserEntity user = makeUser();
         UUID userId = user.getId();
         when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
