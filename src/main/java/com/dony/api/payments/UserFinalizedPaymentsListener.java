@@ -1,5 +1,6 @@
-package com.dony.api.messaging;
+package com.dony.api.payments;
 
+import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.events.UserFinalizedEvent;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -9,18 +10,22 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
-public class UserFinalizedMessagingListener {
+public class UserFinalizedPaymentsListener {
 
-    private final FirestoreService firestoreService;
+    private final StripeCustomerService stripeCustomerService;
+    private final UserRepository userRepository;
 
-    public UserFinalizedMessagingListener(FirestoreService firestoreService) {
-        this.firestoreService = firestoreService;
+    public UserFinalizedPaymentsListener(StripeCustomerService stripeCustomerService,
+                                         UserRepository userRepository) {
+        this.stripeCustomerService = stripeCustomerService;
+        this.userRepository = userRepository;
     }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onUserFinalized(UserFinalizedEvent event) {
-        firestoreService.anonymizeUser(event.getUserId().toString());
+        userRepository.findById(event.getUserId())
+                .ifPresent(stripeCustomerService::cleanupForUser);
     }
 }
