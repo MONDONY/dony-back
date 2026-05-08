@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.auth.dto.DeleteImmediatelyRequest;
 import com.dony.api.auth.dto.FcmTokenRequest;
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
@@ -73,6 +74,13 @@ public class AuthController {
     public ResponseEntity<UserResponse> upgradeToPro(@Valid @RequestBody UpgradeToProRequest request) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(authService.upgradeToPro(firebaseUid, request));
+    }
+
+    @PostMapping("/me/delete-immediately")
+    public ResponseEntity<Void> deleteImmediately(@Valid @RequestBody DeleteImmediatelyRequest request) {
+        String firebaseUid = requireFirebaseUid();
+        authService.deleteImmediately(firebaseUid, request);
+        return ResponseEntity.noContent().build();
     }
 
     private String requireFirebaseUid() {

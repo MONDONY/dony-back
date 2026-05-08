@@ -5,11 +5,7 @@ import com.dony.api.auth.events.AccountDeletionRequestedEvent;
 import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.kyc.KycRepository;
-import com.dony.api.kyc.KycVerificationEntity;
 import com.dony.api.payments.PaymentRepository;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseAuthException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -30,20 +25,20 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
-    private final KycRepository kycRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AccountFinalizationService accountFinalizationService;
 
     public UserService(UserRepository userRepository,
                        PaymentRepository paymentRepository,
-                       KycRepository kycRepository,
                        AuditService auditService,
-                       ApplicationEventPublisher eventPublisher) {
+                       ApplicationEventPublisher eventPublisher,
+                       AccountFinalizationService accountFinalizationService) {
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
-        this.kycRepository = kycRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.accountFinalizationService = accountFinalizationService;
     }
 
     // Story 9.5 — Suspension automatique après trop de refus de colis
@@ -120,40 +115,7 @@ public class UserService {
     // Story 9.8 — Finalisation RGPD à J+30 (appelé par le scheduler)
     @Transactional
     public void finalizeGdprDeletion(UserEntity user) {
-        String uid = user.getId().toString();
-
-        // 1. Pseudonymise personal data
-        user.setEmail("deleted_" + uid + "@dony.app");
-        user.setPhoneNumber("+00000000000");
-        user.setFirstName("Utilisateur");
-        user.setLastName("supprimé");
-        user.setBirthDate(null);
-        user.setCity(null);
-        user.setFcmToken(null);
-        user.setStatus(UserStatus.BANNED);
-
-        // 2. Soft-delete KYC BEFORE flushing the user (RGPD safety + Hibernate ordering)
-        Optional<KycVerificationEntity> kycOpt = kycRepository.findByUserId(user.getId());
-        kycOpt.ifPresent(kyc -> {
-            kyc.softDelete();
-            kycRepository.save(kyc);
-        });
-
-        // 3. Soft-delete the user and flush to DB
-        user.softDelete();
-        userRepository.save(user);
-
-        // 4. Remove Firebase identity
-        try {
-            FirebaseAuth.getInstance().deleteUser(user.getFirebaseUid());
-        } catch (FirebaseAuthException e) {
-            log.warn("Could not delete Firebase user {}: {}", user.getFirebaseUid(), e.getMessage());
-        }
-
-        // 5. Immutable audit entry
-        auditService.log("USER", user.getId(), "USER_GDPR_DELETION", user.getId(),
-                Map.of("pseudonymized", true));
-        log.info("GDPR deletion finalized for user {}", uid);
+        accountFinalizationService.finalize(user, FinalizationReason.SOFT_GRACE_EXPIRED);
     }
 
     // Story 9.8 — Méthode conservée pour compatibilité avec AuthService (délègue à requestDeletion)

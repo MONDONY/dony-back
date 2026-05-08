@@ -1,20 +1,26 @@
 package com.dony.api.auth;
 
+import com.dony.api.auth.dto.DeleteImmediatelyRequest;
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.payments.PaymentRepository;
+import com.google.firebase.auth.FirebaseToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,11 +33,19 @@ public class AuthService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final UserService userService;
+    private final PaymentRepository paymentRepository;
+    private final AccountFinalizationService accountFinalizationService;
 
-    public AuthService(UserRepository userRepository, AuditService auditService, UserService userService) {
+    public AuthService(UserRepository userRepository,
+                       AuditService auditService,
+                       UserService userService,
+                       PaymentRepository paymentRepository,
+                       AccountFinalizationService accountFinalizationService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
+        this.paymentRepository = paymentRepository;
+        this.accountFinalizationService = accountFinalizationService;
     }
 
     @Transactional
@@ -106,6 +120,47 @@ public class AuthService {
     // Story 9.8 — Delegates full GDPR deletion (pseudonymization, KYC cleanup, Firebase revoke)
     public void deleteAccount(String firebaseUid) {
         userService.deleteAccount(firebaseUid);
+    }
+
+    /**
+     * Suppression immédiate du compte (HARD_IMMEDIATE).
+     * Vérifie : statut BANNED → 409, escrow actif → 422, auth_time récent (< 5 min) → 401.
+     * Délègue la finalisation RGPD à {@link AccountFinalizationService}.
+     */
+    @Transactional
+    public void deleteImmediately(String firebaseUid, DeleteImmediatelyRequest request) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        if (user.getStatus() == UserStatus.BANNED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "account-banned",
+                    "Conflict", "Ce compte est banni et ne peut pas être supprimé");
+        }
+
+        if (paymentRepository.hasActiveEscrowForUser(user.getId())) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
+                    "Unprocessable", "Impossible — vous avez des transactions en cours");
+        }
+
+        FirebaseToken decoded = (FirebaseToken) SecurityContextHolder
+                .getContext().getAuthentication().getCredentials();
+        Object authTimeClaim = decoded.getClaims().get("auth_time");
+        if (authTimeClaim == null) {
+            throw new DonyBusinessException(HttpStatus.UNAUTHORIZED, "reauth-required",
+                    "Re-authentication required",
+                    "Veuillez vous ré-authentifier avant de supprimer votre compte définitivement");
+        }
+        long authTime = ((Number) authTimeClaim).longValue();
+        if (Instant.ofEpochSecond(authTime).isBefore(Instant.now().minus(5, ChronoUnit.MINUTES))) {
+            throw new DonyBusinessException(HttpStatus.UNAUTHORIZED, "reauth-required",
+                    "Re-authentication required",
+                    "Veuillez vous ré-authentifier avant de supprimer votre compte définitivement");
+        }
+
+        auditService.log("USER", user.getId(), "ACCOUNT_DELETE_IMMEDIATELY_REQUESTED",
+                user.getId(), Map.of("initiatedBy", "user"));
+        accountFinalizationService.finalize(user, FinalizationReason.HARD_IMMEDIATE);
     }
 
     /**

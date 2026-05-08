@@ -30,6 +30,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.Webhook;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
+import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -326,6 +327,12 @@ public class PaymentService {
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
 
         try {
+            // Compatibilité comptes legacy : avant cette fix, certains comptes Stripe Connect
+            // ont été créés sans la capacité card_payments (seulement transfers).
+            // Stripe rejette PaymentIntent.create(on_behalf_of=…) si card_payments n'est pas active.
+            // On la demande de manière idempotente : si déjà active, no-op.
+            ensureCardPaymentsCapability(traveler.getStripeAccountId());
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(amountCents)
                     .setCurrency("eur")
@@ -647,6 +654,69 @@ public class PaymentService {
         return userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "user-not-found", "User Not Found", "Utilisateur introuvable"));
+    }
+
+    /**
+     * Garantit que la capacité {@code card_payments} est demandée sur le compte Connect.
+     * Sans elle, Stripe rejette {@code PaymentIntent.create(on_behalf_of=…)} :
+     * « You cannot create a payment with on_behalf_of set to a connected account
+     *   representing the transfers feature without enabling the card_payments feature. »
+     * <p>
+     * Idempotent : si la capacité est déjà active ou pending, no-op.
+     * Si le compte n'a pas encore complété l'onboarding pour activer la capacité,
+     * Stripe lèvera tout de même une erreur sur PaymentIntent.create — ce check ne masque pas
+     * le besoin pour le voyageur de finaliser son onboarding.
+     */
+    private void ensureCardPaymentsCapability(String stripeAccountId) throws StripeException {
+        Account account = Account.retrieve(stripeAccountId);
+        String currentState = account.getCapabilities() == null
+                ? null
+                : account.getCapabilities().getCardPayments();
+        if ("active".equals(currentState)) {
+            return;
+        }
+        // pending → la capacité est demandée mais Stripe attend encore des infos
+        // (typiquement un document KYC). On lève une erreur métier claire plutôt
+        // que de laisser Stripe rejeter le PaymentIntent avec un message technique.
+        if ("pending".equals(currentState)) {
+            log.warn("card_payments pending on Stripe account {} — traveler needs to complete onboarding (KYC docs)",
+                    stripeAccountId);
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "traveler-onboarding-pending", "Traveler Onboarding Pending",
+                    "Le voyageur doit finaliser son inscription Stripe (pièce d'identité requise) "
+                    + "avant de pouvoir recevoir des paiements.");
+        }
+        // null / inactive / unrequested → demander la capacité (idempotent côté Stripe)
+        log.info("Requesting card_payments capability on legacy Stripe account {} (current={})",
+                stripeAccountId, currentState);
+        AccountUpdateParams updateParams = AccountUpdateParams.builder()
+                .setCapabilities(
+                        AccountUpdateParams.Capabilities.builder()
+                                .setCardPayments(
+                                        AccountUpdateParams.Capabilities.CardPayments.builder()
+                                                .setRequested(true)
+                                                .build()
+                                )
+                                .setTransfers(
+                                        AccountUpdateParams.Capabilities.Transfers.builder()
+                                                .setRequested(true)
+                                                .build()
+                                )
+                                .build()
+                )
+                .build();
+        Account updated = account.update(updateParams);
+        String newState = updated.getCapabilities() == null
+                ? null
+                : updated.getCapabilities().getCardPayments();
+        if (!"active".equals(newState)) {
+            log.warn("card_payments still {} after update on account {} — traveler needs to complete onboarding",
+                    newState, stripeAccountId);
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "traveler-onboarding-pending", "Traveler Onboarding Pending",
+                    "Le voyageur doit finaliser son inscription Stripe (pièce d'identité requise) "
+                    + "avant de pouvoir recevoir des paiements.");
+        }
     }
 
     private PaymentResponse toPaymentResponse(PaymentEntity payment, String clientSecret) {

@@ -3,10 +3,7 @@ package com.dony.api.auth;
 import com.dony.api.auth.events.AccountDeletionRequestedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.kyc.KycRepository;
-import com.dony.api.kyc.KycVerificationEntity;
 import com.dony.api.payments.PaymentRepository;
-import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -14,7 +11,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -34,9 +30,9 @@ class UserServiceDeleteAccountTest {
 
     @Mock private UserRepository userRepository;
     @Mock private PaymentRepository paymentRepository;
-    @Mock private KycRepository kycRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AccountFinalizationService accountFinalizationService;
 
     @InjectMocks private UserService userService;
 
@@ -159,29 +155,13 @@ class UserServiceDeleteAccountTest {
     class FinalizeGdpr {
 
         @Test
-        @DisplayName("pseudonymise + softDelete + KYC supprimé + audit log")
-        void finalizes_pseudonymizesAndSoftDeletes() throws Exception {
+        @DisplayName("délègue à AccountFinalizationService avec SOFT_GRACE_EXPIRED")
+        void delegatesToFinalizationService() {
             UserEntity user = makeUser(UserStatus.PENDING_DELETION);
-            KycVerificationEntity kyc = new KycVerificationEntity();
-            when(kycRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kyc));
 
-            com.google.firebase.auth.FirebaseAuth mockAuth =
-                mock(com.google.firebase.auth.FirebaseAuth.class);
-            try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class)) {
-                staticAuth.when(FirebaseAuth::getInstance).thenReturn(mockAuth);
+            userService.finalizeGdprDeletion(user);
 
-                userService.finalizeGdprDeletion(user);
-            }
-
-            assertThat(user.getStatus()).isEqualTo(UserStatus.BANNED);
-            assertThat(user.getDeletedAt()).isNotNull();
-            assertThat(user.getEmail()).startsWith("deleted_");
-            assertThat(user.getPhoneNumber()).isEqualTo("+00000000000");
-            assertThat(user.getFirstName()).isEqualTo("Utilisateur");
-            assertThat(user.getLastName()).isEqualTo("supprimé");
-            assertThat(user.getFcmToken()).isNull();
-            assertThat(kyc.getDeletedAt()).isNotNull();
-            verify(auditService).log(eq("USER"), eq(USER_ID), eq("USER_GDPR_DELETION"), eq(USER_ID), any());
+            verify(accountFinalizationService).finalize(user, FinalizationReason.SOFT_GRACE_EXPIRED);
         }
     }
 }

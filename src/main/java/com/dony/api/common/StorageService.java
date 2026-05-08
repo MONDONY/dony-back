@@ -6,22 +6,31 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class StorageService {
 
-    private static final Set<String> ALLOWED_PREFIXES = Set.of("tracking/", "users/", "messaging/");
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(StorageService.class);
+
+    private static final Set<String> ALLOWED_PREFIXES = Set.of("tracking/", "users/", "messaging/", "kyc/");
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp");
@@ -84,6 +93,34 @@ public class StorageService {
                 .bucket(bucket)
                 .key(objectKey)
                 .build());
+    }
+
+    /**
+     * Bulk delete all objects under a given prefix (e.g., "kyc/userId/").
+     * Used for GDPR account deletion. No-op if prefix is empty.
+     */
+    public void deleteByPrefix(String prefix) {
+        String continuationToken = null;
+        do {
+            ListObjectsV2Request.Builder reqBuilder = ListObjectsV2Request.builder()
+                    .bucket(bucket).prefix(prefix);
+            if (continuationToken != null) reqBuilder.continuationToken(continuationToken);
+            ListObjectsV2Response list = s3Client.listObjectsV2(reqBuilder.build());
+            if (!list.contents().isEmpty()) {
+                List<ObjectIdentifier> identifiers = list.contents().stream()
+                        .map(o -> ObjectIdentifier.builder().key(o.key()).build())
+                        .toList();
+                DeleteObjectsResponse resp = s3Client.deleteObjects(DeleteObjectsRequest.builder()
+                        .bucket(bucket)
+                        .delete(Delete.builder().objects(identifiers).build())
+                        .build());
+                if (!resp.errors().isEmpty()) {
+                    log.error("S3 deleteObjects partial failure: {} objects not deleted under prefix '{}'",
+                            resp.errors().size(), prefix);
+                }
+            }
+            continuationToken = list.isTruncated() ? list.nextContinuationToken() : null;
+        } while (continuationToken != null);
     }
 
     private void validateFile(MultipartFile file) {
