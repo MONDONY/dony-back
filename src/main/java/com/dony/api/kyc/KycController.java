@@ -1,8 +1,10 @@
 package com.dony.api.kyc;
 
+import com.dony.api.common.DonyBusinessException;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -50,6 +52,10 @@ public class KycController {
 
     private String requireFirebaseUid() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new DonyBusinessException(HttpStatus.UNAUTHORIZED, "unauthorized",
+                    "Unauthorized", "Token Firebase requis");
+        }
         return (String) auth.getPrincipal();
     }
 }

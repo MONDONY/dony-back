@@ -60,6 +60,13 @@ management:
   server:
     port: 8080
 
+# OpenAPI / Swagger — disabled by default, enabled only in dev profile
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+
 # Logging
 logging:
   level:

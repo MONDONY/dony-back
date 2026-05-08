@@ -62,7 +62,9 @@ public class AdminPaymentController {
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found",
                         "Paiement introuvable"));
 
-        if (payment.getStatus() != PaymentStatus.ESCROW) {
+        // Atomic ESCROW → RELEASED transition — prevents double-capture race condition
+        int updated = paymentRepository.markReleasedIfEscrow(id, LocalDateTime.now(ZoneOffset.UTC));
+        if (updated == 0) {
             throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "payment-not-in-escrow",
                     "Invalid Status",
@@ -80,10 +82,6 @@ public class AdminPaymentController {
                     "Stripe Error",
                     "Impossible de capturer le paiement Stripe. Veuillez réessayer.");
         }
-
-        payment.setStatus(PaymentStatus.RELEASED);
-        payment.setEscrowReleasedAt(LocalDateTime.now(ZoneOffset.UTC));
-        paymentRepository.save(payment);
 
         // Resolve any open ESCROW_J48_TIMEOUT alerts for this payment
         resolveRelatedAlerts(id);

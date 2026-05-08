@@ -1,6 +1,9 @@
 package com.dony.api.payments;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,4 +23,13 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
 
     /** Story 9.8 — GDPR: check active escrow payments for given bid IDs. */
     boolean existsByBidIdInAndStatus(List<UUID> bidIds, PaymentStatus status);
+
+    /**
+     * Atomic status transition ESCROW → RELEASED.
+     * Returns 1 if the row was updated, 0 if it was already in a non-ESCROW state.
+     * Using this instead of a read-then-write prevents double-capture race conditions.
+     */
+    @Modifying
+    @Query("UPDATE PaymentEntity p SET p.status = 'RELEASED', p.escrowReleasedAt = :releasedAt WHERE p.id = :id AND p.status = 'ESCROW'")
+    int markReleasedIfEscrow(@Param("id") UUID id, @Param("releasedAt") LocalDateTime releasedAt);
 }

@@ -196,8 +196,12 @@ public class BidService {
     @Transactional
     @CacheEvict(value = "announcements-search", allEntries = true)
     public BidResponse acceptBid(UUID bidId, String firebaseUid) {
-        BidEntity bid = findBid(bidId);
-        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        BidEntity bid = bidRepository.findByIdForUpdate(bidId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "bid-not-found", "Bid Not Found", "Demande introuvable"));
+        AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
@@ -485,12 +489,12 @@ public class BidService {
     }
 
     private static final String TRACKING_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final java.security.SecureRandom SECURE_RNG = new java.security.SecureRandom();
 
     private String generateTrackingNumber() {
-        ThreadLocalRandom rng = ThreadLocalRandom.current();
         StringBuilder sb = new StringBuilder("DON-");
-        for (int i = 0; i < 6; i++) {
-            sb.append(TRACKING_CHARS.charAt(rng.nextInt(TRACKING_CHARS.length())));
+        for (int i = 0; i < 8; i++) {
+            sb.append(TRACKING_CHARS.charAt(SECURE_RNG.nextInt(TRACKING_CHARS.length())));
         }
         return sb.toString();
     }
@@ -499,9 +503,14 @@ public class BidService {
         return toResponse(bid, sender, null);
     }
 
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) return null;
+        return phone.substring(0, Math.min(4, phone.length())) + "••••••" + phone.substring(phone.length() - 2);
+    }
+
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
-        String senderPhone = sender != null ? sender.getPhoneNumber() : null;
+        String senderPhone = sender != null ? maskPhone(sender.getPhoneNumber()) : null;
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
@@ -518,7 +527,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = traveler != null ? traveler.getPhoneNumber() : null;
+        String travelerPhone = traveler != null ? maskPhone(traveler.getPhoneNumber()) : null;
 
         return new BidResponse(
                 bid.getId(),
