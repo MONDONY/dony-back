@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -65,6 +67,10 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     List<BidEntity> findNoShowBids(@Param("cutoff") LocalDateTime cutoff);
 
     List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM BidEntity b WHERE b.id = :id AND b.deletedAt IS NULL")
+    Optional<BidEntity> findByIdForUpdate(@Param("id") UUID id);
 
     // Completed deliveries for a given traveler (via announcement ownership)
     @Query("SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id " +

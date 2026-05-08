@@ -26,6 +26,15 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     boolean existsByBidIdInAndStatus(List<UUID> bidIds, PaymentStatus status);
 
     /**
+     * Atomic status transition ESCROW → RELEASED.
+     * Returns 1 if the row was updated, 0 if it was already in a non-ESCROW state.
+     * Using this instead of a read-then-write prevents double-capture race conditions.
+     */
+    @Modifying
+    @Query("UPDATE PaymentEntity p SET p.status = 'RELEASED', p.escrowReleasedAt = :releasedAt WHERE p.id = :id AND p.status = 'ESCROW'")
+    int markReleasedIfEscrow(@Param("id") UUID id, @Param("releasedAt") LocalDateTime releasedAt);
+
+    /**
      * Atomic capture-once CAS guard. Returns 1 if the row was updated (first capture),
      * 0 if already captured or not in ESCROW status.
      */

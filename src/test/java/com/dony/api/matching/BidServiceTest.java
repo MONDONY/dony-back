@@ -362,8 +362,8 @@ class BidServiceTest {
             AnnouncementEntity announcement = buildAnnouncement();
             BidEntity bid = buildBid();
 
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.save(any())).thenReturn(announcement);
             when(bidRepository.save(any())).thenReturn(bid);
@@ -391,8 +391,8 @@ class BidServiceTest {
             announcement.setAvailableKg(BigDecimal.valueOf(3)); // Less than bid weight (5 kg)
 
             BidEntity bid = buildBid();
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
 
             assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
@@ -411,8 +411,8 @@ class BidServiceTest {
             AnnouncementEntity announcement = buildAnnouncement();
             BidEntity bid = buildBid();
 
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(otherTraveler));
 
             assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
@@ -429,8 +429,8 @@ class BidServiceTest {
             BidEntity bid = buildBid();
             bid.setStatus(BidStatus.ACCEPTED); // Already accepted
 
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
 
             assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))

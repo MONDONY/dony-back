@@ -12,6 +12,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -169,10 +172,22 @@ public class AuthService {
                 saved.getId(),
                 "USER_CREATED",
                 saved.getId(),
-                Map.of("phoneNumber", request.phoneNumber(), "roles", request.roles())
+                Map.of("phoneHash", hashPhone(request.phoneNumber()), "roles", request.roles())
         );
 
         return toResponse(saved);
+    }
+
+    private static String hashPhone(String phone) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(phone.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return "SHA256:" + hex.substring(0, 16) + "...";
+        } catch (NoSuchAlgorithmException e) {
+            return "HASHED";
+        }
     }
 
     private Set<Role> parseRoles(Set<String> rawRoles) {
