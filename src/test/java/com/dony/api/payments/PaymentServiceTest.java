@@ -1,9 +1,13 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.ProcessedStripeEventRepository;
+import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -56,6 +60,7 @@ class PaymentServiceTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     PaymentService service;
 
@@ -69,10 +74,10 @@ class PaymentServiceTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test");
+                "whsec_test",
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
-        ReflectionTestUtils.setField(service, "returnUrl",  "https://dony.app/return");
-        ReflectionTestUtils.setField(service, "refreshUrl", "https://dony.app/refresh");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -104,7 +109,7 @@ class PaymentServiceTest {
     private UserEntity buildTraveler(String stripeAccountId, boolean onboarded) {
         UserEntity t = buildUser(travelerId, "uid-traveler");
         t.setStripeAccountId(stripeAccountId);
-        t.setStripeOnboarded(onboarded);
+        t.setStripeAccountStatus(onboarded ? StripeAccountStatus.ONBOARDING_COMPLETE : StripeAccountStatus.PENDING_ONBOARDING);
         return t;
     }
 
@@ -244,7 +249,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void createEscrow_travelerNotOnboarded_throwsUnprocessable() {
+    void createEscrow_travelerNotOnboarded_throwsTravelerNotEligible() {
         UserEntity sender = buildUser(senderId, "uid-sender");
         BidEntity bid = buildBid(BidStatus.ACCEPTED);
         AnnouncementEntity ann = buildAnnouncement();
@@ -256,7 +261,10 @@ class PaymentServiceTest {
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
         var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
         when(req.getBidId()).thenReturn(bidId);
-        assertDonyError(() -> service.createEscrow(req, "uid-sender"), "traveler-not-onboarded");
+
+        Throwable thrown = catchThrowable(() -> service.createEscrow(req, "uid-sender"));
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+        assertThat(((TravelerNotEligibleForPaymentException) thrown).getTravelerId()).isEqualTo(travelerId);
     }
 
     @Test
@@ -270,7 +278,8 @@ class PaymentServiceTest {
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
         when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
-        when(paymentRepository.save(any())).thenAnswer(inv -> {
+        org.mockito.ArgumentCaptor<PaymentEntity> savedCaptor = org.mockito.ArgumentCaptor.forClass(PaymentEntity.class);
+        when(paymentRepository.save(savedCaptor.capture())).thenAnswer(inv -> {
             PaymentEntity p = inv.getArgument(0);
             setId(p, UUID.randomUUID());
             return p;
@@ -282,13 +291,30 @@ class PaymentServiceTest {
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getId()).thenReturn("pi_test_new");
             when(mockPi.getClientSecret()).thenReturn("pi_secret");
-            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+            org.mockito.ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor =
+                    org.mockito.ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+            piStatic.when(() -> PaymentIntent.create(paramsCaptor.capture())).thenReturn(mockPi);
 
             PaymentResponse resp = service.createEscrow(req, "uid-sender");
 
             assertThat(resp.getStatus()).isEqualTo("PENDING");
             assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
             verify(paymentRepository).save(any(PaymentEntity.class));
+
+            // Separate charges and transfers model: NO application_fee_amount, NO transfer_data.
+            PaymentIntentCreateParams params = paramsCaptor.getValue();
+            assertThat(params.getApplicationFeeAmount()).isNull();
+            assertThat(params.getTransferData()).isNull();
+            assertThat(params.getCaptureMethod())
+                    .isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
+            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler");
+            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
+
+            // Persisted payment is non-legacy.
+            assertThat(savedCaptor.getValue().isLegacyDestinationCharge()).isFalse();
+            // Commission still tracked on the entity for later Transfer (release at delivery).
+            assertThat(savedCaptor.getValue().getCommissionAmount())
+                    .isEqualByComparingTo(new BigDecimal("3.00"));
         }
     }
 
@@ -319,13 +345,14 @@ class PaymentServiceTest {
     void createConnectAccount_alreadyHasStripeId_returnsExisting() {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_existing");
-        user.setStripeOnboarded(true);
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
 
         ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
 
         assertThat(resp.stripeAccountId()).isEqualTo("acct_existing");
-        assertThat(resp.stripeOnboarded()).isTrue();
+        assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
     }
 
     @Test
@@ -334,6 +361,7 @@ class PaymentServiceTest {
         user.setStripeAccountId(null);
         user.setEmail("user@dony.app");
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
@@ -344,7 +372,7 @@ class PaymentServiceTest {
             ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
 
             assertThat(resp.stripeAccountId()).isEqualTo("acct_new_123");
-            assertThat(resp.stripeOnboarded()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), any(), eq("STRIPE_ACCOUNT_CREATED"), any(), any());
         }
@@ -356,6 +384,7 @@ class PaymentServiceTest {
         user.setStripeAccountId(null);
         user.setEmail("user@dony.app");
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
 
         try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
             acctStatic.when(() -> Account.create(any(AccountCreateParams.class)))
@@ -432,10 +461,11 @@ class PaymentServiceTest {
     void handleWebhook_accountUpdated_chargesEnabled_setsOnboarded() {
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
-        user.setStripeOnboarded(false);
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(true);
         when(mockAccount.getId()).thenReturn("acct_123");
 
         Event mockEvent = buildEventWith("account.updated", mockAccount);
@@ -448,22 +478,55 @@ class PaymentServiceTest {
             service.handleWebhook("payload", "sig");
         }
 
-        assertThat(user.isStripeOnboarded()).isTrue();
+        assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+        assertThat(user.getStripeOnboardingCompletedAt()).isNotNull();
         verify(auditService).log(eq("USER"), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
+        verify(eventPublisher).publishEvent(any(com.dony.api.payments.events.StripeOnboardingCompletedEvent.class));
     }
 
     @Test
-    void handleWebhook_accountUpdated_chargesEnabled_alreadyOnboarded_skips() {
+    void handleWebhook_accountUpdated_chargesEnabled_alreadyOnboarded_idempotent() {
+        // Already ONBOARDING_COMPLETE — status re-confirmed by Stripe, save is idempotent, no event emitted.
         UserEntity user = buildUser(senderId, "uid-sender");
         user.setStripeAccountId("acct_123");
-        user.setStripeOnboarded(true); // already onboarded
+        user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
 
         Account mockAccount = mock(Account.class);
         when(mockAccount.getChargesEnabled()).thenReturn(true);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(true);
         when(mockAccount.getId()).thenReturn("acct_123");
 
         Event mockEvent = buildEventWith("account.updated", mockAccount);
         when(userRepository.findByStripeAccountId("acct_123")).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
+            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                    .thenReturn(mockEvent);
+            service.handleWebhook("payload", "sig");
+        }
+
+        // No StripeOnboardingCompletedEvent emitted on idempotent re-confirmation
+        verify(eventPublisher, never()).publishEvent(any(com.dony.api.payments.events.StripeOnboardingCompletedEvent.class));
+        // save is called but no audit entry for STRIPE_ONBOARDING_COMPLETE
+        verify(auditService, never()).log(any(), any(), eq("STRIPE_ONBOARDING_COMPLETE"), any(), any());
+    }
+
+    @Test
+    void handleWebhook_accountUpdated_chargesDisabled_noDisabledReason_doesNothing() {
+        // charges=false, payouts=false, no disabledReason → still pending, early return — no save, no event.
+        UserEntity user = buildUser(senderId, "uid-sender");
+        user.setStripeAccountId("acct_pending");
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+
+        Account mockAccount = mock(Account.class);
+        when(mockAccount.getChargesEnabled()).thenReturn(false);
+        when(mockAccount.getPayoutsEnabled()).thenReturn(false);
+        when(mockAccount.getId()).thenReturn("acct_pending");
+        when(mockAccount.getRequirements()).thenReturn(null);
+
+        Event mockEvent = buildEventWith("account.updated", mockAccount);
+        when(userRepository.findByStripeAccountId("acct_pending")).thenReturn(Optional.of(user));
 
         try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
             wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
@@ -472,21 +535,7 @@ class PaymentServiceTest {
         }
 
         verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    void handleWebhook_accountUpdated_chargesDisabled_doesNothing() {
-        Account mockAccount = mock(Account.class);
-        when(mockAccount.getChargesEnabled()).thenReturn(false);
-
-        Event mockEvent = buildEventWith("account.updated", mockAccount);
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-            service.handleWebhook("payload", "sig");
-        }
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -614,20 +663,134 @@ class PaymentServiceTest {
 
     @Test
     void getPaymentStatusForBid_noPayment_returnsEmpty() {
+        UserEntity caller = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(caller));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
-        assertThat(service.getPaymentStatusForBid(bidId)).isEmpty();
+        assertThat(service.getPaymentStatusForBid(bidId, "uid-sender")).isEmpty();
     }
 
     @Test
     void getPaymentStatusForBid_withPayment_returnsResponse() {
+        UserEntity caller = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(caller));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
         PaymentEntity payment = buildPayment(PaymentStatus.ESCROW, null);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
 
-        Optional<PaymentResponse> resp = service.getPaymentStatusForBid(bidId);
+        Optional<PaymentResponse> resp = service.getPaymentStatusForBid(bidId, "uid-sender");
 
         assertThat(resp).isPresent();
         assertThat(resp.get().getStatus()).isEqualTo("ESCROW");
         assertThat(resp.get().getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
+    }
+
+    // ── confirmBidPayment ─────────────────────────────────────────────────────
+
+    @Test
+    void confirmBidPayment_promotes_when_PI_requires_capture() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        AnnouncementEntity ann = buildAnnouncement();
+        ann.setDepartureCity("Paris");
+        ann.setArrivalCity("Dakar");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setFirstName("Marie");
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findByPaymentIntentId("pi_test")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isTrue();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PENDING);
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.BidCreatedEvent.class));
+        }
+    }
+
+    @Test
+    void confirmBidPayment_idempotent_when_already_PENDING() {
+        BidEntity bid = buildBid(BidStatus.PENDING);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isTrue();
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_bid_in_other_status() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_PI_status_unknown() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isFalse();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
+        }
+    }
+
+    @Test
+    void confirmBidPayment_throws_when_bid_not_found() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        assertDonyError(() -> service.confirmBidPayment(bidId), "bid-not-found");
+    }
+
+    @Test
+    void confirmBidPayment_returns_false_when_no_payment_intent_id() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        // paymentIntentId left null
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        boolean result = service.confirmBidPayment(bidId);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void confirmBidPayment_throws_502_when_stripe_fails() throws StripeException {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            StripeException ex = mock(StripeException.class);
+            when(ex.getMessage()).thenReturn("network down");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test")).thenThrow(ex);
+
+            assertDonyError(() -> service.confirmBidPayment(bidId), "stripe-error");
+        }
     }
 
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────

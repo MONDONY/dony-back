@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -36,6 +37,15 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "escrow_released_at")
     private LocalDateTime escrowReleasedAt;
 
+    @Column(name = "legacy_destination_charge", nullable = false)
+    private boolean legacyDestinationCharge = false;
+
+    @Column(name = "stripe_charge_id", length = 255)
+    private String stripeChargeId;
+
+    @Column(name = "captured_at")
+    private Instant capturedAt;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -53,4 +63,13 @@ public class PaymentEntity extends BaseEntity {
 
     public LocalDateTime getEscrowReleasedAt() { return escrowReleasedAt; }
     public void setEscrowReleasedAt(LocalDateTime escrowReleasedAt) { this.escrowReleasedAt = escrowReleasedAt; }
+
+    public boolean isLegacyDestinationCharge() { return legacyDestinationCharge; }
+    public void setLegacyDestinationCharge(boolean legacyDestinationCharge) { this.legacyDestinationCharge = legacyDestinationCharge; }
+
+    public String getStripeChargeId() { return stripeChargeId; }
+    public void setStripeChargeId(String stripeChargeId) { this.stripeChargeId = stripeChargeId; }
+
+    public Instant getCapturedAt() { return capturedAt; }
+    public void setCapturedAt(Instant capturedAt) { this.capturedAt = capturedAt; }
 }

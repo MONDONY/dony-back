@@ -2,6 +2,7 @@ package com.dony.api.auth;
 
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
+import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
@@ -107,6 +108,35 @@ public class AuthService {
         userService.deleteAccount(firebaseUid);
     }
 
+    /**
+     * Réactive un compte supprimé : restore status à ACTIVE et deletedAt à null.
+     */
+    @Transactional
+    public UserResponse reactivateAccount(String firebaseUid) {
+        userService.reactivateAccount(firebaseUid);
+        return getProfile(firebaseUid);
+    }
+
+    /**
+     * Upgrades the authenticated user to a PRO account.
+     * Delegates business-rule enforcement to {@link UserService#upgradeToPro}.
+     *
+     * <p>The already-loaded {@link UserEntity} is passed directly to
+     * {@code UserService.upgradeToPro} to avoid a redundant DB lookup.
+     */
+    @Transactional
+    public UserResponse upgradeToPro(String firebaseUid, UpgradeToProRequest request) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        UserEntity updated = userService.upgradeToPro(user, request);
+        return toResponse(updated);
+    }
+
     private UserResponse createUser(String firebaseUid, RegisterRequest request) {
         Set<Role> roles = parseRoles(request.roles());
 
@@ -132,7 +162,7 @@ public class AuthService {
         user.setFirebaseUid(firebaseUid);
         user.setPhoneNumber(request.phoneNumber());
         user.setStatus(UserStatus.ACTIVE);
-        user.setKycStatus(KycStatus.PENDING);
+        user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
 
         UserEntity saved = userRepository.save(user);
@@ -188,7 +218,12 @@ public class AuthService {
                 user.getCity(),
                 user.getRoles().stream().map(Role::name).collect(Collectors.toSet()),
                 user.getKycStatus().name(),
-                user.getStatus().name()
+                user.getStatus().name(),
+                user.getTotalTrips(),
+                user.getTotalShipments(),
+                user.isProAccount(),
+                user.getStripeAccountStatus(),
+                user.getCountry()
         );
     }
 }

@@ -11,10 +11,10 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -38,6 +38,9 @@ public class BidService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Value("${dony.kyc.enforce:true}")
+    private boolean enforceKyc;
+
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
                       ApplicationEventPublisher eventPublisher) {
@@ -55,14 +58,11 @@ public class BidService {
 
         UserEntity sender = findUserByFirebaseUid(firebaseUid);
 
-        /* 
-        // TODO: Réactiver avant mise en production (KYC bypass pour DEV)
-        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+        if (enforceKyc && sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new DonyBusinessException(
                     HttpStatus.FORBIDDEN, "kyc-not-verified", "KYC Not Verified",
-                    "Vérifiez votre identité pour envoyer un colis");
+                    "Vous devez compléter votre vérification d'identité pour effectuer cette action");
         }
-        */
 
         if (!sender.getRoles().contains(Role.SENDER)) {
             sender.getRoles().add(Role.SENDER);
@@ -136,13 +136,21 @@ public class BidService {
                         "disclaimerSignedIp", clientIp
                 ));
 
-        String senderName = sender.getFirstName() != null ? sender.getFirstName() : "Un expéditeur";
-        String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
-        eventPublisher.publishEvent(new BidCreatedEvent(
-                saved.getId(), announcement.getId(), announcement.getTravelerId(), sender.getId(),
-                senderName, saved.getWeightKg(), corridor));
+        // Note: BidCreatedEvent is no longer published here. Traveler notification
+        // happens after the sender's payment is authorized — see
+        // PaymentService.promoteBidOnPaymentAuthorized().
 
         return toResponse(saved, sender);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertSenderOwnsBid(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        UserEntity user = findUserByFirebaseUid(firebaseUid);
+        if (!bid.getSenderId().equals(user.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut confirmer le paiement");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -177,6 +185,7 @@ public class BidService {
         return bidRepository.findByAnnouncementId(announcementId)
                 .stream()
                 .filter(b -> !b.isDeletedByTraveler())
+                .filter(b -> b.getStatus() != BidStatus.AWAITING_PAYMENT)
                 .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
                     return toResponse(b, sender);
@@ -207,6 +216,14 @@ public class BidService {
         requireTravelerOwnsAnnouncement(traveler, announcement);
         requireBidStatus(bid, BidStatus.PENDING);
 
+        if (announcement.getStatus() == AnnouncementStatus.IN_PROGRESS
+                || announcement.getStatus() == AnnouncementStatus.COMPLETED
+                || announcement.getStatus() == AnnouncementStatus.CANCELLED) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                    "announcement-not-accepting", "Announcement Not Accepting",
+                    "Le voyageur est déjà parti, ce trajet n'accepte plus de colis");
+        }
+
         if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",
@@ -224,6 +241,9 @@ public class BidService {
             bid.setTrackingToken(java.util.UUID.randomUUID().toString());
         }
         announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+            announcement.setStatus(AnnouncementStatus.FULL);
+        }
         announcementRepository.save(announcement);
         bidRepository.save(bid);
 
@@ -340,6 +360,9 @@ public class BidService {
             AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
                 announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+                if (announcement.getStatus() == AnnouncementStatus.FULL) {
+                    announcement.setStatus(AnnouncementStatus.ACTIVE);
+                }
                 announcementRepository.save(announcement);
             }
         }
@@ -348,6 +371,9 @@ public class BidService {
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_CANCELLED", sender.getId(), Map.of());
+
+        eventPublisher.publishEvent(new BidRejectedEvent(
+                bid.getId(), bid.getSenderId(), "CANCELLED_BY_SENDER"));
 
         return toResponse(bid, sender);
     }
@@ -483,7 +509,9 @@ public class BidService {
     private String resolveClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] parts = forwarded.split(",");
+            // Use the last value added by the trusted proxy — the client cannot spoof it
+            return parts[parts.length - 1].trim();
         }
         return request.getRemoteAddr();
     }
@@ -511,6 +539,7 @@ public class BidService {
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
         String senderPhone = sender != null ? maskPhone(sender.getPhoneNumber()) : null;
+        Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
@@ -535,6 +564,7 @@ public class BidService {
                 bid.getSenderId(),
                 senderName,
                 senderPhone,
+                senderTotalShipments,
                 bid.getWeightKg(),
                 bid.getDeclaredValueEur(),
                 bid.getDescription(),

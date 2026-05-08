@@ -10,9 +10,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -50,7 +52,7 @@ public class UserEntity extends BaseEntity {
 
     @Column(name = "kyc_status", nullable = false, length = 20)
     @Enumerated(EnumType.STRING)
-    private KycStatus kycStatus = KycStatus.PENDING;
+    private KycStatus kycStatus = KycStatus.NOT_STARTED;
 
     @Column(name = "fcm_token", length = 512)
     private String fcmToken;
@@ -67,8 +69,29 @@ public class UserEntity extends BaseEntity {
     @Column(name = "stripe_account_id", length = 64)
     private String stripeAccountId;
 
-    @Column(name = "stripe_onboarded", nullable = false)
-    private boolean stripeOnboarded = false;
+    @Column(name = "stripe_account_status", nullable = false, length = 32)
+    @Enumerated(EnumType.STRING)
+    private StripeAccountStatus stripeAccountStatus = StripeAccountStatus.NOT_CREATED;
+
+    @Column(name = "stripe_account_created_at")
+    private Instant stripeAccountCreatedAt;
+
+    @Column(name = "stripe_onboarding_completed_at")
+    private Instant stripeOnboardingCompletedAt;
+
+    @Column(name = "is_pro_account", nullable = false)
+    private boolean isProAccount = false;
+
+    @Column(name = "pro_company_name", length = 255)
+    private String proCompanyName;
+
+    // TODO(security): proSiret stored unencrypted. Evaluate AES-256 encryption (like kyc_schema)
+    // before production — SIRET can identify individual entrepreneurs under GDPR.
+    @Column(name = "pro_siret", length = 14)
+    private String proSiret;
+
+    @Column(name = "country", nullable = false, length = 2)
+    private String country = "FR";
 
     @Column(name = "average_rating", precision = 3, scale = 2)
     private BigDecimal averageRating;
@@ -82,11 +105,21 @@ public class UserEntity extends BaseEntity {
     @Column(name = "total_trips", nullable = false)
     private int totalTrips = 0;
 
+    @Column(name = "total_shipments", nullable = false)
+    private int totalShipments = 0;
+
     @Column(name = "no_show_count", nullable = false)
     private int noShowCount = 0;
 
     @Column(name = "refused_count", nullable = false)
     private int refusedCount = 0;
+
+    @Version
+    @Column(name = "version")
+    private Long version = 0L;
+
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
 
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
@@ -127,8 +160,26 @@ public class UserEntity extends BaseEntity {
     public String getStripeAccountId() { return stripeAccountId; }
     public void setStripeAccountId(String stripeAccountId) { this.stripeAccountId = stripeAccountId; }
 
-    public boolean isStripeOnboarded() { return stripeOnboarded; }
-    public void setStripeOnboarded(boolean stripeOnboarded) { this.stripeOnboarded = stripeOnboarded; }
+    public StripeAccountStatus getStripeAccountStatus() { return stripeAccountStatus; }
+    public void setStripeAccountStatus(StripeAccountStatus stripeAccountStatus) { this.stripeAccountStatus = stripeAccountStatus; }
+
+    public Instant getStripeAccountCreatedAt() { return stripeAccountCreatedAt; }
+    public void setStripeAccountCreatedAt(Instant stripeAccountCreatedAt) { this.stripeAccountCreatedAt = stripeAccountCreatedAt; }
+
+    public Instant getStripeOnboardingCompletedAt() { return stripeOnboardingCompletedAt; }
+    public void setStripeOnboardingCompletedAt(Instant stripeOnboardingCompletedAt) { this.stripeOnboardingCompletedAt = stripeOnboardingCompletedAt; }
+
+    public boolean isProAccount() { return isProAccount; }
+    public void setProAccount(boolean proAccount) { isProAccount = proAccount; }
+
+    public String getProCompanyName() { return proCompanyName; }
+    public void setProCompanyName(String proCompanyName) { this.proCompanyName = proCompanyName; }
+
+    public String getProSiret() { return proSiret; }
+    public void setProSiret(String proSiret) { this.proSiret = proSiret; }
+
+    public String getCountry() { return country; }
+    public void setCountry(String country) { this.country = country; }
 
     public BigDecimal getAverageRating() { return averageRating; }
     public void setAverageRating(BigDecimal averageRating) { this.averageRating = averageRating; }
@@ -142,9 +193,18 @@ public class UserEntity extends BaseEntity {
     public int getTotalTrips() { return totalTrips; }
     public void setTotalTrips(int totalTrips) { this.totalTrips = totalTrips; }
 
+    public int getTotalShipments() { return totalShipments; }
+    public void setTotalShipments(int totalShipments) { this.totalShipments = totalShipments; }
+
     public int getNoShowCount() { return noShowCount; }
     public void setNoShowCount(int noShowCount) { this.noShowCount = noShowCount; }
 
     public int getRefusedCount() { return refusedCount; }
     public void setRefusedCount(int refusedCount) { this.refusedCount = refusedCount; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
+
+    public Instant getDeletionRequestedAt() { return deletionRequestedAt; }
+    public void setDeletionRequestedAt(Instant deletionRequestedAt) { this.deletionRequestedAt = deletionRequestedAt; }
 }

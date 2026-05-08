@@ -10,6 +10,7 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -102,6 +103,7 @@ class BidServiceTest {
         a.setArrivalCity("Dakar");
         a.setDepartureDate(LocalDate.now().plusDays(10));
         a.setAvailableKg(BigDecimal.valueOf(20));
+        a.setTotalKg(BigDecimal.valueOf(20));
         a.setPricePerKg(BigDecimal.valueOf(5));
         a.setStatus(AnnouncementStatus.ACTIVE);
         setId(a, ANNOUNCEMENT_ID);
@@ -165,6 +167,9 @@ class BidServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
             verify(auditService).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
+            // Task 8: BidCreatedEvent is no longer published from createBid — the
+            // webhook (PaymentService.promoteBidOnPaymentAuthorized) does it now.
+            verify(eventPublisher, never()).publishEvent(any(BidCreatedEvent.class));
         }
 
         @Test
@@ -311,7 +316,8 @@ class BidServiceTest {
 
             ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
             verify(bidRepository).save(captor.capture());
-            assertThat(captor.getValue().getDisclaimerSignedIp()).isEqualTo("203.0.113.1");
+            // Last hop in X-Forwarded-For is used (added by trusted proxy, not spoofable by client)
+            assertThat(captor.getValue().getDisclaimerSignedIp()).isEqualTo("198.51.100.2");
         }
 
         @Test
@@ -432,6 +438,27 @@ class BidServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
         }
+
+        @Test
+        @DisplayName("acceptBid remplit exactement la capacité → annonce passe FULL")
+        void acceptBid_fillsCapacity_becomesFulls() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAvailableKg(BigDecimal.valueOf(5)); // exact match avec le bid
+            BidEntity bid = buildBid(); // weightKg = 5
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.acceptBid(BID_ID, TRAVELER_UID);
+
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
+        }
     }
 
     // ─── rejectBid ─────────────────────────────────────────────────────────────
@@ -491,6 +518,28 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("cancelBid publie BidRejectedEvent avec reason CANCELLED_BY_SENDER")
+        void cancelBid_publishes_BidRejectedEvent_with_CANCELLED_BY_SENDER_reason() {
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(
+                    Optional.of(buildAnnouncement()));
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getBidId()).isEqualTo(bid.getId());
+            assertThat(captor.getValue().getSenderId()).isEqualTo(bid.getSenderId());
+            assertThat(captor.getValue().getReason()).isEqualTo("CANCELLED_BY_SENDER");
+        }
+
+        @Test
         @DisplayName("bid ACCEPTED annulé → kg restitués à l'annonce")
         void cancelBid_acceptedBid_restoresKg() {
             UserEntity sender = buildSender();
@@ -509,6 +558,27 @@ class BidServiceTest {
             assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(25)); // 20+5
             verify(announcementRepository).save(announcement);
+        }
+
+        @Test
+        @DisplayName("bid ACCEPTED annulé sur annonce FULL → annonce repasse ACTIVE")
+        void cancelBid_acceptedBidOnFullAnnouncement_reactivates() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAvailableKg(BigDecimal.ZERO);
+            announcement.setStatus(AnnouncementStatus.FULL);
+            BidEntity bid = buildBid(); // weightKg = 5
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
         }
 
         @Test

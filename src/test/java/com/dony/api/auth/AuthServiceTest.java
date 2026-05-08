@@ -100,7 +100,7 @@ class AuthServiceTest {
             UserResponse result = authService.register(FIREBASE_UID, req);
 
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
-            assertThat(result.kycStatus()).isEqualTo("PENDING");
+            assertThat(result.kycStatus()).isEqualTo("NOT_STARTED");
             assertThat(result.status()).isEqualTo("ACTIVE");
             verify(userRepository).save(any(UserEntity.class));
             verify(auditService).log(eq("USER"), any(), eq("USER_CREATED"), any(), any());
@@ -328,6 +328,10 @@ class AuthServiceTest {
             assertThat(resp.kycStatus()).isEqualTo("VERIFIED");
             assertThat(resp.status()).isEqualTo("ACTIVE");
             assertThat(resp.roles()).contains("SENDER");
+            // PRO fields — new in PR-1 review fix
+            assertThat(resp.isProAccount()).isFalse();
+            assertThat(resp.stripeAccountStatus()).isNotNull();
+            assertThat(resp.country()).isEqualTo("FR");
         }
     }
 }

@@ -1,0 +1,198 @@
+package com.dony.api.payments;
+
+import com.dony.api.auth.StripeAccountStatus;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.ProcessedStripeEventRepository;
+import com.dony.api.config.StripeConnectProperties;
+import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.dto.ConnectAccountResponse;
+import com.stripe.exception.ApiException;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class PaymentServiceRefreshConnectAccountTest {
+
+    @Mock UserRepository userRepository;
+    @Mock BidRepository bidRepository;
+    @Mock AnnouncementRepository announcementRepository;
+    @Mock PaymentRepository paymentRepository;
+    @Mock AuditService auditService;
+    @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
+
+    PaymentService service;
+
+    private final UUID userId = UUID.randomUUID();
+    private static final String FIREBASE_UID = "uid-traveler";
+    private static final String ACCT_ID = "acct_test_123";
+
+    @BeforeEach
+    void setUp() {
+        service = new PaymentService(
+                userRepository, bidRepository, announcementRepository,
+                paymentRepository, auditService, eventPublisher,
+                "whsec_test",
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                processedStripeEventRepository);
+        ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
+    }
+
+    private UserEntity buildUser(String stripeAccountId, boolean onboarded) {
+        UserEntity u = new UserEntity();
+        try {
+            Field f = u.getClass().getSuperclass().getDeclaredField("id");
+            f.setAccessible(true);
+            f.set(u, userId);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+        u.setFirebaseUid(FIREBASE_UID);
+        u.setStripeAccountId(stripeAccountId);
+        if (stripeAccountId != null) {
+            u.setStripeAccountStatus(onboarded
+                    ? StripeAccountStatus.ONBOARDING_COMPLETE
+                    : StripeAccountStatus.PENDING_ONBOARDING);
+        }
+        return u;
+    }
+
+    @Test
+    void throws_conflict_when_user_has_no_stripe_account() {
+        UserEntity user = buildUser(null, false);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        Throwable thrown = catchThrowable(() -> service.refreshConnectAccount(FIREBASE_UID));
+
+        assertThat(thrown).isInstanceOf(DonyBusinessException.class);
+        assertThat(((DonyBusinessException) thrown).getErrorCode()).isEqualTo("stripe-account-required");
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void flips_onboarded_to_true_when_charges_enabled_and_was_false() throws StripeException {
+        UserEntity user = buildUser(ACCT_ID, false);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(ACCT_ID);
+        when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
+
+        try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
+            mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
+
+            ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
+
+            assertThat(resp.stripeAccountId()).isEqualTo(ACCT_ID);
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+            assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(userId),
+                    eq("STRIPE_ONBOARDING_COMPLETE"), eq(userId), any());
+        }
+    }
+
+    @Test
+    void noop_when_charges_enabled_and_already_onboarded() throws StripeException {
+        UserEntity user = buildUser(ACCT_ID, true);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(ACCT_ID);
+        when(account.getChargesEnabled()).thenReturn(true);
+        when(account.getPayoutsEnabled()).thenReturn(true); // both required for ONBOARDING_COMPLETE
+
+        try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
+            mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
+
+            ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
+
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+            verify(userRepository, never()).save(any());
+            verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+    }
+
+    @Test
+    void flips_onboarded_to_false_when_charges_disabled_and_was_true() throws StripeException {
+        UserEntity user = buildUser(ACCT_ID, true);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(ACCT_ID);
+        when(account.getChargesEnabled()).thenReturn(false);
+
+        try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
+            mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
+
+            ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
+
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
+            assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(userId),
+                    eq("STRIPE_ONBOARDING_REVOKED"), eq(userId), any());
+        }
+    }
+
+    @Test
+    void noop_when_charges_disabled_and_already_not_onboarded() throws StripeException {
+        UserEntity user = buildUser(ACCT_ID, false);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(ACCT_ID);
+        when(account.getChargesEnabled()).thenReturn(false);
+
+        try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
+            mocked.when(() -> Account.retrieve(ACCT_ID)).thenReturn(account);
+
+            ConnectAccountResponse resp = service.refreshConnectAccount(FIREBASE_UID);
+
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
+            verify(userRepository, never()).save(any());
+            verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+    }
+
+    @Test
+    void throws_bad_gateway_when_stripe_call_fails() {
+        UserEntity user = buildUser(ACCT_ID, false);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+        try (MockedStatic<Account> mocked = mockStatic(Account.class)) {
+            mocked.when(() -> Account.retrieve(ACCT_ID))
+                    .thenThrow(new ApiException("Stripe down", "req_x", "api_error", 503, null));
+
+            Throwable thrown = catchThrowable(() -> service.refreshConnectAccount(FIREBASE_UID));
+
+            assertThat(thrown).isInstanceOf(DonyBusinessException.class);
+            assertThat(((DonyBusinessException) thrown).getErrorCode()).isEqualTo("stripe-refresh-failed");
+            verify(userRepository, never()).save(any());
+        }
+    }
+}

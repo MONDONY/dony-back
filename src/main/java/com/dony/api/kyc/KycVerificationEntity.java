@@ -25,14 +25,6 @@ public class KycVerificationEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private KycVerificationStatus status = KycVerificationStatus.PENDING;
 
-    // Stored encrypted via EncryptionService (applied in KycService layer)
-    @Column(name = "id_document_encrypted", columnDefinition = "TEXT")
-    private String idDocumentEncrypted;
-
-    // Stored encrypted via EncryptionService
-    @Column(name = "selfie_url", length = 1024)
-    private String selfieUrl;
-
     @Column(name = "rejection_reason", length = 512)
     private String rejectionReason;
 
@@ -44,12 +36,6 @@ public class KycVerificationEntity extends BaseEntity {
 
     public KycVerificationStatus getStatus() { return status; }
     public void setStatus(KycVerificationStatus status) { this.status = status; }
-
-    public String getIdDocumentEncrypted() { return idDocumentEncrypted; }
-    public void setIdDocumentEncrypted(String idDocumentEncrypted) { this.idDocumentEncrypted = idDocumentEncrypted; }
-
-    public String getSelfieUrl() { return selfieUrl; }
-    public void setSelfieUrl(String selfieUrl) { this.selfieUrl = selfieUrl; }
 
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }

@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -11,6 +13,11 @@ import com.dony.api.matching.dto.AnnouncementResponse;
 import com.dony.api.matching.dto.AnnouncementSearchResponse;
 import com.dony.api.matching.dto.TravelerProfileDto;
 import com.dony.api.matching.events.AnnouncementDeletedEvent;
+import com.dony.api.matching.events.AnnouncementInProgressEvent;
+import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
@@ -25,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,11 +42,20 @@ import java.util.UUID;
 @Service
 public class AnnouncementService {
 
+    private static final Logger log = LoggerFactory.getLogger(AnnouncementService.class);
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Paris");
+
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Value("${dony.kyc.enforce:true}")
+    private boolean enforceKyc;
+
+    @Value("${dony.stripe.enforce:true}")
+    private boolean enforceStripeOnboarding;
 
     public AnnouncementService(
             AnnouncementRepository announcementRepository,
@@ -53,11 +72,14 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
-            BigDecimal minAvailableKg,
+            BigDecimal minAvailableKg, BigDecimal maxAvailableKg,
+            BigDecimal maxPricePerKg, BigDecimal minRating,
+            Boolean kiloProOnly, Boolean weekendOnly,
+            String transportMode, Boolean kycVerifiedOnly, String contentType,
             Double userLat, Double userLng, Double radiusKm,
             String sortBy, String sortDir, Pageable pageable) {
 
@@ -73,6 +95,28 @@ public class AnnouncementService {
             spec = spec.and(AnnouncementSpecification.departureDateTo(departureDateTo));
         if (minAvailableKg != null)
             spec = spec.and(AnnouncementSpecification.minAvailableKg(minAvailableKg));
+        if (maxAvailableKg != null)
+            spec = spec.and(AnnouncementSpecification.maxAvailableKg(maxAvailableKg));
+        if (maxPricePerKg != null)
+            spec = spec.and(AnnouncementSpecification.maxPricePerKg(maxPricePerKg));
+        if (Boolean.TRUE.equals(weekendOnly))
+            spec = spec.and(AnnouncementSpecification.weekendOnly());
+        if (minRating != null)
+            spec = spec.and(AnnouncementSpecification.minRating(minRating));
+        if (Boolean.TRUE.equals(kiloProOnly))
+            spec = spec.and(AnnouncementSpecification.kiloProOnly());
+        if (transportMode != null && !transportMode.isBlank()) {
+            try {
+                TransportMode mode = TransportMode.valueOf(transportMode.toUpperCase());
+                spec = spec.and(AnnouncementSpecification.hasTransportMode(mode));
+            } catch (IllegalArgumentException ignored) {
+                // invalid enum value → ignore filter, don't crash
+            }
+        }
+        if (Boolean.TRUE.equals(kycVerifiedOnly))
+            spec = spec.and(AnnouncementSpecification.kycVerifiedOnly());
+        if (contentType != null && !contentType.isBlank())
+            spec = spec.and(AnnouncementSpecification.hasAcceptedContentType(contentType));
 
         // Radius filter: only active when ALL 3 params provided
         if (userLat != null && userLng != null && radiusKm != null && radiusKm > 0) {
@@ -103,16 +147,18 @@ public class AnnouncementService {
 
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
         UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
+        boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto profile = traveler != null
                 ? new TravelerProfileDto(
                         traveler.getId(),
                         buildDisplayName(traveler),
-                        traveler.getPhoneNumber(),
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         traveler.getTotalTrips(),
-                        traveler.isKiloPro())
+                        traveler.isKiloPro(),
+                        traveler.isProAccount(),
+                        kycVerified)
                 : null;
-        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         return new AnnouncementSearchResponse(
                 entity.getId(), entity.getTravelerId(),
                 entity.getDepartureCity(), entity.getArrivalCity(),
@@ -120,7 +166,7 @@ public class AnnouncementService {
                 entity.getDepartureTime(), entity.getArrivalTime(),
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
-                entity.getAvailableKg(), entity.getPricePerKg(),
+                entity.getAvailableKg(), entity.getTotalKg(), entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getDescription(),
@@ -151,15 +197,23 @@ public class AnnouncementService {
                         "Utilisateur introuvable"
                 ));
 
-        // TODO: Réactiver la vérification KYC avant la prod
-        // if (user.getKycStatus() != KycStatus.VERIFIED) {
-        //     throw new DonyBusinessException(
-        //             HttpStatus.FORBIDDEN,
-        //             "kyc-not-verified",
-        //             "KYC Not Verified",
-        //             "Vérifiez votre identité pour publier un trajet"
-        //     );
-        // }
+        if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "kyc-not-verified",
+                    "KYC Not Verified",
+                    "Vous devez compléter votre vérification d'identité pour effectuer cette action"
+            );
+        }
+
+        if (enforceStripeOnboarding && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "stripe-onboarding-incomplete",
+                    "Stripe Onboarding Incomplete",
+                    "Vous devez compléter la configuration de votre compte bancaire pour publier un trajet"
+            );
+        }
 
         if (!user.getRoles().contains(Role.TRAVELER)) {
             user.getRoles().add(Role.TRAVELER);
@@ -180,6 +234,7 @@ public class AnnouncementService {
         announcement.setDeliveryLat(java.math.BigDecimal.valueOf(request.deliveryAddress().lat()));
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
+        announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
         announcement.setStatus(AnnouncementStatus.ACTIVE);
@@ -204,16 +259,93 @@ public class AnnouncementService {
                 )
         );
 
+        eventPublisher.publishEvent(new com.dony.api.matching.events.AnnouncementCreatedEvent(
+            saved.getId(),
+            saved.getDepartureCity(),
+            "",
+            saved.getArrivalCity(),
+            ""
+        ));
+
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
-        
+
+        // Transition inline: before returning the list, check if any ACTIVE/FULL
+        // announcements have passed their departure time and update them immediately.
+        // This makes the "En cours" status appear as soon as the traveler opens the screen,
+        // without waiting for the hourly scheduler.
+        triggerInProgressTransitions();
+
         return announcementRepository.findByTravelerId(user.getId(), pageable)
                 .map(this::toResponse);
+    }
+
+    /**
+     * Checks all ACTIVE/FULL announcements whose departure time has passed and transitions
+     * them to IN_PROGRESS (or directly COMPLETED if no ACCEPTED bids remain).
+     * Called inline on each "Mes trajets" load, and also by the hourly scheduler as a safety net.
+     */
+    public void triggerInProgressTransitions() {
+        ZonedDateTime nowParis = ZonedDateTime.now(DEFAULT_ZONE);
+        LocalDate today = nowParis.toLocalDate();
+        LocalTime nowTime = nowParis.toLocalTime();
+
+        List<AnnouncementEntity> candidates =
+                announcementRepository.findDepartedActiveAnnouncements(today, nowTime);
+
+        for (AnnouncementEntity announcement : candidates) {
+            try {
+                applyInProgressTransition(announcement);
+            } catch (Exception e) {
+                log.error("Inline transition failed for announcement {}: {}",
+                        announcement.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void applyInProgressTransition(AnnouncementEntity announcement) {
+        AnnouncementStatus previous = announcement.getStatus();
+        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(
+                announcement.getId(), BidStatus.ACCEPTED);
+
+        if (!hasAcceptedBids) {
+            announcement.setStatus(AnnouncementStatus.COMPLETED);
+            announcementRepository.save(announcement);
+            auditService.log("ANNOUNCEMENT", announcement.getTravelerId(),
+                    "ANNOUNCEMENT_COMPLETED", announcement.getId(),
+                    Map.of("previousStatus", previous.name(), "trigger", "DEPARTURE_NO_ACCEPTED_BIDS"));
+            log.info("Announcement {} → COMPLETED (no ACCEPTED bids at departure)", announcement.getId());
+        } else {
+            announcement.setStatus(AnnouncementStatus.IN_PROGRESS);
+            announcementRepository.save(announcement);
+            auditService.log("ANNOUNCEMENT", announcement.getTravelerId(),
+                    "ANNOUNCEMENT_IN_PROGRESS", announcement.getId(),
+                    Map.of("previousStatus", previous.name()));
+            eventPublisher.publishEvent(
+                    new AnnouncementInProgressEvent(announcement.getId(), announcement.getTravelerId()));
+            log.info("Announcement {} → IN_PROGRESS", announcement.getId());
+        }
+
+        expirePendingBids(announcement);
+    }
+
+    private void expirePendingBids(AnnouncementEntity announcement) {
+        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatus(
+                announcement.getId(), BidStatus.PENDING);
+        for (BidEntity bid : pendingBids) {
+            bid.setStatus(BidStatus.EXPIRED);
+            bidRepository.save(bid);
+            auditService.log("BID", bid.getId(), "BID_EXPIRED_ON_DEPARTURE",
+                    announcement.getTravelerId(),
+                    Map.of("announcementId", announcement.getId().toString()));
+            eventPublisher.publishEvent(new BidExpiredOnDepartureEvent(
+                    bid.getId(), bid.getSenderId(), announcement.getId(), announcement.getTravelerId()));
+        }
     }
 
     @Transactional(readOnly = true)
@@ -221,17 +353,19 @@ public class AnnouncementService {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
-        long bidsCount = bidRepository.countByAnnouncementId(id);
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
         UserEntity traveler = userRepository.findById(announcement.getTravelerId()).orElse(null);
+        boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto travelerDto = traveler != null
                 ? new TravelerProfileDto(
                         traveler.getId(),
                         buildDisplayName(traveler),
-                        traveler.getPhoneNumber(),
                         traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
                         null,
-                        traveler.isKiloPro())
+                        traveler.isKiloPro(),
+                        traveler.isProAccount(),
+                        kycVerified)
                 : null;
 
         return new AnnouncementDetailResponse(
@@ -245,6 +379,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(announcement.getPickupAddressLabel(), announcement.getPickupLat().doubleValue(), announcement.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(announcement.getDeliveryAddressLabel(), announcement.getDeliveryLat().doubleValue(), announcement.getDeliveryLng().doubleValue()),
                 announcement.getAvailableKg(),
+                announcement.getTotalKg(),
                 announcement.getPricePerKg(),
                 announcement.getTransportMode(),
                 announcement.getStatus().name(),
@@ -295,6 +430,8 @@ public class AnnouncementService {
         announcement.setDeliveryLat(java.math.BigDecimal.valueOf(request.deliveryAddress().lat()));
         announcement.setDeliveryLng(java.math.BigDecimal.valueOf(request.deliveryAddress().lng()));
         announcement.setAvailableKg(request.availableKg());
+        // Update is blocked if any bid is ACCEPTED, so no booked weight to preserve → keep total in sync.
+        announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
         announcement.setDescription(request.description());
@@ -319,13 +456,13 @@ public class AnnouncementService {
                 )
         );
 
-        long bidsCount = bidRepository.countByAnnouncementId(id);
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
 
+        boolean kycVerified = user.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
                 user.getId(),
                 buildDisplayName(user),
-                user.getPhoneNumber(),
-                null, null, false);
+                null, null, false, user.isProAccount(), kycVerified);
 
         return new AnnouncementDetailResponse(
                 saved.getId(),
@@ -338,6 +475,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(saved.getPickupAddressLabel(), saved.getPickupLat().doubleValue(), saved.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(saved.getDeliveryAddressLabel(), saved.getDeliveryLat().doubleValue(), saved.getDeliveryLng().doubleValue()),
                 saved.getAvailableKg(),
+                saved.getTotalKg(),
                 saved.getPricePerKg(),
                 saved.getTransportMode(),
                 saved.getStatus().name(),
@@ -412,7 +550,7 @@ public class AnnouncementService {
     }
 
     private AnnouncementResponse toResponse(AnnouncementEntity entity) {
-        long bidsCount = bidRepository.countByAnnouncementId(entity.getId());
+        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),
@@ -424,6 +562,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(),
+                entity.getTotalKg(),
                 entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(),

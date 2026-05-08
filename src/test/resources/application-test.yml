@@ -41,6 +41,12 @@ stripe:
   secret-key: sk_test_dummy
   webhook-secret: whsec_dummy
 
+dony:
+  kyc:
+    enforce: false
+  stripe:
+    enforce: false
+
 app:
   encryption:
     key: dony-test-encryption-key-not-for-production-use-32-bytes

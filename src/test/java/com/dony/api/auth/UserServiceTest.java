@@ -3,12 +3,8 @@ package com.dony.api.auth;
 import com.dony.api.auth.events.UserSuspendedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
-import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.PaymentRepository;
-import com.dony.api.payments.PaymentStatus;
-import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -17,13 +13,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.lang.reflect.Field;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,10 +30,8 @@ import static org.mockito.Mockito.*;
 class UserServiceTest {
 
     @Mock private UserRepository userRepository;
-    @Mock private BidRepository bidRepository;
     @Mock private PaymentRepository paymentRepository;
     @Mock private KycRepository kycRepository;
-    @Mock private StorageService storageService;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
 
@@ -108,46 +100,28 @@ class UserServiceTest {
     }
 
     @Nested
-    @DisplayName("deleteAccount() — RGPD")
+    @DisplayName("deleteAccount() — RGPD (délègue à requestDeletion)")
     class DeleteAccountTests {
 
         @Test
-        @DisplayName("utilisateur sans transaction active → pseudonymisation + revocation Firebase")
+        @DisplayName("utilisateur sans transaction active → statut PENDING_DELETION + event publié")
         void deleteAccount_noActiveTransactions_pseudonymizes() throws Exception {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(bidRepository.findBySenderId(USER_ID)).thenReturn(List.of());
-            when(bidRepository.findCompletedBidsByTravelerId(USER_ID)).thenReturn(List.of());
-            when(kycRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
             when(userRepository.save(any())).thenReturn(user);
 
-            try (MockedStatic<FirebaseAuth> fbMock = mockStatic(FirebaseAuth.class)) {
-                FirebaseAuth mockFb = mock(FirebaseAuth.class);
-                fbMock.when(FirebaseAuth::getInstance).thenReturn(mockFb);
-                doNothing().when(mockFb).deleteUser(anyString());
+            userService.deleteAccount(FIREBASE_UID);
 
-                userService.deleteAccount(FIREBASE_UID);
-
-                assertThat(user.getEmail()).contains("deleted_");
-                assertThat(user.getPhoneNumber()).isEqualTo("+00000000000");
-                assertThat(user.getFirstName()).isEqualTo("Utilisateur");
-                assertThat(user.getStatus()).isEqualTo(UserStatus.BANNED);
-                verify(mockFb).deleteUser(FIREBASE_UID);
-                verify(auditService).log(eq("USER"), any(), eq("USER_GDPR_DELETION"), any(), any());
-            }
+            assertThat(user.getStatus()).isEqualTo(UserStatus.PENDING_DELETION);
+            assertThat(user.getDeletionRequestedAt()).isNotNull();
+            verify(eventPublisher).publishEvent(any(com.dony.api.auth.events.AccountDeletionRequestedEvent.class));
         }
 
         @Test
         @DisplayName("transaction active (ESCROW) → 422 UNPROCESSABLE_ENTITY")
         void deleteAccount_activeEscrow_throws422() throws Exception {
-            UUID bidId = UUID.randomUUID();
-            com.dony.api.matching.BidEntity bid = new com.dony.api.matching.BidEntity();
-            setId(bid, bidId);
-
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(bidRepository.findBySenderId(USER_ID)).thenReturn(List.of(bid));
-            when(bidRepository.findCompletedBidsByTravelerId(USER_ID)).thenReturn(List.of());
-            when(paymentRepository.existsByBidIdInAndStatus(anyList(), eq(PaymentStatus.ESCROW)))
-                    .thenReturn(true);
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(true);
 
             assertThatThrownBy(() -> userService.deleteAccount(FIREBASE_UID))
                     .isInstanceOf(DonyBusinessException.class)

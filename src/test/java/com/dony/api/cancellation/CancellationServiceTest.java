@@ -88,6 +88,7 @@ class CancellationServiceTest {
         a.setArrivalCity("Dakar");
         a.setDepartureDate(LocalDate.now().plusDays(5));
         a.setAvailableKg(BigDecimal.valueOf(20));
+        a.setTotalKg(BigDecimal.valueOf(20));
         a.setPricePerKg(BigDecimal.valueOf(5));
         a.setStatus(AnnouncementStatus.ACTIVE);
         setId(a, ANNOUNCEMENT_ID);
