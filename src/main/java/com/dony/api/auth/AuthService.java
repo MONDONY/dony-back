@@ -134,8 +134,8 @@ public class AuthService {
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         if (user.getStatus() == UserStatus.BANNED) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT, "already-deleted",
-                    "Conflict", "Ce compte est déjà supprimé");
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "account-banned",
+                    "Conflict", "Ce compte est banni et ne peut pas être supprimé");
         }
 
         if (paymentRepository.hasActiveEscrowForUser(user.getId())) {
@@ -145,7 +145,13 @@ public class AuthService {
 
         FirebaseToken decoded = (FirebaseToken) SecurityContextHolder
                 .getContext().getAuthentication().getCredentials();
-        long authTime = ((Number) decoded.getClaims().get("auth_time")).longValue();
+        Object authTimeClaim = decoded.getClaims().get("auth_time");
+        if (authTimeClaim == null) {
+            throw new DonyBusinessException(HttpStatus.UNAUTHORIZED, "reauth-required",
+                    "Re-authentication required",
+                    "Veuillez vous ré-authentifier avant de supprimer votre compte définitivement");
+        }
+        long authTime = ((Number) authTimeClaim).longValue();
         if (Instant.ofEpochSecond(authTime).isBefore(Instant.now().minus(5, ChronoUnit.MINUTES))) {
             throw new DonyBusinessException(HttpStatus.UNAUTHORIZED, "reauth-required",
                     "Re-authentication required",
