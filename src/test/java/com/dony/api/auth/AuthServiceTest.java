@@ -5,6 +5,7 @@ import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,8 @@ class AuthServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private UserService userService;
+    @Mock private PaymentRepository paymentRepository;
+    @Mock private AccountFinalizationService accountFinalizationService;
 
     @InjectMocks private AuthService authService;
 
