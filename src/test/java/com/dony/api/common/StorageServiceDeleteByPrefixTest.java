@@ -40,7 +40,7 @@ class StorageServiceDeleteByPrefixTest {
         S3Object obj1 = S3Object.builder().key("kyc/user1/photo1.jpg").build();
         S3Object obj2 = S3Object.builder().key("kyc/user1/photo2.jpg").build();
         ListObjectsV2Response listResponse = ListObjectsV2Response.builder()
-                .contents(List.of(obj1, obj2)).build();
+                .contents(List.of(obj1, obj2)).isTruncated(false).build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(listResponse);
         doReturn(DeleteObjectsResponse.builder().build())
                 .when(s3Client).deleteObjects(any(DeleteObjectsRequest.class));
@@ -59,10 +59,29 @@ class StorageServiceDeleteByPrefixTest {
     @DisplayName("préfixe sans objets → deleteObjects jamais appelé")
     void emptyPrefix_doesNotCallDelete() {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder().contents(List.of()).build());
+                .thenReturn(ListObjectsV2Response.builder().contents(List.of()).isTruncated(false).build());
 
         storageService.deleteByPrefix("kyc/nobody/");
 
         verify(s3Client, never()).deleteObjects(any(DeleteObjectsRequest.class));
+    }
+
+    @Test
+    @DisplayName("pagination S3 → deux appels listObjectsV2 si isTruncated")
+    void paginatedPrefix_callsListTwice() {
+        ListObjectsV2Response page1 = ListObjectsV2Response.builder()
+                .contents(List.of(S3Object.builder().key("kyc/u/a.jpg").build()))
+                .isTruncated(true).nextContinuationToken("tok1").build();
+        ListObjectsV2Response page2 = ListObjectsV2Response.builder()
+                .contents(List.of(S3Object.builder().key("kyc/u/b.jpg").build()))
+                .isTruncated(false).build();
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(page1, page2);
+        doReturn(DeleteObjectsResponse.builder().build())
+                .when(s3Client).deleteObjects(any(DeleteObjectsRequest.class));
+
+        storageService.deleteByPrefix("kyc/u/");
+
+        verify(s3Client, times(2)).listObjectsV2(any(ListObjectsV2Request.class));
+        verify(s3Client, times(2)).deleteObjects(any(DeleteObjectsRequest.class));
     }
 }
