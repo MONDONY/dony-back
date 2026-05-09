@@ -1,5 +1,7 @@
 package com.dony.api.ratings;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,8 @@ public interface RatingRepository extends JpaRepository<RatingEntity, UUID> {
     Optional<RatingEntity> findByBidIdAndTrackingToken(UUID bidId, String trackingToken);
 
     List<RatingEntity> findByRatedUserId(UUID ratedUserId);
+
+    Page<RatingEntity> findByRatedUserId(UUID ratedUserId, Pageable pageable);
 
     @Query("SELECT r FROM RatingEntity r WHERE r.ratedUserId = :userId AND r.excludedFromAverage = false")
     List<RatingEntity> findIncludedRatingsByRatedUserId(@Param("userId") UUID userId);

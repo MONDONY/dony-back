@@ -130,4 +130,23 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
            "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
            "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
     int cancelOpenTravelerBidsByUserId(@Param("userId") UUID userId);
+
+    // Retourne le bid COMPLETED le plus récent pour lequel userId n'a pas encore noté
+    // (en tant qu'expéditeur OU voyageur via la jointure avec announcements)
+    @Query(nativeQuery = true, value = """
+        SELECT b.* FROM bids b
+        JOIN announcements a ON b.announcement_id = a.id
+        WHERE b.status = 'COMPLETED'
+          AND b.deleted_at IS NULL
+          AND (b.sender_id = :userId OR a.traveler_id = :userId)
+          AND NOT EXISTS (
+              SELECT 1 FROM ratings r
+              WHERE r.bid_id = b.id
+                AND r.rater_id = :userId
+                AND r.deleted_at IS NULL
+          )
+        ORDER BY b.updated_at DESC
+        LIMIT 1
+        """)
+    Optional<BidEntity> findPendingRatingForUser(@Param("userId") UUID userId);
 }
