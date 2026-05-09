@@ -76,6 +76,12 @@ public class AuthController {
         return ResponseEntity.ok(authService.upgradeToPro(firebaseUid, request));
     }
 
+    @DeleteMapping("/me/upgrade-to-pro")
+    public ResponseEntity<UserResponse> downgradePro() {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.downgradePro(firebaseUid));
+    }
+
     @PostMapping("/me/delete-immediately")
     public ResponseEntity<Void> deleteImmediately(@Valid @RequestBody DeleteImmediatelyRequest request) {
         String firebaseUid = requireFirebaseUid();

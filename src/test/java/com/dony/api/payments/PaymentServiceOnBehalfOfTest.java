@@ -158,7 +158,14 @@ class PaymentServiceOnBehalfOfTest {
             return p;
         });
 
-        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+        try (MockedStatic<com.stripe.model.Account> acctStatic = mockStatic(com.stripe.model.Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            com.stripe.model.Account mockAcct = mock(com.stripe.model.Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAcct.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> com.stripe.model.Account.retrieve(any(String.class))).thenReturn(mockAcct);
+
             ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor =
                     ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
             PaymentIntent mockPi = mock(PaymentIntent.class);

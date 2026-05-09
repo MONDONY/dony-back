@@ -70,7 +70,15 @@ class AnnouncementServiceAddressTest {
     @Mock UserRepository userRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
-    @InjectMocks AnnouncementService announcementService;
+    AnnouncementService announcementService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void initService() {
+        com.dony.api.config.DonyConfigProperties cfg = new com.dony.api.config.DonyConfigProperties(null, null);
+        announcementService = new AnnouncementService(
+                announcementRepository, bidRepository, userRepository,
+                auditService, eventPublisher, cfg);
+    }
 
     private static final String TRAVELER_UID = "firebase-uid-123";
     private static final java.util.UUID TRAVELER_ID = java.util.UUID.randomUUID();

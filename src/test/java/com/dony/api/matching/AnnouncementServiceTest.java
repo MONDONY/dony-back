@@ -7,6 +7,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AddressDto;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
@@ -54,7 +55,15 @@ class AnnouncementServiceTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
 
-    @InjectMocks private AnnouncementService announcementService;
+    private AnnouncementService announcementService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void initService() {
+        DonyConfigProperties config = new DonyConfigProperties(null, null);
+        announcementService = new AnnouncementService(
+                announcementRepository, bidRepository, userRepository,
+                auditService, eventPublisher, config);
+    }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
     private static final UUID USER_ID = UUID.randomUUID();

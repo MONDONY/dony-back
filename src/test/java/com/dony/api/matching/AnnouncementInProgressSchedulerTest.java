@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.events.AnnouncementInProgressEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,10 +64,14 @@ class AnnouncementInProgressTransitionTest {
 
     @BeforeEach
     void setUp() {
+        DonyConfigProperties.Limits.NonPro nonPro = new DonyConfigProperties.Limits.NonPro(2);
+        DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(nonPro);
+        DonyConfigProperties config = new DonyConfigProperties(
+                new DonyConfigProperties.Commission(new java.math.BigDecimal("0.12")), limits);
         service = new AnnouncementService(
                 announcementRepository, bidRepository,
                 mock(com.dony.api.auth.UserRepository.class),
-                auditService, eventPublisher);
+                auditService, eventPublisher, config);
     }
 
     private static void setId(Object entity, UUID id) {

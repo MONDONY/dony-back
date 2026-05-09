@@ -447,8 +447,8 @@ class BidServiceTest {
             announcement.setAvailableKg(BigDecimal.valueOf(5)); // exact match avec le bid
             BidEntity bid = buildBid(); // weightKg = 5
 
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.save(any())).thenReturn(announcement);
             when(bidRepository.save(any())).thenReturn(bid);

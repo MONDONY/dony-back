@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
@@ -76,4 +77,26 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
            "WHERE a.travelerId = :userId AND a.status IN " +
            "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
     int cancelOpenAnnouncementsByUserId(@Param("userId") UUID userId);
+
+    long countByTravelerIdAndCreatedAtBetween(UUID travelerId, LocalDateTime from, LocalDateTime to);
+
+    long countByTravelerIdAndStatusAndCreatedAtBetween(
+            UUID travelerId, AnnouncementStatus status, LocalDateTime from, LocalDateTime to);
+
+    @Query("""
+        SELECT new com.dony.api.matching.dto.TravelerStatsDto$DestinationStat(
+            a.departureCity, a.arrivalCity, COUNT(a))
+        FROM AnnouncementEntity a
+        WHERE a.travelerId = :travelerId
+        GROUP BY a.departureCity, a.arrivalCity
+        ORDER BY COUNT(a) DESC
+    """)
+    List<com.dony.api.matching.dto.TravelerStatsDto.DestinationStat> findTopDestinationsForTraveler(
+            @Param("travelerId") UUID travelerId, org.springframework.data.domain.Pageable pageable);
+
+    @Modifying
+    @Query("UPDATE AnnouncementEntity a SET a.travelerIsPro = :isPro " +
+           "WHERE a.travelerId = :travelerId AND a.status IN " +
+           "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
+    int updateTravelerProStatus(@Param("travelerId") UUID travelerId, @Param("isPro") boolean isPro);
 }

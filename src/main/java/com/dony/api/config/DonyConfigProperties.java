@@ -11,7 +11,16 @@ import java.math.BigDecimal;
  */
 @ConfigurationProperties(prefix = "dony")
 public record DonyConfigProperties(
-    Commission commission
+    Commission commission,
+    Limits limits
 ) {
     public record Commission(BigDecimal rate) {}
+
+    public record Limits(NonPro nonPro) {
+        public record NonPro(int monthlyAnnouncements) {}
+
+        public int monthlyAnnouncements() {
+            return nonPro != null ? nonPro.monthlyAnnouncements() : 2;
+        }
+    }
 }
