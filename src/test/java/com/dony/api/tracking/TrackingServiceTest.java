@@ -495,7 +495,7 @@ class TrackingServiceTest {
     }
 
     @Test
-    void refreshCode_success_generatesNewCodeAndNotifiesTraveler() {
+    void refreshCode_success_generatesNewCode() {
         BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
         bid.setConfirmationCode("000000");
         bid.setConfirmationCodeAttempts(2);
@@ -511,9 +511,59 @@ class TrackingServiceTest {
         assertThat(resp.confirmationCode()).isNotEqualTo("000000");
         assertThat(resp.expiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC));
         assertThat(bid.getConfirmationCodeAttempts()).isZero();
-        verify(notificationDispatcher).notifyUser(
-                eq(travelerId), contains("code"), any(),
-                argThat(d -> "CONFIRMATION_CODE_REFRESHED".equals(d.get("type"))));
+        assertThat(bid.getConfirmationCodeRefreshCount()).isEqualTo(1);
+        assertThat(bid.getConfirmationCodeRefreshWindowStart()).isNotNull();
+        verifyNoInteractions(notificationDispatcher);
+    }
+
+    @Test
+    void refreshCode_withinWindow_incrementsCount() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("111111");
+        bid.setConfirmationCodeRefreshCount(3);
+        bid.setConfirmationCodeRefreshWindowStart(LocalDateTime.now(ZoneOffset.UTC).minusHours(10));
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        service.refreshConfirmationCode(bidId, "uid-sender");
+
+        assertThat(bid.getConfirmationCodeRefreshCount()).isEqualTo(4);
+    }
+
+    @Test
+    void refreshCode_limitReached_throwsTooManyRequests() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("222222");
+        bid.setConfirmationCodeRefreshCount(5);
+        bid.setConfirmationCodeRefreshWindowStart(LocalDateTime.now(ZoneOffset.UTC).minusHours(1));
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+
+        assertDonyError(() -> service.refreshConfirmationCode(bidId, "uid-sender"), "too-many-refreshes");
+    }
+
+    @Test
+    void refreshCode_windowExpired_resetsCount() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("333333");
+        bid.setConfirmationCodeRefreshCount(5);
+        // Fenêtre ouverte il y a 25h → expirée
+        bid.setConfirmationCodeRefreshWindowStart(LocalDateTime.now(ZoneOffset.UTC).minusHours(25));
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        service.refreshConfirmationCode(bidId, "uid-sender");
+
+        assertThat(bid.getConfirmationCodeRefreshCount()).isEqualTo(1);
+        assertThat(bid.getConfirmationCodeRefreshWindowStart())
+                .isAfter(LocalDateTime.now(ZoneOffset.UTC).minusSeconds(5));
     }
 
     @Test

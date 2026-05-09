@@ -13,6 +13,7 @@ import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
+import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
@@ -37,18 +38,20 @@ public class BidService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final RatingRepository ratingRepository;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
 
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
-                      ApplicationEventPublisher eventPublisher) {
+                      ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.ratingRepository = ratingRepository;
     }
 
     @Transactional
@@ -540,6 +543,10 @@ public class BidService {
         String senderName = buildSenderName(sender);
         String senderPhone = sender != null ? maskPhone(sender.getPhoneNumber()) : null;
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
+        boolean senderKycVerified = sender != null
+                && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
+        boolean senderIsProAccount = sender != null && sender.isProAccount();
+        boolean senderKiloPro = sender != null && sender.isKiloPro();
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         String departureCity = announcement != null ? announcement.getDepartureCity() : "Inconnu";
         String arrivalCity = announcement != null ? announcement.getArrivalCity() : "Inconnu";
@@ -557,6 +564,16 @@ public class BidService {
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
         String travelerPhone = traveler != null ? maskPhone(traveler.getPhoneNumber()) : null;
+        boolean travelerKycVerified = traveler != null
+                && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
+        boolean travelerIsProAccount = traveler != null && traveler.isProAccount();
+        boolean travelerKiloPro = traveler != null && traveler.isKiloPro();
+        Integer travelerTotalTrips = traveler != null ? traveler.getTotalTrips() : null;
+        java.math.BigDecimal travelerAverageRating = traveler != null ? traveler.getAverageRating() : null;
+
+        boolean senderHasRated = ratingRepository.existsByBidIdAndRaterId(bid.getId(), bid.getSenderId());
+        boolean travelerHasRated = travelerId != null
+                && ratingRepository.existsByBidIdAndRaterId(bid.getId(), travelerId);
 
         return new BidResponse(
                 bid.getId(),
@@ -565,6 +582,9 @@ public class BidService {
                 senderName,
                 senderPhone,
                 senderTotalShipments,
+                senderKycVerified,
+                senderIsProAccount,
+                senderKiloPro,
                 bid.getWeightKg(),
                 bid.getDeclaredValueEur(),
                 bid.getDescription(),
@@ -592,7 +612,16 @@ public class BidService {
                 confirmationCode,
                 travelerId,
                 travelerName,
-                travelerPhone
+                travelerPhone,
+                travelerKycVerified,
+                travelerIsProAccount,
+                travelerKiloPro,
+                travelerTotalTrips,
+                travelerAverageRating,
+                senderHasRated,
+                travelerHasRated,
+                bid.getConfirmationCodeRefreshCount(),
+                bid.getConfirmationCodeRefreshWindowStart()
         );
     }
 }
