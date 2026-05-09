@@ -102,11 +102,17 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "total_trips_counted", nullable = false)
     private boolean totalTripsCounted = false;
 
+    @Column(name = "traveler_is_pro", nullable = false)
+    private boolean travelerIsPro = false;
+
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
     public boolean isTotalTripsCounted() { return totalTripsCounted; }
     public void setTotalTripsCounted(boolean totalTripsCounted) { this.totalTripsCounted = totalTripsCounted; }
+
+    public boolean isTravelerIsPro() { return travelerIsPro; }
+    public void setTravelerIsPro(boolean travelerIsPro) { this.travelerIsPro = travelerIsPro; }
 
     public UUID getTravelerId() { return travelerId; }
     public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }

@@ -1,3 +1,5 @@
 package com.dony.api.tracking.dto;
 
-public record ConfirmCodeResponse(String confirmationCode) {}
+import java.time.LocalDateTime;
+
+public record ConfirmCodeResponse(String confirmationCode, LocalDateTime expiresAt) {}

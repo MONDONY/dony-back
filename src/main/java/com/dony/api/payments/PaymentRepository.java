@@ -52,4 +52,31 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
            "   WHERE a.travelerId = :userId) " +
            "AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
     boolean hasActiveEscrowForUser(@Param("userId") UUID userId);
+
+    @Query("""
+        SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
+        FROM PaymentEntity p
+        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId
+          AND p.status = :status
+          AND p.createdAt BETWEEN :from AND :to
+    """)
+    java.math.BigDecimal sumCapturedRevenueForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") PaymentStatus status,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
+    @Query("""
+        SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
+        FROM PaymentEntity p
+        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId
+          AND p.status = :status
+    """)
+    java.math.BigDecimal sumTotalCapturedRevenueForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") PaymentStatus status);
 }

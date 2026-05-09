@@ -31,7 +31,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -105,6 +107,13 @@ class TrackingServiceTest {
         a.setDepartureCity("Paris");
         a.setArrivalCity("Dakar");
         a.setPricePerKg(BigDecimal.valueOf(5.0));
+        a.setDepartureDate(LocalDate.now(ZoneOffset.UTC).plusDays(2));
+        return a;
+    }
+
+    private AnnouncementEntity buildAnnouncementWithArrivalTime(LocalTime arrivalTime) {
+        AnnouncementEntity a = buildAnnouncement();
+        a.setArrivalTime(arrivalTime);
         return a;
     }
 
@@ -439,6 +448,7 @@ class TrackingServiceTest {
     void getConfirmationCode_senderGetsCode() {
         BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
         bid.setConfirmationCode("888888");
+        bid.setConfirmationCodeExpiry(LocalDateTime.now(ZoneOffset.UTC).plusDays(2));
         UserEntity sender = buildUser(senderId, "uid-sender");
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
@@ -446,6 +456,101 @@ class TrackingServiceTest {
         ConfirmCodeResponse resp = service.getConfirmationCode(bidId, "uid-sender");
 
         assertThat(resp.confirmationCode()).isEqualTo("888888");
+        assertThat(resp.expiresAt()).isNotNull();
+    }
+
+    // ── refreshConfirmationCode ───────────────────────────────────────────────
+
+    @Test
+    void refreshCode_notSender_throwsForbidden() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("111111");
+        UserEntity other = buildUser(UUID.randomUUID(), "uid-other");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(other));
+
+        assertDonyError(() -> service.refreshConfirmationCode(bidId, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void refreshCode_codeNotYetGenerated_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        // confirmationCode is null → DEPART not yet scanned
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+
+        assertDonyError(() -> service.refreshConfirmationCode(bidId, "uid-sender"), "code-not-generated");
+    }
+
+    @Test
+    void refreshCode_bidNotAccepted_throwsUnprocessable() {
+        BidEntity bid = buildBid(BidStatus.COMPLETED, "qt");
+        bid.setConfirmationCode("123456");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+
+        assertDonyError(() -> service.refreshConfirmationCode(bidId, "uid-sender"), "bid-not-accepted");
+    }
+
+    @Test
+    void refreshCode_success_generatesNewCodeAndNotifiesTraveler() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("000000");
+        bid.setConfirmationCodeAttempts(2);
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        ConfirmCodeResponse resp = service.refreshConfirmationCode(bidId, "uid-sender");
+
+        assertThat(resp.confirmationCode()).hasSize(6);
+        assertThat(resp.confirmationCode()).isNotEqualTo("000000");
+        assertThat(resp.expiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC));
+        assertThat(bid.getConfirmationCodeAttempts()).isZero();
+        verify(notificationDispatcher).notifyUser(
+                eq(travelerId), contains("code"), any(),
+                argThat(d -> "CONFIRMATION_CODE_REFRESHED".equals(d.get("type"))));
+    }
+
+    @Test
+    void refreshCode_withArrivalTime_expiryIsArrivalTimePlusOneDay() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("111111");
+        LocalDate departureDate = LocalDate.now(ZoneOffset.UTC).plusDays(1);
+        LocalTime arrivalTime = LocalTime.of(14, 30);
+        AnnouncementEntity ann = buildAnnouncementWithArrivalTime(arrivalTime);
+        ann.setDepartureDate(departureDate);
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        ConfirmCodeResponse resp = service.refreshConfirmationCode(bidId, "uid-sender");
+
+        LocalDateTime expected = departureDate.atTime(arrivalTime).plusDays(1);
+        assertThat(resp.expiresAt()).isEqualTo(expected);
+    }
+
+    @Test
+    void refreshCode_withoutArrivalTime_expiryIsDepartureDatePlusThreeDays() {
+        BidEntity bid = buildBid(BidStatus.ACCEPTED, "qt");
+        bid.setConfirmationCode("222222");
+        LocalDate departureDate = LocalDate.now(ZoneOffset.UTC).plusDays(1);
+        AnnouncementEntity ann = buildAnnouncement();
+        ann.setDepartureDate(departureDate);
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+        ConfirmCodeResponse resp = service.refreshConfirmationCode(bidId, "uid-sender");
+
+        LocalDateTime expected = departureDate.atStartOfDay().plusDays(3);
+        assertThat(resp.expiresAt()).isEqualTo(expected);
     }
 
     // ── searchByTrackingNumber additional branches ────────────────────────────

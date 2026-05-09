@@ -192,6 +192,19 @@ public class AuthService {
         return toResponse(updated);
     }
 
+    @Transactional
+    public UserResponse downgradePro(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+        if (!user.isProAccount()) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "not-pro-account", "Not a PRO account", "Ce compte n'est pas un compte PRO");
+        }
+        UserEntity updated = userService.downgradePro(user);
+        return toResponse(updated);
+    }
+
     private UserResponse createUser(String firebaseUid, RegisterRequest request) {
         Set<Role> roles = parseRoles(request.roles());
 

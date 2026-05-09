@@ -46,6 +46,11 @@ dony:
     enforce: false
   stripe:
     enforce: false
+  commission:
+    rate: 0.12
+  limits:
+    non-pro:
+      monthly-announcements: 2
 
 app:
   encryption:

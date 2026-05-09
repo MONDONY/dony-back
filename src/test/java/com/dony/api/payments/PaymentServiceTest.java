@@ -287,7 +287,14 @@ class PaymentServiceTest {
         var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
         when(req.getBidId()).thenReturn(bidId);
 
-        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            Account mockAcct = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAcct.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve(any(String.class))).thenReturn(mockAcct);
+
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getId()).thenReturn("pi_test_new");
             when(mockPi.getClientSecret()).thenReturn("pi_secret");

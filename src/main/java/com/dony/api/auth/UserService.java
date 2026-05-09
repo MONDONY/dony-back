@@ -152,11 +152,25 @@ public class UserService {
                 Map.of("companyName", request.companyName() != null ? request.companyName() : "",
                         "siret", request.siret() != null ? request.siret() : ""));
 
-        if (alreadyPro) {
-            log.info("User {} PRO profile updated (companyName, siret)", userId);
-        } else {
+        if (!alreadyPro) {
+            eventPublisher.publishEvent(new UserProStatusChangedEvent(userId, true));
             log.info("User {} upgraded to PRO account", userId);
+        } else {
+            log.info("User {} PRO profile updated (companyName, siret)", userId);
         }
+        return saved;
+    }
+
+    @Transactional
+    public UserEntity downgradePro(UserEntity user) {
+        UUID userId = user.getId();
+        user.setProAccount(false);
+        user.setProCompanyName(null);
+        user.setProSiret(null);
+        UserEntity saved = userRepository.save(user);
+        auditService.log("USER", userId, "USER_DOWNGRADED_FROM_PRO", userId, Map.of());
+        eventPublisher.publishEvent(new UserProStatusChangedEvent(userId, false));
+        log.info("User {} downgraded from PRO account", userId);
         return saved;
     }
 

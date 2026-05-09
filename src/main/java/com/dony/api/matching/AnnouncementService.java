@@ -4,9 +4,11 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserProStatusChangedEvent;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
@@ -21,6 +23,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -32,7 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -50,6 +55,7 @@ public class AnnouncementService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DonyConfigProperties config;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -62,13 +68,15 @@ public class AnnouncementService {
             BidRepository bidRepository,
             UserRepository userRepository,
             AuditService auditService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            DonyConfigProperties config
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.config = config;
     }
 
     @Transactional(readOnly = true)
@@ -139,10 +147,12 @@ public class AnnouncementService {
 
     private Sort buildSort(String sortBy, String sortDir) {
         Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
-        return switch (sortBy != null ? sortBy : "date") {
+        Sort proFirst = Sort.by(Sort.Direction.DESC, "travelerIsPro");
+        Sort secondary = switch (sortBy != null ? sortBy : "date") {
             case "price" -> Sort.by(direction, "pricePerKg");
             default -> Sort.by(direction, "departureDate");
         };
+        return proFirst.and(secondary);
     }
 
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
@@ -197,6 +207,22 @@ public class AnnouncementService {
                         "Utilisateur introuvable"
                 ));
 
+        if (!user.isProAccount() && config.limits() != null) {
+            YearMonth current = YearMonth.now();
+            LocalDateTime from = current.atDay(1).atStartOfDay();
+            LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
+            long count = announcementRepository.countByTravelerIdAndCreatedAtBetween(user.getId(), from, to);
+            if (count >= config.limits().monthlyAnnouncements()) {
+                throw new DonyBusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "pro-limit-reached",
+                        "Monthly announcement limit reached",
+                        "Vous avez atteint votre limite de " + config.limits().monthlyAnnouncements()
+                                + " annonces ce mois-ci. Passez en PRO pour continuer."
+                );
+            }
+        }
+
         if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
             throw new DonyBusinessException(
                     HttpStatus.FORBIDDEN,
@@ -222,6 +248,7 @@ public class AnnouncementService {
 
         AnnouncementEntity announcement = new AnnouncementEntity();
         announcement.setTravelerId(user.getId());
+        announcement.setTravelerIsPro(user.isProAccount());
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureDate(request.departureDate());
@@ -573,5 +600,13 @@ public class AnnouncementService {
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
+    }
+
+    @EventListener
+    @Transactional
+    public void onUserProStatusChanged(UserProStatusChangedEvent event) {
+        int updated = announcementRepository.updateTravelerProStatus(event.userId(), event.isPro());
+        log.info("PRO status change for user {} (isPro={}) — {} open announcements updated",
+                event.userId(), event.isPro(), updated);
     }
 }

@@ -16,6 +16,27 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     long countByAnnouncementId(UUID announcementId);
 
+    @Query("""
+        SELECT COUNT(b) FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+    """)
+    long countByAnnouncementTravelerIdAndStatus(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status);
+
+    @Query("""
+        SELECT COUNT(b) FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.createdAt BETWEEN :from AND :to
+    """)
+    long countDeliveredBidsForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
     /**
      * Counts only bids that are currently visible to the traveler on their announcement
      * (PENDING demands awaiting traveler action). Excludes AWAITING_PAYMENT (sender hasn't paid),
