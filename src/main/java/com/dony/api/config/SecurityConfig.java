@@ -46,6 +46,7 @@ public class SecurityConfig {
                     "/kyc/webhook",
                     "/payments/webhook",
                     "/ratings/recipient",
+                    "/ratings/user/**",
                     "/tracking/search",
                     "/tracking/public/**",
                     "/v3/api-docs/**",
