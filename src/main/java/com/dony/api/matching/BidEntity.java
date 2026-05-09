@@ -84,6 +84,12 @@ public class BidEntity extends BaseEntity {
     @Column(name = "confirmation_code_attempts", nullable = false)
     private int confirmationCodeAttempts = 0;
 
+    @Column(name = "confirmation_code_refresh_count", nullable = false)
+    private int confirmationCodeRefreshCount = 0;
+
+    @Column(name = "confirmation_code_refresh_window_start")
+    private LocalDateTime confirmationCodeRefreshWindowStart;
+
     @Column(name = "h2_alert_sent_at")
     private LocalDateTime h2AlertSentAt;
 
@@ -176,6 +182,12 @@ public class BidEntity extends BaseEntity {
 
     public int getConfirmationCodeAttempts() { return confirmationCodeAttempts; }
     public void setConfirmationCodeAttempts(int confirmationCodeAttempts) { this.confirmationCodeAttempts = confirmationCodeAttempts; }
+
+    public int getConfirmationCodeRefreshCount() { return confirmationCodeRefreshCount; }
+    public void setConfirmationCodeRefreshCount(int confirmationCodeRefreshCount) { this.confirmationCodeRefreshCount = confirmationCodeRefreshCount; }
+
+    public LocalDateTime getConfirmationCodeRefreshWindowStart() { return confirmationCodeRefreshWindowStart; }
+    public void setConfirmationCodeRefreshWindowStart(LocalDateTime confirmationCodeRefreshWindowStart) { this.confirmationCodeRefreshWindowStart = confirmationCodeRefreshWindowStart; }
 
     public LocalDateTime getH2AlertSentAt() { return h2AlertSentAt; }
     public void setH2AlertSentAt(LocalDateTime h2AlertSentAt) { this.h2AlertSentAt = h2AlertSentAt; }

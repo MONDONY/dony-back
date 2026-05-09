@@ -13,6 +13,9 @@ public record BidResponse(
         String senderName,
         String senderPhone,
         Integer senderTotalShipments,
+        boolean senderKycVerified,
+        boolean senderIsProAccount,
+        boolean senderKiloPro,
         BigDecimal weightKg,
         BigDecimal declaredValueEur,
         String description,
@@ -40,5 +43,14 @@ public record BidResponse(
         String confirmationCode,
         UUID travelerId,
         String travelerName,
-        String travelerPhone
+        String travelerPhone,
+        boolean travelerKycVerified,
+        boolean travelerIsProAccount,
+        boolean travelerKiloPro,
+        Integer travelerTotalTrips,
+        java.math.BigDecimal travelerAverageRating,
+        boolean senderHasRated,
+        boolean travelerHasRated,
+        Integer confirmationCodeRefreshCount,
+        LocalDateTime confirmationCodeRefreshWindowStart
 ) {}

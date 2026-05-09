@@ -678,9 +678,10 @@ public class AnnouncementService {
 
 ### NEVER:
 
-1. ❌ Store secrets (API keys, tokens, passwords) in code or git
-2. ❌ Perform physical DELETE on business entities (soft delete only)
-3. ❌ Modify existing Flyway migrations (create V(n+1) instead)
+1. ❌ Commit directly to `main` — always work on a feature branch and merge via PR
+2. ❌ Store secrets (API keys, tokens, passwords) in code or git
+3. ❌ Perform physical DELETE on business entities (soft delete only)
+4. ❌ Modify existing Flyway migrations (create V(n+1) instead)
 4. ❌ Modify or delete `audit_log` entries (immutable by design)
 5. ❌ Inject services directly across packages (use Spring Events)
 6. ❌ Put cancellation logic in `matching/` package (dedicated `cancellation/` package)
@@ -690,6 +691,15 @@ public class AnnouncementService {
 10. ❌ Use Redis in MVP (Caffeine only)
 11. ❌ Create generic `Utils.java` (shared code goes in `common/`)
 12. ❌ Skip `@PreAuthorize` on admin endpoints
+13. ❌ Grant access when DB is unavailable in `FirebaseTokenFilter` — toujours retourner 503 et vider le `SecurityContext` si le chargement de l'utilisateur échoue
+14. ❌ Exposer `phoneNumber` dans `TravelerProfileDto` ou tout DTO public — le numéro de téléphone ne doit jamais quitter le backend
+15. ❌ Utiliser le premier élément de `X-Forwarded-For` pour résoudre l'IP client — toujours prendre le **dernier** élément (ajouté par le proxy de confiance), sinon le client peut spoofer son IP
+16. ❌ Traiter un webhook Stripe sans vérifier d'abord dans `processed_stripe_events` — double traitement possible (Stripe rejoue les webhooks)
+17. ❌ Créer un compte Stripe Connect sans verrou pessimiste (`findByIdForUpdate`) — race condition possible si deux requêtes simultanées
+18. ❌ Utiliser `@EventListener` seul sur les listeners de paiement — toujours utiliser `@TransactionalEventListener(phase = AFTER_COMMIT)` + `@Transactional(propagation = REQUIRES_NEW)` pour éviter de lire des données non encore commitées
+19. ❌ Capturer un `PaymentIntent` sans passer par `markCapturedIfEscrow()` en premier — protection atomique contre la double capture
+20. ❌ Laisser `dony.kyc.enforce` ou `dony.stripe.enforce` à `false` en prod — ces flags doivent être `true` en production
+21. ❌ Commenter ou désactiver les vérifications KYC/Stripe avec un TODO — utiliser les flags `dony.kyc.enforce` et `dony.stripe.enforce` à la place
 
 ### ALWAYS:
 
@@ -703,6 +713,10 @@ public class AnnouncementService {
 8. ✅ Make schedulers idempotent
 9. ✅ Use events for cross-package communication
 10. ✅ Isolate KYC data in `kyc_schema` with encryption
+11. ✅ Vérifier l'ownership avant tout accès à une ressource — ex. `GET /payments/bid/{bidId}` doit confirmer que le caller est l'expéditeur ou le voyageur du bid
+12. ✅ Enregistrer les events Stripe dans `processed_stripe_events` **avant** de les traiter (insert-first, then process) pour garantir l'idempotence
+13. ✅ Demander les capacités `card_payments` ET `transfers` à la création d'un compte Stripe Connect Express — obligatoire pour le pattern `on_behalf_of`
+14. ✅ Vérifier que `dony.kyc.enforce` et `dony.stripe.enforce` sont bien désactivés dans `application-test.yml` pour ne pas bloquer les tests d'intégration
 
 ---
 
@@ -825,6 +839,13 @@ Before deploying:
 - [ ] Offline timestamps validated (reject future timestamps)
 - [ ] CORS configured properly for production frontend domain
 - [ ] Sentry configured for error monitoring
+- [ ] `dony.kyc.enforce=true` en prod — bloque bid/annonce sans KYC vérifié
+- [ ] `dony.stripe.enforce=true` en prod — bloque annonce sans compte bancaire Stripe configuré
+- [ ] `INTERNAL_SHARED_SECRET` généré avec `openssl rand -hex 32` (jamais la valeur par défaut `local-dev-secret-change-me`)
+- [ ] Webhook listeners utilisent `@TransactionalEventListener(phase = AFTER_COMMIT)` + `@Transactional(propagation = REQUIRES_NEW)`
+- [ ] Table `processed_stripe_events` créée (migration V48) — idempotence webhooks
+- [ ] Colonne `payments.captured_at` créée (migration V48) — protection double capture
+- [ ] Colonne `users.version` créée (migration V49) — optimistic locking
 
 ---
 

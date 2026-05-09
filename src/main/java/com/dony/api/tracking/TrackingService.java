@@ -59,6 +59,7 @@ public class TrackingService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int MAX_CODE_ATTEMPTS = 3;
+    private static final int MAX_CODE_REFRESHES_PER_DAY = 5;
 
     @Value("${app.base-url}")
     private String appBaseUrl;
@@ -379,6 +380,21 @@ public class TrackingService {
                     "Le code de confirmation n'est pas encore disponible — le voyageur doit d'abord scanner le départ");
         }
 
+        // Rate-limit : 5 régénérations maximum par fenêtre de 24h glissante
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime windowStart = bid.getConfirmationCodeRefreshWindowStart();
+        if (windowStart != null && windowStart.isAfter(now.minusHours(24))) {
+            if (bid.getConfirmationCodeRefreshCount() >= MAX_CODE_REFRESHES_PER_DAY) {
+                throw new DonyBusinessException(HttpStatus.TOO_MANY_REQUESTS, "too-many-refreshes",
+                        "Too Many Refreshes",
+                        "Limite atteinte : 5 régénérations par 24h. Patientez avant de réessayer.");
+            }
+            bid.setConfirmationCodeRefreshCount(bid.getConfirmationCodeRefreshCount() + 1);
+        } else {
+            bid.setConfirmationCodeRefreshCount(1);
+            bid.setConfirmationCodeRefreshWindowStart(now);
+        }
+
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
@@ -390,12 +406,6 @@ public class TrackingService {
         bid.setConfirmationCodeAttempts(0);
         bid.setConfirmationCodeExpiry(newExpiry);
         bidRepository.save(bid);
-
-        notificationDispatcher.notifyUser(
-                announcement.getTravelerId(),
-                "Nouveau code de livraison",
-                "L'expéditeur a généré un nouveau code de confirmation. Demandez-le lui pour finaliser la livraison.",
-                Map.of("type", "CONFIRMATION_CODE_REFRESHED", "bidId", bidId.toString()));
 
         auditService.log("TRACKING_CONFIRMATION_CODE", bidId, "CODE_REFRESHED",
                 currentUser.getId(), Map.of("bidId", bidId.toString()));

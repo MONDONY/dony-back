@@ -9,9 +9,14 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.ratings.dto.PendingRatingResponse;
 import com.dony.api.ratings.dto.RatingRequest;
 import com.dony.api.ratings.dto.RatingResponse;
 import com.dony.api.ratings.dto.RecipientRatingRequest;
+import com.dony.api.ratings.dto.TravelerRatingRequest;
+import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import com.dony.api.ratings.events.RatingCreatedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -234,6 +239,187 @@ class RatingServiceTest {
             ratingService.recalculateAverageRating(TRAVELER_ID);
 
             verify(userRepository, never()).findById(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("createTravelerRating() — voyageur note l'expéditeur")
+    class CreateTravelerRatingTests {
+
+        private static final String TRAVELER_UID = "uid-traveler-001";
+        private UserEntity traveler;
+
+        @BeforeEach
+        void setUpTraveler() throws Exception {
+            traveler = new UserEntity();
+            setId(traveler, TRAVELER_ID);
+            setField(traveler, "firebaseUid", TRAVELER_UID);
+            setField(traveler, "firstName", "Moussa");
+            setField(traveler, "lastName", "Diallo");
+        }
+
+        @Test
+        @DisplayName("notation valide → persist + recalcul sur expéditeur + event publié")
+        void createTravelerRating_valid_persistsAndPublishesEvent() {
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(ratingRepository.existsByBidIdAndRaterId(BID_ID, TRAVELER_ID)).thenReturn(false);
+            when(ratingRepository.save(any(RatingEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(SENDER_ID)).thenReturn(List.of());
+
+            var request = new TravelerRatingRequest(BID_ID, 5, "Expéditeur sérieux");
+            RatingResponse response = ratingService.createTravelerRating(TRAVELER_UID, request);
+
+            ArgumentCaptor<RatingEntity> captor = ArgumentCaptor.forClass(RatingEntity.class);
+            verify(ratingRepository).save(captor.capture());
+            assertThat(captor.getValue().getRatedUserId()).isEqualTo(SENDER_ID);
+            assertThat(captor.getValue().getRaterId()).isEqualTo(TRAVELER_ID);
+            assertThat(captor.getValue().getStars()).isEqualTo(5);
+
+            ArgumentCaptor<RatingCreatedEvent> eventCaptor = ArgumentCaptor.forClass(RatingCreatedEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().getRatedUserId()).isEqualTo(SENDER_ID);
+        }
+
+        @Test
+        @DisplayName("caller n'est pas le voyageur → 403 FORBIDDEN")
+        void createTravelerRating_wrongTraveler_throwsForbidden() throws Exception {
+            setField(announcement, "travelerId", UUID.randomUUID()); // autre voyageur
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 4, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("bid non livré → 422 UNPROCESSABLE_ENTITY")
+        void createTravelerRating_bidNotDelivered_throws422() throws Exception {
+            setField(bid, "status", BidStatus.ACCEPTED);
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 5, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("bid-not-delivered"));
+        }
+
+        @Test
+        @DisplayName("fenêtre expirée → 422 rating-window-expired")
+        void createTravelerRating_windowExpired_throws422() throws Exception {
+            setField(bid, "updatedAt", LocalDateTime.now().minusDays(10));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 3, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("rating-window-expired"));
+        }
+
+        @Test
+        @DisplayName("déjà noté → 409 CONFLICT")
+        void createTravelerRating_alreadyRated_throws409() {
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(ratingRepository.existsByBidIdAndRaterId(BID_ID, TRAVELER_ID)).thenReturn(true);
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 5, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
+        }
+    }
+
+    @Nested
+    @DisplayName("getUserRatings()")
+    class GetUserRatingsTests {
+
+        @Test
+        @DisplayName("utilisateur avec 3 notations → résumé correct")
+        void getUserRatings_withRatings_returnsCorrectSummary() throws Exception {
+            UserEntity user = new UserEntity();
+            setId(user, TRAVELER_ID);
+            setField(user, "averageRating", new BigDecimal("4.33"));
+
+            RatingEntity r1 = buildRating(5); r1.setComment("Top !");
+            RatingEntity r2 = buildRating(4); r2.setComment(null);
+            RatingEntity r3 = buildRating(4); r3.setComment("Bien");
+
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(user));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(TRAVELER_ID))
+                    .thenReturn(List.of(r1, r2, r3));
+            when(ratingRepository.findByRatedUserId(eq(TRAVELER_ID), any()))
+                    .thenReturn(new PageImpl<>(List.of(r1, r2, r3)));
+
+            UserRatingsSummaryResponse response = ratingService.getUserRatings(TRAVELER_ID, 0, 20);
+
+            assertThat(response.ratingCount()).isEqualTo(3);
+            assertThat(response.averageRating()).isEqualByComparingTo(new BigDecimal("4.33"));
+            assertThat(response.distribution().get(5)).isEqualTo(1L);
+            assertThat(response.distribution().get(4)).isEqualTo(2L);
+            assertThat(response.distribution().get(1)).isEqualTo(0L);
+            assertThat(response.ratings()).hasSize(3);
+        }
+
+        @Test
+        @DisplayName("utilisateur inexistant → 404")
+        void getUserRatings_unknownUser_throws404() {
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> ratingService.getUserRatings(TRAVELER_ID, 0, 20))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("getPendingRating()")
+    class GetPendingRatingTests {
+
+        @Test
+        @DisplayName("bid en attente → retourne PendingRatingResponse avec isTravelerRating=false pour expéditeur")
+        void getPendingRating_senderPending_returnsResponse() throws Exception {
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.findPendingRatingForUser(SENDER_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            UserEntity traveler = new UserEntity();
+            setId(traveler, TRAVELER_ID);
+            setField(traveler, "firstName", "Moussa");
+            setField(traveler, "lastName", "Diallo");
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+
+            Optional<PendingRatingResponse> result = ratingService.getPendingRating(SENDER_UID);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().bidId()).isEqualTo(BID_ID);
+            assertThat(result.get().otherPartyId()).isEqualTo(TRAVELER_ID);
+            assertThat(result.get().isTravelerRating()).isFalse();
+            assertThat(result.get().otherPartyName()).contains("Moussa");
+        }
+
+        @Test
+        @DisplayName("aucun bid en attente → Optional.empty()")
+        void getPendingRating_noPending_returnsEmpty() {
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.findPendingRatingForUser(SENDER_ID)).thenReturn(Optional.empty());
+
+            Optional<PendingRatingResponse> result = ratingService.getPendingRating(SENDER_UID);
+            assertThat(result).isEmpty();
         }
     }
 
