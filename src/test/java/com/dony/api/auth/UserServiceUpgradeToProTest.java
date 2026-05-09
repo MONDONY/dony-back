@@ -121,22 +121,18 @@ class UserServiceUpgradeToProTest {
     class RejectionCases {
 
         @Test
-        @DisplayName("stripe account already exists → HTTP 409 Conflict")
-        void upgradeToPro_stripeAccountExists_throws409() throws Exception {
+        @DisplayName("user with existing Stripe account can still upgrade to PRO")
+        void upgradeToPro_stripeAccountExists_succeeds() throws Exception {
             UserEntity user = buildUser();
             user.setStripeAccountId("acct_existing_123");
+            when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+            UserEntity result = userService.upgradeToPro(user, request);
 
-            assertThatThrownBy(() -> userService.upgradeToPro(user, request))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> {
-                        DonyBusinessException ex = (DonyBusinessException) e;
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                        assertThat(ex.getErrorCode()).isEqualTo("stripe-account-exists");
-                    });
-
-            verify(userRepository, never()).save(any());
+            assertThat(result.isProAccount()).isTrue();
+            assertThat(result.getProCompanyName()).isEqualTo("Dony SARL");
+            verify(userRepository).save(user);
         }
 
         @Test

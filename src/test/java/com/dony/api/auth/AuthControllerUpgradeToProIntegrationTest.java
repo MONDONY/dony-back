@@ -93,16 +93,17 @@ class AuthControllerUpgradeToProIntegrationTest {
     }
 
     @Test
-    @DisplayName("409 Conflict when user already has a Stripe Connect account")
-    void upgradeToPro_stripeAccountExists_returns409() throws Exception {
+    @DisplayName("200 OK when user already has a Stripe Connect account → compte pro indépendant de Stripe")
+    void upgradeToPro_withStripeAccount_returns200() throws Exception {
         UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
 
         mockMvc.perform(post("/auth/me/upgrade-to-pro")
                         .with(authentication(authenticatedAs(FIREBASE_UID_WITH_STRIPE)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("stripe-account-exists"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isProAccount").value(true))
+                .andExpect(jsonPath("$.stripeAccountStatus").value("PENDING_ONBOARDING"));
     }
 
     @Test

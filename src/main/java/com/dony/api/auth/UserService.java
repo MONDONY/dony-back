@@ -129,15 +129,6 @@ public class UserService {
     public UserEntity upgradeToPro(UserEntity user, UpgradeToProRequest request) {
         UUID userId = user.getId();
 
-        if (user.getStripeAccountId() != null && !user.getStripeAccountId().isBlank()) {
-            throw new DonyBusinessException(
-                    HttpStatus.CONFLICT,
-                    "stripe-account-exists",
-                    "Stripe account already exists",
-                    "Un compte Stripe Connect est déjà associé à ce compte"
-            );
-        }
-
         if (request.siret() != null && !request.siret().isBlank()) {
             if (!request.siret().matches("\\d{14}")) {
                 throw new DonyBusinessException(
