@@ -68,6 +68,14 @@ public class TrackingController {
         return ResponseEntity.ok(trackingService.getConfirmationCode(bidId, firebaseUid));
     }
 
+    @PostMapping("/{bidId}/refresh-code")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<ConfirmCodeResponse> refreshCode(
+            @PathVariable UUID bidId,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(trackingService.refreshConfirmationCode(bidId, firebaseUid));
+    }
+
     @PostMapping("/{bidId}/confirm-delivery")
     @PreAuthorize("hasRole('TRAVELER')")
     public ResponseEntity<TrackingEventResponse> confirmDelivery(

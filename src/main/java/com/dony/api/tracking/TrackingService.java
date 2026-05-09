@@ -275,7 +275,7 @@ public class TrackingService {
             String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
             bid.setConfirmationCode(code);
             bid.setConfirmationCodeAttempts(0);
-            bid.setConfirmationCodeExpiry(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15));
+            bid.setConfirmationCodeExpiry(computeCodeExpiry(announcement));
             bidRepository.save(bid);
 
             notificationDispatcher.notifyUser(
@@ -348,7 +348,59 @@ public class TrackingService {
                     "Seul l'expéditeur peut consulter le code de confirmation");
         }
 
-        return new ConfirmCodeResponse(bid.getConfirmationCode());
+        return new ConfirmCodeResponse(bid.getConfirmationCode(), bid.getConfirmationCodeExpiry());
+    }
+
+    @Transactional
+    public ConfirmCodeResponse refreshConfirmationCode(UUID bidId, String firebaseUid) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
+                        "Transaction introuvable"));
+
+        UserEntity currentUser = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "user-not-found", "User Not Found",
+                        "Utilisateur introuvable"));
+
+        if (!currentUser.getId().equals(bid.getSenderId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut régénérer le code de confirmation");
+        }
+
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
+                    "Bid Not Accepted", "Ce colis ne peut pas recevoir un nouveau code dans son état actuel");
+        }
+
+        if (bid.getConfirmationCode() == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-not-generated",
+                    "Code Not Generated",
+                    "Le code de confirmation n'est pas encore disponible — le voyageur doit d'abord scanner le départ");
+        }
+
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
+                        "Annonce introuvable"));
+
+        String newCode = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+        LocalDateTime newExpiry = computeCodeExpiry(announcement);
+        bid.setConfirmationCode(newCode);
+        bid.setConfirmationCodeAttempts(0);
+        bid.setConfirmationCodeExpiry(newExpiry);
+        bidRepository.save(bid);
+
+        notificationDispatcher.notifyUser(
+                announcement.getTravelerId(),
+                "Nouveau code de livraison",
+                "L'expéditeur a généré un nouveau code de confirmation. Demandez-le lui pour finaliser la livraison.",
+                Map.of("type", "CONFIRMATION_CODE_REFRESHED", "bidId", bidId.toString()));
+
+        auditService.log("TRACKING_CONFIRMATION_CODE", bidId, "CODE_REFRESHED",
+                currentUser.getId(), Map.of("bidId", bidId.toString()));
+
+        return new ConfirmCodeResponse(newCode, newExpiry);
     }
 
     @Transactional
@@ -434,6 +486,15 @@ public class TrackingService {
                 traveler.getId(), Map.of("bidId", bid.getId().toString()));
 
         return toEventResponse(event, null);
+    }
+
+    private LocalDateTime computeCodeExpiry(AnnouncementEntity announcement) {
+        if (announcement.getArrivalTime() != null) {
+            // Heure d'arrivée connue → même jour que le départ + 24h de marge
+            return announcement.getDepartureDate().atTime(announcement.getArrivalTime()).plusDays(1);
+        }
+        // Pas d'heure d'arrivée → 72h après le début du jour de départ (couvre J+1 + buffer)
+        return announcement.getDepartureDate().atStartOfDay().plusDays(3);
     }
 
     private String generateQrBase64(String content) {
