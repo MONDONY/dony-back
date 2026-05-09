@@ -97,9 +97,26 @@ public class PaymentService {
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
-        // Re-check after acquiring lock — another thread may have created the account already
+        // Re-check after acquiring lock — another thread may have created the account already.
+        // Also verify the existing account still exists in Stripe (it can be manually deleted in
+        // sandbox or expire). If it's missing, reset and recreate.
         if (user.getStripeAccountId() != null) {
-            return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
+            try {
+                Account.retrieve(user.getStripeAccountId());
+                return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
+            } catch (StripeException e) {
+                if (!isStripeAccountMissing(e)) {
+                    log.error("Failed to verify Stripe account {} for user {}",
+                            user.getStripeAccountId(), user.getId(), e);
+                    throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                            "stripe-account-verification-failed", "Stripe Error",
+                            "Impossible de vérifier le compte de paiement");
+                }
+                log.warn("Stripe account {} no longer exists for user {} — resetting and recreating",
+                        user.getStripeAccountId(), user.getId());
+                resetStripeAccountState(user);
+                // fall through to creation below
+            }
         }
 
         try {
@@ -196,12 +213,47 @@ public class PaymentService {
             AccountLink link = AccountLink.create(params);
             return new OnboardingLinkResponse(link.getUrl());
 
+        } catch (StripeException e) {
+            if (isStripeAccountMissing(e)) {
+                log.warn("Stripe account {} no longer exists for user {} — resetting state so user can recreate",
+                        user.getStripeAccountId(), user.getId());
+                resetStripeAccountState(user);
+                userRepository.save(user);
+                throw new DonyBusinessException(HttpStatus.CONFLICT,
+                        "stripe-account-invalid", "Stripe Account Invalid",
+                        "Votre compte de paiement n'est plus valide. Réessayez pour en créer un nouveau.");
+            }
+            log.error("Failed to create onboarding link for user {}", user.getId(), e);
+            throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "stripe-link-creation-failed", "Stripe Error",
+                    "Impossible de générer le lien d'onboarding");
         } catch (Exception e) {
             log.error("Failed to create onboarding link for user {}", user.getId(), e);
             throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "stripe-link-creation-failed", "Stripe Error",
                     "Impossible de générer le lien d'onboarding");
         }
+    }
+
+    /**
+     * Returns true if the Stripe exception is a "resource_missing" error, typically thrown
+     * when an account, payment intent, or other resource ID stored in our DB no longer exists
+     * in Stripe (account deleted in sandbox, key rotation, expired test data, etc.).
+     */
+    private static boolean isStripeAccountMissing(StripeException e) {
+        return "resource_missing".equals(e.getCode());
+    }
+
+    /**
+     * Resets the user's Stripe Connect state in memory. Caller is responsible for persisting
+     * the change via {@code userRepository.save(user)} when this is not part of the same
+     * transactional flow (e.g. fall-through to immediate recreation does not require save).
+     */
+    private void resetStripeAccountState(UserEntity user) {
+        user.setStripeAccountId(null);
+        user.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+        user.setStripeAccountCreatedAt(null);
+        user.setStripeOnboardingCompletedAt(null);
     }
 
     /**
@@ -366,6 +418,15 @@ public class PaymentService {
             return toPaymentResponse(payment, pi.getClientSecret());
 
         } catch (StripeException e) {
+            if (isStripeAccountMissing(e)) {
+                log.warn("Traveler {} stripe account {} no longer exists in Stripe — resetting state",
+                        traveler.getId(), traveler.getStripeAccountId(), e);
+                resetStripeAccountState(traveler);
+                userRepository.save(traveler);
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "traveler-stripe-invalid", "Traveler Stripe Account Invalid",
+                        "Le voyageur doit reconfigurer son compte de paiement avant de pouvoir recevoir cette demande.");
+            }
             log.error("Stripe PaymentIntent creation failed for bid {}", bidId, e);
             throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "payment-creation-failed", "Payment Error",

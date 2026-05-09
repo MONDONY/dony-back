@@ -319,6 +319,36 @@ class PaymentServiceTest {
     }
 
     @Test
+    void createEscrow_travelerStripeAccountMissing_resetsAndThrows422() {
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildTraveler("acct_stale_invalid", true);
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        StripeException missing = mock(StripeException.class);
+        when(missing.getCode()).thenReturn("resource_missing");
+
+        var req = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
+        when(req.getBidId()).thenReturn(bidId);
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
+            acctStatic.when(() -> Account.retrieve("acct_stale_invalid")).thenThrow(missing);
+
+            assertDonyError(() -> service.createEscrow(req, "uid-sender"), "traveler-stripe-invalid");
+
+            assertThat(traveler.getStripeAccountId()).isNull();
+            assertThat(traveler.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.NOT_CREATED);
+            verify(userRepository).save(traveler);
+        }
+    }
+
+    @Test
     void createEscrow_stripeException_throwsInternalError() {
         UserEntity sender = buildUser(senderId, "uid-sender");
         BidEntity bid = buildBid(BidStatus.ACCEPTED);
@@ -349,10 +379,42 @@ class PaymentServiceTest {
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
 
-        ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
+            Account mockAccount = mock(Account.class);
+            acctStatic.when(() -> Account.retrieve("acct_existing")).thenReturn(mockAccount);
 
-        assertThat(resp.stripeAccountId()).isEqualTo("acct_existing");
-        assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+            ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
+
+            assertThat(resp.stripeAccountId()).isEqualTo("acct_existing");
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
+        }
+    }
+
+    @Test
+    void createConnectAccount_existingAccountMissingFromStripe_resetsAndRecreates() {
+        UserEntity user = buildUser(senderId, "uid-sender");
+        user.setStripeAccountId("acct_stale_invalid");
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+        user.setEmail("user@dony.app");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        StripeException missing = mock(StripeException.class);
+        when(missing.getCode()).thenReturn("resource_missing");
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class)) {
+            acctStatic.when(() -> Account.retrieve("acct_stale_invalid")).thenThrow(missing);
+            Account fresh = mock(Account.class);
+            when(fresh.getId()).thenReturn("acct_fresh_456");
+            acctStatic.when(() -> Account.create(any(AccountCreateParams.class))).thenReturn(fresh);
+
+            ConnectAccountResponse resp = service.createConnectAccount("uid-sender");
+
+            assertThat(resp.stripeAccountId()).isEqualTo("acct_fresh_456");
+            assertThat(resp.stripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
+            assertThat(user.getStripeAccountId()).isEqualTo("acct_fresh_456");
+        }
     }
 
     @Test
@@ -430,6 +492,27 @@ class PaymentServiceTest {
             alStatic.when(() -> AccountLink.create(any(AccountLinkCreateParams.class)))
                     .thenThrow(new RuntimeException("Stripe error"));
             assertDonyError(() -> service.createOnboardingLink("uid-sender"), "stripe-link-creation-failed");
+        }
+    }
+
+    @Test
+    void createOnboardingLink_accountMissingFromStripe_resetsAndThrowsConflict() {
+        UserEntity user = buildUser(senderId, "uid-sender");
+        user.setStripeAccountId("acct_stale_invalid");
+        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        StripeException missing = mock(StripeException.class);
+        when(missing.getCode()).thenReturn("resource_missing");
+
+        try (MockedStatic<AccountLink> alStatic = mockStatic(AccountLink.class)) {
+            alStatic.when(() -> AccountLink.create(any(AccountLinkCreateParams.class)))
+                    .thenThrow(missing);
+            assertDonyError(() -> service.createOnboardingLink("uid-sender"), "stripe-account-invalid");
+            assertThat(user.getStripeAccountId()).isNull();
+            assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.NOT_CREATED);
+            verify(userRepository).save(user);
         }
     }
 
