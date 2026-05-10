@@ -123,6 +123,60 @@ public class NegotiationService {
         return toResponse(saved, List.of(toMessageResponse(msg)), null);
     }
 
+    @Transactional
+    public NegotiationThreadResponse counter(UUID callerId, UUID threadId, NegotiationCounterRequest req) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        if (thread.getStatus() != NegotiationThreadStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.GONE, "thread/expired");
+        }
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        UUID senderId = request.getSenderId();
+        UUID travelerId = thread.getTravelerId();
+        if (!callerId.equals(senderId) && !callerId.equals(travelerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        if (thread.getRoundsCount() >= config.maxNegotiationRounds()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/max-rounds-reached");
+        }
+
+        List<NegotiationMessageEntity> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
+        if (messages.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/inconsistent-thread");
+        }
+        NegotiationMessageEntity lastMessage = messages.get(messages.size() - 1);
+        if (lastMessage.getFromUserId().equals(callerId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/not-your-turn");
+        }
+
+        NegotiationMessageEntity msg = NegotiationMessageEntity.create(
+            threadId, callerId, NegotiationMessageKind.COUNTER, req.proposedPriceEur(), req.body());
+        messageRepo.save(msg);
+
+        thread.setCurrentPriceEur(req.proposedPriceEur());
+        thread.setRoundsCount((short) (thread.getRoundsCount() + 1));
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        UUID toUser = callerId.equals(senderId) ? travelerId : senderId;
+        eventPublisher.publishEvent(new NegotiationCounterPostedEvent(
+            threadId, msg.getId(), callerId, toUser, req.proposedPriceEur(),
+            thread.getRoundsCount().intValue()
+        ));
+        auditService.log("NEGOTIATION_THREAD", threadId, "COUNTER_POSTED", callerId,
+            Map.of("price", req.proposedPriceEur().toString(),
+                "round", String.valueOf(thread.getRoundsCount())));
+
+        List<NegotiationMessageEntity> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
+        List<NegotiationMessageResponse> responses = allMsgs.stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, responses, null);
+    }
+
     NegotiationThreadResponse toResponse(NegotiationThreadEntity t,
                                           List<NegotiationMessageResponse> messages,
                                           String paymentIntentClientSecret) {

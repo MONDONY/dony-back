@@ -205,4 +205,116 @@ class NegotiationServiceTest {
             null, null
         );
     }
+
+    @Nested
+    @DisplayName("counter() — alternance + rounds")
+    class CounterTests {
+        private NegotiationThreadEntity thread;
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("sender counter après PROPOSAL traveler → OK, rounds++, message COUNTER")
+        void counter_validAlternance_savesAndIncrementsRounds() {
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            // Last message was PROPOSAL by traveler
+            var lastMsg = NegotiationMessageEntity.create(THREAD_ID, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+
+            var req = new com.dony.api.requests.dto.NegotiationCounterRequest(
+                new BigDecimal("25"), "Mon contre");
+            var response = service.counter(SENDER_ID, THREAD_ID, req);
+
+            assertThat(response.roundsCount()).isEqualTo(2);
+            assertThat(response.currentPriceEur()).isEqualByComparingTo("25");
+            verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.COUNTER
+                && m.getFromUserId().equals(SENDER_ID)));
+            verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationCounterPostedEvent.class));
+        }
+
+        @Test
+        @DisplayName("même partie 2 fois d'affilée → 409 not-your-turn")
+        void counter_sameSideTwice_throws409() {
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            var lastMsg = NegotiationMessageEntity.create(THREAD_ID, SENDER_ID,
+                NegotiationMessageKind.COUNTER, new BigDecimal("28"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+
+            var req = new com.dony.api.requests.dto.NegotiationCounterRequest(
+                new BigDecimal("27"), null);
+
+            assertThatThrownBy(() -> service.counter(SENDER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-your-turn");
+        }
+
+        @Test
+        @DisplayName("rounds_count >= max → 409 max-rounds-reached")
+        void counter_atMaxRounds_throws409() {
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            thread.setRoundsCount((short) 5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            var req = new com.dony.api.requests.dto.NegotiationCounterRequest(
+                new BigDecimal("25"), null);
+
+            assertThatThrownBy(() -> service.counter(SENDER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("max-rounds-reached");
+        }
+
+        @Test
+        @DisplayName("thread status REJECTED → 410 expired")
+        void counter_threadNotOpen_throws410() {
+            thread.setStatus(NegotiationThreadStatus.REJECTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+
+            var req = new com.dony.api.requests.dto.NegotiationCounterRequest(
+                new BigDecimal("25"), null);
+
+            assertThatThrownBy(() -> service.counter(SENDER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("thread/expired");
+        }
+
+        @Test
+        @DisplayName("non-participant → 403")
+        void counter_outsider_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            UUID OUTSIDER = UUID.randomUUID();
+            var req = new com.dony.api.requests.dto.NegotiationCounterRequest(
+                new BigDecimal("25"), null);
+
+            assertThatThrownBy(() -> service.counter(OUTSIDER, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+    }
 }
