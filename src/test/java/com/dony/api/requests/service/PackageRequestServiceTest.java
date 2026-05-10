@@ -38,6 +38,7 @@ class PackageRequestServiceTest {
     @Mock private AuditService auditService;
     @Mock private RequestsConfig config;
     @Mock private NegotiationThreadRepository threadRepository;
+    @Mock private com.dony.api.city.CityRepository cityRepository;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;

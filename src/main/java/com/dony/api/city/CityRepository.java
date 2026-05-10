@@ -5,8 +5,17 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface CityRepository extends JpaRepository<CityEntity, Long> {
+
+    @Query(value = """
+        SELECT * FROM cities
+        WHERE LOWER(name) = LOWER(:name)
+        ORDER BY population DESC
+        LIMIT 1
+        """, nativeQuery = true)
+    Optional<CityEntity> findFirstByNameIgnoreCase(@Param("name") String name);
 
     @Query(value = """
         SELECT * FROM cities

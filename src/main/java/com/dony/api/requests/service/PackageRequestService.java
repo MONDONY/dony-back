@@ -35,19 +35,22 @@ public class PackageRequestService {
     private final AuditService auditService;
     private final RequestsConfig config;
     private final NegotiationThreadRepository threadRepository;
+    private final com.dony.api.city.CityRepository cityRepository;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
                                   ApplicationEventPublisher eventPublisher,
                                   AuditService auditService,
                                   RequestsConfig config,
-                                  NegotiationThreadRepository threadRepository) {
+                                  NegotiationThreadRepository threadRepository,
+                                  com.dony.api.city.CityRepository cityRepository) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
         this.config = config;
         this.threadRepository = threadRepository;
+        this.cityRepository = cityRepository;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -220,12 +223,17 @@ public class PackageRequestService {
 
     private PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e) {
         // Sender profile will be wired with UserService in a later task (Task 20+).
-        // For now, return a minimal public profile from available entity data.
         var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
             e.getSenderId(), "Sender", 0.0, 0, false
         );
+        var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
+        var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
         return new PackageRequestSearchResponse(
             e.getId(), e.getDepartureCity(), e.getArrivalCity(),
+            depCity != null ? depCity.getLatitude() : null,
+            depCity != null ? depCity.getLongitude() : null,
+            arrCity != null ? arrCity.getLatitude() : null,
+            arrCity != null ? arrCity.getLongitude() : null,
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
             e.getWeightKg(), e.getParcelSize(), e.getContentCategory(),
             e.getTargetPriceEur(), e.getPhotoUrl(),

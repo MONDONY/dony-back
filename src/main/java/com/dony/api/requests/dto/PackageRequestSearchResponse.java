@@ -8,6 +8,8 @@ import java.util.UUID;
 public record PackageRequestSearchResponse(
     UUID id,
     String departureCity, String arrivalCity,
+    BigDecimal departureLat, BigDecimal departureLng,
+    BigDecimal arrivalLat, BigDecimal arrivalLng,
     LocalDate desiredDate, int dateToleranceDays,
     BigDecimal weightKg, ParcelSize parcelSize, String contentCategory,
     BigDecimal targetPriceEur, String photoUrl,

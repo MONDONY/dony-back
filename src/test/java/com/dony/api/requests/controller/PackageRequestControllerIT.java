@@ -143,6 +143,8 @@ class PackageRequestControllerIT {
     void get_search_returnsPage() throws Exception {
         var searchResp = new PackageRequestSearchResponse(
             UUID.randomUUID(), "Paris", "Dakar",
+            new BigDecimal("48.85"), new BigDecimal("2.35"),
+            new BigDecimal("14.69"), new BigDecimal("-17.44"),
             LocalDate.now().plusDays(5), 2,
             new BigDecimal("5"), ParcelSize.SMALL, "vetements",
             new BigDecimal("25"), null, "10e", "Plateau",
