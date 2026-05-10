@@ -386,4 +386,37 @@ class KycServiceTest {
         }
         verify(kycRepository, never()).save(any());
     }
+
+    // ── abandonSession ────────────────────────────────────────────────────────
+
+    @Test
+    void abandonSession_pending_resetsToNotStarted() {
+        UserEntity user = buildUser(KycStatus.PENDING);
+        when(userRepository.findByFirebaseUid("uid-001")).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.abandonSession("uid-001");
+
+        assertThat(user.getKycStatus()).isEqualTo(KycStatus.NOT_STARTED);
+        verify(userRepository).save(user);
+        verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_SESSION_ABANDONED"), any(), any());
+    }
+
+    @Test
+    void abandonSession_notPending_doesNothing() {
+        UserEntity user = buildUser(KycStatus.NOT_STARTED);
+        when(userRepository.findByFirebaseUid("uid-001")).thenReturn(Optional.of(user));
+
+        service.abandonSession("uid-001");
+
+        verify(userRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void abandonSession_userNotFound_throwsNotFoundException() {
+        when(userRepository.findByFirebaseUid("unknown")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.abandonSession("unknown"))
+                .isInstanceOf(DonyNotFoundException.class);
+    }
 }

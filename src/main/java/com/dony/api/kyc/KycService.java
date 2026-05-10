@@ -132,6 +132,20 @@ public class KycService {
         }
     }
 
+    @Transactional
+    public void abandonSession(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyNotFoundException("Utilisateur introuvable"));
+
+        if (user.getKycStatus() != KycStatus.PENDING) return;
+
+        user.setKycStatus(KycStatus.NOT_STARTED);
+        userRepository.save(user);
+
+        auditService.log("kyc_verification", user.getId(), "KYC_SESSION_ABANDONED",
+                user.getId(), Map.of("reason", "user_closed_webview"));
+    }
+
     @Transactional(readOnly = true)
     public KycStatusResponse getStatus(String firebaseUid) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)

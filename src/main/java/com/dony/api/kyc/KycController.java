@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -31,6 +32,13 @@ public class KycController {
     public ResponseEntity<KycSessionResponse> createSession() {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(kycService.createSession(firebaseUid));
+    }
+
+    @DeleteMapping("/session")
+    public ResponseEntity<Void> abandonSession() {
+        String firebaseUid = requireFirebaseUid();
+        kycService.abandonSession(firebaseUid);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/status")
