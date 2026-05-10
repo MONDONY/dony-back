@@ -88,7 +88,7 @@ class NegotiationControllerIT {
             null, null
         );
 
-        mockMvc.perform(post("/api/v1/negotiations")
+        mockMvc.perform(post("/negotiations")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -104,7 +104,7 @@ class NegotiationControllerIT {
             null, null
         );
 
-        mockMvc.perform(post("/api/v1/negotiations")
+        mockMvc.perform(post("/negotiations")
                 .with(authentication(authAs("uid-sender", "SENDER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -119,7 +119,7 @@ class NegotiationControllerIT {
 
         var req = new NegotiationCounterRequest(new BigDecimal("25"), null);
 
-        mockMvc.perform(post("/api/v1/negotiations/" + threadId + "/counter")
+        mockMvc.perform(post("/negotiations/" + threadId + "/counter")
                 .with(authentication(authAs("uid-sender", "SENDER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -135,7 +135,7 @@ class NegotiationControllerIT {
 
         var req = new NegotiationAcceptRequest("Deal!");
 
-        mockMvc.perform(post("/api/v1/negotiations/" + threadId + "/accept")
+        mockMvc.perform(post("/negotiations/" + threadId + "/accept")
                 .with(authentication(authAs("uid-sender", "SENDER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -147,7 +147,7 @@ class NegotiationControllerIT {
     @Test
     void post_accept_byTraveler_returns403() throws Exception {
         var req = new NegotiationAcceptRequest(null);
-        mockMvc.perform(post("/api/v1/negotiations/" + UUID.randomUUID() + "/accept")
+        mockMvc.perform(post("/negotiations/" + UUID.randomUUID() + "/accept")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -158,7 +158,7 @@ class NegotiationControllerIT {
     void post_reject_returns204() throws Exception {
         UUID threadId = UUID.randomUUID();
         var req = new NegotiationRejectRequest("Trop cher");
-        mockMvc.perform(post("/api/v1/negotiations/" + threadId + "/reject")
+        mockMvc.perform(post("/negotiations/" + threadId + "/reject")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -173,7 +173,7 @@ class NegotiationControllerIT {
 
         var req = new NegotiationCounterRequest(new BigDecimal("25"), null);
 
-        mockMvc.perform(post("/api/v1/negotiations/" + threadId + "/counter")
+        mockMvc.perform(post("/negotiations/" + threadId + "/counter")
                 .with(authentication(authAs("uid-sender", "SENDER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))

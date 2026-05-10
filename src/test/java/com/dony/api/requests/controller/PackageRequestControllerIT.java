@@ -101,7 +101,7 @@ class PackageRequestControllerIT {
         UUID newId = UUID.randomUUID();
         when(service.create(eq(SENDER_UUID), any())).thenReturn(fakeResponse(newId));
 
-        mockMvc.perform(post("/api/v1/package-requests")
+        mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validRequest())))
@@ -112,7 +112,7 @@ class PackageRequestControllerIT {
 
     @Test
     void post_create_withoutSenderRole_returns403() throws Exception {
-        mockMvc.perform(post("/api/v1/package-requests")
+        mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validRequest())))
@@ -121,7 +121,7 @@ class PackageRequestControllerIT {
 
     @Test
     void post_create_unauthenticated_returns401() throws Exception {
-        mockMvc.perform(post("/api/v1/package-requests")
+        mockMvc.perform(post("/package-requests")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validRequest())))
             .andExpect(status().isUnauthorized());
@@ -133,7 +133,7 @@ class PackageRequestControllerIT {
         when(service.findMine(eq(SENDER_UUID), any()))
             .thenReturn(new PageImpl<>(List.of(fakeResponse(UUID.randomUUID())), pageable, 1));
 
-        mockMvc.perform(get("/api/v1/package-requests/me")
+        mockMvc.perform(get("/package-requests/me")
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].status").value("OPEN"));
@@ -152,7 +152,7 @@ class PackageRequestControllerIT {
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
-        mockMvc.perform(get("/api/v1/package-requests")
+        mockMvc.perform(get("/package-requests")
                 .param("departure", "Paris")
                 .param("arrival", "Dakar")
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
@@ -163,7 +163,7 @@ class PackageRequestControllerIT {
     @Test
     void delete_cancel_returns204() throws Exception {
         UUID id = UUID.randomUUID();
-        mockMvc.perform(delete("/api/v1/package-requests/" + id)
+        mockMvc.perform(delete("/package-requests/" + id)
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isNoContent());
     }
@@ -173,7 +173,7 @@ class PackageRequestControllerIT {
         when(service.getById(eq(SENDER_UUID), any()))
             .thenThrow(new ResponseStatusException(NOT_FOUND, "request/not-found"));
 
-        mockMvc.perform(get("/api/v1/package-requests/" + UUID.randomUUID())
+        mockMvc.perform(get("/package-requests/" + UUID.randomUUID())
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isNotFound())
             .andExpect(content().contentType("application/problem+json"))
@@ -185,7 +185,7 @@ class PackageRequestControllerIT {
         when(estimationService.estimate(eq("Paris"), eq("Dakar"), any()))
             .thenReturn(new PriceEstimateResponse(new BigDecimal("85"), new BigDecimal("115"), "HIGH", 15));
 
-        mockMvc.perform(get("/api/v1/package-requests/estimate")
+        mockMvc.perform(get("/package-requests/estimate")
                 .param("from", "Paris")
                 .param("to", "Dakar")
                 .param("weight", "5")

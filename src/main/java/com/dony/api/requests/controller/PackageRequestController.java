@@ -25,7 +25,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/package-requests")
+@RequestMapping("/package-requests")
 public class PackageRequestController {
 
     private final PackageRequestService service;

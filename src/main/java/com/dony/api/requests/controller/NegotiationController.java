@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/negotiations")
+@RequestMapping("/negotiations")
 public class NegotiationController {
 
     private final NegotiationService service;
