@@ -92,7 +92,7 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "disclaimer_signed_at")
     private LocalDateTime disclaimerSignedAt;
 
-    @Column(name = "disclaimer_signed_ip", columnDefinition = "inet")
+    @Column(name = "disclaimer_signed_ip", length = 45)
     private String disclaimerSignedIp;
 
     // === NO-ARG CONSTRUCTOR (required by JPA) ===
