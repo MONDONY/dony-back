@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -98,7 +100,111 @@ public class PackageRequestService {
         return toResponse(saved);
     }
 
-    // ─── Mapper ─────────────────────────────────────────────────────────────────
+    // ─── getById ─────────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public PackageRequestResponse getById(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        boolean isOwner = entity.getSenderId().equals(callerUid);
+        boolean isThreadParticipant = threadRepository
+            .findByPackageRequestIdAndTravelerId(requestId, callerUid).isPresent();
+
+        if (!isOwner && !isThreadParticipant) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        return toResponse(entity);
+    }
+
+    // ─── findMine ─────────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public Page<PackageRequestResponse> findMine(UUID senderId, Pageable pageable) {
+        return repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable)
+            .map(this::toResponse);
+    }
+
+    // ─── cancel ──────────────────────────────────────────────────────────────────
+
+    @Transactional
+    public void cancel(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() == PackageRequestStatus.ACCEPTED ||
+            entity.getStatus() == PackageRequestStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-accepted");
+        }
+
+        entity.setStatus(PackageRequestStatus.CANCELLED);
+        entity.softDelete();
+        repository.save(entity);
+
+        // Auto-reject any open threads
+        threadRepository.findByPackageRequestId(requestId).forEach(t -> {
+            if (t.getStatus() == NegotiationThreadStatus.OPEN) {
+                t.setStatus(NegotiationThreadStatus.AUTO_REJECTED);
+                threadRepository.save(t);
+            }
+        });
+
+        auditService.log("PACKAGE_REQUEST", requestId, "CANCELLED", callerUid,
+            Map.of("status", "CANCELLED"));
+    }
+
+    // ─── completeDetails ─────────────────────────────────────────────────────────
+
+    @Transactional
+    public PackageRequestResponse completeDetails(UUID callerUid, UUID requestId,
+                                                   PackageRequestCompleteDetailsRequest req,
+                                                   String clientIp) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() != PackageRequestStatus.ACCEPTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-yet-accepted");
+        }
+        if (!req.disclaimerSigned()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/disclaimer-not-signed");
+        }
+
+        entity.setPickupAddressLabel(req.pickupAddressLabel());
+        entity.setPickupLat(req.pickupLat());
+        entity.setPickupLng(req.pickupLng());
+        entity.setDeliveryAddressLabel(req.deliveryAddressLabel());
+        entity.setDeliveryLat(req.deliveryLat());
+        entity.setDeliveryLng(req.deliveryLng());
+        entity.setRecipientName(req.recipientName());
+        entity.setRecipientPhone(req.recipientPhone());
+        entity.setDeclaredValueEur(req.declaredValueEur());
+        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setDisclaimerSignedIp(clientIp);
+
+        PackageRequestEntity saved = repository.save(entity);
+
+        auditService.log("PACKAGE_REQUEST", requestId, "DETAILS_COMPLETED", callerUid,
+            Map.of("recipient", req.recipientName(),
+                   "declaredValue", req.declaredValueEur().toString()));
+
+        return toResponse(saved);
+    }
+
+    // ─── search ──────────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public Page<PackageRequestSearchResponse> search(Specification<PackageRequestEntity> spec,
+                                                      Pageable pageable) {
+        return repository.findAll(spec, pageable).map(this::toSearchResponse);
+    }
+
+    // ─── Mappers ─────────────────────────────────────────────────────────────────
 
     PackageRequestResponse toResponse(PackageRequestEntity e) {
         return new PackageRequestResponse(
@@ -109,6 +215,22 @@ public class PackageRequestService {
             e.getDescription(), e.getTargetPriceEur(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             e.getStatus(), e.getCreatedAt()
+        );
+    }
+
+    private PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e) {
+        // Sender profile will be wired with UserService in a later task (Task 20+).
+        // For now, return a minimal public profile from available entity data.
+        var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
+            e.getSenderId(), "Sender", 0.0, 0, false
+        );
+        return new PackageRequestSearchResponse(
+            e.getId(), e.getDepartureCity(), e.getArrivalCity(),
+            e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
+            e.getWeightKg(), e.getParcelSize(), e.getContentCategory(),
+            e.getTargetPriceEur(), e.getPhotoUrl(),
+            e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
+            senderProfile
         );
     }
 }

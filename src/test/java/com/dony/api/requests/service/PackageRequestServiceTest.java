@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.requests.RequestsConfig;
+import com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest;
 import com.dony.api.requests.dto.PackageRequestCreateRequest;
 import com.dony.api.requests.entity.*;
 import com.dony.api.requests.event.PackageRequestCreatedEvent;
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -67,6 +69,8 @@ class PackageRequestServiceTest {
         setId(sender, SENDER_ID);
         sender.setKycStatus(KycStatus.VERIFIED);
     }
+
+    // ========== Task 12: create() tests ==========
 
     @Nested @DisplayName("create() — happy path")
     class CreateHappyPath {
@@ -143,6 +147,151 @@ class PackageRequestServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("date-too-far");
         }
+    }
+
+    // ========== Task 13: getById() / findMine() / cancel() / completeDetails() tests ==========
+
+    @Nested @DisplayName("getById() — ownership")
+    class GetByIdTests {
+
+        @Test @DisplayName("sender owner → OK")
+        void getById_owner_returnsResponse() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var resp = service.getById(SENDER_ID, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("autre sender, pas de thread → 403")
+        void getById_otherCallerNoThread_throws403() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, UUID.randomUUID());
+            entity.setSenderId(SENDER_ID);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.findByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getById(OTHER, entity.getId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("forbidden");
+        }
+    }
+
+    @Nested @DisplayName("cancel() — soft delete + cascade threads")
+    class CancelTests {
+        @Test @DisplayName("status OPEN → soft delete + threads auto-rejected")
+        void cancel_open_softDeletesAndCancelsThreads() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.OPEN);
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(threadRepository.findByPackageRequestId(reqId)).thenReturn(List.of());
+
+            service.cancel(SENDER_ID, reqId);
+
+            assertThat(entity.getStatus()).isEqualTo(PackageRequestStatus.CANCELLED);
+            verify(repository).save(entity);
+        }
+
+        @Test @DisplayName("status ACCEPTED → 409")
+        void cancel_accepted_throws409() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.ACCEPTED);
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+
+            assertThatThrownBy(() -> service.cancel(SENDER_ID, reqId))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("already-accepted");
+        }
+    }
+
+    @Nested @DisplayName("completeDetails() — post-acceptation")
+    class CompleteDetailsTests {
+        @Test @DisplayName("status ACCEPTED → renseigne adresses + recipient + disclaimer")
+        void completeDetails_accepted_persists() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.ACCEPTED);
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "12 rue de Paris", new BigDecimal("48.85"), new BigDecimal("2.35"),
+                "5 rue de Dakar", new BigDecimal("14.69"), new BigDecimal("-17.44"),
+                "Marie", "+221771234567", new BigDecimal("100"), true
+            );
+
+            service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
+
+            assertThat(entity.getPickupAddressLabel()).isEqualTo("12 rue de Paris");
+            assertThat(entity.getRecipientName()).isEqualTo("Marie");
+            assertThat(entity.getDeclaredValueEur()).isEqualByComparingTo(new BigDecimal("100"));
+            assertThat(entity.getDisclaimerSignedAt()).isNotNull();
+            assertThat(entity.getDisclaimerSignedIp()).isEqualTo("203.0.113.5");
+        }
+
+        @Test @DisplayName("status OPEN → 409 not-yet-accepted")
+        void completeDetails_open_throws409() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.OPEN);
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "X", new BigDecimal("1"), new BigDecimal("1"),
+                "Y", new BigDecimal("1"), new BigDecimal("1"),
+                "Z", "+221771234567", new BigDecimal("100"), true
+            );
+
+            assertThatThrownBy(() -> service.completeDetails(SENDER_ID, reqId, req, "1.2.3.4"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-yet-accepted");
+        }
+    }
+
+    @Nested @DisplayName("findMine() — own requests pagination")
+    class FindMineTests {
+        @Test @DisplayName("returns paginated responses for sender")
+        void findMine_returnsPage() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+
+            var page = new org.springframework.data.domain.PageImpl<>(List.of(entity));
+            when(repository.findBySenderIdOrderByCreatedAtDesc(eq(SENDER_ID), any()))
+                .thenReturn(page);
+
+            var result = service.findMine(SENDER_ID, org.springframework.data.domain.PageRequest.of(0, 20));
+            assertThat(result.getTotalElements()).isEqualTo(1);
+            assertThat(result.getContent().get(0).senderId()).isEqualTo(SENDER_ID);
+        }
+    }
+
+    // ─── Shared helpers ─────────────────────────────────────────────────────────
+
+    private PackageRequestEntity buildEntity(UUID senderId, PackageRequestStatus status) {
+        PackageRequestEntity entity = new PackageRequestEntity();
+        setId(entity, UUID.randomUUID());
+        entity.setSenderId(senderId);
+        entity.setDepartureCity("Paris");
+        entity.setArrivalCity("Dakar");
+        entity.setDesiredDate(LocalDate.now().plusDays(7));
+        entity.setDateToleranceDays((short) 2);
+        entity.setWeightKg(new BigDecimal("5"));
+        entity.setParcelSize(ParcelSize.SMALL);
+        entity.setContentCategory("vetements");
+        entity.setStatus(status);
+        return entity;
     }
 
     private PackageRequestCreateRequest validRequest() {
