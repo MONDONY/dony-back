@@ -70,6 +70,26 @@ public class NegotiationController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Traveler links a trip (existing announcement) to an AWAITING_TRIP thread. */
+    @PostMapping("/{id}/submit-trip")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public NegotiationThreadResponse submitTrip(
+            @PathVariable UUID id,
+            @RequestBody @Valid NegotiationSubmitTripRequest req
+    ) {
+        return service.submitTrip(requireUserId(), id, req.travelerAnnouncementId());
+    }
+
+    /** Sender confirms payment for an AWAITING_PAYMENT thread → finalize as ACCEPTED. */
+    @PostMapping("/{id}/checkout")
+    @PreAuthorize("hasRole('SENDER')")
+    public NegotiationThreadResponse checkout(
+            @PathVariable UUID id,
+            @RequestBody @Valid NegotiationCheckoutRequest req
+    ) {
+        return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId());
+    }
+
     // ─── Auth helper ─────────────────────────────────────────────────────────────
 
     private UUID requireUserId() {

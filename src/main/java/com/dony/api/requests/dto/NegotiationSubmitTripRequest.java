@@ -1,0 +1,8 @@
+package com.dony.api.requests.dto;
+
+import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
+
+public record NegotiationSubmitTripRequest(
+    @NotNull UUID travelerAnnouncementId
+) {}

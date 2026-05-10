@@ -24,10 +24,15 @@ import java.util.UUID;
 @Service
 public class NegotiationService {
 
+    private static final org.slf4j.Logger log =
+        org.slf4j.LoggerFactory.getLogger(NegotiationService.class);
+
+
     private final PackageRequestRepository requestRepo;
     private final NegotiationThreadRepository threadRepo;
     private final NegotiationMessageRepository messageRepo;
     private final UserRepository userRepository;
+    private final com.dony.api.matching.AnnouncementRepository announcementRepo;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditService auditService;
     private final RequestsConfig config;
@@ -36,6 +41,7 @@ public class NegotiationService {
                                NegotiationThreadRepository threadRepo,
                                NegotiationMessageRepository messageRepo,
                                UserRepository userRepository,
+                               com.dony.api.matching.AnnouncementRepository announcementRepo,
                                ApplicationEventPublisher eventPublisher,
                                AuditService auditService,
                                RequestsConfig config) {
@@ -43,6 +49,7 @@ public class NegotiationService {
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
         this.userRepository = userRepository;
+        this.announcementRepo = announcementRepo;
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
         this.config = config;
@@ -207,15 +214,17 @@ public class NegotiationService {
             Map.of("reason", req.reason() != null ? req.reason() : ""));
     }
 
+    /**
+     * Sender accepts the current price. Thread moves to AWAITING_TRIP.
+     * The traveler is notified to link (or create) a trip via {@link #submitTrip}.
+     * No auto-reject yet — that happens only at payment confirmation.
+     */
     @Transactional
     public NegotiationThreadResponse accept(UUID callerId, UUID threadId, NegotiationAcceptRequest req) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
-
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
-
-        // Only the sender (request owner) can accept a thread
         if (!callerId.equals(request.getSenderId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
         }
@@ -223,19 +232,109 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/already-finalized");
         }
 
-        // TODO(stripe-integration): replace placeholder client_secret with real PaymentIntent.create(...)
-        //   after extending PaymentEntity with negotiation_thread_id (new migration V60).
-        //   See plan task 16 step 3 + payments/PaymentService.createIntent for the Bid pattern.
-        String placeholderClientSecret = "pi_pending_" + thread.getId() + "_secret_" + UUID.randomUUID();
-        thread.setPaymentIntentId("pi_pending_" + thread.getId());
-
-        // Persist ACCEPT message (append-only)
         NegotiationMessageEntity msg = NegotiationMessageEntity.create(
             threadId, callerId, NegotiationMessageKind.ACCEPT, null,
             req == null ? null : req.body());
         messageRepo.save(msg);
 
-        // Promote thread + request atomically
+        thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
+            thread.getId(), request.getId(),
+            request.getSenderId(), thread.getTravelerId(),
+            thread.getCurrentPriceEur()
+        ));
+        auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPT_AWAITING_TRIP", callerId,
+            Map.of("price", thread.getCurrentPriceEur().toString()));
+
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, allMsgs, null);
+    }
+
+    /**
+     * Traveler links an existing announcement (or just-created one) to the accepted thread.
+     * The announcement must belong to caller and match the package_request corridor + date window.
+     * Thread moves to AWAITING_PAYMENT. Sender is notified to checkout.
+     */
+    @Transactional
+    public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, UUID travelerAnnouncementId) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        if (!callerId.equals(thread.getTravelerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-traveler");
+        }
+        if (thread.getStatus() != NegotiationThreadStatus.AWAITING_TRIP) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-trip");
+        }
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // Validate the announcement belongs to caller and matches corridor + date window
+        com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(travelerAnnouncementId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "announcement/not-found"));
+        if (!ann.getTravelerId().equals(callerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "announcement/not-yours");
+        }
+        if (!ann.getDepartureCity().equalsIgnoreCase(request.getDepartureCity())
+            || !ann.getArrivalCity().equalsIgnoreCase(request.getArrivalCity())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/corridor-mismatch");
+        }
+        java.time.LocalDate annDate = ann.getDepartureDate();
+        java.time.LocalDate from = request.getDesiredDate().minusDays(request.getDateToleranceDays());
+        java.time.LocalDate to = request.getDesiredDate().plusDays(request.getDateToleranceDays());
+        if (annDate.isBefore(from) || annDate.isAfter(to)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/date-mismatch");
+        }
+
+        thread.setTravelerAnnouncementId(travelerAnnouncementId);
+        thread.setTravelerTravelDate(annDate);
+        thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        eventPublisher.publishEvent(new NegotiationAwaitingPaymentEvent(
+            thread.getId(), request.getId(),
+            request.getSenderId(), thread.getTravelerId(),
+            thread.getCurrentPriceEur(), travelerAnnouncementId
+        ));
+        auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_LINKED", callerId,
+            Map.of("announcementId", travelerAnnouncementId.toString()));
+
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, allMsgs, null);
+    }
+
+    /**
+     * Sender confirms payment for an AWAITING_PAYMENT thread. This finalizes:
+     *  - thread → ACCEPTED
+     *  - package_request → ACCEPTED
+     *  - all competing OPEN threads on the same request → AUTO_REJECTED
+     *  - payment_intent_id stored on thread
+     *
+     * Currently this is a synchronous placeholder — the real Stripe escrow call
+     * is wired separately in {@code PaymentService.createNegotiationEscrow} (Phase 3).
+     * Caller passes the paymentIntentId returned by Stripe (or a placeholder for now).
+     */
+    @Transactional
+    public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId, String paymentIntentId) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+        if (!callerId.equals(request.getSenderId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+        if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
+        }
+
+        thread.setPaymentIntentId(paymentIntentId);
         thread.setStatus(NegotiationThreadStatus.ACCEPTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -243,10 +342,11 @@ public class NegotiationService {
         request.setStatus(PackageRequestStatus.ACCEPTED);
         requestRepo.save(request);
 
-        // Auto-reject competing OPEN threads
         threadRepo.findByPackageRequestId(request.getId()).stream()
             .filter(t -> !t.getId().equals(thread.getId())
-                      && t.getStatus() == NegotiationThreadStatus.OPEN)
+                      && (t.getStatus() == NegotiationThreadStatus.OPEN
+                          || t.getStatus() == NegotiationThreadStatus.AWAITING_TRIP
+                          || t.getStatus() == NegotiationThreadStatus.AWAITING_PAYMENT))
             .forEach(t -> {
                 t.setStatus(NegotiationThreadStatus.AUTO_REJECTED);
                 t.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
@@ -262,13 +362,14 @@ public class NegotiationService {
             thread.getTravelerAnnouncementId()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
-            Map.of("price", thread.getCurrentPriceEur().toString()));
+            Map.of("price", thread.getCurrentPriceEur().toString(),
+                "paymentIntentId", paymentIntentId));
         auditService.log("PACKAGE_REQUEST", request.getId(), "ACCEPTED", callerId,
             Map.of("threadId", thread.getId().toString()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, placeholderClientSecret);
+        return toResponse(thread, allMsgs, paymentIntentId);
     }
 
     @Transactional(readOnly = true)

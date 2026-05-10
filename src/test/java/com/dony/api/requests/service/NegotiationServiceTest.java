@@ -406,8 +406,8 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("sender accept → thread ACCEPTED, request ACCEPTED, competing threads AUTO_REJECTED, event")
-        void accept_byOwner_finalizesAndRejectsCompeting() {
+        @DisplayName("sender accept → thread AWAITING_TRIP, request still NEGOTIATING, competing threads untouched, event")
+        void accept_byOwner_movesToAwaitingTrip() {
             UUID OTHER_THREAD_ID = UUID.randomUUID();
             var otherThread = new NegotiationThreadEntity();
             otherThread.setPackageRequestId(REQUEST_ID);
@@ -424,20 +424,20 @@ class NegotiationServiceTest {
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
-            when(threadRepo.findByPackageRequestId(REQUEST_ID))
-                .thenReturn(java.util.List.of(thread, otherThread));
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
                 .thenReturn(java.util.List.of());
 
             var req = new com.dony.api.requests.dto.NegotiationAcceptRequest("Deal!");
             var response = service.accept(SENDER_ID, THREAD_ID, req);
 
-            assertThat(response.status()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
-            assertThat(response.paymentIntentClientSecret()).isNotBlank();
-            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
-            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
-            assertThat(otherThread.getStatus()).isEqualTo(NegotiationThreadStatus.AUTO_REJECTED);
-            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+            assertThat(response.status()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+            assertThat(response.paymentIntentClientSecret()).isNull();
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+            // Request unchanged at accept time — only finalizes to ACCEPTED after payment
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            // Competing threads untouched at accept time — auto-reject only at finalize
+            assertThat(otherThread.getStatus()).isEqualTo(NegotiationThreadStatus.OPEN);
+            verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationAwaitingTripEvent.class));
             verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.ACCEPT));
         }
 
