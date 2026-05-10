@@ -177,6 +177,59 @@ public class NegotiationService {
         return toResponse(thread, responses, null);
     }
 
+    @Transactional
+    public void reject(UUID callerId, UUID threadId, NegotiationRejectRequest req) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        if (thread.getStatus() != NegotiationThreadStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/already-finalized");
+        }
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        UUID senderId = request.getSenderId();
+        UUID travelerId = thread.getTravelerId();
+        if (!callerId.equals(senderId) && !callerId.equals(travelerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        NegotiationMessageEntity msg = NegotiationMessageEntity.create(
+            threadId, callerId, NegotiationMessageKind.REJECT, null, req.reason());
+        messageRepo.save(msg);
+
+        thread.setStatus(NegotiationThreadStatus.REJECTED);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        auditService.log("NEGOTIATION_THREAD", threadId, "REJECTED", callerId,
+            Map.of("reason", req.reason() != null ? req.reason() : ""));
+    }
+
+    @Transactional(readOnly = true)
+    public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!callerId.equals(request.getSenderId()) && !callerId.equals(thread.getTravelerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, messages, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<NegotiationThreadResponse> listMine(UUID userId) {
+        // Stub — full impl deferred to Task 21 controller wiring
+        return List.of();
+    }
+
     NegotiationThreadResponse toResponse(NegotiationThreadEntity t,
                                           List<NegotiationMessageResponse> messages,
                                           String paymentIntentClientSecret) {

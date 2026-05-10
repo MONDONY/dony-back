@@ -317,4 +317,123 @@ class NegotiationServiceTest {
                 .hasMessageContaining("not-thread-participant");
         }
     }
+
+    @Nested
+    @DisplayName("reject() — manual rejection")
+    class RejectTests {
+        private NegotiationThreadEntity thread;
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("traveler reject → thread REJECTED, message REJECT")
+        void reject_byTraveler_marksRejected() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            var req = new com.dony.api.requests.dto.NegotiationRejectRequest("Trop cher pour moi");
+            service.reject(TRAVELER_ID, THREAD_ID, req);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.REJECTED);
+            verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.REJECT
+                && "Trop cher pour moi".equals(m.getBody())));
+            verify(threadRepo).save(thread);
+        }
+
+        @Test
+        @DisplayName("non-participant → 403")
+        void reject_outsider_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            UUID OUTSIDER = UUID.randomUUID();
+            var req = new com.dony.api.requests.dto.NegotiationRejectRequest("nope");
+
+            assertThatThrownBy(() -> service.reject(OUTSIDER, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("thread status REJECTED → 409 already-finalized")
+        void reject_alreadyRejected_throws409() {
+            thread.setStatus(NegotiationThreadStatus.REJECTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+
+            var req = new com.dony.api.requests.dto.NegotiationRejectRequest("dup");
+            assertThatThrownBy(() -> service.reject(SENDER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("already-finalized");
+        }
+    }
+
+    @Nested
+    @DisplayName("getById() / listMine()")
+    class GetByIdAndListTests {
+        @Test
+        @DisplayName("getById — participant → response avec messages")
+        void getById_participant_returnsThreadWithMessages() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+            assertThat(resp.id()).isEqualTo(THREAD_ID);
+        }
+
+        @Test
+        @DisplayName("getById — non-participant → 403")
+        void getById_outsider_throws403() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            UUID OUTSIDER = UUID.randomUUID();
+            assertThatThrownBy(() -> service.getById(OUTSIDER, THREAD_ID))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+    }
 }
