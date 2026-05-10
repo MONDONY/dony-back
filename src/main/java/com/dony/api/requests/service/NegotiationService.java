@@ -207,6 +207,70 @@ public class NegotiationService {
             Map.of("reason", req.reason() != null ? req.reason() : ""));
     }
 
+    @Transactional
+    public NegotiationThreadResponse accept(UUID callerId, UUID threadId, NegotiationAcceptRequest req) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // Only the sender (request owner) can accept a thread
+        if (!callerId.equals(request.getSenderId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+        if (thread.getStatus() != NegotiationThreadStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/already-finalized");
+        }
+
+        // TODO(stripe-integration): replace placeholder client_secret with real PaymentIntent.create(...)
+        //   after extending PaymentEntity with negotiation_thread_id (new migration V60).
+        //   See plan task 16 step 3 + payments/PaymentService.createIntent for the Bid pattern.
+        String placeholderClientSecret = "pi_pending_" + thread.getId() + "_secret_" + UUID.randomUUID();
+        thread.setPaymentIntentId("pi_pending_" + thread.getId());
+
+        // Persist ACCEPT message (append-only)
+        NegotiationMessageEntity msg = NegotiationMessageEntity.create(
+            threadId, callerId, NegotiationMessageKind.ACCEPT, null,
+            req == null ? null : req.body());
+        messageRepo.save(msg);
+
+        // Promote thread + request atomically
+        thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        request.setStatus(PackageRequestStatus.ACCEPTED);
+        requestRepo.save(request);
+
+        // Auto-reject competing OPEN threads
+        threadRepo.findByPackageRequestId(request.getId()).stream()
+            .filter(t -> !t.getId().equals(thread.getId())
+                      && t.getStatus() == NegotiationThreadStatus.OPEN)
+            .forEach(t -> {
+                t.setStatus(NegotiationThreadStatus.AUTO_REJECTED);
+                t.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+                threadRepo.save(t);
+                auditService.log("NEGOTIATION_THREAD", t.getId(), "AUTO_REJECTED", callerId,
+                    Map.of("reason", "competing-accepted",
+                        "winningThreadId", thread.getId().toString()));
+            });
+
+        eventPublisher.publishEvent(new PackageRequestAcceptedEvent(
+            thread.getId(), request.getId(), request.getSenderId(),
+            thread.getTravelerId(), thread.getCurrentPriceEur(),
+            thread.getTravelerAnnouncementId()
+        ));
+        auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
+            Map.of("price", thread.getCurrentPriceEur().toString()));
+        auditService.log("PACKAGE_REQUEST", request.getId(), "ACCEPTED", callerId,
+            Map.of("threadId", thread.getId().toString()));
+
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, allMsgs, placeholderClientSecret);
+    }
+
     @Transactional(readOnly = true)
     public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
