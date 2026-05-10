@@ -91,6 +91,21 @@ dony:
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
+  requests:
+    max-negotiation-rounds: 5
+    thread-inactivity-hours: 48
+    date-tolerance-default-days: 2
+    date-tolerance-max-days: 7
+    weight-kg-min: 0.5
+    weight-kg-max: 30
+    declared-value-max-eur: 500
+    body-max-chars: 280
+    max-open-requests-per-sender: 10
+    max-open-threads-per-traveler: 5
+    threads-per-minute-rate-limit: 1
+    auto-expire-check-cron: "0 */15 * * * *"
+    estimation-corridor-recent-trips: 20
+    estimation-cache-ttl-minutes: 60
 
 # Encryption (AES-256 for KYC sensitive data)
 app:

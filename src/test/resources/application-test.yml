@@ -51,6 +51,10 @@ dony:
   limits:
     non-pro:
       monthly-announcements: 2
+  requests:
+    max-negotiation-rounds: 3
+    thread-inactivity-hours: 1
+    auto-expire-check-cron: "-"
 
 app:
   encryption:
