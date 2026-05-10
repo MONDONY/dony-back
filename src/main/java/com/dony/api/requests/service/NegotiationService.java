@@ -15,8 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -81,7 +84,7 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-finalized");
         }
 
-        if (threadRepo.findByPackageRequestIdAndTravelerId(req.packageRequestId(), travelerId).isPresent()) {
+        if (threadRepo.findActiveByPackageRequestIdAndTravelerId(req.packageRequestId(), travelerId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/duplicate-thread");
         }
 
@@ -311,6 +314,103 @@ public class NegotiationService {
     }
 
     /**
+     * Traveler creates a brand-new "dedicated trip" announcement that is linked
+     * exclusively to this package_request. Used when none of the traveler's
+     * existing trips match the corridor/date.
+     *
+     * Locked from the package_request: corridor, weightKg (= availableKg/totalKg),
+     * transportMode, agreed price (= thread.currentPriceEur, stored as pricePerKg
+     * = currentPrice / weightKg since the trip is private and never priced again).
+     *
+     * Editable by the traveler: departureDate (must fall in the tolerance window),
+     * times, addresses, description, content type lists.
+     *
+     * On success the thread transitions AWAITING_TRIP → AWAITING_PAYMENT and the
+     * sender is notified to checkout, exactly like {@link #submitTrip}.
+     */
+    @Transactional
+    public NegotiationThreadResponse createDedicatedTrip(UUID callerId, UUID threadId,
+                                                          NegotiationCreateDedicatedTripRequest req) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        if (!callerId.equals(thread.getTravelerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-traveler");
+        }
+        if (thread.getStatus() != NegotiationThreadStatus.AWAITING_TRIP) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-trip");
+        }
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // Validate the chosen date falls within the sender's tolerance window.
+        java.time.LocalDate from = request.getDesiredDate().minusDays(request.getDateToleranceDays());
+        java.time.LocalDate to = request.getDesiredDate().plusDays(request.getDateToleranceDays());
+        if (req.departureDate().isBefore(from) || req.departureDate().isAfter(to)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/date-mismatch");
+        }
+
+        UserEntity traveler = userRepository.findById(callerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+
+        // Build the dedicated announcement with all locked fields derived server-side.
+        com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+        ann.setTravelerId(callerId);
+        ann.setTravelerIsPro(traveler.isProAccount());
+        ann.setDepartureCity(request.getDepartureCity());
+        ann.setArrivalCity(request.getArrivalCity());
+        ann.setDepartureDate(req.departureDate());
+        ann.setDepartureTime(req.departureTime());
+        ann.setArrivalTime(req.arrivalTime());
+        ann.setPickupAddressLabel(req.pickupAddress().label());
+        ann.setPickupLat(BigDecimal.valueOf(req.pickupAddress().lat()));
+        ann.setPickupLng(BigDecimal.valueOf(req.pickupAddress().lng()));
+        ann.setDeliveryAddressLabel(req.deliveryAddress().label());
+        ann.setDeliveryLat(BigDecimal.valueOf(req.deliveryAddress().lat()));
+        ann.setDeliveryLng(BigDecimal.valueOf(req.deliveryAddress().lng()));
+        ann.setAvailableKg(request.getWeightKg());
+        ann.setTotalKg(request.getWeightKg());
+        // Price-per-kg is derived from the agreed total. The trip is private, so
+        // this value is never displayed — but it must be > 0 to satisfy the
+        // pricePerKg >= 0.01 validation on the entity column.
+        BigDecimal derivedPricePerKg = thread.getCurrentPriceEur()
+            .divide(request.getWeightKg(), 2, RoundingMode.HALF_UP);
+        if (derivedPricePerKg.signum() <= 0) {
+            derivedPricePerKg = new BigDecimal("0.01");
+        }
+        ann.setPricePerKg(derivedPricePerKg);
+        ann.setTransportMode(request.getTransportMode());
+        ann.setStatus(com.dony.api.matching.AnnouncementStatus.ACTIVE);
+        ann.setDescription(req.description());
+        ann.setAcceptedContentTypes(req.acceptedContentTypes() != null ? req.acceptedContentTypes() : new ArrayList<>());
+        ann.setRefusedTypes(req.refusedTypes() != null ? req.refusedTypes() : new ArrayList<>());
+        ann.setLinkedPackageRequestId(request.getId());
+
+        com.dony.api.matching.AnnouncementEntity savedAnn = announcementRepo.save(ann);
+
+        // Link the dedicated trip to the thread and transition to AWAITING_PAYMENT.
+        thread.setTravelerAnnouncementId(savedAnn.getId());
+        thread.setTravelerTravelDate(savedAnn.getDepartureDate());
+        thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        eventPublisher.publishEvent(new NegotiationAwaitingPaymentEvent(
+            thread.getId(), request.getId(),
+            request.getSenderId(), thread.getTravelerId(),
+            thread.getCurrentPriceEur(), savedAnn.getId()
+        ));
+        auditService.log("NEGOTIATION_THREAD", threadId, "DEDICATED_TRIP_CREATED", callerId,
+            Map.of("announcementId", savedAnn.getId().toString(),
+                   "linkedPackageRequestId", request.getId().toString()));
+
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        return toResponse(thread, allMsgs, null);
+    }
+
+    /**
      * Sender confirms payment for an AWAITING_PAYMENT thread. This finalizes:
      *  - thread → ACCEPTED
      *  - package_request → ACCEPTED
@@ -359,7 +459,11 @@ public class NegotiationService {
         eventPublisher.publishEvent(new PackageRequestAcceptedEvent(
             thread.getId(), request.getId(), request.getSenderId(),
             thread.getTravelerId(), thread.getCurrentPriceEur(),
-            thread.getTravelerAnnouncementId()
+            thread.getTravelerAnnouncementId(),
+            request.getWeightKg(),
+            request.getDescription(),
+            request.getContentCategory(),
+            paymentIntentId
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

@@ -522,7 +522,7 @@ public class BidService {
     private static final String TRACKING_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     private static final java.security.SecureRandom SECURE_RNG = new java.security.SecureRandom();
 
-    private String generateTrackingNumber() {
+    static String generateTrackingNumber() {
         StringBuilder sb = new StringBuilder("DON-");
         for (int i = 0; i < 8; i++) {
             sb.append(TRACKING_CHARS.charAt(SECURE_RNG.nextInt(TRACKING_CHARS.length())));

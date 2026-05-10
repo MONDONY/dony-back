@@ -83,6 +83,7 @@ public class PackageRequestService {
         entity.setDateToleranceDays((short) req.dateToleranceDays());
         entity.setWeightKg(req.weightKg());
         entity.setParcelSize(req.parcelSize());
+        entity.setTransportMode(req.transportMode());
         entity.setContentCategory(req.contentCategory());
         entity.setDescription(req.description());
         entity.setTargetPriceEur(req.targetPriceEur());
@@ -112,7 +113,7 @@ public class PackageRequestService {
 
         boolean isOwner = entity.getSenderId().equals(callerUid);
         boolean isThreadParticipant = threadRepository
-            .findByPackageRequestIdAndTravelerId(requestId, callerUid).isPresent();
+            .existsByPackageRequestIdAndTravelerId(requestId, callerUid);
 
         if (!isOwner && !isThreadParticipant) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
@@ -196,6 +197,24 @@ public class PackageRequestService {
             Map.of("recipient", req.recipientName(),
                    "declaredValue", req.declaredValueEur().toString()));
 
+        // Propagate to the marketplace-issued bid (if any) via the matching/
+        // listener so "Mes envois" stays in sync with the package_request data.
+        threadRepository.findByPackageRequestId(requestId).stream()
+            .filter(t -> t.getStatus() == com.dony.api.requests.entity.NegotiationThreadStatus.ACCEPTED
+                      || t.getStatus() == com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_PAYMENT)
+            .findFirst()
+            .ifPresent(thread -> eventPublisher.publishEvent(
+                new com.dony.api.requests.event.PackageRequestDetailsCompletedEvent(
+                    requestId,
+                    thread.getId(),
+                    callerUid,
+                    req.recipientName(),
+                    req.recipientPhone(),
+                    req.declaredValueEur(),
+                    saved.getDisclaimerSignedAt(),
+                    saved.getDisclaimerSignedIp()
+                )));
+
         return toResponse(saved);
     }
 
@@ -214,7 +233,8 @@ public class PackageRequestService {
             e.getId(), e.getSenderId(),
             e.getDepartureCity(), e.getArrivalCity(),
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
-            e.getWeightKg(), e.getParcelSize(), e.getContentCategory(),
+            e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
+            e.getContentCategory(),
             e.getDescription(), e.getTargetPriceEur(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             e.getStatus(), e.getCreatedAt()
@@ -235,7 +255,8 @@ public class PackageRequestService {
             arrCity != null ? arrCity.getLatitude() : null,
             arrCity != null ? arrCity.getLongitude() : null,
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
-            e.getWeightKg(), e.getParcelSize(), e.getContentCategory(),
+            e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
+            e.getContentCategory(),
             e.getTargetPriceEur(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             senderProfile

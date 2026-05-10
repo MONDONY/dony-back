@@ -78,7 +78,9 @@ class PackageRequestControllerIT {
         return new PackageRequestCreateRequest(
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
             "Cadeau", new BigDecimal("25"), null,
             "10e", "Plateau"
         );
@@ -89,7 +91,9 @@ class PackageRequestControllerIT {
             id, SENDER_UUID,
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
             "Cadeau", new BigDecimal("25"), null,
             "10e", "Plateau",
             PackageRequestStatus.OPEN, LocalDateTime.now()
@@ -146,7 +150,9 @@ class PackageRequestControllerIT {
             new BigDecimal("48.85"), new BigDecimal("2.35"),
             new BigDecimal("14.69"), new BigDecimal("-17.44"),
             LocalDate.now().plusDays(5), 2,
-            new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
             new BigDecimal("25"), null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true)

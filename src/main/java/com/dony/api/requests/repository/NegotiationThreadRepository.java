@@ -12,7 +12,33 @@ import java.util.UUID;
 
 public interface NegotiationThreadRepository extends JpaRepository<NegotiationThreadEntity, UUID> {
 
-    Optional<NegotiationThreadEntity> findByPackageRequestIdAndTravelerId(UUID packageRequestId, UUID travelerId);
+    /**
+     * True iff at least one thread exists for (request, traveler) — regardless of status.
+     * Used to assert the user is a participant. Derived count works even when multiple
+     * historical threads exist (one active + N terminal), unlike a unique-result Optional.
+     */
+    boolean existsByPackageRequestIdAndTravelerId(UUID packageRequestId, UUID travelerId);
+
+    /**
+     * Active (non-terminal) thread for the (request, traveler) pair.
+     * REJECTED / AUTO_REJECTED / EXPIRED threads are intentionally excluded so the
+     * traveler can retry with a fresh proposal — see V63 unique-index change.
+     */
+    @Query("""
+        SELECT t FROM NegotiationThreadEntity t
+        WHERE t.packageRequestId = :requestId
+          AND t.travelerId = :travelerId
+          AND t.status IN (
+              com.dony.api.requests.entity.NegotiationThreadStatus.OPEN,
+              com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_TRIP,
+              com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_PAYMENT,
+              com.dony.api.requests.entity.NegotiationThreadStatus.ACCEPTED
+          )
+    """)
+    Optional<NegotiationThreadEntity> findActiveByPackageRequestIdAndTravelerId(
+        @Param("requestId") UUID requestId,
+        @Param("travelerId") UUID travelerId
+    );
 
     List<NegotiationThreadEntity> findByPackageRequestId(UUID packageRequestId);
 

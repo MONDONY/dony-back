@@ -38,6 +38,13 @@ spring:
       name: disabled
       password: disabled
 
+  # Multipart upload (Spring's defaults are 1 MB / 10 MB which truncate
+  # photos coming from mobile cameras — bumped to match StorageService.MAX_FILE_SIZE)
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+
 # Server
 server:
   servlet:
@@ -46,6 +53,11 @@ server:
   error:
     whitelabel:
       enabled: false
+  # Tomcat enforces its own multipart limits before Spring sees the request.
+  # Default 2 MB rejects mobile photos silently — bumped to match StorageService.
+  tomcat:
+    max-http-form-post-size: 12MB
+    max-swallow-size: 12MB
 
 # Actuator
 management:

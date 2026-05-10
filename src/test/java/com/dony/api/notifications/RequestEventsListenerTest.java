@@ -46,16 +46,45 @@ class RequestEventsListenerTest {
     }
 
     @Test
-    void onPackageRequestAccepted_notifiesTraveler() {
+    void onPackageRequestAccepted_notifiesBothParties() {
         UUID travelerId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
         var event = new PackageRequestAcceptedEvent(
             UUID.randomUUID(), UUID.randomUUID(),
-            UUID.randomUUID(), travelerId, new BigDecimal("30"), null
+            senderId, travelerId, new BigDecimal("30"), null,
+            new BigDecimal("5"), "test colis", "vetements", "pi_test_123"
         );
 
         listener.onPackageRequestAccepted(event);
 
+        verify(dispatcher).notifyUser(eq(travelerId), contains("Paiement reçu"), anyString(), anyMap());
+        verify(dispatcher).notifyUser(eq(senderId), contains("finalisée"), anyString(), anyMap());
+    }
+
+    @Test
+    void onNegotiationAwaitingTrip_notifiesTraveler() {
+        UUID travelerId = UUID.randomUUID();
+        var event = new com.dony.api.requests.event.NegotiationAwaitingTripEvent(
+            UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), travelerId, new BigDecimal("30")
+        );
+
+        listener.onNegotiationAwaitingTrip(event);
+
         verify(dispatcher).notifyUser(eq(travelerId), contains("acceptée"), anyString(), anyMap());
+    }
+
+    @Test
+    void onNegotiationAwaitingPayment_notifiesSender() {
+        UUID senderId = UUID.randomUUID();
+        var event = new com.dony.api.requests.event.NegotiationAwaitingPaymentEvent(
+            UUID.randomUUID(), UUID.randomUUID(),
+            senderId, UUID.randomUUID(), new BigDecimal("30"), UUID.randomUUID()
+        );
+
+        listener.onNegotiationAwaitingPayment(event);
+
+        verify(dispatcher).notifyUser(eq(senderId), contains("paiement"), anyString(), anyMap());
     }
 
     @Test

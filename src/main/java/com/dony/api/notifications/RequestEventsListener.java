@@ -60,14 +60,69 @@ public class RequestEventsListener {
         );
     }
 
+    /**
+     * Sender just clicked "Accepter le prix". Status is now AWAITING_TRIP.
+     * Notify the traveler that they need to link a trip.
+     */
+    @EventListener
+    @Async
+    public void onNegotiationAwaitingTrip(NegotiationAwaitingTripEvent e) {
+        dispatcher.notifyUser(
+            e.travelerId(),
+            "Votre offre a été acceptée 🎉",
+            String.format("L'expéditeur a accepté à %.0f€. Choisissez maintenant le trajet à lier.",
+                e.agreedPriceEur()),
+            Map.of(
+                "type", "negotiation_awaiting_trip",
+                "threadId", e.threadId().toString(),
+                "packageRequestId", e.packageRequestId().toString()
+            )
+        );
+    }
+
+    /**
+     * Traveler just linked a trip. Status is now AWAITING_PAYMENT.
+     * Notify the sender that they need to pay.
+     */
+    @EventListener
+    @Async
+    public void onNegotiationAwaitingPayment(NegotiationAwaitingPaymentEvent e) {
+        dispatcher.notifyUser(
+            e.senderId(),
+            "Trajet validé — paiement requis 💳",
+            String.format("Le voyageur a confirmé son trajet. Payez %.0f€ pour finaliser la commande.",
+                e.agreedPriceEur()),
+            Map.of(
+                "type", "negotiation_awaiting_payment",
+                "threadId", e.threadId().toString(),
+                "packageRequestId", e.packageRequestId().toString()
+            )
+        );
+    }
+
+    /**
+     * Final ACCEPTED state — fires only after payment is captured (escrow active).
+     * Notify both parties that the deal is sealed.
+     */
     @EventListener
     @Async
     public void onPackageRequestAccepted(PackageRequestAcceptedEvent e) {
-        // Notify traveler that their offer was accepted
         dispatcher.notifyUser(
             e.travelerId(),
-            "Votre offre a été acceptée !",
-            String.format("Le paiement de %.2f€ est en cours de finalisation", e.agreedPriceEur()),
+            "Paiement reçu — c'est parti ✈️",
+            String.format("Le paiement de %.0f€ est en escrow. Vous pouvez préparer le retrait du colis.",
+                e.agreedPriceEur()),
+            Map.of(
+                "type", "request_accepted",
+                "threadId", e.threadId().toString(),
+                "packageRequestId", e.packageRequestId().toString()
+            )
+        );
+        dispatcher.notifyUser(
+            e.senderId(),
+            "Demande finalisée ✅",
+            String.format("Paiement de %.0f€ confirmé. Le voyageur va vous contacter.",
+                e.agreedPriceEur()),
             Map.of(
                 "type", "request_accepted",
                 "threadId", e.threadId().toString(),

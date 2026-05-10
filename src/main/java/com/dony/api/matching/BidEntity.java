@@ -26,8 +26,17 @@ public class BidEntity extends BaseEntity {
     @Column(name = "weight_kg", nullable = false, precision = 5, scale = 2)
     private BigDecimal weightKg;
 
-    @Column(name = "declared_value_eur", nullable = false, precision = 10, scale = 2)
+    @Column(name = "declared_value_eur", precision = 10, scale = 2)
     private BigDecimal declaredValueEur;
+
+    /**
+     * If non-null, this bid was created from the package_request marketplace
+     * flow (NegotiationThread → ACCEPTED) rather than the classic announce-bid flow.
+     * Lets PackageRequest.completeDetails sync recipient + declared value
+     * back onto the bid.
+     */
+    @Column(name = "linked_negotiation_thread_id")
+    private UUID linkedNegotiationThreadId;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -128,6 +137,9 @@ public class BidEntity extends BaseEntity {
 
     public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
     public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
+
+    public UUID getLinkedNegotiationThreadId() { return linkedNegotiationThreadId; }
+    public void setLinkedNegotiationThreadId(UUID id) { this.linkedNegotiationThreadId = id; }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

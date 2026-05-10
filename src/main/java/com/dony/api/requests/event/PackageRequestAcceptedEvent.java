@@ -7,5 +7,9 @@ public record PackageRequestAcceptedEvent(
     UUID threadId, UUID packageRequestId,
     UUID senderId, UUID travelerId,
     BigDecimal agreedPriceEur,
-    UUID travelerAnnouncementId
+    UUID travelerAnnouncementId,
+    BigDecimal weightKg,
+    String description,
+    String contentCategory,
+    String paymentIntentId
 ) {}

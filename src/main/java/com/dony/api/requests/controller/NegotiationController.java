@@ -84,6 +84,21 @@ public class NegotiationController {
         return service.submitTrip(requireUserId(), id, req.travelerAnnouncementId());
     }
 
+    /**
+     * Traveler creates a brand-new "dedicated trip" announcement to satisfy
+     * an AWAITING_TRIP thread (used when no existing trip matches). The trip
+     * is private (excluded from public search) and the thread transitions to
+     * AWAITING_PAYMENT atomically.
+     */
+    @PostMapping("/{id}/create-dedicated-trip")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public NegotiationThreadResponse createDedicatedTrip(
+            @PathVariable UUID id,
+            @RequestBody @Valid NegotiationCreateDedicatedTripRequest req
+    ) {
+        return service.createDedicatedTrip(requireUserId(), id, req);
+    }
+
     /** Sender confirms payment for an AWAITING_PAYMENT thread → finalize as ACCEPTED. */
     @PostMapping("/{id}/checkout")
     @PreAuthorize("hasRole('SENDER')")

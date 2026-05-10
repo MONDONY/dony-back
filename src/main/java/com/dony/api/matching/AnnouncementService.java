@@ -91,7 +91,8 @@ public class AnnouncementService {
             Double userLat, Double userLng, Double radiusKm,
             String sortBy, String sortDir, Pageable pageable) {
 
-        Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE);
+        Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE)
+                .and(AnnouncementSpecification.publicOnly());
 
         if (departureCity != null && !departureCity.isBlank())
             spec = spec.and(AnnouncementSpecification.hasDepartureCity(departureCity));

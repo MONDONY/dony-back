@@ -39,6 +39,10 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "parcel_size", nullable = false, length = 10)
     private ParcelSize parcelSize;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transport_mode", nullable = false, length = 20)
+    private com.dony.api.matching.TransportMode transportMode;
+
     @Column(name = "content_category", nullable = false, length = 50)
     private String contentCategory;
 
@@ -115,6 +119,8 @@ public class PackageRequestEntity extends BaseEntity {
 
     public ParcelSize getParcelSize() { return parcelSize; }
 
+    public com.dony.api.matching.TransportMode getTransportMode() { return transportMode; }
+
     public String getContentCategory() { return contentCategory; }
 
     public String getDescription() { return description; }
@@ -166,6 +172,8 @@ public class PackageRequestEntity extends BaseEntity {
     public void setWeightKg(BigDecimal weightKg) { this.weightKg = weightKg; }
 
     public void setParcelSize(ParcelSize parcelSize) { this.parcelSize = parcelSize; }
+
+    public void setTransportMode(com.dony.api.matching.TransportMode transportMode) { this.transportMode = transportMode; }
 
     public void setContentCategory(String contentCategory) { this.contentCategory = contentCategory; }
 

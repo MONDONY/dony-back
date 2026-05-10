@@ -114,7 +114,9 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Paris",
                 LocalDate.now().plusDays(7), 2,
-                new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+                new BigDecimal("5"), ParcelSize.SMALL,
+                com.dony.api.matching.TransportMode.PLANE,
+                "vetements",
                 null, null, null, null, null
             );
 
@@ -140,7 +142,9 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(95), 2,
-                new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+                new BigDecimal("5"), ParcelSize.SMALL,
+                com.dony.api.matching.TransportMode.PLANE,
+                "vetements",
                 null, null, null, null, null
             );
 
@@ -172,8 +176,8 @@ class PackageRequestServiceTest {
             setId(entity, UUID.randomUUID());
             entity.setSenderId(SENDER_ID);
             when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
-            when(threadRepository.findByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
-                .thenReturn(Optional.empty());
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(false);
 
             assertThatThrownBy(() -> service.getById(OTHER, entity.getId()))
                 .isInstanceOf(ResponseStatusException.class)
@@ -290,6 +294,7 @@ class PackageRequestServiceTest {
         entity.setDateToleranceDays((short) 2);
         entity.setWeightKg(new BigDecimal("5"));
         entity.setParcelSize(ParcelSize.SMALL);
+        entity.setTransportMode(com.dony.api.matching.TransportMode.PLANE);
         entity.setContentCategory("vetements");
         entity.setStatus(status);
         return entity;
@@ -299,7 +304,9 @@ class PackageRequestServiceTest {
         return new PackageRequestCreateRequest(
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL, "vetements",
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
             "Cadeau pour ma mère", new BigDecimal("25"), null,
             "10e arr", "Plateau"
         );

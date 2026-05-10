@@ -33,6 +33,7 @@ class NegotiationServiceTest {
     @Mock private NegotiationThreadRepository threadRepo;
     @Mock private NegotiationMessageRepository messageRepo;
     @Mock private UserRepository userRepository;
+    @Mock private com.dony.api.matching.AnnouncementRepository announcementRepo;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AuditService auditService;
     @Mock private RequestsConfig config;
@@ -81,7 +82,7 @@ class NegotiationServiceTest {
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-            when(threadRepo.findByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
                 .thenReturn(0L);
@@ -144,7 +145,7 @@ class NegotiationServiceTest {
         void start_duplicate_throws409() {
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-            when(threadRepo.findByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.of(new NegotiationThreadEntity()));
 
             assertThatThrownBy(() -> service.start(TRAVELER_ID, validStartReq()))
@@ -171,7 +172,7 @@ class NegotiationServiceTest {
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-            when(threadRepo.findByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
                 .thenReturn(0L);
@@ -188,7 +189,7 @@ class NegotiationServiceTest {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-            when(threadRepo.findByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
                 .thenReturn(5L);
@@ -535,6 +536,155 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.getById(OUTSIDER, THREAD_ID))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not-thread-participant");
+        }
+    }
+
+    @Nested
+    @DisplayName("createDedicatedTrip()")
+    class CreateDedicatedTripTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupThread() {
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setDesiredDate(LocalDate.now().plusDays(10));
+            request.setDateToleranceDays((short) 2);
+            request.setWeightKg(new BigDecimal("5"));
+            request.setTransportMode(com.dony.api.matching.TransportMode.PLANE);
+
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("80"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        private com.dony.api.requests.dto.NegotiationCreateDedicatedTripRequest buildRequest(LocalDate date) {
+            return new com.dony.api.requests.dto.NegotiationCreateDedicatedTripRequest(
+                date,
+                java.time.LocalTime.of(8, 0),
+                java.time.LocalTime.of(14, 30),
+                new com.dony.api.matching.dto.AddressDto("CDG T2E", 49.0097, 2.5479),
+                new com.dony.api.matching.dto.AddressDto("DSS Diass", 14.6708, -17.0734),
+                "Bagage en soute",
+                java.util.List.of("vetements", "documents"),
+                java.util.List.of("liquides")
+            );
+        }
+
+        @Test
+        @DisplayName("happy path — date dans la fenêtre → annonce dédiée créée + thread → AWAITING_PAYMENT + event")
+        void createDedicatedTrip_valid_createsAnnouncementAndTransitionsThread() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            UUID newAnnId = UUID.randomUUID();
+            when(announcementRepo.save(any())).thenAnswer(inv -> {
+                com.dony.api.matching.AnnouncementEntity a = inv.getArgument(0);
+                try {
+                    var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                    idField.setAccessible(true);
+                    idField.set(a, newAnnId);
+                } catch (Exception e) { throw new RuntimeException(e); }
+                return a;
+            });
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+
+            var resp = service.createDedicatedTrip(TRAVELER_ID, THREAD_ID,
+                buildRequest(request.getDesiredDate())); // exact desired date — within tolerance
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            assertThat(resp.travelerAnnouncementId()).isEqualTo(newAnnId);
+
+            ArgumentCaptor<com.dony.api.matching.AnnouncementEntity> annCaptor =
+                ArgumentCaptor.forClass(com.dony.api.matching.AnnouncementEntity.class);
+            verify(announcementRepo).save(annCaptor.capture());
+            com.dony.api.matching.AnnouncementEntity savedAnn = annCaptor.getValue();
+            // Locked fields derived server-side
+            assertThat(savedAnn.getDepartureCity()).isEqualTo("Paris");
+            assertThat(savedAnn.getArrivalCity()).isEqualTo("Dakar");
+            assertThat(savedAnn.getAvailableKg()).isEqualByComparingTo("5");
+            assertThat(savedAnn.getTotalKg()).isEqualByComparingTo("5");
+            assertThat(savedAnn.getTransportMode()).isEqualTo(com.dony.api.matching.TransportMode.PLANE);
+            assertThat(savedAnn.getLinkedPackageRequestId()).isEqualTo(REQUEST_ID);
+            // Price-per-kg derived from agreed total (80 / 5 = 16)
+            assertThat(savedAnn.getPricePerKg()).isEqualByComparingTo("16.00");
+            assertThat(savedAnn.getStatus()).isEqualTo(com.dony.api.matching.AnnouncementStatus.ACTIVE);
+
+            verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationAwaitingPaymentEvent.class));
+        }
+
+        @Test
+        @DisplayName("date avant la fenêtre de tolérance → 422 date-mismatch")
+        void createDedicatedTrip_dateBeforeWindow_throws422() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var req = buildRequest(request.getDesiredDate().minusDays(3));
+            assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("date-mismatch");
+            verifyNoInteractions(announcementRepo);
+        }
+
+        @Test
+        @DisplayName("date après la fenêtre de tolérance → 422 date-mismatch")
+        void createDedicatedTrip_dateAfterWindow_throws422() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var req = buildRequest(request.getDesiredDate().plusDays(3));
+            assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("date-mismatch");
+            verifyNoInteractions(announcementRepo);
+        }
+
+        @Test
+        @DisplayName("caller n'est pas le traveler → 403 not-traveler")
+        void createDedicatedTrip_notTraveler_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+
+            UUID OUTSIDER = UUID.randomUUID();
+            assertThatThrownBy(() -> service.createDedicatedTrip(OUTSIDER, THREAD_ID,
+                buildRequest(request.getDesiredDate())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-traveler");
+            verifyNoInteractions(announcementRepo);
+        }
+
+        @Test
+        @DisplayName("thread status != AWAITING_TRIP → 409 not-awaiting-trip")
+        void createDedicatedTrip_wrongStatus_throws409() {
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+
+            assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID,
+                buildRequest(request.getDesiredDate())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-awaiting-trip");
+            verifyNoInteractions(announcementRepo);
+        }
+
+        @Test
+        @DisplayName("thread introuvable → 404 thread/not-found")
+        void createDedicatedTrip_threadMissing_throws404() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID,
+                buildRequest(LocalDate.now().plusDays(10))))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("thread/not-found");
         }
     }
 }

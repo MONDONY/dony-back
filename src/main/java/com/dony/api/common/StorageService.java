@@ -30,7 +30,8 @@ public class StorageService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(StorageService.class);
 
-    private static final Set<String> ALLOWED_PREFIXES = Set.of("tracking/", "users/", "messaging/", "kyc/");
+    private static final Set<String> ALLOWED_PREFIXES = Set.of(
+            "tracking/", "users/", "messaging/", "kyc/", "package_requests/");
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp");
@@ -53,6 +54,8 @@ public class StorageService {
      * @return the S3 object key
      */
     public String uploadFile(MultipartFile file, String prefix) throws IOException {
+        log.info("uploadFile: prefix={}, originalFilename={}, contentType={}, size={} bytes",
+            prefix, file.getOriginalFilename(), file.getContentType(), file.getSize());
         validateFile(file);
         validatePrefix(prefix);
 
@@ -65,7 +68,16 @@ public class StorageService {
                 .contentLength(file.getSize())
                 .build();
 
-        s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
+        long t0 = System.currentTimeMillis();
+        try {
+            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
+            log.info("uploadFile: putObject OK key={} bucket={} ({} ms)",
+                key, bucket, System.currentTimeMillis() - t0);
+        } catch (Exception ex) {
+            log.error("uploadFile: putObject FAILED key={} bucket={} ({} ms): {}",
+                key, bucket, System.currentTimeMillis() - t0, ex.toString(), ex);
+            throw ex;
+        }
 
         return key;
     }

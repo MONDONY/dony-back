@@ -1,5 +1,6 @@
 package com.dony.api.requests.dto;
 
+import com.dony.api.matching.TransportMode;
 import com.dony.api.requests.entity.ParcelSize;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ public record PackageRequestCreateRequest(
     @Min(0) @Max(7) int dateToleranceDays,
     @NotNull @DecimalMin("0.5") @DecimalMax("30.0") BigDecimal weightKg,
     @NotNull ParcelSize parcelSize,
+    @NotNull TransportMode transportMode,
     @NotBlank @Size(max = 50) String contentCategory,
     @Size(max = 500) String description,
     @DecimalMin("0.0") @DecimalMax("500.0") BigDecimal targetPriceEur,

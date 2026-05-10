@@ -66,6 +66,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
 
+    Optional<BidEntity> findByLinkedNegotiationThreadId(UUID linkedNegotiationThreadId);
+
     List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
             BidStatus status, LocalDateTime threshold);
 
