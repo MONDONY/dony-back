@@ -18,8 +18,15 @@ import java.util.UUID;
 @Where(clause = "deleted_at IS NULL")
 public class PaymentEntity extends BaseEntity {
 
-    @Column(name = "bid_id", nullable = false, unique = true)
+    @Column(name = "bid_id", unique = true)
     private UUID bidId;
+
+    /**
+     * Reference to a negotiation thread (package-request marketplace flow).
+     * Mutually exclusive with bid_id — enforced by DB CHECK constraint.
+     */
+    @Column(name = "negotiation_thread_id", unique = true)
+    private UUID negotiationThreadId;
 
     @Column(name = "stripe_payment_intent_id", nullable = false, unique = true, length = 255)
     private String stripePaymentIntentId;
@@ -48,6 +55,9 @@ public class PaymentEntity extends BaseEntity {
 
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
+
+    public UUID getNegotiationThreadId() { return negotiationThreadId; }
+    public void setNegotiationThreadId(UUID negotiationThreadId) { this.negotiationThreadId = negotiationThreadId; }
 
     public String getStripePaymentIntentId() { return stripePaymentIntentId; }
     public void setStripePaymentIntentId(String stripePaymentIntentId) { this.stripePaymentIntentId = stripePaymentIntentId; }

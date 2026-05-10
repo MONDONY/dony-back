@@ -21,10 +21,14 @@ import java.util.UUID;
 public class NegotiationController {
 
     private final NegotiationService service;
+    private final com.dony.api.payments.PaymentService paymentService;
     private final UserRepository userRepository;
 
-    public NegotiationController(NegotiationService service, UserRepository userRepository) {
+    public NegotiationController(NegotiationService service,
+                                 com.dony.api.payments.PaymentService paymentService,
+                                 UserRepository userRepository) {
         this.service = service;
+        this.paymentService = paymentService;
         this.userRepository = userRepository;
     }
 
@@ -88,6 +92,27 @@ public class NegotiationController {
             @RequestBody @Valid NegotiationCheckoutRequest req
     ) {
         return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId());
+    }
+
+    /**
+     * Sender initiates the Stripe escrow payment for an AWAITING_PAYMENT thread.
+     * Returns the Stripe clientSecret to confirm via the Flutter SDK.
+     * The thread is finalized to ACCEPTED only when the webhook fires
+     * payment_intent.amount_capturable_updated (escrow active).
+     */
+    @PostMapping("/{id}/initiate-payment")
+    @PreAuthorize("hasRole('SENDER')")
+    public com.dony.api.payments.dto.PaymentResponse initiatePayment(@PathVariable UUID id) {
+        UUID senderId = requireUserId();
+        var thread = service.getById(senderId, id);
+        // Defensive: only allowed if thread status = AWAITING_PAYMENT
+        if (thread.status() != com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_PAYMENT) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT,
+                "thread/not-awaiting-payment");
+        }
+        return paymentService.createNegotiationEscrow(
+            id, senderId, thread.travelerId(), thread.currentPriceEur());
     }
 
     // ─── Auth helper ─────────────────────────────────────────────────────────────

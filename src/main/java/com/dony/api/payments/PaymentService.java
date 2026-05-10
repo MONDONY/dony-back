@@ -558,6 +558,18 @@ public class PaymentService {
             });
             // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
             promoteBidOnPaymentAuthorized(pi.getId());
+
+            // Marketplace package_request flow: if this PI is bound to a negotiation thread,
+            // ask the NegotiationService to finalize via the application context (avoid circular DI).
+            String scope = pi.getMetadata().get("scope");
+            String negotiationThreadId = pi.getMetadata().get("negotiation_thread_id");
+            if ("NEGOTIATION".equals(scope) && negotiationThreadId != null) {
+                eventPublisher.publishEvent(new NegotiationPaymentAuthorizedEvent(
+                        java.util.UUID.fromString(negotiationThreadId),
+                        java.util.UUID.fromString(pi.getMetadata().get("sender_id")),
+                        pi.getId()
+                ));
+            }
         });
     }
 
@@ -813,5 +825,112 @@ public class PaymentService {
         PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
         pi.capture();
         log.info("PaymentIntent {} captured", paymentIntentId);
+    }
+
+    // ─── Package-request marketplace : escrow on negotiation thread ──────────────
+
+    /**
+     * Creates a Stripe escrow PaymentIntent for an AWAITING_PAYMENT negotiation thread.
+     * Mirrors {@link #createEscrow} but bound to a negotiation_thread_id instead of bid_id.
+     *
+     * The traveler must have a fully-onboarded Stripe Connect account
+     * (same eligibility rules as for bids).
+     *
+     * Returns clientSecret that the Flutter side passes to Stripe SDK confirmPayment.
+     * On webhook payment_intent.amount_capturable_updated, the thread is finalized as ACCEPTED
+     * via {@code com.dony.api.requests.service.NegotiationService.finalizeAfterPayment}.
+     */
+    public PaymentResponse createNegotiationEscrow(
+            UUID threadId,
+            UUID senderId,
+            UUID travelerId,
+            BigDecimal amountEur) {
+        log.info("createNegotiationEscrow(threadId={}, senderId={}, travelerId={}, amount={})",
+                threadId, senderId, travelerId, amountEur);
+
+        UserEntity sender = userRepository.findById(senderId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "user-not-found", "User Not Found", "Sender introuvable"));
+        UserEntity traveler = userRepository.findById(travelerId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "traveler-not-found", "Traveler Not Found", "Voyageur introuvable"));
+
+        // Idempotency: reuse existing non-failed payment for this thread
+        Optional<PaymentEntity> existing = paymentRepository.findByNegotiationThreadId(threadId);
+        if (existing.isPresent()) {
+            PaymentEntity payment = existing.get();
+            if (payment.getStatus() == PaymentStatus.ESCROW
+                    || payment.getStatus() == PaymentStatus.RELEASED) {
+                throw new DonyBusinessException(HttpStatus.CONFLICT,
+                        "payment-already-completed", "Payment Already Completed",
+                        "Le paiement pour cette négociation a déjà été effectué");
+            }
+            if (payment.getStatus() == PaymentStatus.PENDING) {
+                try {
+                    PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+                    if ("requires_payment_method".equals(pi.getStatus())
+                            || "requires_confirmation".equals(pi.getStatus())) {
+                        return toPaymentResponse(payment, pi.getClientSecret());
+                    }
+                    throw new DonyBusinessException(HttpStatus.CONFLICT,
+                            "payment-already-completed", "Payment Already Completed",
+                            "Le paiement pour cette négociation a déjà été effectué");
+                } catch (StripeException e) {
+                    log.warn("Could not retrieve existing PaymentIntent for thread {}, creating new one",
+                            threadId);
+                }
+            }
+        }
+
+        if (traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE
+                || traveler.getStripeAccountId() == null
+                || traveler.getStripeAccountId().isBlank()) {
+            throw new TravelerNotEligibleForPaymentException(traveler.getId());
+        }
+
+        BigDecimal amount = amountEur.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal commission = amount.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
+        long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
+
+        try {
+            ensureCardPaymentsCapability(traveler.getStripeAccountId());
+
+            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                    .setAmount(amountCents)
+                    .setCurrency("eur")
+                    .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
+                    .setOnBehalfOf(traveler.getStripeAccountId())
+                    .setStatementDescriptorSuffix("DONY")
+                    .putMetadata("negotiation_thread_id", threadId.toString())
+                    .putMetadata("sender_id", sender.getId().toString())
+                    .putMetadata("traveler_id", traveler.getId().toString())
+                    .putMetadata("scope", "NEGOTIATION")
+                    .build();
+
+            PaymentIntent pi = PaymentIntent.create(params);
+
+            PaymentEntity payment = new PaymentEntity();
+            payment.setNegotiationThreadId(threadId);
+            payment.setStripePaymentIntentId(pi.getId());
+            payment.setAmount(amount);
+            payment.setCommissionAmount(commission);
+            payment.setStatus(PaymentStatus.PENDING);
+            paymentRepository.save(payment);
+
+            auditService.log("PAYMENT", payment.getId(), "NEGOTIATION_ESCROW_CREATED",
+                    sender.getId(),
+                    java.util.Map.of("threadId", threadId.toString(),
+                            "amount", amount.toString(),
+                            "stripePaymentIntentId", pi.getId()));
+
+            log.info("PaymentIntent {} created for negotiation thread {} (sender={})",
+                    pi.getId(), threadId, sender.getId());
+            return toPaymentResponse(payment, pi.getClientSecret());
+        } catch (StripeException e) {
+            log.error("Stripe PaymentIntent creation failed for negotiation thread {}", threadId, e);
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                    "stripe-error", "Stripe Error",
+                    "Échec création PaymentIntent : " + e.getMessage());
+        }
     }
 }
