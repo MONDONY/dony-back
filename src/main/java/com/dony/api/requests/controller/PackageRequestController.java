@@ -30,13 +30,16 @@ public class PackageRequestController {
 
     private final PackageRequestService service;
     private final PriceEstimationService estimationService;
+    private final com.dony.api.requests.service.NegotiationService negotiationService;
     private final UserRepository userRepository;
 
     public PackageRequestController(PackageRequestService service,
                                     PriceEstimationService estimationService,
+                                    com.dony.api.requests.service.NegotiationService negotiationService,
                                     UserRepository userRepository) {
         this.service = service;
         this.estimationService = estimationService;
+        this.negotiationService = negotiationService;
         this.userRepository = userRepository;
     }
 
@@ -59,6 +62,12 @@ public class PackageRequestController {
     @GetMapping("/{id}")
     public PackageRequestResponse getById(@PathVariable UUID id) {
         return service.getById(requireUserId(), id);
+    }
+
+    @GetMapping("/{id}/threads")
+    @PreAuthorize("hasRole('SENDER')")
+    public java.util.List<com.dony.api.requests.dto.NegotiationThreadResponse> listThreads(@PathVariable UUID id) {
+        return negotiationService.listForRequest(requireUserId(), id);
     }
 
     @DeleteMapping("/{id}")

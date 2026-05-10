@@ -290,8 +290,34 @@ public class NegotiationService {
 
     @Transactional(readOnly = true)
     public List<NegotiationThreadResponse> listMine(UUID userId) {
-        // Stub — full impl deferred to Task 21 controller wiring
-        return List.of();
+        return threadRepo.findByParticipant(userId).stream()
+            .map(t -> {
+                var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
+                    .stream().map(this::toMessageResponse).toList();
+                return toResponse(t, messages, null);
+            })
+            .toList();
+    }
+
+    /**
+     * All threads attached to a single package_request (sender's inbox view
+     * for one of their requests). Caller must be the sender of the request
+     * — ownership check is enforced.
+     */
+    @Transactional(readOnly = true)
+    public List<NegotiationThreadResponse> listForRequest(UUID callerId, UUID requestId) {
+        PackageRequestEntity request = requestRepo.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+        if (!request.getSenderId().equals(callerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        return threadRepo.findByPackageRequestId(requestId).stream()
+            .map(t -> {
+                var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
+                    .stream().map(this::toMessageResponse).toList();
+                return toResponse(t, messages, null);
+            })
+            .toList();
     }
 
     NegotiationThreadResponse toResponse(NegotiationThreadEntity t,

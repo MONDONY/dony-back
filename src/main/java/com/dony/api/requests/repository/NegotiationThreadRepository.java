@@ -30,4 +30,19 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
         WHERE t.travelerId = :travelerId AND t.createdAt > :since
     """)
     long countCreatedBy(@Param("travelerId") UUID travelerId, @Param("since") LocalDateTime since);
+
+    /**
+     * All threads where the user is participant — either traveler directly,
+     * or sender via the linked package_request.
+     * Used by GET /negotiations/me to power the inbox view.
+     */
+    @Query("""
+        SELECT t FROM NegotiationThreadEntity t
+        WHERE t.travelerId = :userId
+           OR t.packageRequestId IN (
+                SELECT p.id FROM PackageRequestEntity p WHERE p.senderId = :userId
+           )
+        ORDER BY t.lastActivityAt DESC
+    """)
+    List<NegotiationThreadEntity> findByParticipant(@Param("userId") UUID userId);
 }
