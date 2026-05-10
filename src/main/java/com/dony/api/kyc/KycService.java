@@ -224,16 +224,27 @@ public class KycService {
                 eventPublisher.publishEvent(new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
             }
 
+        } else if ("identity.verification_session.canceled".equals(eventType)) {
+            // Session abandonnée avant soumission des documents → NOT_STARTED
+            // L'utilisateur n'a pas tenté la vérification ; on lui permet de recommencer proprement.
+            kyc.setStatus(KycVerificationStatus.REJECTED);
+            kyc.setRejectionReason("session_canceled");
+            user.setKycStatus(KycStatus.NOT_STARTED);
+            kycRepository.save(kyc);
+            userRepository.save(user);
+
+            auditService.log("kyc_verification", kyc.getId(), "KYC_CANCELED",
+                    user.getId(), Map.of("sessionId", sessionId, "reason", "session_canceled"));
+
         } else {
-            // requires_input or canceled → REJECTED (user must re-submit)
+            // requires_input → documents soumis mais refusés par Stripe
             kyc.setStatus(KycVerificationStatus.REJECTED);
             kyc.setRejectionReason(lastErrorReason != null ? lastErrorReason : "verification_failed");
             user.setKycStatus(KycStatus.REJECTED);
             kycRepository.save(kyc);
             userRepository.save(user);
 
-            String auditAction = "identity.verification_session.canceled".equals(eventType) ? "KYC_CANCELED" : "KYC_REJECTED";
-            auditService.log("kyc_verification", kyc.getId(), auditAction,
+            auditService.log("kyc_verification", kyc.getId(), "KYC_REJECTED",
                     user.getId(), Map.of("sessionId", sessionId,
                             "reason", kyc.getRejectionReason()));
         }

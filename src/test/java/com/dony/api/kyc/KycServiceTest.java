@@ -331,6 +331,39 @@ class KycServiceTest {
     }
 
     @Test
+    void processWebhook_canceledEvent_resetsToNotStarted() {
+        UserEntity user = buildUser(KycStatus.PENDING);
+        KycVerificationEntity kyc = buildKyc(user.getId(), KycVerificationStatus.PENDING);
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("identity.verification_session.canceled");
+        when(mockEvent.getId()).thenReturn("evt_canceled");
+        when(processedStripeEventRepository.existsByEventId("evt_canceled")).thenReturn(false);
+        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_canceled\",\"last_error\":null}");
+        when(kycRepository.findByStripeVerificationSessionId("vs_test_canceled")).thenReturn(Optional.of(kyc));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
+            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                    .thenReturn(mockEvent);
+
+            service.processWebhook("payload", "sig");
+        }
+
+        // Session abandonnée → kyc_status repassé à NOT_STARTED pour permettre un nouvel essai
+        assertThat(user.getKycStatus()).isEqualTo(KycStatus.NOT_STARTED);
+        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.REJECTED);
+        assertThat(kyc.getRejectionReason()).isEqualTo("session_canceled");
+        verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_CANCELED"), any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void processWebhook_verifiedEvent_noUser_returnsEarly() {
         KycVerificationEntity kyc = buildKyc(UUID.randomUUID(), KycVerificationStatus.PENDING);
 
