@@ -226,6 +226,50 @@ public class PackageRequestService {
         return repository.findAll(spec, pageable).map(this::toSearchResponse);
     }
 
+    /**
+     * Near-me variant: same filtering as {@link #search}, plus a geographic
+     * post-filter applied in memory using the Haversine formula on the city
+     * coordinates resolved via {@link com.dony.api.city.CityRepository}.
+     *
+     * <p>Results within {@code radiusKm} of ({@code lat}, {@code lng}) are
+     * returned, sorted by ascending distance. Requests whose departure city is
+     * unknown to the city table are excluded from the geo set.
+     *
+     * <p>MVP trade-off: the SQL pagination still applies before the geo filter,
+     * so a page may contain fewer items than {@code pageable.size}. Acceptable
+     * because the dataset is small (<50k active requests). A future optimization
+     * would JOIN the city table inside the JPA specification.
+     */
+    @Transactional(readOnly = true)
+    public Page<PackageRequestSearchResponse> searchNearMe(Specification<PackageRequestEntity> spec,
+                                                            Pageable pageable,
+                                                            java.math.BigDecimal lat,
+                                                            java.math.BigDecimal lng,
+                                                            double radiusKm) {
+        Page<PackageRequestSearchResponse> mapped = repository.findAll(spec, pageable).map(this::toSearchResponse);
+        double latD = lat.doubleValue();
+        double lngD = lng.doubleValue();
+        List<PackageRequestSearchResponse> filtered = mapped.getContent().stream()
+            .filter(r -> r.departureLat() != null && r.departureLng() != null)
+            .map(r -> Map.entry(r, haversineKm(latD, lngD, r.departureLat().doubleValue(), r.departureLng().doubleValue())))
+            .filter(e -> e.getValue() <= radiusKm)
+            .sorted(java.util.Comparator.comparingDouble(Map.Entry::getValue))
+            .map(Map.Entry::getKey)
+            .toList();
+        return new org.springframework.data.domain.PageImpl<>(filtered, pageable, mapped.getTotalElements());
+    }
+
+    private static double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double r = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return r * c;
+    }
+
     // ─── Mappers ─────────────────────────────────────────────────────────────────
 
     PackageRequestResponse toResponse(PackageRequestEntity e) {

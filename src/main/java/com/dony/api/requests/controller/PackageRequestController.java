@@ -97,6 +97,9 @@ public class PackageRequestController {
             @RequestParam(required = false) LocalDate dateTo,
             @RequestParam(required = false) BigDecimal maxWeight,
             @RequestParam(required = false) ParcelSize parcelSize,
+            @RequestParam(required = false) BigDecimal lat,
+            @RequestParam(required = false) BigDecimal lng,
+            @RequestParam(required = false) Double radiusKm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -106,7 +109,12 @@ public class PackageRequestController {
                 .and(PackageRequestSpecifications.dateRange(dateFrom, dateTo))
                 .and(PackageRequestSpecifications.maxWeight(maxWeight))
                 .and(PackageRequestSpecifications.parcelSize(parcelSize));
-        return service.search(spec, PageRequest.of(page, size));
+        Pageable pageable = PageRequest.of(page, size);
+        if (lat != null && lng != null) {
+            double radius = radiusKm != null ? radiusKm : 50.0;
+            return service.searchNearMe(spec, pageable, lat, lng, radius);
+        }
+        return service.search(spec, pageable);
     }
 
     @GetMapping("/estimate")

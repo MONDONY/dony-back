@@ -266,6 +266,73 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("searchNearMe() — geo proximity filter")
+    class SearchNearMeTests {
+
+        @Test @DisplayName("filtre + tri par distance asc, exclut hors radius et coords inconnues")
+        void searchNearMe_filtersAndSorts() {
+            // 3 demandes : Paris (ref), Lyon, Marseille — viewer à Paris, radius 600 km → garde Paris (0km) + Lyon (~390km), exclut Marseille (~660km)
+            PackageRequestEntity paris = buildEntity(UUID.randomUUID(), PackageRequestStatus.OPEN);
+            paris.setDepartureCity("Paris");
+            PackageRequestEntity lyon = buildEntity(UUID.randomUUID(), PackageRequestStatus.OPEN);
+            lyon.setDepartureCity("Lyon");
+            PackageRequestEntity marseille = buildEntity(UUID.randomUUID(), PackageRequestStatus.OPEN);
+            marseille.setDepartureCity("Marseille");
+
+            var page = new org.springframework.data.domain.PageImpl<>(List.of(marseille, lyon, paris));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(page);
+
+            com.dony.api.city.CityEntity cityParis = cityWith(new BigDecimal("48.8566"), new BigDecimal("2.3522"));
+            com.dony.api.city.CityEntity cityLyon = cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"));
+            com.dony.api.city.CityEntity cityMarseille = cityWith(new BigDecimal("43.2965"), new BigDecimal("5.3698"));
+            when(cityRepository.findFirstByNameIgnoreCase("Paris")).thenReturn(Optional.of(cityParis));
+            when(cityRepository.findFirstByNameIgnoreCase("Lyon")).thenReturn(Optional.of(cityLyon));
+            when(cityRepository.findFirstByNameIgnoreCase("Marseille")).thenReturn(Optional.of(cityMarseille));
+            when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
+
+            var result = service.searchNearMe(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                new BigDecimal("48.8566"), new BigDecimal("2.3522"),
+                600.0
+            );
+
+            assertThat(result.getContent()).hasSize(2);
+            assertThat(result.getContent().get(0).departureCity()).isEqualTo("Paris");
+            assertThat(result.getContent().get(1).departureCity()).isEqualTo("Lyon");
+        }
+
+        @Test @DisplayName("toutes hors radius → page vide")
+        void searchNearMe_allOutOfRadius_returnsEmpty() {
+            PackageRequestEntity lyon = buildEntity(UUID.randomUUID(), PackageRequestStatus.OPEN);
+            lyon.setDepartureCity("Lyon");
+            var page = new org.springframework.data.domain.PageImpl<>(List.of(lyon));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(page);
+            when(cityRepository.findFirstByNameIgnoreCase("Lyon"))
+                .thenReturn(Optional.of(cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"))));
+            when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
+
+            var result = service.searchNearMe(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                new BigDecimal("48.8566"), new BigDecimal("2.3522"),
+                10.0
+            );
+            assertThat(result.getContent()).isEmpty();
+        }
+
+        private com.dony.api.city.CityEntity cityWith(BigDecimal lat, BigDecimal lng) {
+            com.dony.api.city.CityEntity c = new com.dony.api.city.CityEntity();
+            c.setLatitude(lat);
+            c.setLongitude(lng);
+            return c;
+        }
+    }
+
     @Nested @DisplayName("findMine() — own requests pagination")
     class FindMineTests {
         @Test @DisplayName("returns paginated responses for sender")
