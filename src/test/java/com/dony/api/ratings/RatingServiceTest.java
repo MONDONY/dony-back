@@ -423,6 +423,41 @@ class RatingServiceTest {
         }
     }
 
+    // ─── getMyReceivedRatings() ──────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getMyReceivedRatings() — notes reçues du connecté")
+    class GetMyReceivedRatingsTests {
+
+        @Test
+        @DisplayName("uid inconnu → 401 UNAUTHORIZED")
+        void getMyReceivedRatings_unknownUid_throws401() {
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> ratingService.getMyReceivedRatings(SENDER_UID, 0, 20))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.UNAUTHORIZED));
+        }
+
+        @Test
+        @DisplayName("uid valide → délègue à getUserRatings avec l'UUID de l'utilisateur")
+        void getMyReceivedRatings_validUid_delegatesToGetUserRatings() throws Exception {
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            RatingEntity r = buildRating(5);
+            when(ratingRepository.findByRatedUserId(eq(SENDER_ID), any()))
+                    .thenReturn(new PageImpl<>(List.of(r)));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(SENDER_ID)).thenReturn(List.of(r));
+
+            var result = ratingService.getMyReceivedRatings(SENDER_UID, 0, 20);
+
+            assertThat(result).isNotNull();
+            assertThat(result.ratingCount()).isEqualTo(1);
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private RatingEntity buildRating(int stars) {

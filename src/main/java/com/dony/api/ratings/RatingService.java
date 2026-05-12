@@ -212,6 +212,13 @@ public class RatingService {
         return toResponse(rating);
     }
 
+    public UserRatingsSummaryResponse getMyReceivedRatings(String firebaseUid, int page, int size) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Utilisateur introuvable"));
+        return getUserRatings(user.getId(), page, size);
+    }
+
     public UserRatingsSummaryResponse getUserRatings(UUID userId, int page, int size) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new DonyBusinessException(
