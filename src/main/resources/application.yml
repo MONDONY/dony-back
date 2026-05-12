@@ -103,6 +103,10 @@ dony:
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
+  referral:
+    reward-amount-cents: 500
+    max-invitations-per-user: 50
+    code-regeneration-cooldown-days: 30
   requests:
     max-negotiation-rounds: 5
     thread-inactivity-hours: 48

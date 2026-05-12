@@ -151,4 +151,11 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
         LIMIT 1
         """)
     Optional<BidEntity> findPendingRatingForUser(@Param("userId") UUID userId);
+
+    /**
+     * Counts completed deliveries for a given sender.
+     * Used by {@code DeliveryConfirmedReferralListener} to detect the first delivery.
+     */
+    @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.senderId = :senderId AND b.status = :status")
+    long countByStatusAndSenderId(@Param("status") BidStatus status, @Param("senderId") UUID senderId);
 }
