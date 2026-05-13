@@ -286,9 +286,13 @@ public class PackageRequestService {
     }
 
     private PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e) {
-        // Sender profile will be wired with UserService in a later task (Task 20+).
+        UserEntity sender = userRepository.findById(e.getSenderId()).orElse(null);
+        String displayName = buildSenderDisplayName(sender);
+        double averageRating = sender != null && sender.getAverageRating() != null
+                ? sender.getAverageRating().doubleValue() : 0.0;
+        boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
         var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), "Sender", 0.0, 0, false
+            e.getSenderId(), displayName, averageRating, 0, kycVerified
         );
         var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
         var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
@@ -305,5 +309,18 @@ public class PackageRequestService {
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             senderProfile
         );
+    }
+
+    private String buildSenderDisplayName(UserEntity user) {
+        if (user == null) return "Expéditeur";
+        String first = user.getFirstName();
+        String last = user.getLastName();
+        if (first != null && !first.isBlank()) {
+            if (last != null && !last.isBlank()) {
+                return first + " " + last.charAt(0) + ".";
+            }
+            return first;
+        }
+        return "Expéditeur";
     }
 }
