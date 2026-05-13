@@ -72,7 +72,9 @@ class NegotiationControllerIT {
             LocalDate.now().plusDays(5), new BigDecimal("10"),
             status, new BigDecimal("30"), 1,
             LocalDateTime.now(), LocalDateTime.now(),
-            List.of(), clientSecret
+            List.of(), clientSecret,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new BigDecimal("5")
         );
     }
 

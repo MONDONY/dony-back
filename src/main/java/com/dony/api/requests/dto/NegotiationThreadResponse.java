@@ -13,5 +13,9 @@ public record NegotiationThreadResponse(
     NegotiationThreadStatus status, BigDecimal currentPriceEur, int roundsCount,
     LocalDateTime lastActivityAt, LocalDateTime createdAt,
     List<NegotiationMessageResponse> messages,
-    String paymentIntentClientSecret
+    String paymentIntentClientSecret,
+    // Profil voyageur embarqué
+    String travelerName, BigDecimal travelerRating, Integer travelerTripsCount, String travelerPhotoUrl,
+    // Infos demande embarquées
+    String departureCity, String arrivalCity, BigDecimal weightKg
 ) {}

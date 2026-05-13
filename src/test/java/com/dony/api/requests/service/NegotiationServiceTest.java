@@ -236,6 +236,7 @@ class NegotiationServiceTest {
             when(config.maxNegotiationRounds()).thenReturn(5);
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
 
             // Last message was PROPOSAL by traveler
             var lastMsg = NegotiationMessageEntity.create(THREAD_ID, TRAVELER_ID,
@@ -425,6 +426,7 @@ class NegotiationServiceTest {
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
                 .thenReturn(java.util.List.of());
 
@@ -506,6 +508,7 @@ class NegotiationServiceTest {
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
 
             var resp = service.getById(TRAVELER_ID, THREAD_ID);

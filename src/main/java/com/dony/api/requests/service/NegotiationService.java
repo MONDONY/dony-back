@@ -130,7 +130,7 @@ public class NegotiationService {
         auditService.log("NEGOTIATION_THREAD", saved.getId(), "CREATED", travelerId,
             Map.of("price", req.proposedPriceEur().toString()));
 
-        return toResponse(saved, List.of(toMessageResponse(msg)), null);
+        return toResponse(saved, List.of(toMessageResponse(msg)), null, traveler, request);
     }
 
     @Transactional
@@ -184,7 +184,9 @@ public class NegotiationService {
 
         List<NegotiationMessageEntity> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
         List<NegotiationMessageResponse> responses = allMsgs.stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, responses, null);
+        UserEntity traveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        return toResponse(thread, responses, null, traveler, request);
     }
 
     @Transactional
@@ -254,7 +256,9 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, null);
+        UserEntity traveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        return toResponse(thread, allMsgs, null, traveler, request);
     }
 
     /**
@@ -310,7 +314,9 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, null);
+        UserEntity submitTraveler = userRepository.findById(callerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        return toResponse(thread, allMsgs, null, submitTraveler, request);
     }
 
     /**
@@ -407,7 +413,7 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, null);
+        return toResponse(thread, allMsgs, null, traveler, request);
     }
 
     /**
@@ -473,7 +479,9 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, paymentIntentId);
+        UserEntity finalTraveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request);
     }
 
     @Transactional(readOnly = true)
@@ -490,7 +498,9 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, messages, null);
+        UserEntity threadTraveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        return toResponse(thread, messages, null, threadTraveler, request);
     }
 
     @Transactional(readOnly = true)
@@ -499,7 +509,11 @@ public class NegotiationService {
             .map(t -> {
                 var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
                     .stream().map(this::toMessageResponse).toList();
-                return toResponse(t, messages, null);
+                UserEntity t_traveler = userRepository.findById(t.getTravelerId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+                PackageRequestEntity t_request = requestRepo.findById(t.getPackageRequestId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+                return toResponse(t, messages, null, t_traveler, t_request);
             })
             .toList();
     }
@@ -520,21 +534,40 @@ public class NegotiationService {
             .map(t -> {
                 var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
                     .stream().map(this::toMessageResponse).toList();
-                return toResponse(t, messages, null);
+                UserEntity lt_traveler = userRepository.findById(t.getTravelerId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+                return toResponse(t, messages, null, lt_traveler, request);
             })
             .toList();
     }
 
     NegotiationThreadResponse toResponse(NegotiationThreadEntity t,
                                           List<NegotiationMessageResponse> messages,
-                                          String paymentIntentClientSecret) {
+                                          String paymentIntentClientSecret,
+                                          UserEntity traveler,
+                                          PackageRequestEntity request) {
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
             t.getStatus(), t.getCurrentPriceEur(), t.getRoundsCount().intValue(),
             t.getLastActivityAt(), t.getCreatedAt(),
-            messages, paymentIntentClientSecret
+            messages, paymentIntentClientSecret,
+            buildDisplayName(traveler), traveler.getAverageRating(),
+            traveler.getTotalTrips(), null,
+            request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg()
         );
+    }
+
+    private String buildDisplayName(UserEntity user) {
+        String first = user.getFirstName();
+        String last = user.getLastName();
+        if (first != null && !first.isBlank()) {
+            if (last != null && !last.isBlank()) {
+                return first + " " + last.charAt(0) + ".";
+            }
+            return first;
+        }
+        return "Voyageur";
     }
 
     NegotiationMessageResponse toMessageResponse(NegotiationMessageEntity m) {
