@@ -290,9 +290,10 @@ public class PackageRequestService {
         String displayName = buildSenderDisplayName(sender);
         double averageRating = sender != null && sender.getAverageRating() != null
                 ? sender.getAverageRating().doubleValue() : 0.0;
+        int totalRatings = sender != null ? sender.getRatingCount() : 0;
         boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
         var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), displayName, averageRating, 0, kycVerified
+            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified
         );
         var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
         var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);

@@ -114,6 +114,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "refused_count", nullable = false)
     private int refusedCount = 0;
 
+    @Column(name = "rating_count", nullable = false)
+    private int ratingCount = 0;
+
     @Version
     @Column(name = "version")
     private Long version = 0L;
@@ -201,6 +204,9 @@ public class UserEntity extends BaseEntity {
 
     public int getRefusedCount() { return refusedCount; }
     public void setRefusedCount(int refusedCount) { this.refusedCount = refusedCount; }
+
+    public int getRatingCount() { return ratingCount; }
+    public void setRatingCount(int ratingCount) { this.ratingCount = ratingCount; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }

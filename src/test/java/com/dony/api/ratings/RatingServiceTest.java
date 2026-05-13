@@ -212,8 +212,8 @@ class RatingServiceTest {
     class RecalculateTests {
 
         @Test
-        @DisplayName("plusieurs notations → moyenne correctement calculée")
-        void recalculate_multipleRatings_computesAverage() throws Exception {
+        @DisplayName("plusieurs notations → moyenne + ratingCount correctement calculés")
+        void recalculate_multipleRatings_computesAverageAndCount() throws Exception {
             RatingEntity r1 = buildRating(4);
             RatingEntity r2 = buildRating(5);
             RatingEntity r3 = buildRating(3);
@@ -229,16 +229,24 @@ class RatingServiceTest {
 
             assertThat(traveler.getAverageRating())
                     .isEqualByComparingTo(new BigDecimal("4.00"));
+            assertThat(traveler.getRatingCount()).isEqualTo(3);
         }
 
         @Test
-        @DisplayName("aucune notation → pas de mise à jour")
-        void recalculate_noRatings_noUpdate() {
+        @DisplayName("aucune notation → ratingCount remis à 0, averageRating inchangée")
+        void recalculate_noRatings_setsCountToZero() throws Exception {
+            UserEntity traveler = new UserEntity();
+            setId(traveler, TRAVELER_ID);
+
             when(ratingRepository.findIncludedRatingsByRatedUserId(TRAVELER_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.save(any())).thenReturn(traveler);
 
             ratingService.recalculateAverageRating(TRAVELER_ID);
 
-            verify(userRepository, never()).findById(any());
+            assertThat(traveler.getRatingCount()).isEqualTo(0);
+            assertThat(traveler.getAverageRating()).isNull();
+            verify(userRepository).save(traveler);
         }
     }
 

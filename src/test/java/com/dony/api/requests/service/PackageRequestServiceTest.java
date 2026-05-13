@@ -333,6 +333,32 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("search() — toSearchResponse propagation")
+    class SearchTests {
+        @Test @DisplayName("sender.ratingCount est propagé dans sender.totalRatings du SearchResponse")
+        void search_propagatesSenderRatingCount() {
+            sender.setRatingCount(7);
+            sender.setAverageRating(new java.math.BigDecimal("4.30"));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20)
+            );
+
+            var sp = result.getContent().get(0).sender();
+            assertThat(sp.totalRatings()).isEqualTo(7);
+            assertThat(sp.averageRating()).isEqualTo(4.30);
+            assertThat(sp.kycVerified()).isTrue();
+        }
+    }
+
     @Nested @DisplayName("findMine() — own requests pagination")
     class FindMineTests {
         @Test @DisplayName("returns paginated responses for sender")
@@ -347,6 +373,7 @@ class PackageRequestServiceTest {
             assertThat(result.getTotalElements()).isEqualTo(1);
             assertThat(result.getContent().get(0).senderId()).isEqualTo(SENDER_ID);
         }
+
     }
 
     // ─── Shared helpers ─────────────────────────────────────────────────────────

@@ -290,13 +290,13 @@ public class RatingService {
     @Transactional
     public void recalculateAverageRating(UUID userId) {
         List<RatingEntity> ratings = ratingRepository.findIncludedRatingsByRatedUserId(userId);
-        if (ratings.isEmpty()) return;
-
-        double avg = ratings.stream().mapToInt(RatingEntity::getStars).average().orElse(0.0);
-        BigDecimal rounded = BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP);
 
         userRepository.findById(userId).ifPresent(user -> {
-            user.setAverageRating(rounded);
+            user.setRatingCount(ratings.size());
+            if (!ratings.isEmpty()) {
+                double avg = ratings.stream().mapToInt(RatingEntity::getStars).average().orElse(0.0);
+                user.setAverageRating(BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP));
+            }
             userRepository.save(user);
         });
     }
