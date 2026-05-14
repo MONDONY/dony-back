@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface CancellationRepository extends JpaRepository<CancellationEntity, UUID> {
     List<CancellationEntity> findByCancelledBy(UUID userId);
     long countByCancelledBy(UUID userId);
+    java.util.Optional<CancellationEntity> findByBidId(UUID bidId);
+    boolean existsByBidIdAndNoShowStatusIn(UUID bidId, List<CancellationStatus> statuses);
 }

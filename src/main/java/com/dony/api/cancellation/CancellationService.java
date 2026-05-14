@@ -5,6 +5,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
+import com.dony.api.cancellation.events.CancellationConfirmedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.common.AuditService;
@@ -15,6 +16,8 @@ import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.payments.cash.CommissionProperties;
+import com.dony.api.payments.cash.PaymentMethod;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +42,7 @@ public class CancellationService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final CommissionProperties commissionProperties;
 
     public CancellationService(CancellationRepository cancellationRepository,
                                 RematchSuggestionRepository rematchSuggestionRepository,
@@ -45,7 +50,8 @@ public class CancellationService {
                                 AnnouncementRepository announcementRepository,
                                 UserRepository userRepository,
                                 AuditService auditService,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                CommissionProperties commissionProperties) {
         this.cancellationRepository = cancellationRepository;
         this.rematchSuggestionRepository = rematchSuggestionRepository;
         this.bidRepository = bidRepository;
@@ -53,6 +59,7 @@ public class CancellationService {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.commissionProperties = commissionProperties;
     }
 
     @Transactional
@@ -217,6 +224,55 @@ public class CancellationService {
         }
 
         return result;
+    }
+
+    @Transactional
+    public CancellationEntity reportSenderNoShow(UUID bidId, UUID travelerId) {
+        BidEntity bid = bidRepository.findById(bidId).orElseThrow();
+        if (bid.getPaymentMethod() != PaymentMethod.CASH) {
+            throw new IllegalStateException("Le no-show n'est signalable que pour les bids cash.");
+        }
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new IllegalStateException("Le bid doit être en statut ACCEPTED.");
+        }
+        LocalDateTime handoverEnd = bid.getHandoverWindowEnd();
+        if (handoverEnd == null || LocalDateTime.now().isBefore(handoverEnd)) {
+            throw new IllegalStateException("Vous ne pouvez signaler qu'après l'heure de remise prévue.");
+        }
+        if (cancellationRepository.existsByBidIdAndNoShowStatusIn(bidId,
+                List.of(CancellationStatus.PENDING_CONFIRMATION, CancellationStatus.CONFIRMED))) {
+            throw new IllegalStateException("Une annulation est déjà en cours pour ce bid.");
+        }
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(bidId);
+        c.setCancelledBy(travelerId);
+        c.setReason(CancellationReason.SENDER_NO_SHOW.name());
+        c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        c.setContestationDeadline(
+                OffsetDateTime.now().plusHours(commissionProperties.noShowContestationHours()));
+        return cancellationRepository.save(c);
+    }
+
+    @Transactional
+    public void confirmSenderNoShow(UUID bidId) {
+        CancellationEntity c = cancellationRepository.findByBidId(bidId).orElseThrow();
+        if (c.getNoShowStatus() != CancellationStatus.PENDING_CONFIRMATION) return;
+
+        c.setNoShowStatus(CancellationStatus.CONFIRMED);
+        cancellationRepository.save(c);
+        eventPublisher.publishEvent(
+                new CancellationConfirmedEvent(bidId, c.getId(), CancellationReason.SENDER_NO_SHOW));
+    }
+
+    @Transactional
+    public void contestSenderNoShow(UUID bidId, UUID senderId) {
+        CancellationEntity c = cancellationRepository.findByBidId(bidId).orElseThrow();
+        if (c.getContestationDeadline() != null
+                && OffsetDateTime.now().isAfter(c.getContestationDeadline())) {
+            throw new IllegalStateException("Le délai de contestation est dépassé.");
+        }
+        c.setNoShowStatus(CancellationStatus.CONTESTED);
+        cancellationRepository.save(c);
     }
 
     private UserEntity findUserByFirebaseUid(String firebaseUid) {
