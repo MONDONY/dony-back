@@ -2,6 +2,8 @@ package com.dony.api.cancellation;
 
 import com.dony.api.cancellation.events.CancellationConfirmedEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.disputes.events.DisputeOpenedEvent;
+import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
@@ -56,6 +58,8 @@ class CancellationNoShowTest {
                 userRepository, auditService, eventPublisher, commissionProps);
     }
 
+    private static final UUID ANNOUNCEMENT_ID = UUID.randomUUID();
+
     private BidEntity cashBid(BidStatus status, LocalDateTime handoverEnd) {
         BidEntity bid = new BidEntity();
         ReflectionTestUtils.setField(bid, "id", BID_ID);
@@ -63,8 +67,15 @@ class CancellationNoShowTest {
         bid.setStatus(status);
         bid.setHandoverWindowEnd(handoverEnd);
         bid.setSenderId(SENDER_ID);
-        bid.setAnnouncementId(UUID.randomUUID());
+        bid.setAnnouncementId(ANNOUNCEMENT_ID);
         return bid;
+    }
+
+    private AnnouncementEntity announcementWithTraveler(UUID travelerId) {
+        AnnouncementEntity a = new AnnouncementEntity();
+        ReflectionTestUtils.setField(a, "id", ANNOUNCEMENT_ID);
+        a.setTravelerId(travelerId);
+        return a;
     }
 
     // ═══════════════════════════════ reportSenderNoShow ═══════════════════════
@@ -193,10 +204,41 @@ class CancellationNoShowTest {
 
             when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
             when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bidRepository.findById(BID_ID))
+                    .thenReturn(Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                    .thenReturn(Optional.of(announcementWithTraveler(TRAVELER_ID)));
 
             service.contestSenderNoShow(BID_ID, SENDER_ID);
 
             assertThat(c.getNoShowStatus()).isEqualTo(CancellationStatus.CONTESTED);
+        }
+
+        @Test
+        void publishesDisputeOpenedEvent() {
+            CancellationEntity c = new CancellationEntity();
+            ReflectionTestUtils.setField(c, "id", UUID.randomUUID());
+            c.setBidId(BID_ID);
+            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            c.setContestationDeadline(java.time.OffsetDateTime.now().plusHours(10));
+
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bidRepository.findById(BID_ID))
+                    .thenReturn(Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                    .thenReturn(Optional.of(announcementWithTraveler(TRAVELER_ID)));
+
+            service.contestSenderNoShow(BID_ID, SENDER_ID);
+
+            ArgumentCaptor<DisputeOpenedEvent> captor =
+                    ArgumentCaptor.forClass(DisputeOpenedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            DisputeOpenedEvent event = captor.getValue();
+            assertThat(event.getBidId()).isEqualTo(BID_ID);
+            assertThat(event.getSenderId()).isEqualTo(SENDER_ID);
+            assertThat(event.getTravelerId()).isEqualTo(TRAVELER_ID);
+            assertThat(event.getDisputeId()).isNotNull();
         }
 
         @Test
