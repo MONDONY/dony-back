@@ -124,6 +124,24 @@ public class UserEntity extends BaseEntity {
     @Column(name = "deletion_requested_at")
     private Instant deletionRequestedAt;
 
+    @Column(name = "stripe_customer_id", length = 255)
+    private String stripeCustomerId;
+
+    @Column(name = "commission_payment_method_id", length = 255)
+    private String commissionPaymentMethodId;
+
+    @Column(name = "commission_card_brand", length = 20)
+    private String commissionCardBrand;
+
+    @Column(name = "commission_card_last4", length = 4)
+    private String commissionCardLast4;
+
+    @Column(name = "commission_card_exp_month")
+    private Integer commissionCardExpMonth;
+
+    @Column(name = "commission_card_exp_year")
+    private Integer commissionCardExpYear;
+
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
@@ -213,4 +231,22 @@ public class UserEntity extends BaseEntity {
 
     public Instant getDeletionRequestedAt() { return deletionRequestedAt; }
     public void setDeletionRequestedAt(Instant deletionRequestedAt) { this.deletionRequestedAt = deletionRequestedAt; }
+
+    public String getStripeCustomerId() { return stripeCustomerId; }
+    public void setStripeCustomerId(String stripeCustomerId) { this.stripeCustomerId = stripeCustomerId; }
+
+    public String getCommissionPaymentMethodId() { return commissionPaymentMethodId; }
+    public void setCommissionPaymentMethodId(String commissionPaymentMethodId) { this.commissionPaymentMethodId = commissionPaymentMethodId; }
+
+    public String getCommissionCardBrand() { return commissionCardBrand; }
+    public void setCommissionCardBrand(String commissionCardBrand) { this.commissionCardBrand = commissionCardBrand; }
+
+    public String getCommissionCardLast4() { return commissionCardLast4; }
+    public void setCommissionCardLast4(String commissionCardLast4) { this.commissionCardLast4 = commissionCardLast4; }
+
+    public Integer getCommissionCardExpMonth() { return commissionCardExpMonth; }
+    public void setCommissionCardExpMonth(Integer commissionCardExpMonth) { this.commissionCardExpMonth = commissionCardExpMonth; }
+
+    public Integer getCommissionCardExpYear() { return commissionCardExpYear; }
+    public void setCommissionCardExpYear(Integer commissionCardExpYear) { this.commissionCardExpYear = commissionCardExpYear; }
 }

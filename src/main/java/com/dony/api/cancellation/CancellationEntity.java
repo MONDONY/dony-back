@@ -3,8 +3,11 @@ package com.dony.api.cancellation;
 import com.dony.api.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -26,6 +29,13 @@ public class CancellationEntity extends BaseEntity {
     @Column(name = "rematch_status", nullable = false, length = 20)
     private String rematchStatus = "NONE";
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "no_show_status", nullable = false, length = 25)
+    private CancellationStatus noShowStatus = CancellationStatus.CONFIRMED;
+
+    @Column(name = "contestation_deadline")
+    private OffsetDateTime contestationDeadline;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -40,4 +50,10 @@ public class CancellationEntity extends BaseEntity {
 
     public String getRematchStatus() { return rematchStatus; }
     public void setRematchStatus(String rematchStatus) { this.rematchStatus = rematchStatus; }
+
+    public CancellationStatus getNoShowStatus() { return noShowStatus; }
+    public void setNoShowStatus(CancellationStatus noShowStatus) { this.noShowStatus = noShowStatus; }
+
+    public OffsetDateTime getContestationDeadline() { return contestationDeadline; }
+    public void setContestationDeadline(OffsetDateTime contestationDeadline) { this.contestationDeadline = contestationDeadline; }
 }
