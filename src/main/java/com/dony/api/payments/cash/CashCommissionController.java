@@ -15,13 +15,11 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/cash-commission")
 @PreAuthorize("hasRole('TRAVELER')")
 public class CashCommissionController {
 
@@ -34,27 +32,27 @@ public class CashCommissionController {
         this.userRepository = userRepository;
     }
 
-    @PostMapping("/setup")
+    @PostMapping("/traveler/commission-method/setup")
     public ResponseEntity<SetupCommissionMethodResponse> setupMethod() {
         UUID userId = resolveUserId();
         return ResponseEntity.ok(cashCommissionService.setupCommissionMethod(userId));
     }
 
-    @GetMapping("/method")
+    @GetMapping("/traveler/commission-method")
     public ResponseEntity<CommissionMethodResponse> getMethod() {
         UUID userId = resolveUserId();
         CommissionMethodResponse resp = cashCommissionService.getCommissionMethod(userId);
         return resp != null ? ResponseEntity.ok(resp) : ResponseEntity.noContent().build();
     }
 
-    @DeleteMapping("/method")
+    @DeleteMapping("/traveler/commission-method")
     public ResponseEntity<Void> detachMethod() {
         UUID userId = resolveUserId();
         cashCommissionService.detachCommissionMethod(userId);
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/bids/{bidId}/accept")
+    @PostMapping("/bids/{bidId}/accept-with-commission")
     public ResponseEntity<AcceptBidResponse> acceptCashBid(@PathVariable UUID bidId) {
         UUID userId = resolveUserId();
         AcceptBidResponse resp = cashCommissionService.acceptCashBid(bidId, userId);
@@ -65,7 +63,7 @@ public class CashCommissionController {
         };
     }
 
-    @PostMapping("/bids/{bidId}/confirm")
+    @PostMapping("/bids/{bidId}/confirm-acceptance")
     public ResponseEntity<ConfirmAcceptanceResponse> confirmAcceptance(@PathVariable UUID bidId) {
         ConfirmAcceptanceResponse resp = cashCommissionService.confirmCommissionAcceptance(bidId);
         return resp.accepted() ? ResponseEntity.ok(resp) : ResponseEntity.unprocessableEntity().body(resp);

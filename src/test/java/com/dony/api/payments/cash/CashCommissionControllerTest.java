@@ -62,14 +62,14 @@ class CashCommissionControllerTest {
                 List.of(new SimpleGrantedAuthority("ROLE_SENDER")));
     }
 
-    // ── POST /cash-commission/setup ──────────────────────────────────────────────
+    // ── POST /traveler/commission-method/setup ───────────────────────────────────
 
     @Test
     void setupMethod_travelerRole_returns200WithClientSecret() throws Exception {
         when(cashCommissionService.setupCommissionMethod(USER_ID))
                 .thenReturn(new SetupCommissionMethodResponse("seti_secret_test"));
 
-        mockMvc.perform(post("/cash-commission/setup")
+        mockMvc.perform(post("/traveler/commission-method/setup")
                 .with(authentication(asTraveler())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clientSecret").value("seti_secret_test"));
@@ -77,25 +77,25 @@ class CashCommissionControllerTest {
 
     @Test
     void setupMethod_senderRole_returns403() throws Exception {
-        mockMvc.perform(post("/cash-commission/setup")
+        mockMvc.perform(post("/traveler/commission-method/setup")
                 .with(authentication(asSender())))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void setupMethod_unauthenticated_returns401() throws Exception {
-        mockMvc.perform(post("/cash-commission/setup"))
+        mockMvc.perform(post("/traveler/commission-method/setup"))
                 .andExpect(status().isUnauthorized());
     }
 
-    // ── GET /cash-commission/method ──────────────────────────────────────────────
+    // ── GET /traveler/commission-method ──────────────────────────────────────────
 
     @Test
     void getMethod_withMethod_returns200() throws Exception {
         when(cashCommissionService.getCommissionMethod(USER_ID))
                 .thenReturn(new CommissionMethodResponse("Visa", "4242", 12, 2027, ExpirationStatus.VALID));
 
-        mockMvc.perform(get("/cash-commission/method")
+        mockMvc.perform(get("/traveler/commission-method")
                 .with(authentication(asTraveler())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.last4").value("4242"));
@@ -105,30 +105,30 @@ class CashCommissionControllerTest {
     void getMethod_noMethod_returns204() throws Exception {
         when(cashCommissionService.getCommissionMethod(USER_ID)).thenReturn(null);
 
-        mockMvc.perform(get("/cash-commission/method")
+        mockMvc.perform(get("/traveler/commission-method")
                 .with(authentication(asTraveler())))
                 .andExpect(status().isNoContent());
     }
 
-    // ── DELETE /cash-commission/method ───────────────────────────────────────────
+    // ── DELETE /traveler/commission-method ───────────────────────────────────────
 
     @Test
     void detachMethod_travelerRole_returns204() throws Exception {
         doNothing().when(cashCommissionService).detachCommissionMethod(USER_ID);
 
-        mockMvc.perform(delete("/cash-commission/method")
+        mockMvc.perform(delete("/traveler/commission-method")
                 .with(authentication(asTraveler())))
                 .andExpect(status().isNoContent());
     }
 
-    // ── POST /cash-commission/bids/{bidId}/accept ────────────────────────────────
+    // ── POST /bids/{bidId}/accept-with-commission ────────────────────────────────
 
     @Test
     void acceptCashBid_accepted_returns200() throws Exception {
         when(cashCommissionService.acceptCashBid(any(), any()))
                 .thenReturn(AcceptBidResponse.accepted());
 
-        mockMvc.perform(post("/cash-commission/bids/{bidId}/accept", BID_ID)
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isOk());
     }
@@ -138,7 +138,7 @@ class CashCommissionControllerTest {
         when(cashCommissionService.acceptCashBid(any(), any()))
                 .thenReturn(AcceptBidResponse.requires3ds("pi_secret", "pi_id"));
 
-        mockMvc.perform(post("/cash-commission/bids/{bidId}/accept", BID_ID)
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isAccepted());
     }
@@ -148,19 +148,19 @@ class CashCommissionControllerTest {
         when(cashCommissionService.acceptCashBid(any(), any()))
                 .thenReturn(AcceptBidResponse.failed("card_declined"));
 
-        mockMvc.perform(post("/cash-commission/bids/{bidId}/accept", BID_ID)
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isUnprocessableEntity());
     }
 
-    // ── POST /cash-commission/bids/{bidId}/confirm ───────────────────────────────
+    // ── POST /bids/{bidId}/confirm-acceptance ────────────────────────────────────
 
     @Test
     void confirmAcceptance_accepted_returns200() throws Exception {
         when(cashCommissionService.confirmCommissionAcceptance(any()))
                 .thenReturn(ConfirmAcceptanceResponse.ok());
 
-        mockMvc.perform(post("/cash-commission/bids/{bidId}/confirm", BID_ID)
+        mockMvc.perform(post("/bids/{bidId}/confirm-acceptance", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isOk());
     }
@@ -170,7 +170,7 @@ class CashCommissionControllerTest {
         when(cashCommissionService.confirmCommissionAcceptance(any()))
                 .thenReturn(ConfirmAcceptanceResponse.fail("payment_failed"));
 
-        mockMvc.perform(post("/cash-commission/bids/{bidId}/confirm", BID_ID)
+        mockMvc.perform(post("/bids/{bidId}/confirm-acceptance", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isUnprocessableEntity());
     }
