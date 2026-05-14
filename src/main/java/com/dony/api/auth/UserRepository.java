@@ -15,6 +15,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByFirebaseUid(String firebaseUid);
     Optional<UserEntity> findByStripeAccountId(String stripeAccountId);
+    Optional<UserEntity> findByStripeCustomerId(String stripeCustomerId);
 
     boolean existsByFirebaseUid(String firebaseUid);
     boolean existsByPhoneNumber(String phoneNumber);
