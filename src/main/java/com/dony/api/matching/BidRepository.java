@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.payments.cash.CommissionStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -163,4 +164,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
      */
     @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.senderId = :senderId AND b.status = :status")
     long countByStatusAndSenderId(@Param("status") BidStatus status, @Param("senderId") UUID senderId);
+
+    List<BidEntity> findByCommissionStatusAndUpdatedAtBefore(
+            CommissionStatus commissionStatus, LocalDateTime before);
 }

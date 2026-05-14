@@ -34,4 +34,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
      * Used to identify accounts ready for final permanent deletion.
      */
     List<UserEntity> findByStatusAndDeletionRequestedAtBefore(UserStatus status, Instant cutoff);
+
+    @Query("SELECT u FROM UserEntity u WHERE u.commissionPaymentMethodId IS NOT NULL AND " +
+           "(u.commissionCardExpYear < :year OR " +
+           "(u.commissionCardExpYear = :year AND u.commissionCardExpMonth <= :month))")
+    List<UserEntity> findUsersWithCardExpiringBefore(@Param("year") int year, @Param("month") int month);
 }
