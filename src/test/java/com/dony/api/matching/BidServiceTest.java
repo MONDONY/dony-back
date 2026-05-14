@@ -10,6 +10,7 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.ratings.RatingRepository;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
@@ -49,6 +50,7 @@ class BidServiceTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RatingRepository ratingRepository;
+    @Mock private CancellationRepository cancellationRepository;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -130,6 +132,12 @@ class BidServiceTest {
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
                 "Aminata Diallo", "+221701234567", true);
+    }
+
+    @BeforeEach
+    void stubCancellationRepository() {
+        lenient().when(cancellationRepository.findByBidId(any()))
+                .thenReturn(java.util.Optional.empty());
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────
