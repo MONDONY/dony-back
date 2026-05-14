@@ -7,8 +7,13 @@ import static org.mockito.Mockito.*;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
 import com.dony.api.payments.cash.dto.AcceptanceStatusDto;
 import com.dony.api.payments.cash.dto.CommissionMethodResponse;
@@ -50,6 +55,7 @@ class CashCommissionServiceTest {
 
     @Mock private UserRepository userRepo;
     @Mock private BidRepository bidRepo;
+    @Mock private AnnouncementRepository announcementRepo;
     @Mock private ApplicationEventPublisher events;
 
     private final CommissionProperties props =
@@ -59,7 +65,7 @@ class CashCommissionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CashCommissionService(props, userRepo, bidRepo, events);
+        service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events);
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -353,18 +359,34 @@ class CashCommissionServiceTest {
     class ConfirmCommissionAcceptance {
 
         private BidEntity bid;
+        private AnnouncementEntity announcement;
+        private UUID announcementId;
+        private UUID travelerId;
 
         @BeforeEach
         void setup() {
+            announcementId = UUID.randomUUID();
+            travelerId = UUID.randomUUID();
+
             bid = new BidEntity();
             ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());
             bid.setCommissionStatus(CommissionStatus.REQUIRES_3DS);
             bid.setCommissionPaymentIntentId("pi_xyz");
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(UUID.randomUUID());
+            bid.setWeightKg(new java.math.BigDecimal("5"));
             when(bidRepo.findById(bid.getId())).thenReturn(Optional.of(bid));
+
+            announcement = new AnnouncementEntity();
+            ReflectionTestUtils.setField(announcement, "id", announcementId);
+            announcement.setTravelerId(travelerId);
+            announcement.setAvailableKg(new java.math.BigDecimal("20"));
+            lenient().when(announcementRepo.findByIdForUpdate(announcementId))
+                    .thenReturn(Optional.of(announcement));
         }
 
         @Test
-        void transitionsToCHARGEDWhenPISucceeded() throws StripeException {
+        void transitionsToCHARGEDAndAcceptsWhenPISucceeded() throws StripeException {
             PaymentIntent mockPi = new PaymentIntent();
             mockPi.setStatus("succeeded");
 
@@ -375,17 +397,33 @@ class CashCommissionServiceTest {
 
                 assertThat(resp.accepted()).isTrue();
                 assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.CHARGED);
+                assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
                 verify(bidRepo).save(bid);
+                verify(events).publishEvent(any(BidAcceptedEvent.class));
             }
         }
 
         @Test
-        void isIdempotentWhenAlreadyCharged() {
+        void isIdempotentWhenAlreadyChargedAndAccepted() {
+            bid.setCommissionStatus(CommissionStatus.CHARGED);
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                assertThat(resp.accepted()).isTrue();
+                pi.verifyNoInteractions();
+                verify(announcementRepo, never()).findByIdForUpdate(any());
+            }
+        }
+
+        @Test
+        void finalizesWhenCommissionChargedButBidNotYetAccepted() {
             bid.setCommissionStatus(CommissionStatus.CHARGED);
 
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
                 ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
                 assertThat(resp.accepted()).isTrue();
+                assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
                 pi.verifyNoInteractions();
             }
         }
@@ -402,6 +440,116 @@ class CashCommissionServiceTest {
 
                 assertThat(resp.accepted()).isFalse();
                 assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.FAILED);
+            }
+        }
+    }
+
+    // ===================== acceptCashBid =====================
+
+    @Nested
+    class AcceptCashBid {
+
+        private UUID travelerId;
+        private UserEntity traveler;
+        private BidEntity bid;
+        private AnnouncementEntity announcement;
+        private UUID announcementId;
+
+        @BeforeEach
+        void setup() {
+            travelerId = UUID.randomUUID();
+            announcementId = UUID.randomUUID();
+
+            traveler = userWithCard("visa", "4242", 12, 2028);
+            ReflectionTestUtils.setField(traveler, "id", travelerId);
+            lenient().when(userRepo.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+            bid = new BidEntity();
+            ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            bid.setDeclaredValueEur(new java.math.BigDecimal("100"));
+            bid.setWeightKg(new java.math.BigDecimal("5"));
+            bid.setSenderId(UUID.randomUUID());
+            bid.setAnnouncementId(announcementId);
+            bid.setStatus(BidStatus.PENDING);
+            when(bidRepo.findByIdForUpdate(bid.getId())).thenReturn(Optional.of(bid));
+
+            java.util.Set<com.dony.api.payments.cash.PaymentMethod> methods =
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.CASH);
+            announcement = new AnnouncementEntity();
+            ReflectionTestUtils.setField(announcement, "id", announcementId);
+            announcement.setTravelerId(travelerId);
+            announcement.setAvailableKg(new java.math.BigDecimal("20"));
+            announcement.setAcceptedPaymentMethods(methods);
+            lenient().when(announcementRepo.findByIdForUpdate(announcementId)).thenReturn(Optional.of(announcement));
+        }
+
+        @Test
+        void successPathFinalizesBidAsAccepted() throws StripeException {
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_test");
+            mockPi.setStatus("succeeded");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId);
+
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+                assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+                assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.CHARGED);
+                assertThat(announcement.getAvailableKg()).isEqualByComparingTo("15");
+                verify(events).publishEvent(any(BidAcceptedEvent.class));
+            }
+        }
+
+        @Test
+        void requires3dsReturnClientSecretWithoutFinalizingBid() throws StripeException {
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_3ds");
+            mockPi.setStatus("requires_action");
+            mockPi.setClientSecret("pi_3ds_secret");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId);
+
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.REQUIRES_3DS);
+                assertThat(resp.clientSecret()).isEqualTo("pi_3ds_secret");
+                assertThat(bid.getStatus()).isNotEqualTo(BidStatus.ACCEPTED);
+                verify(events, never()).publishEvent(any());
+            }
+        }
+
+        @Test
+        void throwsWhenTravelerDoesNotOwnAnnouncement() {
+            announcement.setTravelerId(UUID.randomUUID());
+
+            assertThatThrownBy(() -> service.acceptCashBid(bid.getId(), travelerId))
+                    .isInstanceOf(com.dony.api.common.DonyBusinessException.class);
+        }
+
+        @Test
+        void throwsWhenAnnouncementDoesNotAcceptCash() {
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.acceptCashBid(bid.getId(), travelerId))
+                    .isInstanceOf(com.dony.api.payments.cash.exception.InvalidPaymentMethodForAnnouncementException.class);
+        }
+
+        @Test
+        void isIdempotentWhenAlreadyChargedAndAccepted() {
+            bid.setCommissionStatus(CommissionStatus.CHARGED);
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId);
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+                pi.verifyNoInteractions();
             }
         }
     }

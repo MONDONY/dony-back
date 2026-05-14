@@ -2,8 +2,14 @@ package com.dony.api.payments.cash;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
 import com.dony.api.payments.cash.dto.CommissionMethodResponse;
 import com.dony.api.payments.cash.dto.ConfirmAcceptanceResponse;
@@ -11,6 +17,7 @@ import com.dony.api.payments.cash.dto.SetupCommissionMethodResponse;
 import com.dony.api.payments.cash.event.CommissionMethodDetachedEvent;
 import com.dony.api.payments.cash.exception.CommissionChargeFailedException;
 import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
+import com.dony.api.payments.cash.exception.InvalidPaymentMethodForAnnouncementException;
 import com.stripe.exception.CardException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
@@ -26,11 +33,13 @@ import com.stripe.param.SetupIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -41,20 +50,25 @@ import java.util.UUID;
 public class CashCommissionService {
 
     private static final Logger log = LoggerFactory.getLogger(CashCommissionService.class);
+    private static final String TRACKING_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final SecureRandom SECURE_RNG = new SecureRandom();
 
     private final CommissionProperties props;
     private final UserRepository userRepo;
     private final BidRepository bidRepo;
+    private final AnnouncementRepository announcementRepo;
     private final ApplicationEventPublisher events;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
                                  UserRepository userRepo,
                                  BidRepository bidRepo,
+                                 AnnouncementRepository announcementRepo,
                                  ApplicationEventPublisher events) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
+        this.announcementRepo = announcementRepo;
         this.events = events;
     }
 
@@ -196,10 +210,56 @@ public class CashCommissionService {
         }
     }
 
+    // --- Cash bid acceptance ---
+
+    @Transactional
+    public AcceptBidResponse acceptCashBid(UUID bidId, UUID travelerId) {
+        BidEntity bid = bidRepo.findByIdForUpdate(bidId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "bid-not-found", "Bid Not Found", "Demande introuvable"));
+        AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "forbidden", "Forbidden", "Ce trajet ne vous appartient pas");
+        }
+        if (!announcement.getAcceptedPaymentMethods().contains(com.dony.api.payments.cash.PaymentMethod.CASH)) {
+            throw new InvalidPaymentMethodForAnnouncementException(
+                    "Cette annonce n'accepte pas le paiement en espèces");
+        }
+        if (bid.getPaymentMethod() != com.dony.api.payments.cash.PaymentMethod.CASH) {
+            throw new InvalidPaymentMethodForAnnouncementException(
+                    "Ce bid n'est pas un bid cash");
+        }
+        if (bid.getStatus() == BidStatus.ACCEPTED
+                && bid.getCommissionStatus() == CommissionStatus.CHARGED) {
+            return AcceptBidResponse.accepted();
+        }
+        if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                    "capacity-insufficient", "Insufficient Capacity",
+                    "Capacité insuffisante pour accepter cette demande");
+        }
+
+        AcceptBidResponse response = chargeCommission(bid, travelerId);
+        if (response.status() == com.dony.api.payments.cash.dto.AcceptanceStatusDto.ACCEPTED) {
+            finalizeBidAcceptance(bid, announcement, travelerId);
+        }
+        return response;
+    }
+
     @Transactional
     public ConfirmAcceptanceResponse confirmCommissionAcceptance(UUID bidId) {
         BidEntity bid = bidRepo.findById(bidId).orElseThrow();
+        if (bid.getCommissionStatus() == CommissionStatus.CHARGED
+                && bid.getStatus() == BidStatus.ACCEPTED) {
+            return ConfirmAcceptanceResponse.ok();
+        }
         if (bid.getCommissionStatus() == CommissionStatus.CHARGED) {
+            AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
+            finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
             return ConfirmAcceptanceResponse.ok();
         }
         if (bid.getCommissionPaymentIntentId() == null) {
@@ -209,7 +269,8 @@ public class CashCommissionService {
             PaymentIntent pi = PaymentIntent.retrieve(bid.getCommissionPaymentIntentId());
             if ("succeeded".equals(pi.getStatus())) {
                 bid.setCommissionStatus(CommissionStatus.CHARGED);
-                bidRepo.save(bid);
+                AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
+                finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
                 return ConfirmAcceptanceResponse.ok();
             }
             bid.setCommissionStatus(CommissionStatus.FAILED);
@@ -245,6 +306,34 @@ public class CashCommissionService {
     }
 
     // --- Private helpers ---
+
+    private void finalizeBidAcceptance(BidEntity bid, AnnouncementEntity announcement, UUID travelerId) {
+        if (bid.getStatus() == BidStatus.ACCEPTED) return;
+
+        bid.setStatus(BidStatus.ACCEPTED);
+        if (bid.getQrToken() == null) bid.setQrToken(UUID.randomUUID().toString());
+        if (bid.getTrackingToken() == null) bid.setTrackingToken(UUID.randomUUID().toString());
+        if (bid.getTrackingNumber() == null) bid.setTrackingNumber(generateTrackingNumber());
+
+        announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+            announcement.setStatus(AnnouncementStatus.FULL);
+        }
+        announcementRepo.save(announcement);
+        bidRepo.save(bid);
+
+        events.publishEvent(new BidAcceptedEvent(
+                bid.getId(), bid.getSenderId(), travelerId, bid.getAnnouncementId()));
+        log.info("Cash bid {} finalized as ACCEPTED for traveler {}", bid.getId(), travelerId);
+    }
+
+    private String generateTrackingNumber() {
+        StringBuilder sb = new StringBuilder("DON-");
+        for (int i = 0; i < 8; i++) {
+            sb.append(TRACKING_CHARS.charAt(SECURE_RNG.nextInt(TRACKING_CHARS.length())));
+        }
+        return sb.toString();
+    }
 
     private void ensureStripeCustomer(UserEntity user) {
         if (user.getStripeCustomerId() != null) return;
