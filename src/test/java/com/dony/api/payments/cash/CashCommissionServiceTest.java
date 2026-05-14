@@ -10,6 +10,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
@@ -552,6 +553,41 @@ class CashCommissionServiceTest {
                 pi.verifyNoInteractions();
             }
         }
+
+        @Test
+        void unexpectedPiStatusReturnsFailed() throws StripeException {
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_proc");
+            mockPi.setStatus("processing");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId);
+
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.FAILED);
+                assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.FAILED);
+                verify(bidRepo).save(bid);
+            }
+        }
+
+        @Test
+        void bidTakesRemainingKg_setsAnnouncementToFull() throws StripeException {
+            announcement.setAvailableKg(bid.getWeightKg()); // exactly full after this bid
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_full");
+            mockPi.setStatus("succeeded");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                service.acceptCashBid(bid.getId(), travelerId);
+
+                assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
+            }
+        }
     }
 
     // ===================== refundCommission =====================
@@ -598,6 +634,17 @@ class CashCommissionServiceTest {
                 service.refundCommission(bid);
                 refund.verifyNoInteractions();
             }
+        }
+
+        @Test
+        void isNoOpWhenStatusNotCharged() {
+            bid.setCommissionStatus(CommissionStatus.FAILED);
+
+            try (MockedStatic<Refund> refund = mockStatic(Refund.class)) {
+                service.refundCommission(bid);
+                refund.verifyNoInteractions();
+            }
+            verify(bidRepo, never()).save(any());
         }
 
         @Test
