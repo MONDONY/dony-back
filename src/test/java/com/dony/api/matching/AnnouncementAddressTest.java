@@ -118,7 +118,7 @@ class AnnouncementServiceAddressTest {
             pickup, delivery,
             java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(5),
             com.dony.api.matching.TransportMode.PLANE,
-            null, java.util.List.of(), java.util.List.of()
+            null, java.util.List.of(), java.util.List.of(), null
         );
     }
 
