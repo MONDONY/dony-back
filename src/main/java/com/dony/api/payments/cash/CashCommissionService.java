@@ -85,9 +85,21 @@ public class CashCommissionService {
     // --- Card registration ---
 
     @Transactional
-    public void saveCommissionMethod(UUID userId, String paymentMethodId) {
+    public void saveCommissionMethod(UUID userId, String paymentMethodOrSetupIntentId) {
         UserEntity user = userRepo.findById(userId).orElseThrow();
         try {
+            String paymentMethodId;
+            if (paymentMethodOrSetupIntentId.startsWith("seti_")) {
+                SetupIntent si = SetupIntent.retrieve(paymentMethodOrSetupIntentId);
+                paymentMethodId = si.getPaymentMethod();
+                if (paymentMethodId == null) {
+                    throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "setup-not-confirmed", "Setup Not Confirmed",
+                            "Le setup intent n'a pas encore de méthode de paiement attachée");
+                }
+            } else {
+                paymentMethodId = paymentMethodOrSetupIntentId;
+            }
             PaymentMethod pm = PaymentMethod.retrieve(paymentMethodId);
             if (pm.getCard() == null) {
                 throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -101,7 +113,7 @@ public class CashCommissionService {
             user.setCommissionCardExpYear(pm.getCard().getExpYear().intValue());
             userRepo.save(user);
         } catch (StripeException e) {
-            throw new RuntimeException("Impossible de récupérer le PaymentMethod Stripe", e);
+            throw new RuntimeException("Impossible de récupérer les données Stripe", e);
         }
     }
 

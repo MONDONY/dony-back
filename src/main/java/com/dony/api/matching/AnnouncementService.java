@@ -187,6 +187,7 @@ public class AnnouncementService {
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
+                entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
     }
@@ -423,6 +424,7 @@ public class AnnouncementService {
                 announcement.getDescription(),
                 announcement.getAcceptedContentTypes(),
                 announcement.getRefusedTypes(),
+                announcement.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 announcement.getCreatedAt(),
                 announcement.getUpdatedAt()
         );
@@ -523,6 +525,7 @@ public class AnnouncementService {
                 saved.getDescription(),
                 saved.getAcceptedContentTypes(),
                 saved.getRefusedTypes(),
+                saved.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
         );
@@ -611,6 +614,7 @@ public class AnnouncementService {
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
+                entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

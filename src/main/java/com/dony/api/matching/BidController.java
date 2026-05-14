@@ -4,6 +4,7 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.dto.BidCheckoutRequest;
 import com.dony.api.matching.dto.BidCheckoutResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
+import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.dto.RefuseParcelRequest;
@@ -62,6 +63,19 @@ public class BidController {
         bidService.assertSenderOwnsBid(bidId, firebaseUid);
         paymentService.confirmBidPayment(bidId);
         return ResponseEntity.ok(bidService.getBidById(bidId, firebaseUid));
+    }
+
+    // ── Sender creates a cash bid ─────────────────────────────────────────────
+
+    @PostMapping("/announcements/{announcementId}/bids")
+    public ResponseEntity<BidResponse> createBid(
+            @PathVariable UUID announcementId,
+            @Valid @RequestBody BidRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(bidService.createBid(announcementId, firebaseUid, request, httpRequest));
     }
 
     // ── Traveler views bids on their announcement ─────────────────────────────

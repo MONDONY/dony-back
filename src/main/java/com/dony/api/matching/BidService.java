@@ -117,6 +117,24 @@ public class BidService {
                     "Le disclaimer légal doit être accepté");
         }
 
+        com.dony.api.payments.cash.PaymentMethod pm;
+        try {
+            pm = request.paymentMethod() != null
+                    ? com.dony.api.payments.cash.PaymentMethod.valueOf(request.paymentMethod().toUpperCase())
+                    : com.dony.api.payments.cash.PaymentMethod.STRIPE;
+        } catch (IllegalArgumentException e) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-payment-method", "Invalid Payment Method",
+                    "Méthode de paiement inconnue : " + request.paymentMethod());
+        }
+
+        if (pm == com.dony.api.payments.cash.PaymentMethod.CASH
+                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "cash-not-accepted", "Cash Not Accepted",
+                    "Cette annonce n'accepte pas le paiement en espèces");
+        }
+
         String clientIp = resolveClientIp(httpRequest);
 
         BidEntity bid = new BidEntity();
@@ -130,6 +148,7 @@ public class BidService {
         bid.setRecipientPhone(request.recipientPhone());
         bid.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
         bid.setDisclaimerSignedIp(clientIp);
+        bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
 
         BidEntity saved = bidRepository.save(bid);
@@ -636,7 +655,8 @@ public class BidService {
                 bid.getConfirmationCodeRefreshCount(),
                 bid.getConfirmationCodeRefreshWindowStart(),
                 cancellationNoShowStatus,
-                contestationDeadline
+                contestationDeadline,
+                bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE"
         );
     }
 }

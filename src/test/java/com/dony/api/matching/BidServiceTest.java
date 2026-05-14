@@ -134,7 +134,7 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true);
+                "Aminata Diallo", "+221701234567", true, null);
     }
 
     @BeforeEach
@@ -243,7 +243,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -379,6 +379,83 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("kyc-not-verified"));
+        }
+
+        @Test
+        @DisplayName("paymentMethod=CASH + annonce accepte cash → bid créé avec PaymentMethod.CASH")
+        void createBid_cashAccepted_setsCashOnBid() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                                         com.dony.api.payments.cash.PaymentMethod.CASH));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+
+            BidResponse result = bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
+
+            assertThat(result.paymentMethod()).isEqualTo("CASH");
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            assertThat(captor.getValue().getPaymentMethod())
+                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
+
+        @Test
+        @DisplayName("paymentMethod=CASH + annonce n'accepte pas cash → 422 UNPROCESSABLE_ENTITY")
+        void createBid_cashNotAcceptedByAnnouncement_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement(); // default = STRIPE only
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("cash-not-accepted");
+                    });
+        }
+
+        @Test
+        @DisplayName("paymentMethod invalide → 422 UNPROCESSABLE_ENTITY")
+        void createBid_invalidPaymentMethod_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN");
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("invalid-payment-method"));
         }
     }
 

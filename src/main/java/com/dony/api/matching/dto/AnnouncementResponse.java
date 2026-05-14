@@ -27,6 +27,7 @@ public record AnnouncementResponse(
         String description,
         List<String> acceptedContentTypes,
         List<String> refusedTypes,
+        List<String> acceptedPaymentMethods,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}

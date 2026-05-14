@@ -54,5 +54,6 @@ public record BidResponse(
         Integer confirmationCodeRefreshCount,
         LocalDateTime confirmationCodeRefreshWindowStart,
         String cancellationNoShowStatus,
-        java.time.OffsetDateTime contestationDeadline
+        java.time.OffsetDateTime contestationDeadline,
+        String paymentMethod
 ) {}
