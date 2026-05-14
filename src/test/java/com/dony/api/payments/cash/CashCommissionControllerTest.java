@@ -7,6 +7,7 @@ import com.dony.api.payments.cash.dto.CommissionMethodResponse;
 import com.dony.api.payments.cash.dto.ConfirmAcceptanceResponse;
 import com.dony.api.payments.cash.dto.SetupCommissionMethodResponse;
 import com.dony.api.payments.cash.ExpirationStatus;
+import org.springframework.http.MediaType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,6 +87,28 @@ class CashCommissionControllerTest {
     void setupMethod_unauthenticated_returns401() throws Exception {
         mockMvc.perform(post("/traveler/commission-method/setup"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── POST /traveler/commission-method/save ────────────────────────────────────
+
+    @Test
+    void saveMethod_travelerRole_returns204() throws Exception {
+        doNothing().when(cashCommissionService).saveCommissionMethod(USER_ID, "pm_test_123");
+
+        mockMvc.perform(post("/traveler/commission-method/save")
+                .with(authentication(asTraveler()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"paymentMethodId\":\"pm_test_123\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void saveMethod_blankPaymentMethodId_returns422() throws Exception {
+        mockMvc.perform(post("/traveler/commission-method/save")
+                .with(authentication(asTraveler()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"paymentMethodId\":\"\"}"))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     // ── GET /traveler/commission-method ──────────────────────────────────────────

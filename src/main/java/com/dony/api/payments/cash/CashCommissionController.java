@@ -6,6 +6,8 @@ import com.dony.api.payments.cash.dto.AcceptBidResponse;
 import com.dony.api.payments.cash.dto.CommissionMethodResponse;
 import com.dony.api.payments.cash.dto.ConfirmAcceptanceResponse;
 import com.dony.api.payments.cash.dto.SetupCommissionMethodResponse;
+import com.dony.api.payments.cash.dto.SaveCommissionMethodRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -36,6 +39,13 @@ public class CashCommissionController {
     public ResponseEntity<SetupCommissionMethodResponse> setupMethod() {
         UUID userId = resolveUserId();
         return ResponseEntity.ok(cashCommissionService.setupCommissionMethod(userId));
+    }
+
+    @PostMapping("/traveler/commission-method/save")
+    public ResponseEntity<Void> saveMethod(@Valid @RequestBody SaveCommissionMethodRequest request) {
+        UUID userId = resolveUserId();
+        cashCommissionService.saveCommissionMethod(userId, request.paymentMethodId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/traveler/commission-method")

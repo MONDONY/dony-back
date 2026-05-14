@@ -85,6 +85,27 @@ public class CashCommissionService {
     // --- Card registration ---
 
     @Transactional
+    public void saveCommissionMethod(UUID userId, String paymentMethodId) {
+        UserEntity user = userRepo.findById(userId).orElseThrow();
+        try {
+            PaymentMethod pm = PaymentMethod.retrieve(paymentMethodId);
+            if (pm.getCard() == null) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-payment-method", "Invalid Payment Method",
+                        "La méthode de paiement fournie n'est pas une carte");
+            }
+            user.setCommissionPaymentMethodId(paymentMethodId);
+            user.setCommissionCardBrand(pm.getCard().getBrand());
+            user.setCommissionCardLast4(pm.getCard().getLast4());
+            user.setCommissionCardExpMonth(pm.getCard().getExpMonth().intValue());
+            user.setCommissionCardExpYear(pm.getCard().getExpYear().intValue());
+            userRepo.save(user);
+        } catch (StripeException e) {
+            throw new RuntimeException("Impossible de récupérer le PaymentMethod Stripe", e);
+        }
+    }
+
+    @Transactional
     public SetupCommissionMethodResponse setupCommissionMethod(UUID userId) {
         UserEntity user = userRepo.findById(userId).orElseThrow();
         ensureStripeCustomer(user);
