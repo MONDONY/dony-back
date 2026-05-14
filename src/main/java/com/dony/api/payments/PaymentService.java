@@ -63,6 +63,7 @@ public class PaymentService {
     private final String webhookSecret;
     private final StripeConnectProperties stripeConnectProperties;
     private final ProcessedStripeEventRepository processedStripeEventRepository;
+    private final com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -75,7 +76,8 @@ public class PaymentService {
                           ApplicationEventPublisher eventPublisher,
                           @Qualifier("stripeWebhookSecret") String webhookSecret,
                           StripeConnectProperties stripeConnectProperties,
-                          ProcessedStripeEventRepository processedStripeEventRepository) {
+                          ProcessedStripeEventRepository processedStripeEventRepository,
+                          com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -85,6 +87,7 @@ public class PaymentService {
         this.webhookSecret = webhookSecret;
         this.stripeConnectProperties = stripeConnectProperties;
         this.processedStripeEventRepository = processedStripeEventRepository;
+        this.cashCommissionWebhookHandler = cashCommissionWebhookHandler;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -468,9 +471,16 @@ public class PaymentService {
             case "account.updated" -> handleAccountUpdated(event);
             // payment_intent.amount_capturable_updated fires when card is authorized (capture_method=manual)
             case "payment_intent.amount_capturable_updated" -> handlePaymentEscrowActive(event);
-            case "payment_intent.payment_failed" -> handlePaymentFailed(event);
+            case "payment_intent.payment_failed" -> {
+                handlePaymentFailed(event);
+                cashCommissionWebhookHandler.handlePaymentIntentFailed(event);
+            }
             // Story 6.7 — confirm refund initiated by TripCancelledEventListener
             case "charge.refunded" -> handleChargeRefunded(event);
+            // Cash commission webhook events
+            case "setup_intent.succeeded" -> cashCommissionWebhookHandler.handleSetupIntentSucceeded(event);
+            case "payment_intent.succeeded" -> cashCommissionWebhookHandler.handlePaymentIntentSucceeded(event);
+            case "payment_method.detached" -> cashCommissionWebhookHandler.handlePaymentMethodDetached(event);
             default -> log.debug("Unhandled webhook event: {}", event.getType());
         }
     }

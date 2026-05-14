@@ -4,6 +4,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
+import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import com.stripe.model.Event;
@@ -33,6 +34,7 @@ class PaymentWebhookChargeIdTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private ProcessedStripeEventRepository processedStripeEventRepository;
+    @Mock private CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     private PaymentService service;
 
@@ -40,7 +42,8 @@ class PaymentWebhookChargeIdTest {
     void setUp() {
         service = new PaymentService(userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher, "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties(), processedStripeEventRepository);
+                PaymentServiceTestFactory.defaultConnectProperties(), processedStripeEventRepository,
+                cashCommissionWebhookHandler);
     }
 
     @Test

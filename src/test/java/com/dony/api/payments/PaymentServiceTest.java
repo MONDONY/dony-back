@@ -8,6 +8,7 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
+import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -61,6 +62,7 @@ class PaymentServiceTest {
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock ProcessedStripeEventRepository processedStripeEventRepository;
+    @Mock CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     PaymentService service;
 
@@ -76,7 +78,8 @@ class PaymentServiceTest {
                 paymentRepository, auditService, eventPublisher,
                 "whsec_test",
                 PaymentServiceTestFactory.defaultConnectProperties(),
-                processedStripeEventRepository);
+                processedStripeEventRepository,
+                cashCommissionWebhookHandler);
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
