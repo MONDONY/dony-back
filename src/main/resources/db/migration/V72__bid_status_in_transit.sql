@@ -1,0 +1,5 @@
+-- bid.status est VARCHAR(20) via EnumType.STRING — aucune modification DDL requise.
+-- Ajout de IN_TRANSIT dans l'enum Java BidStatus.
+-- Transition : ACCEPTED → IN_TRANSIT lors du scan TrackingEventType.TRANSIT par le voyageur.
+-- BidStatus: PENDING | AWAITING_PAYMENT | PAYMENT_ESCROWED | ACCEPTED | IN_TRANSIT | REJECTED | CANCELLED | COMPLETED | NO_SHOW | PARCEL_REFUSED | EXPIRED
+COMMENT ON COLUMN bids.status IS 'BidStatus: PENDING | AWAITING_PAYMENT | PAYMENT_ESCROWED | ACCEPTED | IN_TRANSIT | REJECTED | CANCELLED | COMPLETED | NO_SHOW | PARCEL_REFUSED | EXPIRED';

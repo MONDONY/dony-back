@@ -119,6 +119,16 @@ class NoShowSchedulerTest {
             verify(bidRepository, never()).save(any());
             verify(eventPublisher, never()).publishEvent(any());
         }
+
+        @Test
+        @DisplayName("exception pendant processNoShow → log error et continue")
+        void detectNoShows_exceptionOnOneBid_doesNotAbort() {
+            when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid));
+            when(bidRepository.save(any())).thenThrow(new RuntimeException("db error"));
+
+            // doit passer sans exception — l'erreur est catchée et loggée
+            scheduler.detectNoShows();
+        }
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────
