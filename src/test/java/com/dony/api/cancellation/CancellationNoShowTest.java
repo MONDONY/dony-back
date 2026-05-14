@@ -195,26 +195,6 @@ class CancellationNoShowTest {
     class ContestSenderNoShow {
 
         @Test
-        void marksAsContestedBeforeDeadline() {
-            CancellationEntity c = new CancellationEntity();
-            ReflectionTestUtils.setField(c, "id", UUID.randomUUID());
-            c.setBidId(BID_ID);
-            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
-            c.setContestationDeadline(java.time.OffsetDateTime.now().plusHours(10));
-
-            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
-            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(bidRepository.findById(BID_ID))
-                    .thenReturn(Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID))
-                    .thenReturn(Optional.of(announcementWithTraveler(TRAVELER_ID)));
-
-            service.contestSenderNoShow(BID_ID, SENDER_ID);
-
-            assertThat(c.getNoShowStatus()).isEqualTo(CancellationStatus.CONTESTED);
-        }
-
-        @Test
         void publishesDisputeOpenedEvent() {
             CancellationEntity c = new CancellationEntity();
             ReflectionTestUtils.setField(c, "id", UUID.randomUUID());
@@ -222,10 +202,10 @@ class CancellationNoShowTest {
             c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
             c.setContestationDeadline(java.time.OffsetDateTime.now().plusHours(10));
 
-            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
-            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(bidRepository.findById(BID_ID))
                     .thenReturn(Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(announcementRepository.findById(ANNOUNCEMENT_ID))
                     .thenReturn(Optional.of(announcementWithTraveler(TRAVELER_ID)));
 
@@ -238,11 +218,13 @@ class CancellationNoShowTest {
             assertThat(event.getBidId()).isEqualTo(BID_ID);
             assertThat(event.getSenderId()).isEqualTo(SENDER_ID);
             assertThat(event.getTravelerId()).isEqualTo(TRAVELER_ID);
-            assertThat(event.getDisputeId()).isNotNull();
         }
 
         @Test
         void failsAfterDeadline() {
+            BidEntity bid = cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
             CancellationEntity c = new CancellationEntity();
             c.setBidId(BID_ID);
             c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
@@ -253,6 +235,55 @@ class CancellationNoShowTest {
             assertThatThrownBy(() -> service.contestSenderNoShow(BID_ID, SENDER_ID))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("délai");
+        }
+
+        @Test
+        void failsIfDeadlineIsNull() {
+            BidEntity bid = cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
+            CancellationEntity c = new CancellationEntity();
+            c.setBidId(BID_ID);
+            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            c.setContestationDeadline(null);
+
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+
+            assertThatThrownBy(() -> service.contestSenderNoShow(BID_ID, SENDER_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("délai");
+        }
+
+        @Test
+        void failsWhenCallerIsNotSender() {
+            UUID otherUserId = UUID.randomUUID();
+            BidEntity bid = cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1));
+            // SENDER_ID is set in cashBid(); otherUserId != SENDER_ID
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
+            assertThatThrownBy(() -> service.contestSenderNoShow(BID_ID, otherUserId))
+                    .isInstanceOf(com.dony.api.common.DonyBusinessException.class)
+                    .hasMessageContaining("expéditeur");
+        }
+
+        @Test
+        void marksAsContestedBeforeDeadline() {
+            CancellationEntity c = new CancellationEntity();
+            ReflectionTestUtils.setField(c, "id", UUID.randomUUID());
+            c.setBidId(BID_ID);
+            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            c.setContestationDeadline(java.time.OffsetDateTime.now().plusHours(10));
+
+            when(bidRepository.findById(BID_ID))
+                    .thenReturn(Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                    .thenReturn(Optional.of(announcementWithTraveler(TRAVELER_ID)));
+
+            service.contestSenderNoShow(BID_ID, SENDER_ID);
+
+            assertThat(c.getNoShowStatus()).isEqualTo(CancellationStatus.CONTESTED);
         }
     }
 }

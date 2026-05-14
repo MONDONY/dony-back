@@ -267,21 +267,27 @@ public class CancellationService {
 
     @Transactional
     public void contestSenderNoShow(UUID bidId, UUID senderId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        if (!bid.getSenderId().equals(senderId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas l'expéditeur de ce bid.");
+        }
+
         CancellationEntity c = cancellationRepository.findByBidId(bidId).orElseThrow();
-        if (c.getContestationDeadline() != null
-                && OffsetDateTime.now().isAfter(c.getContestationDeadline())) {
+        if (c.getContestationDeadline() == null
+                || OffsetDateTime.now().isAfter(c.getContestationDeadline())) {
             throw new IllegalStateException("Le délai de contestation est dépassé.");
         }
         c.setNoShowStatus(CancellationStatus.CONTESTED);
         cancellationRepository.save(c);
 
-        BidEntity bid = bidRepository.findById(bidId).orElseThrow();
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElseThrow();
-        UUID disputeId = UUID.randomUUID();
         eventPublisher.publishEvent(new DisputeOpenedEvent(
-                disputeId, bidId, bid.getSenderId(), announcement.getTravelerId()));
+                bidId, bid.getSenderId(), announcement.getTravelerId()));
         auditService.log("CANCELLATION", c.getId(), "SENDER_NO_SHOW_CONTESTED", senderId,
-                Map.of("bidId", bidId.toString(), "disputeId", disputeId.toString()));
+                Map.of("bidId", bidId.toString()));
     }
 
     private UserEntity findUserByFirebaseUid(String firebaseUid) {
