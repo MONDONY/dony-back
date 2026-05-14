@@ -52,5 +52,8 @@ public record BidResponse(
         boolean senderHasRated,
         boolean travelerHasRated,
         Integer confirmationCodeRefreshCount,
-        LocalDateTime confirmationCodeRefreshWindowStart
+        LocalDateTime confirmationCodeRefreshWindowStart,
+        String cancellationNoShowStatus,
+        java.time.OffsetDateTime contestationDeadline,
+        String paymentMethod
 ) {}

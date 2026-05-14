@@ -4,6 +4,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
+import com.dony.api.cancellation.dto.RematchSuggestionDto;
 import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.common.AuditService;
@@ -283,6 +284,23 @@ class CancellationServiceTest {
     class RematchSuggestionsTests {
 
         @Test
+        @DisplayName("annonce non-ACTIVE non-CANCELLED → 409 CONFLICT invalid-status")
+        void cancelTrip_nonActiveNonCancelled_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            announcement.setStatus(AnnouncementStatus.FULL);
+            CancellationRequest req = new CancellationRequest(ANNOUNCEMENT_ID, "Changement de plan");
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> cancellationService.cancelTrip(TRAVELER_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
         @DisplayName("cancellation introuvable → 404 NOT_FOUND")
         void getRematchSuggestions_unknownCancellation_throwsNotFound() {
             UUID cancellationId = UUID.randomUUID();
@@ -292,6 +310,97 @@ class CancellationServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("caller non-participant → 403 FORBIDDEN")
+        void getRematchSuggestions_notParticipant_throwsForbidden() {
+            UUID cancellationId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID otherId = UUID.randomUUID();
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setBidId(bidId);
+            cancellation.setCancelledBy(travelerId);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, bidId);
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(UUID.randomUUID()); // some other sender
+
+            AnnouncementEntity announcement = new AnnouncementEntity();
+            setId(announcement, announcementId);
+            announcement.setTravelerId(travelerId);
+
+            UserEntity outsider = new UserEntity();
+            setId(outsider, otherId); // not sender, traveler, nor cancelledBy
+
+            when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
+            when(userRepository.findByFirebaseUid("uid-outsider")).thenReturn(Optional.of(outsider));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> cancellationService.getRematchSuggestions(cancellationId, "uid-outsider"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("suggestions présentes avec annonces → retourne DTOs")
+        void getRematchSuggestions_withSuggestions_returnsDtos() {
+            UUID cancellationId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+            UUID userId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID altAnnouncementId = UUID.randomUUID();
+            UUID suggestionId = UUID.randomUUID();
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setBidId(bidId);
+            cancellation.setCancelledBy(userId);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, bidId);
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(userId);
+
+            AnnouncementEntity announcement = new AnnouncementEntity();
+            setId(announcement, announcementId);
+            announcement.setTravelerId(travelerId);
+
+            UserEntity caller = new UserEntity();
+            setId(caller, userId);
+
+            RematchSuggestionEntity suggestion = new RematchSuggestionEntity();
+            setId(suggestion, suggestionId);
+            suggestion.setCancellationId(cancellationId);
+            suggestion.setAnnouncementId(altAnnouncementId);
+
+            AnnouncementEntity altAnnouncement = new AnnouncementEntity();
+            setId(altAnnouncement, altAnnouncementId);
+            altAnnouncement.setDepartureCity("Paris");
+            altAnnouncement.setArrivalCity("Dakar");
+            altAnnouncement.setDepartureDate(LocalDate.now().plusDays(7));
+            altAnnouncement.setAvailableKg(BigDecimal.TEN);
+            altAnnouncement.setPricePerKg(BigDecimal.valueOf(5));
+
+            when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
+            when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
+            when(rematchSuggestionRepository.findByCancellationId(cancellationId)).thenReturn(List.of(suggestion));
+            when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+
+            List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).departureCity()).isEqualTo("Paris");
         }
 
         @Test

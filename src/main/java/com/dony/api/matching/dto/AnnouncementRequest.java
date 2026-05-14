@@ -1,5 +1,6 @@
 package com.dony.api.matching.dto;
 
+import com.dony.api.payments.cash.PaymentMethod;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -11,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 
 public record AnnouncementRequest(
         @NotBlank(message = "La ville de départ est obligatoire")
@@ -51,5 +53,7 @@ public record AnnouncementRequest(
 
         List<String> acceptedContentTypes,
 
-        List<String> refusedTypes
+        List<String> refusedTypes,
+
+        Set<PaymentMethod> acceptedPaymentMethods
 ) {}

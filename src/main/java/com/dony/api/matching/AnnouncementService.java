@@ -6,6 +6,8 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserProStatusChangedEvent;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.config.DonyConfigProperties;
@@ -40,8 +42,10 @@ import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -183,6 +187,7 @@ public class AnnouncementService {
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
+                entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
     }
@@ -247,6 +252,8 @@ public class AnnouncementService {
             userRepository.save(user);
         }
 
+        Set<PaymentMethod> paymentMethods = resolvePaymentMethods(request.acceptedPaymentMethods(), user);
+
         AnnouncementEntity announcement = new AnnouncementEntity();
         announcement.setTravelerId(user.getId());
         announcement.setTravelerIsPro(user.isProAccount());
@@ -269,6 +276,7 @@ public class AnnouncementService {
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
+        announcement.setAcceptedPaymentMethods(paymentMethods);
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -416,6 +424,7 @@ public class AnnouncementService {
                 announcement.getDescription(),
                 announcement.getAcceptedContentTypes(),
                 announcement.getRefusedTypes(),
+                announcement.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 announcement.getCreatedAt(),
                 announcement.getUpdatedAt()
         );
@@ -466,6 +475,9 @@ public class AnnouncementService {
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
+        if (request.acceptedPaymentMethods() != null) {
+            announcement.setAcceptedPaymentMethods(resolvePaymentMethods(request.acceptedPaymentMethods(), user));
+        }
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -513,6 +525,7 @@ public class AnnouncementService {
                 saved.getDescription(),
                 saved.getAcceptedContentTypes(),
                 saved.getRefusedTypes(),
+                saved.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
         );
@@ -601,6 +614,7 @@ public class AnnouncementService {
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
+                entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
@@ -612,5 +626,15 @@ public class AnnouncementService {
         int updated = announcementRepository.updateTravelerProStatus(event.userId(), event.isPro());
         log.info("PRO status change for user {} (isPro={}) — {} open announcements updated",
                 event.userId(), event.isPro(), updated);
+    }
+
+    private Set<PaymentMethod> resolvePaymentMethods(Set<PaymentMethod> requested, UserEntity traveler) {
+        if (requested == null || requested.isEmpty()) {
+            return EnumSet.of(PaymentMethod.STRIPE);
+        }
+        if (requested.contains(PaymentMethod.CASH) && traveler.getCommissionPaymentMethodId() == null) {
+            throw new CommissionMethodMissingException();
+        }
+        return EnumSet.copyOf(requested);
     }
 }

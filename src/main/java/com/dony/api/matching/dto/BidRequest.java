@@ -30,5 +30,7 @@ public record BidRequest(
         String recipientPhone,
 
         @NotNull(message = "Le disclaimer légal doit être accepté")
-        Boolean disclaimerSigned
+        Boolean disclaimerSigned,
+
+        String paymentMethod
 ) {}

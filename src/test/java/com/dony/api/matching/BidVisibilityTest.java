@@ -3,6 +3,7 @@ package com.dony.api.matching;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.ratings.RatingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ class BidVisibilityTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RatingRepository ratingRepository;
+    @Mock private CancellationRepository cancellationRepository;
 
     @InjectMocks private BidService bidService;
 
@@ -73,6 +75,10 @@ class BidVisibilityTest {
         pendingBid.setStatus(BidStatus.PENDING);
         pendingBid.setWeightKg(new BigDecimal("1"));
         pendingBid.setDeclaredValueEur(new BigDecimal("100"));
+
+        org.mockito.Mockito.lenient()
+                .when(cancellationRepository.findByBidId(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.empty());
     }
 
     @Test

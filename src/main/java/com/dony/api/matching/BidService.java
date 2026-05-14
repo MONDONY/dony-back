@@ -13,6 +13,7 @@ import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
+import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,19 +40,22 @@ public class BidService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final RatingRepository ratingRepository;
+    private final CancellationRepository cancellationRepository;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
 
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
-                      ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository) {
+                      ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
+                      CancellationRepository cancellationRepository) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.ratingRepository = ratingRepository;
+        this.cancellationRepository = cancellationRepository;
     }
 
     @Transactional
@@ -113,6 +117,24 @@ public class BidService {
                     "Le disclaimer légal doit être accepté");
         }
 
+        com.dony.api.payments.cash.PaymentMethod pm;
+        try {
+            pm = request.paymentMethod() != null
+                    ? com.dony.api.payments.cash.PaymentMethod.valueOf(request.paymentMethod().toUpperCase())
+                    : com.dony.api.payments.cash.PaymentMethod.STRIPE;
+        } catch (IllegalArgumentException e) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-payment-method", "Invalid Payment Method",
+                    "Méthode de paiement inconnue : " + request.paymentMethod());
+        }
+
+        if (pm == com.dony.api.payments.cash.PaymentMethod.CASH
+                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "cash-not-accepted", "Cash Not Accepted",
+                    "Cette annonce n'accepte pas le paiement en espèces");
+        }
+
         String clientIp = resolveClientIp(httpRequest);
 
         BidEntity bid = new BidEntity();
@@ -126,6 +148,7 @@ public class BidService {
         bid.setRecipientPhone(request.recipientPhone());
         bid.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
         bid.setDisclaimerSignedIp(clientIp);
+        bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
 
         BidEntity saved = bidRepository.save(bid);
@@ -576,6 +599,14 @@ public class BidService {
         boolean travelerHasRated = travelerId != null
                 && ratingRepository.existsByBidIdAndRaterId(bid.getId(), travelerId);
 
+        var cancellation = cancellationRepository.findByBidId(bid.getId()).orElse(null);
+        String cancellationNoShowStatus = cancellation != null
+                ? cancellation.getNoShowStatus().name()
+                : null;
+        java.time.OffsetDateTime contestationDeadline = cancellation != null
+                ? cancellation.getContestationDeadline()
+                : null;
+
         return new BidResponse(
                 bid.getId(),
                 bid.getAnnouncementId(),
@@ -622,7 +653,10 @@ public class BidService {
                 senderHasRated,
                 travelerHasRated,
                 bid.getConfirmationCodeRefreshCount(),
-                bid.getConfirmationCodeRefreshWindowStart()
+                bid.getConfirmationCodeRefreshWindowStart(),
+                cancellationNoShowStatus,
+                contestationDeadline,
+                bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE"
         );
     }
 }

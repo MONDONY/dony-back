@@ -1,5 +1,6 @@
 package com.dony.api.cancellation;
 
+import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
@@ -7,6 +8,7 @@ import com.dony.api.common.DonyBusinessException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,9 +26,12 @@ import java.util.UUID;
 public class CancellationController {
 
     private final CancellationService cancellationService;
+    private final UserRepository userRepository;
 
-    public CancellationController(CancellationService cancellationService) {
+    public CancellationController(CancellationService cancellationService,
+                                   UserRepository userRepository) {
         this.cancellationService = cancellationService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
@@ -44,6 +49,37 @@ public class CancellationController {
     ) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(cancellationService.getRematchSuggestions(cancellationId, firebaseUid));
+    }
+
+    @PostMapping("/bids/{bidId}/report-noshow")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<Void> reportNoShow(@PathVariable UUID bidId) {
+        UUID travelerId = resolveUserId();
+        cancellationService.reportSenderNoShow(bidId, travelerId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/bids/{bidId}/confirm-noshow")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> confirmNoShow(@PathVariable UUID bidId) {
+        cancellationService.confirmSenderNoShow(bidId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/bids/{bidId}/contest-noshow")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<Void> contestNoShow(@PathVariable UUID bidId) {
+        UUID senderId = resolveUserId();
+        cancellationService.contestSenderNoShow(bidId, senderId);
+        return ResponseEntity.ok().build();
+    }
+
+    private UUID resolveUserId() {
+        String firebaseUid = requireFirebaseUid();
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .map(u -> u.getId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Utilisateur introuvable"));
     }
 
     private String requireFirebaseUid() {

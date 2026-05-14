@@ -1,7 +1,10 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.payments.cash.PaymentMethodSetConverter;
 import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
@@ -16,7 +19,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -114,6 +119,10 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "linked_package_request_id")
     private UUID linkedPackageRequestId;
 
+    @Convert(converter = PaymentMethodSetConverter.class)
+    @Column(name = "accepted_payment_methods", nullable = false)
+    private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
+
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
@@ -180,4 +189,7 @@ public class AnnouncementEntity extends BaseEntity {
 
     public List<String> getRefusedTypes() { return refusedTypes; }
     public void setRefusedTypes(List<String> refusedTypes) { this.refusedTypes = refusedTypes; }
+
+    public Set<PaymentMethod> getAcceptedPaymentMethods() { return acceptedPaymentMethods; }
+    public void setAcceptedPaymentMethods(Set<PaymentMethod> acceptedPaymentMethods) { this.acceptedPaymentMethods = acceptedPaymentMethods; }
 }

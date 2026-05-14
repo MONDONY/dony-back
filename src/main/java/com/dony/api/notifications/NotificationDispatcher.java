@@ -214,4 +214,14 @@ public class NotificationDispatcher {
         notifyUser(recipientId, "Message de " + senderName, truncated,
                 Map.of("type", "NEW_MESSAGE", "conversationId", conversationId));
     }
+
+    public void sendCardExpiringNotice(com.dony.api.auth.UserEntity user) {
+        String brand = user.getCommissionCardBrand() != null ? user.getCommissionCardBrand() : "Carte";
+        String last4 = user.getCommissionCardLast4() != null ? user.getCommissionCardLast4() : "****";
+        notifyUser(user.getId(),
+                "Votre carte de débit expire bientôt",
+                brand + " se terminant par " + last4 + " expire ce mois-ci. " +
+                "Mettez-la à jour pour continuer à accepter des paiements cash.",
+                Map.of("type", "CARD_EXPIRING"));
+    }
 }

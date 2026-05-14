@@ -3,6 +3,9 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
@@ -48,21 +51,30 @@ public class DeliveryEventListener {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final BidRepository bidRepository;
 
     public DeliveryEventListener(PaymentRepository paymentRepository,
                                  UserRepository userRepository,
                                  AuditService auditService,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 ApplicationEventPublisher eventPublisher,
+                                 BidRepository bidRepository) {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.bidRepository = bidRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleDeliveryConfirmed(DeliveryConfirmedEvent event) {
+        BidEntity bid = bidRepository.findById(event.getBidId()).orElse(null);
+        if (bid != null && bid.getPaymentMethod() == PaymentMethod.CASH) {
+            log.debug("CASH bid {} — no Stripe escrow to release", event.getBidId());
+            return;
+        }
+
         Optional<PaymentEntity> paymentOpt = paymentRepository.findByBidId(event.getBidId());
 
         if (paymentOpt.isEmpty()) {

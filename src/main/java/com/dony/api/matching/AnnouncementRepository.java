@@ -100,6 +100,10 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
            "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
     int updateTravelerProStatus(@Param("travelerId") UUID travelerId, @Param("isPro") boolean isPro);
 
+    @Query("SELECT a FROM AnnouncementEntity a WHERE a.travelerId = :travelerId " +
+           "AND a.status IN (com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
+    List<AnnouncementEntity> findActiveByTravelerId(@Param("travelerId") UUID travelerId);
+
     /**
      * Returns recent announcements on a corridor (departure→arrival) with a future or
      * today departure date, ordered newest first. Used by PriceEstimationService.

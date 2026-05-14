@@ -130,8 +130,14 @@ class AnnouncementServiceTest {
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 mode,
-                null, null, null
+                null, null, null, null
         );
+    }
+
+    private UserEntity buildTravelerWithCommissionMethod() {
+        UserEntity u = buildTraveler();
+        u.setCommissionPaymentMethodId("pm_test");
+        return u;
     }
 
     // ─── createAnnouncement ────────────────────────────────────────────────────
@@ -253,6 +259,61 @@ class AnnouncementServiceTest {
             verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_CREATED"), any(), captor.capture());
             assertThat(captor.getValue()).containsEntry("transportMode", "TRAIN");
         }
+
+        @Test
+        @DisplayName("CASH sans carte commission → CommissionMethodMissingException")
+        void create_cashWithoutCommissionMethod_throws() {
+            UserEntity traveler = buildTraveler();
+            traveler.setKycStatus(com.dony.api.auth.KycStatus.VERIFIED);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", LocalDate.now().plusDays(10),
+                    null, null,
+                    new AddressDto("CDG", 49.009, 2.547),
+                    new AddressDto("DSS", 14.693, -17.447),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH)
+            );
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(com.dony.api.payments.cash.exception.CommissionMethodMissingException.class);
+        }
+
+        @Test
+        @DisplayName("CASH avec carte commission enregistrée → acceptedPaymentMethods inclut CASH")
+        void create_cashWithCommissionMethod_setsPaymentMethods() {
+            UserEntity traveler = buildTravelerWithCommissionMethod();
+            traveler.setKycStatus(com.dony.api.auth.KycStatus.VERIFIED);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", LocalDate.now().plusDays(10),
+                    null, null,
+                    new AddressDto("CDG", 49.009, 2.547),
+                    new AddressDto("DSS", 14.693, -17.447),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH)
+            );
+
+            announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            org.mockito.ArgumentCaptor<AnnouncementEntity> captor =
+                    org.mockito.ArgumentCaptor.forClass(AnnouncementEntity.class);
+            verify(announcementRepository).save(captor.capture());
+            assertThat(captor.getValue().getAcceptedPaymentMethods())
+                    .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
     }
 
     // ─── getMyAnnouncements ────────────────────────────────────────────────────
@@ -338,7 +399,7 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null
+                    null, null, null, null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -393,7 +454,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(35), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null
+                    null, null, null, null
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);

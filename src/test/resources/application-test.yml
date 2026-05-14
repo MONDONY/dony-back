@@ -48,6 +48,13 @@ dony:
     enforce: false
   commission:
     rate: 0.12
+    minimum-amount: 1.00
+    no-show-contestation-hours: 24
+  cash-commission:
+    orphan-pi-cleanup-cron: "0 */15 * * * *"
+    orphan-pi-timeout-minutes: 30
+    no-show-timeout-cron: "0 0 * * * *"
+    card-expiration-warning-days: 30
   limits:
     non-pro:
       monthly-announcements: 2

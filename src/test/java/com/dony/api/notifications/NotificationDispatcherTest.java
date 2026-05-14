@@ -183,10 +183,9 @@ class NotificationDispatcherTest {
 
     @Test
     void onDisputeOpened_notifiesBothParties() {
-        UUID disputeId = UUID.randomUUID();
         when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
 
-        dispatcher.onDisputeOpened(new DisputeOpenedEvent(disputeId, bidId, senderId, travelerId));
+        dispatcher.onDisputeOpened(new DisputeOpenedEvent(bidId, senderId, travelerId));
 
         verify(fcmService).sendToUser(eq(senderId),   eq("Litige ouvert"), any(), any());
         verify(fcmService).sendToUser(eq(travelerId), eq("Litige ouvert"), any(), any());

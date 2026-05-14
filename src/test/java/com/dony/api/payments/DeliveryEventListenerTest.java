@@ -3,6 +3,9 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
@@ -35,13 +38,14 @@ class DeliveryEventListenerTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private BidRepository bidRepository;
 
     private DeliveryEventListener listener;
 
     @BeforeEach
     void setUp() {
         listener = new DeliveryEventListener(paymentRepository, userRepository,
-                auditService, eventPublisher);
+                auditService, eventPublisher, bidRepository);
     }
 
     private PaymentEntity payment(boolean legacy, PaymentStatus status, String chargeId) {
@@ -159,6 +163,24 @@ class DeliveryEventListenerTest {
 
             assertThat(captor.getValue().getSourceTransaction()).isNull();
         }
+    }
+
+    @Test
+    void cash_bid_skips_stripe_operations() {
+        UUID bidId = UUID.randomUUID();
+        BidEntity bid = new BidEntity();
+        bid.setPaymentMethod(PaymentMethod.CASH);
+        when(bidRepository.findById(bidId)).thenReturn(java.util.Optional.of(bid));
+
+        try (MockedStatic<com.stripe.model.PaymentIntent> piStatic =
+                     mockStatic(com.stripe.model.PaymentIntent.class);
+             MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
+            listener.handleDeliveryConfirmed(event(bidId, UUID.randomUUID()));
+            piStatic.verifyNoInteractions();
+            transferStatic.verifyNoInteractions();
+        }
+        verifyNoInteractions(paymentRepository, auditService);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

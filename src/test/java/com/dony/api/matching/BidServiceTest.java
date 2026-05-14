@@ -10,6 +10,9 @@ import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.cancellation.CancellationEntity;
+import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.ratings.RatingRepository;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
@@ -28,6 +31,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.lang.reflect.Field;
+import java.time.OffsetDateTime;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -49,6 +53,7 @@ class BidServiceTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RatingRepository ratingRepository;
+    @Mock private CancellationRepository cancellationRepository;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -129,7 +134,13 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true);
+                "Aminata Diallo", "+221701234567", true, null);
+    }
+
+    @BeforeEach
+    void stubCancellationRepository() {
+        lenient().when(cancellationRepository.findByBidId(any()))
+                .thenReturn(java.util.Optional.empty());
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────
@@ -232,7 +243,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -349,6 +360,103 @@ class BidServiceTest {
 
             assertThat(sender.getRoles()).contains(Role.SENDER);
         }
+
+        @Test
+        @DisplayName("enforceKyc=true + KYC non vérifié → 403 FORBIDDEN")
+        void createBid_kycEnforced_notVerified_throwsForbidden() throws Exception {
+            Field enfField = BidService.class.getDeclaredField("enforceKyc");
+            enfField.setAccessible(true);
+            enfField.set(bidService, true);
+
+            UserEntity sender = buildSender();
+            // kycStatus is null by default → null != KycStatus.VERIFIED → KYC check fires
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID,
+                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("kyc-not-verified"));
+        }
+
+        @Test
+        @DisplayName("paymentMethod=CASH + annonce accepte cash → bid créé avec PaymentMethod.CASH")
+        void createBid_cashAccepted_setsCashOnBid() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                                         com.dony.api.payments.cash.PaymentMethod.CASH));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+
+            BidResponse result = bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
+
+            assertThat(result.paymentMethod()).isEqualTo("CASH");
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            assertThat(captor.getValue().getPaymentMethod())
+                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
+
+        @Test
+        @DisplayName("paymentMethod=CASH + annonce n'accepte pas cash → 422 UNPROCESSABLE_ENTITY")
+        void createBid_cashNotAcceptedByAnnouncement_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement(); // default = STRIPE only
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("cash-not-accepted");
+                    });
+        }
+
+        @Test
+        @DisplayName("paymentMethod invalide → 422 UNPROCESSABLE_ENTITY")
+        void createBid_invalidPaymentMethod_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN");
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("invalid-payment-method"));
+        }
     }
 
     // ─── acceptBid ─────────────────────────────────────────────────────────────
@@ -460,6 +568,24 @@ class BidServiceTest {
 
             assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
+        }
+
+        @Test
+        @DisplayName("annonce IN_PROGRESS → n'accepte plus de colis → 409 CONFLICT")
+        void acceptBid_announcementInProgress_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.IN_PROGRESS);
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("announcement-not-accepting"));
         }
     }
 
@@ -775,6 +901,23 @@ class BidServiceTest {
 
             assertThat(bid.isVoyageurConfirmed()).isTrue();
         }
+
+        @Test
+        @DisplayName("bid non ACCEPTED → 409 CONFLICT")
+        void confirmPresence_bidNotAccepted_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED (not ACCEPTED)
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> bidService.confirmPresence(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("bid-not-accepted"));
+        }
     }
 
     // ─── markH2AlertSent ───────────────────────────────────────────────────────
@@ -882,6 +1025,22 @@ class BidServiceTest {
         assertThat(result).hasSize(1);
     }
 
+    @Test
+    @DisplayName("getBidsForAnnouncement — non propriétaire → 403 FORBIDDEN")
+    void getBidsForAnnouncement_notOwner_throwsForbidden() {
+        UserEntity otherTraveler = new UserEntity();
+        setId(otherTraveler, UUID.randomUUID()); // different UUID, not TRAVELER_ID
+        AnnouncementEntity announcement = buildAnnouncement(); // travelerId = TRAVELER_ID
+
+        when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+        when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(otherTraveler));
+
+        assertThatThrownBy(() -> bidService.getBidsForAnnouncement(ANNOUNCEMENT_ID, TRAVELER_UID))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
+    }
+
     // ─── rejectBid null request ────────────────────────────────────────────────
 
     @Test
@@ -963,6 +1122,227 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("invalid-bid-status"));
+        }
+    }
+
+    @Nested
+    @DisplayName("toResponse() — champs cancellation")
+    class ToResponseCancellationTests {
+
+        @Test
+        @DisplayName("cancellation présente → noShowStatus et contestationDeadline renseignés")
+        void toResponse_withCancellation_populatesNoShowFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            OffsetDateTime deadline = OffsetDateTime.now().plusHours(2);
+            CancellationEntity cancellation = new CancellationEntity();
+            cancellation.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            cancellation.setContestationDeadline(deadline);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.cancellationNoShowStatus()).isEqualTo("PENDING_CONFIRMATION");
+            assertThat(resp.contestationDeadline()).isEqualTo(deadline);
+        }
+
+        @Test
+        @DisplayName("pas de cancellation → champs null")
+        void toResponse_withoutCancellation_fieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.cancellationNoShowStatus()).isNull();
+            assertThat(resp.contestationDeadline()).isNull();
+        }
+
+        @Test
+        @DisplayName("expéditeur avec prénom ET nom → nom complet dans la réponse")
+        void toResponse_senderWithBothNames_returnsFullName() {
+            UserEntity sender = buildSender();
+            sender.setFirstName("Alice");
+            sender.setLastName("Dupont");
+            BidEntity bid = buildBid();
+
+            // announcementRepository non stubbed → Optional.empty() → announcement=null → traveler=null
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.senderName()).isEqualTo("Alice Dupont");
+        }
+    }
+
+    @Nested
+    @DisplayName("refuseParcel()")
+    class RefuseParcelTests {
+
+        @Test
+        @DisplayName("colis refusé → status PARCEL_REFUSED + event + audit")
+        void refuseParcel_valid_setsStatusAndPublishesEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.save(any())).thenReturn(sender);
+
+            BidResponse resp = bidService.refuseParcel(BID_ID, TRAVELER_UID, "Colis endommagé", null);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PARCEL_REFUSED);
+            assertThat(bid.getRefusalReason()).isEqualTo("Colis endommagé");
+            assertThat(resp).isNotNull();
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.ParcelRefusedEvent.class));
+        }
+
+        @Test
+        @DisplayName("status invalide → 422")
+        void refuseParcel_invalidStatus_throwsUnprocessable() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.refuseParcel(BID_ID, TRAVELER_UID, "raison", null))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+
+        @Test
+        @DisplayName("avec photo URL → photo stockée dans bid")
+        void refuseParcel_withPhotoUrl_storesPhotoUrl() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.HANDED_OVER);
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.refuseParcel(BID_ID, TRAVELER_UID, "raison", "https://photo.jpg");
+
+            assertThat(bid.getRefusalPhotoUrl()).isEqualTo("https://photo.jpg");
+        }
+    }
+
+    @Nested
+    @DisplayName("entités introuvables (orElseThrow lambdas)")
+    class NotFoundTests {
+
+        @Test
+        @DisplayName("acceptBid — bid introuvable → 404")
+        void acceptBid_bidNotFound_throwsNotFound() {
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("acceptBid — annonce introuvable → 404")
+        void acceptBid_announcementNotFound_throwsNotFound() {
+            BidEntity bid = buildBid();
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("getBidById — bid introuvable → 404")
+        void getBidById_bidNotFound_throwsNotFound() {
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> bidService.getBidById(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("getBidsForAnnouncement — annonce introuvable → 404")
+        void getBidsForAnnouncement_announcementNotFound_throwsNotFound() {
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> bidService.getBidsForAnnouncement(ANNOUNCEMENT_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("createBid — utilisateur introuvable → 404")
+        void createBid_userNotFound_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    @Nested
+    @DisplayName("assertSenderOwnsBid()")
+    class AssertSenderOwnsBidTests {
+
+        @Test
+        @DisplayName("expéditeur propriétaire → pas d'exception")
+        void assertSenderOwnsBid_ownerMatches_noException() {
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+
+            bidService.assertSenderOwnsBid(BID_ID, SENDER_UID);
+        }
+
+        @Test
+        @DisplayName("autre utilisateur → 403")
+        void assertSenderOwnsBid_notOwner_throwsForbidden() {
+            UserEntity other = new UserEntity();
+            setId(other, UUID.randomUUID());
+            other.setFirebaseUid(SENDER_UID);
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(other));
+
+            assertThatThrownBy(() -> bidService.assertSenderOwnsBid(BID_ID, SENDER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.FORBIDDEN));
         }
     }
 }

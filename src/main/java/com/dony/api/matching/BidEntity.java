@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.CommissionStatus;
+import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -126,6 +128,20 @@ public class BidEntity extends BaseEntity {
     @Column(name = "shipment_counted", nullable = false)
     private boolean shipmentCounted = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false, length = 10)
+    private PaymentMethod paymentMethod = PaymentMethod.STRIPE;
+
+    @Column(name = "commission_payment_intent_id", length = 255)
+    private String commissionPaymentIntentId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "commission_status", length = 20)
+    private CommissionStatus commissionStatus;
+
+    @Column(name = "commission_retry_count", nullable = false)
+    private int commissionRetryCount = 0;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -227,4 +243,16 @@ public class BidEntity extends BaseEntity {
 
     public boolean isShipmentCounted() { return shipmentCounted; }
     public void setShipmentCounted(boolean shipmentCounted) { this.shipmentCounted = shipmentCounted; }
+
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public String getCommissionPaymentIntentId() { return commissionPaymentIntentId; }
+    public void setCommissionPaymentIntentId(String commissionPaymentIntentId) { this.commissionPaymentIntentId = commissionPaymentIntentId; }
+
+    public CommissionStatus getCommissionStatus() { return commissionStatus; }
+    public void setCommissionStatus(CommissionStatus commissionStatus) { this.commissionStatus = commissionStatus; }
+
+    public int getCommissionRetryCount() { return commissionRetryCount; }
+    public void setCommissionRetryCount(int commissionRetryCount) { this.commissionRetryCount = commissionRetryCount; }
 }

@@ -1,5 +1,8 @@
 package com.dony.api.common;
 
+import com.dony.api.payments.cash.exception.CommissionChargeFailedException;
+import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
+import com.dony.api.payments.cash.exception.InvalidPaymentMethodForAnnouncementException;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import io.sentry.Sentry;
 import jakarta.validation.ConstraintViolationException;
@@ -136,6 +139,30 @@ public class GlobalExceptionHandler {
         problem.setProperty("code", "traveler-not-eligible");
         problem.setProperty("travelerId", ex.getTravelerId().toString());
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
+    }
+
+    @ExceptionHandler(CommissionMethodMissingException.class)
+    public ProblemDetail handleCommissionMethodMissing(CommissionMethodMissingException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        pd.setType(URI.create(BASE_TYPE + "commission-method-missing"));
+        pd.setTitle("Méthode de commission requise");
+        return pd;
+    }
+
+    @ExceptionHandler(InvalidPaymentMethodForAnnouncementException.class)
+    public ProblemDetail handleInvalidPaymentMethod(InvalidPaymentMethodForAnnouncementException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        pd.setType(URI.create(BASE_TYPE + "invalid-payment-method-for-announcement"));
+        pd.setTitle("Mode de paiement non autorisé");
+        return pd;
+    }
+
+    @ExceptionHandler(CommissionChargeFailedException.class)
+    public ProblemDetail handleCommissionChargeFailed(CommissionChargeFailedException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
+        pd.setType(URI.create(BASE_TYPE + "commission-charge-failed"));
+        pd.setTitle("Débit de la commission refusé");
+        return pd;
     }
 
     @ExceptionHandler(Exception.class)

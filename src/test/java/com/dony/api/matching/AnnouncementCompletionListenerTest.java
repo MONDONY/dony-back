@@ -252,4 +252,15 @@ class AnnouncementCompletionListenerTest {
         verify(announcementRepository, never()).findById(any());
         verify(announcementRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("no-show bid inconnu → log warn, no-op")
+    void noShow_unknownBid_skips() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        listener.onVoyageurNoShow(noShowEvent());
+
+        verify(announcementRepository, never()).findById(any());
+        verify(announcementRepository, never()).save(any());
+    }
 }
