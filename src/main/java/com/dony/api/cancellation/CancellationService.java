@@ -6,6 +6,7 @@ import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
 import com.dony.api.cancellation.events.CancellationConfirmedEvent;
+import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.common.AuditService;
@@ -273,6 +274,14 @@ public class CancellationService {
         }
         c.setNoShowStatus(CancellationStatus.CONTESTED);
         cancellationRepository.save(c);
+
+        BidEntity bid = bidRepository.findById(bidId).orElseThrow();
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElseThrow();
+        UUID disputeId = UUID.randomUUID();
+        eventPublisher.publishEvent(new DisputeOpenedEvent(
+                disputeId, bidId, bid.getSenderId(), announcement.getTravelerId()));
+        auditService.log("CANCELLATION", c.getId(), "SENDER_NO_SHOW_CONTESTED", senderId,
+                Map.of("bidId", bidId.toString(), "disputeId", disputeId.toString()));
     }
 
     private UserEntity findUserByFirebaseUid(String firebaseUid) {
