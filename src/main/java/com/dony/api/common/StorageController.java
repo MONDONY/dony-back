@@ -97,4 +97,29 @@ public class StorageController {
 
         return ResponseEntity.ok(Map.of("key", key, "url", url));
     }
+
+    /**
+     * Upload a package request photo (sender side).
+     * Prefix built server-side: package_requests/{userId}/{timestamp}_photo.jpg
+     * Returns a presigned URL valid 7 days for embedding in the request.
+     */
+    @PostMapping("/upload/package-request")
+    public ResponseEntity<Map<String, String>> uploadPackageRequestPhoto(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal String uid) throws IOException {
+
+        if (uid == null || !UID_PATTERN.matcher(uid).matches()) {
+            throw new DonyBusinessException(HttpStatus.UNAUTHORIZED,
+                    "invalid-uid", "Unauthorized", "Identifiant utilisateur invalide");
+        }
+        var user = userRepository.findByFirebaseUid(uid).orElseThrow(() -> new DonyBusinessException(
+                HttpStatus.UNAUTHORIZED, "unauthenticated", "Unauthorized", "Utilisateur introuvable"));
+
+        String prefix = "package_requests/" + user.getId() + "/";
+        String key = storageService.uploadFile(file, prefix);
+        // Public URL for marketplace display (signed 7 days, refresh on detail fetch).
+        String url = storageService.generatePresignedUrl(key, Duration.ofDays(7));
+
+        return ResponseEntity.ok(Map.of("key", key, "url", url));
+    }
 }

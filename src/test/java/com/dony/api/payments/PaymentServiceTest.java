@@ -806,14 +806,14 @@ class PaymentServiceTest {
             boolean result = service.confirmBidPayment(bidId);
 
             assertThat(result).isTrue();
-            assertThat(bid.getStatus()).isEqualTo(BidStatus.PENDING);
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PAYMENT_ESCROWED);
             verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.BidCreatedEvent.class));
         }
     }
 
     @Test
-    void confirmBidPayment_idempotent_when_already_PENDING() {
-        BidEntity bid = buildBid(BidStatus.PENDING);
+    void confirmBidPayment_idempotent_when_already_PAYMENT_ESCROWED() {
+        BidEntity bid = buildBid(BidStatus.PAYMENT_ESCROWED);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
 
         boolean result = service.confirmBidPayment(bidId);

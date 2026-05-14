@@ -38,6 +38,13 @@ spring:
       name: disabled
       password: disabled
 
+  # Multipart upload (Spring's defaults are 1 MB / 10 MB which truncate
+  # photos coming from mobile cameras — bumped to match StorageService.MAX_FILE_SIZE)
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+
 # Server
 server:
   servlet:
@@ -46,6 +53,11 @@ server:
   error:
     whitelabel:
       enabled: false
+  # Tomcat enforces its own multipart limits before Spring sees the request.
+  # Default 2 MB rejects mobile photos silently — bumped to match StorageService.
+  tomcat:
+    max-http-form-post-size: 12MB
+    max-swallow-size: 12MB
 
 # Actuator
 management:
@@ -91,6 +103,25 @@ dony:
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
+  referral:
+    reward-amount-cents: 500
+    max-invitations-per-user: 50
+    code-regeneration-cooldown-days: 30
+  requests:
+    max-negotiation-rounds: 5
+    thread-inactivity-hours: 48
+    date-tolerance-default-days: 2
+    date-tolerance-max-days: 7
+    weight-kg-min: 0.5
+    weight-kg-max: 30
+    declared-value-max-eur: 500
+    body-max-chars: 280
+    max-open-requests-per-sender: 10
+    max-open-threads-per-traveler: 5
+    threads-per-minute-rate-limit: 1
+    auto-expire-check-cron: "0 */15 * * * *"
+    estimation-corridor-recent-trips: 20
+    estimation-cache-ttl-minutes: 60
 
 # Encryption (AES-256 for KYC sensitive data)
 app:

@@ -124,4 +124,13 @@ public class AnnouncementSpecification {
             cb.isNotNull(root.get("pickupLng"))
         );
     }
+
+    /**
+     * Excludes "dedicated trips" — trips tied to a specific package_request via
+     * /negotiations/{id}/create-dedicated-trip. These must never appear in the
+     * public search; they're visible only to the negotiating sender.
+     */
+    public static Specification<AnnouncementEntity> publicOnly() {
+        return (root, query, cb) -> cb.isNull(root.get("linkedPackageRequestId"));
+    }
 }

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
@@ -61,5 +62,15 @@ public class RatingController {
         return ratingService.getPendingRating(principal.getName())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
+    }
+
+    // Notes reçues par l'utilisateur connecté (mes notes reçues)
+    @GetMapping("/me/received")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
+    public ResponseEntity<UserRatingsSummaryResponse> getMyReceivedRatings(
+            Authentication auth,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(ratingService.getMyReceivedRatings(auth.getName(), page, size));
     }
 }

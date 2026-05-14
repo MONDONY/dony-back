@@ -99,4 +99,20 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
            "WHERE a.travelerId = :travelerId AND a.status IN " +
            "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
     int updateTravelerProStatus(@Param("travelerId") UUID travelerId, @Param("isPro") boolean isPro);
+
+    /**
+     * Returns recent announcements on a corridor (departure→arrival) with a future or
+     * today departure date, ordered newest first. Used by PriceEstimationService.
+     */
+    @Query("""
+        SELECT a FROM AnnouncementEntity a
+        WHERE LOWER(a.departureCity) = LOWER(:departure)
+          AND LOWER(a.arrivalCity)   = LOWER(:arrival)
+          AND a.departureDate >= CURRENT_DATE
+        ORDER BY a.createdAt DESC
+    """)
+    List<AnnouncementEntity> findRecentByCorridor(
+        @Param("departure") String departure,
+        @Param("arrival") String arrival,
+        org.springframework.data.domain.Pageable pageable);
 }

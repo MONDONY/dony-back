@@ -212,6 +212,13 @@ public class RatingService {
         return toResponse(rating);
     }
 
+    public UserRatingsSummaryResponse getMyReceivedRatings(String firebaseUid, int page, int size) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Utilisateur introuvable"));
+        return getUserRatings(user.getId(), page, size);
+    }
+
     public UserRatingsSummaryResponse getUserRatings(UUID userId, int page, int size) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -283,13 +290,13 @@ public class RatingService {
     @Transactional
     public void recalculateAverageRating(UUID userId) {
         List<RatingEntity> ratings = ratingRepository.findIncludedRatingsByRatedUserId(userId);
-        if (ratings.isEmpty()) return;
-
-        double avg = ratings.stream().mapToInt(RatingEntity::getStars).average().orElse(0.0);
-        BigDecimal rounded = BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP);
 
         userRepository.findById(userId).ifPresent(user -> {
-            user.setAverageRating(rounded);
+            user.setRatingCount(ratings.size());
+            if (!ratings.isEmpty()) {
+                double avg = ratings.stream().mapToInt(RatingEntity::getStars).average().orElse(0.0);
+                user.setAverageRating(BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP));
+            }
             userRepository.save(user);
         });
     }

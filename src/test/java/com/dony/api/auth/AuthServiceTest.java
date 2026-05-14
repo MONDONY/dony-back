@@ -19,6 +19,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.lang.reflect.Field;
@@ -40,6 +41,7 @@ class AuthServiceTest {
     @Mock private UserService userService;
     @Mock private PaymentRepository paymentRepository;
     @Mock private AccountFinalizationService accountFinalizationService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private AuthService authService;
 

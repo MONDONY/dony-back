@@ -105,6 +105,15 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "traveler_is_pro", nullable = false)
     private boolean travelerIsPro = false;
 
+    /**
+     * If non-null, this announcement is a "dedicated trip" — created by the
+     * traveler in response to a sender's package_request via
+     * POST /negotiations/{id}/create-dedicated-trip. It must NOT appear in
+     * the public announcements search, only in the negotiating sender's view.
+     */
+    @Column(name = "linked_package_request_id")
+    private UUID linkedPackageRequestId;
+
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
@@ -113,6 +122,9 @@ public class AnnouncementEntity extends BaseEntity {
 
     public boolean isTravelerIsPro() { return travelerIsPro; }
     public void setTravelerIsPro(boolean travelerIsPro) { this.travelerIsPro = travelerIsPro; }
+
+    public UUID getLinkedPackageRequestId() { return linkedPackageRequestId; }
+    public void setLinkedPackageRequestId(UUID linkedPackageRequestId) { this.linkedPackageRequestId = linkedPackageRequestId; }
 
     public UUID getTravelerId() { return travelerId; }
     public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }

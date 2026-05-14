@@ -139,6 +139,9 @@ public class TrackingService {
         } else if (bid.getStatus() == BidStatus.PENDING) {
             currentStep = "PENDING";
             stepLabel = "En attente de confirmation";
+        } else if (bid.getStatus() == BidStatus.PAYMENT_ESCROWED) {
+            currentStep = "PAYMENT_ESCROWED";
+            stepLabel = "Paiement gelé — confirmation voyageur en attente";
         } else {
             // ACCEPTED — calcul de base depuis paiement/confirmation
             if (paymentOpt.isEmpty() || paymentOpt.get().getStatus() == PaymentStatus.PENDING) {
@@ -212,7 +215,9 @@ public class TrackingService {
                     "Seul le voyageur de cette annonce peut scanner le QR code");
         }
 
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
+        if (bid.getStatus() != BidStatus.ACCEPTED
+                && bid.getStatus() != BidStatus.HANDED_OVER
+                && bid.getStatus() != BidStatus.IN_TRANSIT) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
                     "Bid Not Accepted", "Ce colis n'est pas dans un état scannable");
         }
@@ -272,20 +277,28 @@ public class TrackingService {
                         "eventType", request.eventType().name(),
                         "offline", String.valueOf(request.offlineTimestamp() != null)));
 
-        if (request.eventType() == TrackingEventType.DEPART && bid.getConfirmationCode() == null) {
-            String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-            bid.setConfirmationCode(code);
-            bid.setConfirmationCodeAttempts(0);
-            bid.setConfirmationCodeExpiry(computeCodeExpiry(announcement));
+        if (request.eventType() == TrackingEventType.DEPART && bid.getStatus() == BidStatus.ACCEPTED) {
+            bid.setStatus(BidStatus.HANDED_OVER);
+            if (bid.getConfirmationCode() == null) {
+                String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+                bid.setConfirmationCode(code);
+                bid.setConfirmationCodeAttempts(0);
+                bid.setConfirmationCodeExpiry(computeCodeExpiry(announcement));
+                notificationDispatcher.notifyUser(
+                        bid.getSenderId(),
+                        "Code de livraison disponible",
+                        "Le voyageur est prêt à remettre votre colis. Partagez le code.",
+                        Map.of("type", "CONFIRMATION_CODE_READY", "bidId", bid.getId().toString()));
+                auditService.log("TRACKING_CONFIRMATION_CODE", bid.getId(), "CODE_GENERATED",
+                        traveler.getId(), Map.of("bidId", bid.getId().toString()));
+            }
             bidRepository.save(bid);
+        }
 
-            notificationDispatcher.notifyUser(
-                    bid.getSenderId(),
-                    "Code de livraison disponible",
-                    "Le voyageur est prêt à remettre votre colis. Partagez le code.",
-                    Map.of("type", "CONFIRMATION_CODE_READY", "bidId", bid.getId().toString()));
-            auditService.log("TRACKING_CONFIRMATION_CODE", bid.getId(), "CODE_GENERATED",
-                    traveler.getId(), Map.of("bidId", bid.getId().toString()));
+        if (request.eventType() == TrackingEventType.TRANSIT
+                && (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER)) {
+            bid.setStatus(BidStatus.IN_TRANSIT);
+            bidRepository.save(bid);
         }
 
         return toEventResponse(event, null);
@@ -369,7 +382,9 @@ public class TrackingService {
                     "Seul l'expéditeur peut régénérer le code de confirmation");
         }
 
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
+        if (bid.getStatus() != BidStatus.ACCEPTED
+                && bid.getStatus() != BidStatus.HANDED_OVER
+                && bid.getStatus() != BidStatus.IN_TRANSIT) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
                     "Bid Not Accepted", "Ce colis ne peut pas recevoir un nouveau code dans son état actuel");
         }
@@ -436,7 +451,9 @@ public class TrackingService {
                     "Seul le voyageur de cette annonce peut confirmer la livraison");
         }
 
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
+        if (bid.getStatus() != BidStatus.ACCEPTED
+                && bid.getStatus() != BidStatus.HANDED_OVER
+                && bid.getStatus() != BidStatus.IN_TRANSIT) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-accepted",
                     "Bid Not Accepted", "Ce colis ne peut pas être confirmé dans son état actuel");
         }

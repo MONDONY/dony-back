@@ -43,11 +43,16 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
      * CANCELLED, REJECTED, COMPLETED — none of which appear in the traveler's pending list.
      */
     @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.announcementId = :announcementId " +
-           "AND b.status = com.dony.api.matching.BidStatus.PENDING " +
+           "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.PAYMENT_ESCROWED) " +
            "AND b.deletedByTraveler = false")
     long countVisibleByAnnouncementId(@Param("announcementId") UUID announcementId);
 
+    List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
+
     boolean existsByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);
+
+    boolean existsByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
 
     boolean existsBySenderIdAndAnnouncementIdAndStatusIn(UUID senderId, UUID announcementId, List<BidStatus> statuses);
 
@@ -65,6 +70,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     Optional<BidEntity> findByTrackingToken(String trackingToken);
 
     Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
+
+    Optional<BidEntity> findByLinkedNegotiationThreadId(UUID linkedNegotiationThreadId);
 
     List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
             BidStatus status, LocalDateTime threshold);
@@ -86,8 +93,6 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
            "AND b.deletedAt IS NULL " +
            "AND NOT EXISTS (SELECT t FROM TrackingEventEntity t WHERE t.bidId = b.id AND t.eventType = 'DEPART')")
     List<BidEntity> findNoShowBids(@Param("cutoff") LocalDateTime cutoff);
-
-    List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM BidEntity b WHERE b.id = :id AND b.deletedAt IS NULL")
@@ -118,6 +123,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("UPDATE BidEntity b SET b.status = com.dony.api.matching.BidStatus.CANCELLED " +
            "WHERE b.senderId = :userId " +
            "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.PAYMENT_ESCROWED, " +
            "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
            "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
     int cancelOpenSenderBidsByUserId(@Param("userId") UUID userId);
@@ -127,6 +133,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
            "WHERE b.announcementId IN " +
            "  (SELECT a.id FROM AnnouncementEntity a WHERE a.travelerId = :userId) " +
            "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.PAYMENT_ESCROWED, " +
            "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
            "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
     int cancelOpenTravelerBidsByUserId(@Param("userId") UUID userId);
@@ -149,4 +156,11 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
         LIMIT 1
         """)
     Optional<BidEntity> findPendingRatingForUser(@Param("userId") UUID userId);
+
+    /**
+     * Counts completed deliveries for a given sender.
+     * Used by {@code DeliveryConfirmedReferralListener} to detect the first delivery.
+     */
+    @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.senderId = :senderId AND b.status = :status")
+    long countByStatusAndSenderId(@Param("status") BidStatus status, @Param("senderId") UUID senderId);
 }

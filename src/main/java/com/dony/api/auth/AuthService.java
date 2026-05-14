@@ -5,12 +5,14 @@ import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
+import com.dony.api.auth.events.UserRegisteredEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -35,17 +37,20 @@ public class AuthService {
     private final UserService userService;
     private final PaymentRepository paymentRepository;
     private final AccountFinalizationService accountFinalizationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
                        UserService userService,
                        PaymentRepository paymentRepository,
-                       AccountFinalizationService accountFinalizationService) {
+                       AccountFinalizationService accountFinalizationService,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
         this.paymentRepository = paymentRepository;
         this.accountFinalizationService = accountFinalizationService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -242,6 +247,8 @@ public class AuthService {
                 saved.getId(),
                 Map.of("phoneHash", hashPhone(request.phoneNumber()), "roles", request.roles())
         );
+
+        eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getFirebaseUid()));
 
         return toResponse(saved);
     }

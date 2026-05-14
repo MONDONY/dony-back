@@ -87,7 +87,8 @@ public class BidService {
         }
 
         boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
-                sender.getId(), announcementId, List.of(BidStatus.PENDING, BidStatus.ACCEPTED));
+                sender.getId(), announcementId,
+                List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED));
         if (alreadyHasBid) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "already-bid", "Demande existante",
@@ -217,7 +218,7 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
-        requireBidStatus(bid, BidStatus.PENDING);
+        requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
 
         if (announcement.getStatus() == AnnouncementStatus.IN_PROGRESS
                 || announcement.getStatus() == AnnouncementStatus.COMPLETED
@@ -268,7 +269,7 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
-        requireBidStatus(bid, BidStatus.PENDING);
+        requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
 
         bid.setStatus(BidStatus.REJECTED);
         if (request != null) {
@@ -358,8 +359,8 @@ public class BidService {
                     "Impossible d'annuler un bid déjà terminé");
         }
 
-        // Si le bid était déjà accepté, on rend le kilo au voyageur
-        if (bid.getStatus() == BidStatus.ACCEPTED) {
+        // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
+        if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
             AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
                 announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
@@ -430,9 +431,9 @@ public class BidService {
         AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
         requireTravelerOwnsAnnouncement(traveler, announcement);
 
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
+        if (bid.getStatus() != BidStatus.ACCEPTED && bid.getStatus() != BidStatus.HANDED_OVER) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-bid-status",
-                    "Unprocessable", "Le refus de colis n'est possible que sur un envoi accepté");
+                    "Unprocessable", "Le refus de colis n'est possible que sur un envoi accepté ou remis");
         }
 
         bid.setStatus(BidStatus.PARCEL_REFUSED);
@@ -522,7 +523,7 @@ public class BidService {
     private static final String TRACKING_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     private static final java.security.SecureRandom SECURE_RNG = new java.security.SecureRandom();
 
-    private String generateTrackingNumber() {
+    static String generateTrackingNumber() {
         StringBuilder sb = new StringBuilder("DON-");
         for (int i = 0; i < 8; i++) {
             sb.append(TRACKING_CHARS.charAt(SECURE_RNG.nextInt(TRACKING_CHARS.length())));

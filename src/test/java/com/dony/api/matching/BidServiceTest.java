@@ -122,7 +122,7 @@ class BidServiceTest {
         b.setContentCategory("CLOTHING");
         b.setRecipientName("Aminata Diallo");
         b.setRecipientPhone("+221701234567");
-        b.setStatus(BidStatus.PENDING);
+        b.setStatus(BidStatus.PAYMENT_ESCROWED);
         setId(b, BID_ID);
         return b;
     }
@@ -153,7 +153,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
-                    SENDER_ID, ANNOUNCEMENT_ID, List.of(BidStatus.PENDING, BidStatus.ACCEPTED)))
+                    SENDER_ID, ANNOUNCEMENT_ID, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
                     .thenReturn(false);
             when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
                 BidEntity b = inv.getArgument(0);
@@ -424,7 +424,7 @@ class BidServiceTest {
         }
 
         @Test
-        @DisplayName("bid non PENDING → 409 CONFLICT")
+        @DisplayName("bid non PAYMENT_ESCROWED → 409 CONFLICT")
         void acceptBid_notPending_throwsConflict() {
             UserEntity traveler = buildTraveler();
             AnnouncementEntity announcement = buildAnnouncement();

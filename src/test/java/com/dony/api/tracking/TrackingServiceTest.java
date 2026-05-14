@@ -351,11 +351,13 @@ class TrackingServiceTest {
             return e;
         });
 
+        when(bidRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         QrScanRequest req = new QrScanRequest(bidId, TrackingEventType.TRANSIT, null, null, null, null);
         TrackingEventResponse resp = service.processScan(req, "uid-traveler");
 
         assertThat(resp.eventType()).isEqualTo("TRANSIT");
-        verify(bidRepository, never()).save(any());
+        assertThat(bid.getStatus()).isEqualTo(BidStatus.IN_TRANSIT);
+        verify(bidRepository).save(bid);
     }
 
     // ── confirmDelivery ───────────────────────────────────────────────────────
@@ -756,7 +758,8 @@ class TrackingServiceTest {
         service.processScan(req, "uid-traveler");
 
         assertThat(bid.getConfirmationCode()).isEqualTo("123456"); // unchanged
-        verify(bidRepository, never()).save(any()); // not saved again
+        assertThat(bid.getStatus()).isEqualTo(BidStatus.HANDED_OVER); // status still transitions
+        verify(bidRepository).save(bid); // saved for the status transition
     }
 
     @Test

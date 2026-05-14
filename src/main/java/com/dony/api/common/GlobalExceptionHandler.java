@@ -93,10 +93,29 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ProblemDetail> handleResponseStatus(ResponseStatusException ex) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(ex.getStatusCode(), ex.getReason());
-        problem.setType(URI.create(BASE_TYPE + "business-error"));
-        problem.setTitle(ex.getReason() != null ? ex.getReason() : "Error");
+        String reason = ex.getReason();
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                ex.getStatusCode(), reason != null ? reason : ex.getMessage());
+
+        if (reason != null && reason.contains("/")) {
+            // Structured error code like "request/expired" or "negotiation/duplicate-thread"
+            problem.setType(URI.create(BASE_TYPE + reason));
+            String[] parts = reason.split("/", 2);
+            String title = parts.length > 1
+                    ? capitalize(parts[1].replace("-", " "))
+                    : capitalize(parts[0].replace("-", " "));
+            problem.setTitle(title);
+        } else {
+            problem.setType(URI.create(BASE_TYPE + "generic"));
+            problem.setTitle(reason != null ? reason : ex.getStatusCode().toString());
+        }
+
         return ResponseEntity.status(ex.getStatusCode()).body(problem);
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
