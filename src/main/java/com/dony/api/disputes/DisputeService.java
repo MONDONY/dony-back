@@ -25,7 +25,7 @@ public class DisputeService {
 
     public DisputeEntity openSenderNoShowDispute(UUID bidId, UUID senderId, UUID travelerId) {
         Optional<DisputeEntity> existing = disputeRepository.findByBidId(bidId);
-        if (existing.isPresent() && STATUS_OPEN.equals(existing.get().getStatus())) {
+        if (existing.isPresent()) {
             return existing.get();
         }
 

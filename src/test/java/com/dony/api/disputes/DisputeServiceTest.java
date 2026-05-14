@@ -62,14 +62,14 @@ class DisputeServiceTest {
         }
 
         @Test
-        void idempotent_returnsExistingOpenDispute_noSaveNoAudit() {
+        void idempotent_returnsExistingDisputeRegardlessOfStatus_noSaveNoAudit() {
             DisputeEntity existing = new DisputeEntity();
             ReflectionTestUtils.setField(existing, "id", UUID.randomUUID());
             existing.setBidId(BID_ID);
             existing.setSenderId(SENDER_ID);
             existing.setTravelerId(TRAVELER_ID);
             existing.setType("SENDER_NO_SHOW_CONTESTED");
-            existing.setStatus("OPEN");
+            existing.setStatus("RESOLVED");
             existing.setRefundFrozen(true);
 
             when(disputeRepository.findByBidId(BID_ID)).thenReturn(Optional.of(existing));
