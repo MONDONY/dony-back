@@ -77,7 +77,7 @@ class PaymentWebhookBidPromotionTest {
 
         service.promoteBidOnPaymentAuthorized("pi_xxx");
 
-        assertThat(bid.getStatus()).isEqualTo(BidStatus.PENDING);
+        assertThat(bid.getStatus()).isEqualTo(BidStatus.PAYMENT_ESCROWED);
         assertThat(bid.getAwaitingPaymentExpiresAt()).isNull();
         verify(bidRepository).save(bid);
         verify(auditService).log(eq("BID"), eq(bid.getId()), eq("BID_CREATED"), eq(sender.getId()), any());

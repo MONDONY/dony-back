@@ -325,7 +325,8 @@ class AnnouncementServiceTest {
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(false);
             when(announcementRepository.save(any())).thenReturn(a);
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
@@ -355,7 +356,8 @@ class AnnouncementServiceTest {
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(true);
 
             assertThatThrownBy(() -> announcementService.updateAnnouncement(
@@ -378,7 +380,8 @@ class AnnouncementServiceTest {
 
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(false);
             when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
@@ -434,9 +437,10 @@ class AnnouncementServiceTest {
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(false);
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.PENDING))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED)))
                     .thenReturn(List.of());
 
             announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
@@ -447,7 +451,7 @@ class AnnouncementServiceTest {
         }
 
         @Test
-        @DisplayName("annonce active avec bids PENDING → bids rejetés + soft-delete")
+        @DisplayName("annonce active avec bids PENDING/PAYMENT_ESCROWED → bids rejetés + soft-delete")
         void delete_activeWithPendingBids_rejectsBidsAndDeletes() {
             UserEntity traveler = buildTraveler();
             AnnouncementEntity a = buildAnnouncement(traveler);
@@ -455,14 +459,15 @@ class AnnouncementServiceTest {
             BidEntity bid = new BidEntity();
             bid.setAnnouncementId(ANNOUNCEMENT_ID);
             bid.setSenderId(UUID.randomUUID());
-            bid.setStatus(BidStatus.PENDING);
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
             setId(bid, UUID.randomUUID());
 
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(false);
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.PENDING))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED)))
                     .thenReturn(List.of(bid));
 
             announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
@@ -479,7 +484,8 @@ class AnnouncementServiceTest {
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.existsByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                     .thenReturn(true);
 
             assertThatThrownBy(() -> announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID))

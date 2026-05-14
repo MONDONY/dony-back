@@ -338,8 +338,8 @@ public class AnnouncementService {
 
     private void applyInProgressTransition(AnnouncementEntity announcement) {
         AnnouncementStatus previous = announcement.getStatus();
-        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(
-                announcement.getId(), BidStatus.ACCEPTED);
+        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatusIn(
+                announcement.getId(), List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT));
 
         if (!hasAcceptedBids) {
             announcement.setStatus(AnnouncementStatus.COMPLETED);
@@ -363,8 +363,8 @@ public class AnnouncementService {
     }
 
     private void expirePendingBids(AnnouncementEntity announcement) {
-        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatus(
-                announcement.getId(), BidStatus.PENDING);
+        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatusIn(
+                announcement.getId(), List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED));
         for (BidEntity bid : pendingBids) {
             bid.setStatus(BidStatus.EXPIRED);
             bidRepository.save(bid);
@@ -434,7 +434,8 @@ public class AnnouncementService {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", "Vous n'êtes pas autorisé à modifier cette annonce");
         }
 
-        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(id, BidStatus.ACCEPTED);
+        boolean hasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatusIn(
+                id, List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT));
         if (hasAcceptedBids) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT,
@@ -556,11 +557,13 @@ public class AnnouncementService {
                     "Seuls les trajets actifs ou annulés peuvent être supprimés");
         }
 
-        if (bidRepository.existsByAnnouncementIdAndStatus(id, BidStatus.ACCEPTED)) {
+        if (bidRepository.existsByAnnouncementIdAndStatusIn(
+                id, List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT))) {
             throw new DonyBusinessException(HttpStatus.CONFLICT, "deletion-impossible", "Deletion Impossible", "Suppression impossible : des colis sont déjà acceptés pour ce trajet");
         }
 
-        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatus(id, BidStatus.PENDING);
+        List<BidEntity> pendingBids = bidRepository.findByAnnouncementIdAndStatusIn(
+                id, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED));
         for (BidEntity bid : pendingBids) {
             bid.setStatus(BidStatus.REJECTED);
             bidRepository.save(bid);

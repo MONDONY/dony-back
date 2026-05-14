@@ -112,9 +112,10 @@ class AnnouncementInProgressTransitionTest {
 
         when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
                 .thenReturn(List.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(true);
-        when(bidRepository.findByAnnouncementIdAndStatus(announcementId, BidStatus.PENDING))
+        when(bidRepository.findByAnnouncementIdAndStatusIn(announcementId, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED)))
                 .thenReturn(List.of(pending));
 
         service.triggerInProgressTransitions();
@@ -139,9 +140,10 @@ class AnnouncementInProgressTransitionTest {
 
         when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
                 .thenReturn(List.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(false);
-        when(bidRepository.findByAnnouncementIdAndStatus(announcementId, BidStatus.PENDING))
+        when(bidRepository.findByAnnouncementIdAndStatusIn(announcementId, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED)))
                 .thenReturn(List.of());
 
         service.triggerInProgressTransitions();
@@ -176,11 +178,13 @@ class AnnouncementInProgressTransitionTest {
 
         when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
                 .thenReturn(List.of(ann1, ann2));
-        when(bidRepository.existsByAnnouncementIdAndStatus(eq(announcementId), eq(BidStatus.ACCEPTED)))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(eq(announcementId),
+                eq(List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT))))
                 .thenThrow(new RuntimeException("DB error"));
-        when(bidRepository.existsByAnnouncementIdAndStatus(eq(ann2Id), eq(BidStatus.ACCEPTED)))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(eq(ann2Id),
+                eq(List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT))))
                 .thenReturn(false);
-        when(bidRepository.findByAnnouncementIdAndStatus(eq(ann2Id), eq(BidStatus.PENDING)))
+        when(bidRepository.findByAnnouncementIdAndStatusIn(eq(ann2Id), eq(List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED))))
                 .thenReturn(List.of());
 
         service.triggerInProgressTransitions();

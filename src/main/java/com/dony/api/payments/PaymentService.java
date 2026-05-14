@@ -584,7 +584,7 @@ public class PaymentService {
         bidRepository.findByPaymentIntentId(paymentIntentId).ifPresent(bid -> {
             if (bid.getStatus() != BidStatus.AWAITING_PAYMENT) return;
 
-            bid.setStatus(BidStatus.PENDING);
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
             bid.setAwaitingPaymentExpiresAt(null);
             bidRepository.save(bid);
 
@@ -625,7 +625,7 @@ public class PaymentService {
                 new DonyBusinessException(HttpStatus.NOT_FOUND, "bid-not-found", "Bid Not Found",
                         "Bid introuvable"));
 
-        if (bid.getStatus() == BidStatus.PENDING) {
+        if (bid.getStatus() == BidStatus.PAYMENT_ESCROWED) {
             return true;
         }
         if (bid.getStatus() != BidStatus.AWAITING_PAYMENT) {

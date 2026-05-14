@@ -150,4 +150,59 @@ class BidCheckoutServiceTest {
         assertThat(sender.getRoles()).contains(Role.SENDER);
         verify(userRepository).save(sender);
     }
+
+    @Test
+    void throws_when_user_not_found() {
+        when(userRepository.findByFirebaseUid("unknown-uid")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.checkout("unknown-uid", req, httpRequest))
+            .isInstanceOf(DonyBusinessException.class)
+            .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("user-not-found"));
+    }
+
+    @Test
+    void throws_when_announcement_not_found() {
+        BidCheckoutRequest unknownAnn = new BidCheckoutRequest(
+            UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("150"),
+            "test", "OTHER", "Recipient", "+221771234567", true);
+        when(announcementRepository.findById(unknownAnn.announcementId())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.checkout("uid-sender", unknownAnn, httpRequest))
+            .isInstanceOf(DonyBusinessException.class)
+            .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("announcement-not-found"));
+    }
+
+    @Test
+    void resumes_awaiting_payment_bid_idempotently() {
+        BidEntity existing = new BidEntity();
+        ReflectionTestUtils.setField(existing, "id", UUID.randomUUID());
+        existing.setStatus(BidStatus.AWAITING_PAYMENT);
+        existing.setAwaitingPaymentExpiresAt(java.time.LocalDateTime.now().plusMinutes(10));
+
+        when(bidRepository.findBySenderIdAndAnnouncementIdAndStatus(
+                sender.getId(), announcement.getId(), BidStatus.AWAITING_PAYMENT))
+            .thenReturn(Optional.of(existing));
+        when(paymentService.createEscrow(any(), eq("uid-sender"))).thenReturn(stubPaymentResponse());
+
+        BidCheckoutResponse resp = service.checkout("uid-sender", req, httpRequest);
+
+        assertThat(resp.bidId()).isEqualTo(existing.getId());
+        assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
+        verify(bidRepository, never()).save(any());
+    }
+
+    @Test
+    void resolveClientIp_uses_last_x_forwarded_for_value() {
+        when(httpRequest.getHeader("X-Forwarded-For")).thenReturn("1.2.3.4, 5.6.7.8, 9.10.11.12");
+        when(bidRepository.save(any())).thenAnswer(inv -> {
+            BidEntity b = inv.getArgument(0);
+            if (b.getId() == null) ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
+            return b;
+        });
+        when(paymentService.createEscrow(any(), anyString())).thenReturn(stubPaymentResponse());
+
+        service.checkout("uid-sender", req, httpRequest);
+
+        ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+        verify(bidRepository, atLeastOnce()).save(captor.capture());
+        assertThat(captor.getAllValues().get(0).getDisclaimerSignedIp()).isEqualTo("9.10.11.12");
+    }
 }
