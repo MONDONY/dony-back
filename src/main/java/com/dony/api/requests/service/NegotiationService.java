@@ -226,9 +226,11 @@ public class NegotiationService {
     }
 
     /**
-     * Sender accepts the current price. Thread moves to AWAITING_TRIP.
-     * The traveler is notified to link (or create) a trip via {@link #submitTrip}.
-     * No auto-reject yet — that happens only at payment confirmation.
+     * Bilateral accept — both the sender AND the traveler can accept the other's counter-offer.
+     * <ul>
+     *   <li>If the traveler accepts AND already has a trip linked → AWAITING_PAYMENT (skip trip step).</li>
+     *   <li>Otherwise → AWAITING_TRIP (traveler must still link / create a trip).</li>
+     * </ul>
      */
     @Transactional
     public NegotiationThreadResponse accept(UUID callerId, UUID threadId, NegotiationAcceptRequest req) {
@@ -236,38 +238,68 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
-        if (!callerId.equals(request.getSenderId())) {
+
+        // Participant check — sender OU traveler
+        if (!callerId.equals(request.getSenderId()) && !callerId.equals(thread.getTravelerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
         }
         if (thread.getStatus() != NegotiationThreadStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/already-finalized");
         }
 
-        NegotiationMessageEntity msg = NegotiationMessageEntity.create(
+        // On ne peut pas accepter son propre message
+        List<NegotiationMessageEntity> allMessages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
+        if (allMessages.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/inconsistent-thread");
+        }
+        NegotiationMessageEntity lastMsg = allMessages.get(allMessages.size() - 1);
+        if (lastMsg.getFromUserId().equals(callerId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/not-your-turn");
+        }
+
+        NegotiationMessageEntity acceptMsg = NegotiationMessageEntity.create(
             threadId, callerId, NegotiationMessageKind.ACCEPT, null,
             req == null ? null : req.body());
-        messageRepo.save(msg);
+        messageRepo.save(acceptMsg);
 
-        thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+        // Si c'est le voyageur qui accepte ET qu'il a déjà un trajet lié → AWAITING_PAYMENT direct
+        boolean travelerIsAcceptor = callerId.equals(thread.getTravelerId());
+        boolean travelerHasTrip = thread.getTravelerAnnouncementId() != null;
+        NegotiationThreadStatus nextStatus = (travelerIsAcceptor && travelerHasTrip)
+            ? NegotiationThreadStatus.AWAITING_PAYMENT
+            : NegotiationThreadStatus.AWAITING_TRIP;
+
+        thread.setStatus(nextStatus);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
 
-        eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
-            thread.getId(), request.getId(),
-            request.getSenderId(), thread.getTravelerId(),
-            thread.getCurrentPriceEur()
-        ));
-        auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPT_AWAITING_TRIP", callerId,
+        String auditAction = nextStatus == NegotiationThreadStatus.AWAITING_PAYMENT
+            ? "ACCEPT_AWAITING_PAYMENT" : "ACCEPT_AWAITING_TRIP";
+        auditService.log("NEGOTIATION_THREAD", threadId, auditAction, callerId,
             Map.of("price", thread.getCurrentPriceEur().toString()));
 
-        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+        if (nextStatus == NegotiationThreadStatus.AWAITING_PAYMENT) {
+            eventPublisher.publishEvent(new NegotiationAwaitingPaymentEvent(
+                thread.getId(), request.getId(),
+                request.getSenderId(), thread.getTravelerId(),
+                thread.getCurrentPriceEur(), thread.getTravelerAnnouncementId()
+            ));
+        } else {
+            eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
+                thread.getId(), request.getId(),
+                request.getSenderId(), thread.getTravelerId(),
+                thread.getCurrentPriceEur()
+            ));
+        }
+
+        List<NegotiationMessageResponse> responses = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
         UserEntity traveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
             .orElse("Expéditeur");
-        return toResponse(thread, allMsgs, null, traveler, request, callerId, senderName);
+        return toResponse(thread, responses, null, traveler, request, callerId, senderName);
     }
 
     /**

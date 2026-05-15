@@ -57,7 +57,6 @@ public class NegotiationController {
     }
 
     @PostMapping("/{id}/accept")
-    @PreAuthorize("hasRole('SENDER')")
     public NegotiationThreadResponse accept(
             @PathVariable UUID id,
             @RequestBody @Valid NegotiationAcceptRequest req
