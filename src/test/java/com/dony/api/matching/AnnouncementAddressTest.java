@@ -96,6 +96,7 @@ class AnnouncementServiceAddressTest {
             return e;
         });
         when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+        when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
         AnnouncementResponse response = announcementService.createAnnouncement(TRAVELER_UID, request);
 

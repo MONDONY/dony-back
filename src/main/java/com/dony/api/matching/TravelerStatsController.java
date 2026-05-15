@@ -4,6 +4,7 @@ import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.CalendarStatsResponse;
 import com.dony.api.matching.dto.InviteRequest;
 import com.dony.api.matching.dto.MatchingRequestDto;
@@ -14,6 +15,7 @@ import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.UUID;
 import java.util.Map;
 
 @RestController
@@ -41,6 +44,7 @@ public class TravelerStatsController {
     private final MatchingService matchingService;
     private final PackageRequestRepository packageRequestRepository;
     private final NotificationDispatcher notificationDispatcher;
+    private final BidService bidService;
 
     public TravelerStatsController(
             TravelerStatsService statsService,
@@ -49,7 +53,8 @@ public class TravelerStatsController {
             AnnouncementRepository announcementRepository,
             MatchingService matchingService,
             PackageRequestRepository packageRequestRepository,
-            NotificationDispatcher notificationDispatcher) {
+            NotificationDispatcher notificationDispatcher,
+            BidService bidService) {
         this.statsService = statsService;
         this.userRepository = userRepository;
         this.analyticsService = analyticsService;
@@ -57,6 +62,7 @@ public class TravelerStatsController {
         this.matchingService = matchingService;
         this.packageRequestRepository = packageRequestRepository;
         this.notificationDispatcher = notificationDispatcher;
+        this.bidService = bidService;
     }
 
     @GetMapping("/me/stats")
@@ -182,6 +188,16 @@ public class TravelerStatsController {
         String last = user.getLastName() != null ? user.getLastName() : "";
         String name = (first + " " + last).trim();
         return name.isEmpty() ? "Un voyageur" : name;
+    }
+
+    @GetMapping("/me/bids")
+    public ResponseEntity<Page<BidResponse>> getMyBids(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID tripId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.getTravelerBids(firebaseUid, status, tripId, page, size));
     }
 
     private String requireFirebaseUid() {

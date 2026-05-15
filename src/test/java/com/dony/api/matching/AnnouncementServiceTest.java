@@ -157,6 +157,7 @@ class AnnouncementServiceTest {
                 return a;
             });
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
 
@@ -181,6 +182,7 @@ class AnnouncementServiceTest {
                 return a;
             });
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
 
@@ -232,6 +234,7 @@ class AnnouncementServiceTest {
                 return a;
             });
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
 
@@ -252,6 +255,7 @@ class AnnouncementServiceTest {
                 return a;
             });
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             announcementService.createAnnouncement(FIREBASE_UID, buildRequest(TransportMode.TRAIN));
 
@@ -295,6 +299,7 @@ class AnnouncementServiceTest {
                 return a;
             });
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             AnnouncementRequest req = new AnnouncementRequest(
                     "Paris", "Dakar", LocalDate.now().plusDays(10),
@@ -329,11 +334,12 @@ class AnnouncementServiceTest {
             AnnouncementEntity a = buildAnnouncement(traveler);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(2L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(1L);
             when(announcementRepository.findByTravelerId(eq(USER_ID), any()))
                     .thenReturn(new PageImpl<>(List.of(a)));
 
             Page<AnnouncementResponse> result = announcementService.getMyAnnouncements(
-                    FIREBASE_UID, PageRequest.of(0, 10));
+                    FIREBASE_UID, null, PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
             assertThat(result.getContent().get(0).departureCity()).isEqualTo("Paris");

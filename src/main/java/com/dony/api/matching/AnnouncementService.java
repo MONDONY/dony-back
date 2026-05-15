@@ -307,7 +307,7 @@ public class AnnouncementService {
     }
 
     @Transactional
-    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, Pageable pageable) {
+    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, AnnouncementStatus statusFilter, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
@@ -317,8 +317,10 @@ public class AnnouncementService {
         // without waiting for the hourly scheduler.
         triggerInProgressTransitions();
 
-        return announcementRepository.findByTravelerId(user.getId(), pageable)
-                .map(this::toResponse);
+        Page<AnnouncementEntity> page = statusFilter != null
+                ? announcementRepository.findByTravelerIdAndStatus(user.getId(), statusFilter, pageable)
+                : announcementRepository.findByTravelerId(user.getId(), pageable);
+        return page.map(this::toResponse);
     }
 
     /**
@@ -594,7 +596,13 @@ public class AnnouncementService {
     }
 
     private AnnouncementResponse toResponse(AnnouncementEntity entity) {
-        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
+        long pendingBidCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
+        long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
+                entity.getId(),
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED)
+        );
+        boolean cashAccepted = entity.getAcceptedPaymentMethods()
+                .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),
@@ -610,11 +618,13 @@ public class AnnouncementService {
                 entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(),
-                bidsCount,
+                pendingBidCount,
+                confirmedParcelCount,
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
                 entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
+                cashAccepted,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
