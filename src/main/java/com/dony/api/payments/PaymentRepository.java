@@ -92,4 +92,18 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     java.math.BigDecimal sumTotalCapturedRevenueForTraveler(
             @Param("travelerId") UUID travelerId,
             @Param("status") PaymentStatus status);
+
+    @Query("""
+        SELECT p FROM PaymentEntity p
+        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId
+          AND p.status = 'RELEASED'
+          AND p.createdAt BETWEEN :from AND :to
+        ORDER BY p.createdAt ASC
+    """)
+    List<PaymentEntity> findReleasedByTravelerAndYear(
+            @Param("travelerId") UUID travelerId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }
