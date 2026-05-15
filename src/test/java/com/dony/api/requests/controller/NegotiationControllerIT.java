@@ -74,7 +74,12 @@ class NegotiationControllerIT {
             LocalDateTime.now(), LocalDateTime.now(),
             List.of(), clientSecret,
             "Test T.", null, 0, null,
-            "Paris", "Dakar", new BigDecimal("5")
+            "Paris", "Dakar", new BigDecimal("5"),
+            "Chaka D.",
+            false,  // isMyTurn
+            false,  // canAccept
+            false,  // canCounter
+            4       // roundsRemaining
         );
     }
 
