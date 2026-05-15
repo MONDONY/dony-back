@@ -229,11 +229,13 @@ class NegotiationControllerIT {
 
     @Test
     void refuseTrip_asSender_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
         NegotiationThreadResponse updated = fakeThread(
-            UUID.randomUUID(), NegotiationThreadStatus.AWAITING_TRIP, null);
-        when(service.refuseTrip(eq(SENDER_UUID), any())).thenReturn(updated);
+            threadId, NegotiationThreadStatus.AWAITING_TRIP, null);
+        when(service.refuseTrip(eq(SENDER_UUID), eq(threadId))).thenReturn(updated);
 
-        mockMvc.perform(post("/negotiations/{id}/refuse-trip", UUID.randomUUID())
+        mockMvc.perform(post("/negotiations/{id}/refuse-trip", threadId)
+                .contentType(MediaType.APPLICATION_JSON)
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("AWAITING_TRIP"));
@@ -248,11 +250,12 @@ class NegotiationControllerIT {
 
     @Test
     void thread_response_contains_linkedTrip_field() throws Exception {
+        UUID threadId = UUID.randomUUID();
         var trip = new com.dony.api.requests.dto.LinkedTripSummary(
             UUID.randomUUID(), "Paris", "Dakar", "2026-06-12", "14:30",
             "PLANE", "CDG Terminal 2E", "Yoff Virage", 8, "Colis fragile");
         NegotiationThreadResponse withTrip = new NegotiationThreadResponse(
-            UUID.randomUUID(), UUID.randomUUID(), TRAVELER_UUID,
+            threadId, UUID.randomUUID(), TRAVELER_UUID,
             trip.announcementId(), LocalDate.now(), new BigDecimal("5.0"),
             NegotiationThreadStatus.AWAITING_PAYMENT, new BigDecimal("45.0"), 2,
             LocalDateTime.now(), LocalDateTime.now(),
@@ -263,9 +266,9 @@ class NegotiationControllerIT {
             false, false, false, 3,
             trip
         );
-        when(service.getById(eq(SENDER_UUID), any())).thenReturn(withTrip);
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(withTrip);
 
-        mockMvc.perform(get("/negotiations/{id}", UUID.randomUUID())
+        mockMvc.perform(get("/negotiations/{id}", threadId)
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.linkedTrip.departureCity").value("Paris"))
