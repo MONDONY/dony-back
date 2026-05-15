@@ -17,5 +17,12 @@ public record NegotiationThreadResponse(
     // Profil voyageur embarqué
     String travelerName, BigDecimal travelerRating, Integer travelerTripsCount, String travelerPhotoUrl,
     // Infos demande embarquées
-    String departureCity, String arrivalCity, BigDecimal weightKg
+    String departureCity, String arrivalCity, BigDecimal weightKg,
+    // Profil expéditeur embarqué (affiché côté voyageur)
+    String senderName,
+    // Champs calculés selon le callerId — source de vérité unique pour les clients
+    boolean isMyTurn,
+    boolean canAccept,
+    boolean canCounter,
+    int roundsRemaining
 ) {}
