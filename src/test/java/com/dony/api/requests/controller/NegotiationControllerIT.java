@@ -79,7 +79,8 @@ class NegotiationControllerIT {
             false,  // isMyTurn
             false,  // canAccept
             false,  // canCounter
-            4       // roundsRemaining
+            4,      // roundsRemaining
+            null    // linkedTrip
         );
     }
 
@@ -181,7 +182,8 @@ class NegotiationControllerIT {
             true,   // isMyTurn
             true,   // canAccept
             false,  // canCounter
-            3       // roundsRemaining
+            3,      // roundsRemaining
+            null    // linkedTrip
         );
         when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
 
