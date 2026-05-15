@@ -10,6 +10,7 @@ import com.dony.api.requests.dto.NegotiationThreadResponse;
 import com.dony.api.requests.entity.*;
 import com.dony.api.requests.event.NegotiationStartedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
+import com.dony.api.requests.event.NegotiationAwaitingTripEvent;
 import com.dony.api.requests.repository.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -688,6 +689,10 @@ class NegotiationServiceTest {
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
             assertThat(thread.getTravelerAnnouncementId()).isNull();
             assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+            assertThat(resp.linkedTrip()).isNull();
+            verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(threadId), eq("TRIP_REFUSED"), eq(SENDER_ID), any());
+            verify(eventPublisher).publishEvent(any(NegotiationAwaitingTripEvent.class));
+            verify(threadRepo).save(thread);
         }
 
         @Test
