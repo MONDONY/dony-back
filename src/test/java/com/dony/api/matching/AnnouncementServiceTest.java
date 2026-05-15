@@ -59,7 +59,7 @@ class AnnouncementServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     void initService() {
-        DonyConfigProperties config = new DonyConfigProperties(null, null);
+        DonyConfigProperties config = new DonyConfigProperties(null, null, null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config);

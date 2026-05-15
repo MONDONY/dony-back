@@ -118,6 +118,11 @@ public class AutomationRuleService {
                 .toList();
     }
 
+    public long countTodayActions(UUID travelerId) {
+        LocalDateTime startOfDay = java.time.LocalDate.now(ZoneOffset.UTC).atStartOfDay();
+        return historyRepository.countByTravelerIdAndTriggeredAtAfter(travelerId, startOfDay);
+    }
+
     private AutomationRuleEntity findOwned(UUID travelerId, UUID ruleId) {
         return ruleRepository.findByIdAndTravelerId(ruleId, travelerId)
                 .orElseThrow(() -> new DonyBusinessException(

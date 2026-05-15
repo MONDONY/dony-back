@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/travelers/me/automation-history")
@@ -43,5 +44,23 @@ public class AutomationHistoryController {
                     "PRO account required", "Historique réservé aux voyageurs PRO.");
         }
         return ResponseEntity.ok(ruleService.listHistory(user.getId()));
+    }
+
+    @GetMapping("/today-count")
+    public ResponseEntity<Map<String, Long>> getTodayCount() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNAUTHORIZED, "unauthenticated", "Unauthenticated", "Authentification requise");
+        }
+        UserEntity user = userRepository.findByFirebaseUid(auth.getName())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+        if (!user.getRoles().contains(Role.TRAVELER) || !user.isProAccount()) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN, "pro-required",
+                    "PRO account required", "Historique réservé aux voyageurs PRO.");
+        }
+        return ResponseEntity.ok(Map.of("count", ruleService.countTodayActions(user.getId())));
     }
 }
