@@ -152,13 +152,49 @@ class NegotiationControllerIT {
     }
 
     @Test
-    void post_accept_byTraveler_returns403() throws Exception {
+    void accept_asTraveler_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.accept(eq(TRAVELER_UUID), eq(threadId), any()))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.AWAITING_TRIP, null));
+
         var req = new NegotiationAcceptRequest(null);
-        mockMvc.perform(post("/negotiations/" + UUID.randomUUID() + "/accept")
+        mockMvc.perform(post("/negotiations/" + threadId + "/accept")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void accept_response_contains_calculated_fields() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        // Build a fakeThread with isMyTurn=true, canAccept=true, canCounter=false, roundsRemaining=3
+        NegotiationThreadResponse thread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new BigDecimal("10"),
+            NegotiationThreadStatus.OPEN, new BigDecimal("30"), 2,
+            LocalDateTime.now(), LocalDateTime.now(),
+            List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new BigDecimal("5"),
+            "Chaka D.",
+            true,   // isMyTurn
+            true,   // canAccept
+            false,  // canCounter
+            3       // roundsRemaining
+        );
+        when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
+
+        var req = new NegotiationAcceptRequest("Deal!");
+        mockMvc.perform(post("/negotiations/" + threadId + "/accept")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.isMyTurn").value(true))
+            .andExpect(jsonPath("$.canAccept").value(true))
+            .andExpect(jsonPath("$.canCounter").value(false))
+            .andExpect(jsonPath("$.roundsRemaining").value(3));
     }
 
     @Test

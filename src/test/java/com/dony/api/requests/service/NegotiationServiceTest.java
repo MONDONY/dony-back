@@ -424,11 +424,19 @@ class NegotiationServiceTest {
                 idField.set(otherThread, OTHER_THREAD_ID);
             } catch (Exception e) { throw new RuntimeException(e); }
 
+            // Last message from the traveler — sender can now accept it (bilateral contract)
+            var travelerProposal = NegotiationMessageEntity.create(
+                THREAD_ID, TRAVELER_ID, NegotiationMessageKind.PROPOSAL,
+                new java.math.BigDecimal("30"), null);
+
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
-                .thenReturn(java.util.List.of());
+                .thenReturn(java.util.List.of(travelerProposal));
+            when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(threadRepo.save(any())).thenReturn(thread);
 
             var req = new com.dony.api.requests.dto.NegotiationAcceptRequest("Deal!");
             var response = service.accept(SENDER_ID, THREAD_ID, req);
@@ -441,7 +449,7 @@ class NegotiationServiceTest {
             // Competing threads untouched at accept time — auto-reject only at finalize
             assertThat(otherThread.getStatus()).isEqualTo(NegotiationThreadStatus.OPEN);
             verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationAwaitingTripEvent.class));
-            verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.ACCEPT));
+            verify(messageRepo, atLeastOnce()).save(argThat(m -> m.getKind() == NegotiationMessageKind.ACCEPT));
         }
 
         @Test
@@ -459,16 +467,18 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("traveler trying to accept → 403 (only sender can accept)")
-        void accept_byTraveler_throws403() {
+        @DisplayName("voyageur accepte sans messages → 409 inconsistent-thread (contrat bilatéral)")
+        void traveler_accepts_noMessages_throwsInconsistent() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of());
 
             var req = new com.dony.api.requests.dto.NegotiationAcceptRequest(null);
 
             assertThatThrownBy(() -> service.accept(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
-                .hasMessageContaining("not-thread-participant");
+                .hasMessageContaining("inconsistent-thread");
         }
 
         @Test
@@ -483,6 +493,104 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.accept(SENDER_ID, THREAD_ID, req))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
                 .hasMessageContaining("already-finalized");
+        }
+
+        @Test
+        @DisplayName("expéditeur accepte le dernier message du voyageur → AWAITING_TRIP")
+        void sender_accepts_travelerMessage_setsAwaitingTrip() {
+            NegotiationMessageEntity lastMsg = NegotiationMessageEntity.create(
+                THREAD_ID, TRAVELER_ID, NegotiationMessageKind.PROPOSAL,
+                new java.math.BigDecimal("30"), null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+            when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(threadRepo.save(any())).thenReturn(thread);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+
+            var result = service.accept(SENDER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+            assertThat(result.status()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+        }
+
+        @Test
+        @DisplayName("voyageur accepte le dernier message du sender sans trajet lié → AWAITING_TRIP")
+        void traveler_accepts_senderMessage_noTrip_setsAwaitingTrip() {
+            thread.setTravelerAnnouncementId(null);
+            NegotiationMessageEntity lastMsg = NegotiationMessageEntity.create(
+                THREAD_ID, SENDER_ID, NegotiationMessageKind.COUNTER,
+                new java.math.BigDecimal("28"), null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+            when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(threadRepo.save(any())).thenReturn(thread);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+
+            service.accept(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
+        }
+
+        @Test
+        @DisplayName("voyageur accepte avec trajet déjà lié → AWAITING_PAYMENT direct")
+        void traveler_accepts_withLinkedTrip_setsAwaitingPayment() {
+            thread.setTravelerAnnouncementId(UUID.randomUUID());
+            NegotiationMessageEntity lastMsg = NegotiationMessageEntity.create(
+                THREAD_ID, SENDER_ID, NegotiationMessageKind.COUNTER,
+                new java.math.BigDecimal("28"), null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+            when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(threadRepo.save(any())).thenReturn(thread);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+
+            service.accept(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+        }
+
+        @Test
+        @DisplayName("accepter son propre message → 409 not-your-turn")
+        void accept_ownMessage_throwsNotYourTurn() {
+            NegotiationMessageEntity lastMsg = NegotiationMessageEntity.create(
+                THREAD_ID, SENDER_ID, NegotiationMessageKind.COUNTER,
+                new java.math.BigDecimal("28"), null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(lastMsg));
+
+            assertThatThrownBy(() -> service.accept(SENDER_ID, THREAD_ID, null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("not-your-turn");
+        }
+
+        @Test
+        @DisplayName("tiers non participant → 403 not-thread-participant")
+        void accept_thirdParty_throwsForbidden() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+
+            UUID stranger = UUID.randomUUID();
+            assertThatThrownBy(() -> service.accept(stranger, THREAD_ID, null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
         }
     }
 
