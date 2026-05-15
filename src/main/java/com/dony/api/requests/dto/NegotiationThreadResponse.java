@@ -24,5 +24,7 @@ public record NegotiationThreadResponse(
     boolean isMyTurn,
     boolean canAccept,
     boolean canCounter,
-    int roundsRemaining
+    int roundsRemaining,
+    // Détails du trajet lié (null si aucun trajet lié)
+    LinkedTripSummary linkedTrip
 ) {}
