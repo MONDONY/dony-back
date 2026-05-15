@@ -567,7 +567,19 @@ public class NegotiationService {
 
     @Transactional(readOnly = true)
     public List<NegotiationThreadResponse> listMine(UUID userId) {
-        return threadRepo.findByParticipant(userId).stream()
+        List<NegotiationThreadEntity> threads = threadRepo.findByParticipant(userId);
+
+        // Batch-load announcements to avoid N+1
+        List<UUID> announcementIds = threads.stream()
+            .map(NegotiationThreadEntity::getTravelerAnnouncementId)
+            .filter(java.util.Objects::nonNull)
+            .toList();
+        Map<UUID, com.dony.api.matching.AnnouncementEntity> annMap =
+            announcementRepo.findAllById(announcementIds).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    com.dony.api.matching.AnnouncementEntity::getId, a -> a));
+
+        return threads.stream()
             .flatMap(t -> {
                 var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
                     .stream().map(this::toMessageResponse).toList();
@@ -581,7 +593,7 @@ public class NegotiationService {
                     .map(this::buildDisplayName)
                     .orElse("Expéditeur");
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
-                    ? announcementRepo.findById(t.getTravelerAnnouncementId()).orElse(null)
+                    ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
                 return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn));
             })
