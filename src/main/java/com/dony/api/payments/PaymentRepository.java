@@ -71,6 +71,17 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
             @Param("to") java.time.LocalDateTime to);
 
     @Query("""
+        SELECT COALESCE(SUM(p.amount), 0)
+        FROM PaymentEntity p
+        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        WHERE b.announcementId = :announcementId
+          AND p.status = :status
+    """)
+    java.math.BigDecimal sumGrossRevenueForAnnouncement(
+            @Param("announcementId") UUID announcementId,
+            @Param("status") PaymentStatus status);
+
+    @Query("""
         SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
         FROM PaymentEntity p
         JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
