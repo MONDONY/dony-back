@@ -1,11 +1,11 @@
 package com.dony.api.matching.dto;
 
-import java.util.UUID;
-
 public record MatchingRequestDto(
         String id,
         String tripId,
         String tripCorridor,
+        String tripDepartureDate,
+        double tripAvailableKg,
         String senderName,
         String senderInitials,
         double senderRating,

@@ -83,6 +83,8 @@ public class MatchingService {
                 request.getId().toString(),
                 announcement.getId().toString(),
                 corridor,
+                announcement.getDepartureDate().toString(),
+                announcement.getAvailableKg().doubleValue(),
                 senderName,
                 senderInitials,
                 senderRating,
