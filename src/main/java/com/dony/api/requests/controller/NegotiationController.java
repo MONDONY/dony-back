@@ -109,6 +109,16 @@ public class NegotiationController {
     }
 
     /**
+     * Sender refuses the linked trip — thread moves back to AWAITING_TRIP.
+     * Only the sender of the package_request can call this endpoint.
+     */
+    @PostMapping("/{id}/refuse-trip")
+    @PreAuthorize("hasRole('SENDER')")
+    public NegotiationThreadResponse refuseTrip(@PathVariable UUID id) {
+        return service.refuseTrip(requireUserId(), id);
+    }
+
+    /**
      * Sender initiates the Stripe escrow payment for an AWAITING_PAYMENT thread.
      * Returns the Stripe clientSecret to confirm via the Flutter SDK.
      * The thread is finalized to ACCEPTED only when the webhook fires

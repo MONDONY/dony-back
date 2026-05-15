@@ -540,6 +540,54 @@ public class NegotiationService {
         return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request, callerId, senderName, linkedAnn);
     }
 
+    @Transactional
+    public NegotiationThreadResponse refuseTrip(UUID callerId, UUID threadId) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // Seul l'expéditeur peut refuser un trajet lié
+        if (!callerId.equals(request.getSenderId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/sender-only");
+        }
+
+        if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
+        }
+
+        if (thread.getTravelerAnnouncementId() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/no-trip-linked");
+        }
+
+        // Effacer le trajet lié et repasser en AWAITING_TRIP
+        thread.setTravelerAnnouncementId(null);
+        thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_REFUSED", callerId,
+            Map.of("reason", "sender-refused"));
+
+        // Notifier le voyageur via l'event existant NegotiationAwaitingTripEvent
+        eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
+            thread.getId(), request.getId(),
+            request.getSenderId(), thread.getTravelerId(),
+            thread.getCurrentPriceEur()
+        ));
+
+        List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        UserEntity traveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        // linkedAnn est null car on vient de clear le travelerAnnouncementId
+        return toResponse(thread, messages, null, traveler, request, callerId, senderName, null);
+    }
+
     @Transactional(readOnly = true)
     public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
