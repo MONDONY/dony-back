@@ -25,4 +25,14 @@ public interface PackageRequestRepository
           AND p.desiredDate < :cutoffDate
     """)
     List<PackageRequestEntity> findExpired(@Param("cutoffDate") LocalDate cutoffDate);
+
+    @Query("""
+        SELECT p FROM PackageRequestEntity p
+        WHERE LOWER(p.departureCity) = LOWER(:departureCity)
+          AND LOWER(p.arrivalCity) = LOWER(:arrivalCity)
+          AND p.status = 'OPEN'
+    """)
+    List<PackageRequestEntity> findOpenByCorridor(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity);
 }
