@@ -543,7 +543,7 @@ public class NegotiationService {
     }
 
     @Transactional
-    public NegotiationThreadResponse refuseTrip(UUID callerId, UUID threadId) {
+    public NegotiationThreadResponse refuseTrip(UUID callerId, UUID threadId, String reason) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
 
@@ -569,8 +569,18 @@ public class NegotiationService {
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
 
+        // Persister la raison du refus comme message visible dans le thread
+        if (reason != null && !reason.isBlank()) {
+            NegotiationMessageEntity refusalMsg = new NegotiationMessageEntity();
+            refusalMsg.setThreadId(threadId);
+            refusalMsg.setFromUserId(callerId);
+            refusalMsg.setKind(NegotiationMessageKind.REJECT);
+            refusalMsg.setBody(reason);
+            messageRepo.save(refusalMsg);
+        }
+
         auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_REFUSED", callerId,
-            Map.of("reason", "sender-refused"));
+            Map.of("reason", reason != null ? reason : "sender-refused"));
 
         // Notifier le voyageur via l'event existant NegotiationAwaitingTripEvent
         eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(

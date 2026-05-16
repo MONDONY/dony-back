@@ -114,8 +114,10 @@ public class NegotiationController {
      */
     @PostMapping("/{id}/refuse-trip")
     @PreAuthorize("hasRole('SENDER')")
-    public NegotiationThreadResponse refuseTrip(@PathVariable UUID id) {
-        return service.refuseTrip(requireUserId(), id);
+    public NegotiationThreadResponse refuseTrip(
+            @PathVariable UUID id,
+            @RequestBody(required = false) @Valid NegotiationRefuseTripRequest req) {
+        return service.refuseTrip(requireUserId(), id, req != null ? req.reason() : null);
     }
 
     /**
