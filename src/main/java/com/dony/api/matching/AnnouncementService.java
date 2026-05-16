@@ -307,7 +307,10 @@ public class AnnouncementService {
     }
 
     @Transactional
-    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, AnnouncementStatus statusFilter, String q, Pageable pageable) {
+    public Page<AnnouncementResponse> getMyAnnouncements(
+            String firebaseUid, AnnouncementStatus statusFilter, String q,
+            LocalDate date, LocalDate dateFrom, LocalDate dateTo,
+            String departure, String arrival, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
@@ -317,10 +320,22 @@ public class AnnouncementService {
         // without waiting for the hourly scheduler.
         triggerInProgressTransitions();
 
-        String qParam = (q != null && !q.isBlank()) ? q.trim() : null;
+        String qParam         = (q         != null && !q.isBlank())         ? q.trim()         : null;
+        String departureParam = (departure != null && !departure.isBlank()) ? departure.trim() : null;
+        String arrivalParam   = (arrival   != null && !arrival.isBlank())   ? arrival.trim()   : null;
         Page<AnnouncementEntity> page = announcementRepository.findByTravelerIdFiltered(
-                user.getId(), statusFilter, qParam, pageable);
+                user.getId(), statusFilter, qParam, date, dateFrom, dateTo, departureParam, arrivalParam, pageable);
         return page.map(this::toResponse);
+    }
+
+    public List<com.dony.api.matching.dto.CorridorDto> getMyCorridors(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+        return announcementRepository
+                .findTopDestinationsForTraveler(user.getId(), PageRequest.of(0, 100))
+                .stream()
+                .map(d -> new com.dony.api.matching.dto.CorridorDto(d.from(), d.to()))
+                .toList();
     }
 
     /**

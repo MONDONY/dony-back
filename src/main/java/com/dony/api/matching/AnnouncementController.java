@@ -24,8 +24,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dony.api.matching.dto.CorridorDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -76,13 +78,25 @@ public class AnnouncementController {
                 .body(announcementService.createAnnouncement(firebaseUid, request));
     }
 
+    @GetMapping("/my/corridors")
+    public ResponseEntity<List<CorridorDto>> getMyCorridors() {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(announcementService.getMyCorridors(firebaseUid));
+    }
+
     @GetMapping("/my")
     public ResponseEntity<PageResponse<AnnouncementResponse>> getMyAnnouncements(
             @RequestParam(required = false) AnnouncementStatus status,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @RequestParam(required = false) String departure,
+            @RequestParam(required = false) String arrival,
             Pageable pageable) {
         String firebaseUid = requireFirebaseUid();
-        Page<AnnouncementResponse> page = announcementService.getMyAnnouncements(firebaseUid, status, q, pageable);
+        Page<AnnouncementResponse> page = announcementService.getMyAnnouncements(
+                firebaseUid, status, q, date, dateFrom, dateTo, departure, arrival, pageable);
         return ResponseEntity.ok(PageResponse.from(page));
     }
 

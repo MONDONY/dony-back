@@ -26,16 +26,26 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
     @Query("""
             SELECT a FROM AnnouncementEntity a
             WHERE a.travelerId = :travelerId
-              AND (:status IS NULL OR a.status = :status)
-              AND (:q IS NULL
-                   OR UPPER(a.departureCity) LIKE UPPER(CONCAT('%', :q, '%'))
-                   OR UPPER(a.arrivalCity)   LIKE UPPER(CONCAT('%', :q, '%')))
+              AND (:status    IS NULL OR a.status = :status)
+              AND (:q         IS NULL
+                   OR UPPER(a.departureCity) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%'))
+                   OR UPPER(a.arrivalCity)   LIKE UPPER(CONCAT('%', CAST(:q AS string), '%')))
+              AND (CAST(:date AS date) IS NULL OR a.departureDate = :date)
+              AND (CAST(:dateFrom AS date) IS NULL OR a.departureDate >= :dateFrom)
+              AND (CAST(:dateTo AS date) IS NULL OR a.departureDate <= :dateTo)
+              AND (:departure IS NULL OR LOWER(a.departureCity) = LOWER(CAST(:departure AS string)))
+              AND (:arrival   IS NULL OR LOWER(a.arrivalCity)   = LOWER(CAST(:arrival AS string)))
             ORDER BY a.createdAt DESC
             """)
     Page<AnnouncementEntity> findByTravelerIdFiltered(
             @Param("travelerId") UUID travelerId,
-            @Param("status") AnnouncementStatus status,
-            @Param("q") String q,
+            @Param("status")     AnnouncementStatus status,
+            @Param("q")          String q,
+            @Param("date")       java.time.LocalDate date,
+            @Param("dateFrom")   java.time.LocalDate dateFrom,
+            @Param("dateTo")     java.time.LocalDate dateTo,
+            @Param("departure")  String departure,
+            @Param("arrival")    String arrival,
             Pageable pageable);
 
     /**
