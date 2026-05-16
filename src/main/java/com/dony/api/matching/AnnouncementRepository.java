@@ -21,6 +21,33 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     Page<AnnouncementEntity> findByTravelerId(UUID travelerId, Pageable pageable);
 
+    Page<AnnouncementEntity> findByTravelerIdAndStatus(UUID travelerId, AnnouncementStatus status, Pageable pageable);
+
+    @Query("""
+            SELECT a FROM AnnouncementEntity a
+            WHERE a.travelerId = :travelerId
+              AND (:status    IS NULL OR a.status = :status)
+              AND (:q         IS NULL
+                   OR UPPER(a.departureCity) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%'))
+                   OR UPPER(a.arrivalCity)   LIKE UPPER(CONCAT('%', CAST(:q AS string), '%')))
+              AND (CAST(:date AS date) IS NULL OR a.departureDate = :date)
+              AND (CAST(:dateFrom AS date) IS NULL OR a.departureDate >= :dateFrom)
+              AND (CAST(:dateTo AS date) IS NULL OR a.departureDate <= :dateTo)
+              AND (:departure IS NULL OR LOWER(a.departureCity) = LOWER(CAST(:departure AS string)))
+              AND (:arrival   IS NULL OR LOWER(a.arrivalCity)   = LOWER(CAST(:arrival AS string)))
+            ORDER BY a.createdAt DESC
+            """)
+    Page<AnnouncementEntity> findByTravelerIdFiltered(
+            @Param("travelerId") UUID travelerId,
+            @Param("status")     AnnouncementStatus status,
+            @Param("q")          String q,
+            @Param("date")       java.time.LocalDate date,
+            @Param("dateFrom")   java.time.LocalDate dateFrom,
+            @Param("dateTo")     java.time.LocalDate dateTo,
+            @Param("departure")  String departure,
+            @Param("arrival")    String arrival,
+            Pageable pageable);
+
     /**
      * Finds ACTIVE or FULL announcements whose departure time has been reached,
      * based on today's date and current time in the announcement's timezone (pre-resolved by caller).
@@ -82,6 +109,11 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     long countByTravelerIdAndStatusAndCreatedAtBetween(
             UUID travelerId, AnnouncementStatus status, LocalDateTime from, LocalDateTime to);
+
+    List<AnnouncementEntity> findByTravelerIdAndStatusAndCreatedAtBetween(
+            UUID travelerId, AnnouncementStatus status, LocalDateTime from, LocalDateTime to);
+
+    long countByTravelerIdAndStatus(UUID travelerId, AnnouncementStatus status);
 
     @Query("""
         SELECT new com.dony.api.matching.dto.TravelerStatsDto$DestinationStat(

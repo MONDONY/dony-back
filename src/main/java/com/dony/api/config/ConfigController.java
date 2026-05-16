@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/config")
 public class ConfigController {
@@ -19,5 +21,11 @@ public class ConfigController {
     @GetMapping("/commission-rate")
     public ResponseEntity<CommissionRateResponse> getCommissionRate() {
         return ResponseEntity.ok(new CommissionRateResponse(config.commission().rate()));
+    }
+
+    @GetMapping("/content-categories")
+    public ResponseEntity<List<String>> getContentCategories() {
+        List<String> categories = config.contentCategories();
+        return ResponseEntity.ok(categories != null ? categories : List.of());
     }
 }

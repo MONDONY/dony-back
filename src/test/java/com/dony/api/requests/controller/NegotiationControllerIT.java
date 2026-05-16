@@ -74,7 +74,13 @@ class NegotiationControllerIT {
             LocalDateTime.now(), LocalDateTime.now(),
             List.of(), clientSecret,
             "Test T.", null, 0, null,
-            "Paris", "Dakar", new BigDecimal("5")
+            "Paris", "Dakar", new BigDecimal("5"),
+            "Chaka D.",
+            false,  // isMyTurn
+            false,  // canAccept
+            false,  // canCounter
+            4,      // roundsRemaining
+            null    // linkedTrip
         );
     }
 
@@ -147,13 +153,50 @@ class NegotiationControllerIT {
     }
 
     @Test
-    void post_accept_byTraveler_returns403() throws Exception {
+    void accept_asTraveler_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.accept(eq(TRAVELER_UUID), eq(threadId), any()))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.AWAITING_TRIP, null));
+
         var req = new NegotiationAcceptRequest(null);
-        mockMvc.perform(post("/negotiations/" + UUID.randomUUID() + "/accept")
+        mockMvc.perform(post("/negotiations/" + threadId + "/accept")
                 .with(authentication(authAs("uid-traveler", "TRAVELER")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void accept_response_contains_calculated_fields() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        // Build a fakeThread with isMyTurn=true, canAccept=true, canCounter=false, roundsRemaining=3
+        NegotiationThreadResponse thread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new BigDecimal("10"),
+            NegotiationThreadStatus.OPEN, new BigDecimal("30"), 2,
+            LocalDateTime.now(), LocalDateTime.now(),
+            List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new BigDecimal("5"),
+            "Chaka D.",
+            true,   // isMyTurn
+            true,   // canAccept
+            false,  // canCounter
+            3,      // roundsRemaining
+            null    // linkedTrip
+        );
+        when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
+
+        var req = new NegotiationAcceptRequest("Deal!");
+        mockMvc.perform(post("/negotiations/" + threadId + "/accept")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.isMyTurn").value(true))
+            .andExpect(jsonPath("$.canAccept").value(true))
+            .andExpect(jsonPath("$.canCounter").value(false))
+            .andExpect(jsonPath("$.roundsRemaining").value(3));
     }
 
     @Test
@@ -182,5 +225,54 @@ class NegotiationControllerIT {
             .andExpect(status().isConflict())
             .andExpect(content().contentType("application/problem+json"))
             .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("negotiation/not-your-turn")));
+    }
+
+    @Test
+    void refuseTrip_asSender_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        NegotiationThreadResponse updated = fakeThread(
+            threadId, NegotiationThreadStatus.AWAITING_TRIP, null);
+        when(service.refuseTrip(eq(SENDER_UUID), eq(threadId), any())).thenReturn(updated);
+
+        mockMvc.perform(post("/negotiations/{id}/refuse-trip", threadId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("AWAITING_TRIP"));
+    }
+
+    @Test
+    void refuseTrip_asTraveler_returns403() throws Exception {
+        mockMvc.perform(post("/negotiations/{id}/refuse-trip", UUID.randomUUID())
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void thread_response_contains_linkedTrip_field() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        var trip = new com.dony.api.requests.dto.LinkedTripSummary(
+            UUID.randomUUID(), "Paris", "Dakar", "2026-06-12", "14:30",
+            "PLANE", "CDG Terminal 2E", "Yoff Virage", 8, "Colis fragile");
+        NegotiationThreadResponse withTrip = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID,
+            trip.announcementId(), LocalDate.now(), new BigDecimal("5.0"),
+            NegotiationThreadStatus.AWAITING_PAYMENT, new BigDecimal("45.0"), 2,
+            LocalDateTime.now(), LocalDateTime.now(),
+            List.of(), null,
+            "Moussa T.", new BigDecimal("4.5"), 12, null,
+            "Paris", "Dakar", new BigDecimal("5.0"),
+            "Amadou S.",
+            false, false, false, 3,
+            trip
+        );
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(withTrip);
+
+        mockMvc.perform(get("/negotiations/{id}", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.linkedTrip.departureCity").value("Paris"))
+            .andExpect(jsonPath("$.linkedTrip.arrivalCity").value("Dakar"))
+            .andExpect(jsonPath("$.linkedTrip.availableKg").value(8));
     }
 }

@@ -100,6 +100,16 @@ dony:
   limits:
     non-pro:
       monthly-announcements: 2
+  content-categories:
+    - Vêtements
+    - Médicaments
+    - Alimentation sèche
+    - "Téléphones & hi-fi"
+    - Documents
+    - Cosmétiques
+    - Chaussures
+    - Matériel informatique
+    - Autres
   escrow-timeout-hours: 48
   dispute-sla-hours: 72
   max-declared-value-eur: 500
@@ -152,3 +162,6 @@ app:
     daily-quota-details: 1000
     daily-quota-reverse: 500
     block-when-quota-exceeded: true
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}

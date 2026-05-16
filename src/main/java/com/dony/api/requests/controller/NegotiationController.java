@@ -57,7 +57,6 @@ public class NegotiationController {
     }
 
     @PostMapping("/{id}/accept")
-    @PreAuthorize("hasRole('SENDER')")
     public NegotiationThreadResponse accept(
             @PathVariable UUID id,
             @RequestBody @Valid NegotiationAcceptRequest req
@@ -107,6 +106,18 @@ public class NegotiationController {
             @RequestBody @Valid NegotiationCheckoutRequest req
     ) {
         return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId());
+    }
+
+    /**
+     * Sender refuses the linked trip — thread moves back to AWAITING_TRIP.
+     * Only the sender of the package_request can call this endpoint.
+     */
+    @PostMapping("/{id}/refuse-trip")
+    @PreAuthorize("hasRole('SENDER')")
+    public NegotiationThreadResponse refuseTrip(
+            @PathVariable UUID id,
+            @RequestBody(required = false) @Valid NegotiationRefuseTripRequest req) {
+        return service.refuseTrip(requireUserId(), id, req != null ? req.reason() : null);
     }
 
     /**

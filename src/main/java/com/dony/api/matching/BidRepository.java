@@ -2,6 +2,8 @@ package com.dony.api.matching;
 
 import com.dony.api.payments.cash.CommissionStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,6 +18,8 @@ import java.util.UUID;
 public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     long countByAnnouncementId(UUID announcementId);
+
+    long countByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);
 
     @Query("""
         SELECT COUNT(b) FROM BidEntity b
@@ -50,6 +54,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     long countVisibleByAnnouncementId(@Param("announcementId") UUID announcementId);
 
     List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
+
+    long countByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
 
     boolean existsByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);
 
@@ -103,6 +109,21 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id " +
            "WHERE a.travelerId = :travelerId AND b.status = 'COMPLETED'")
     List<BidEntity> findCompletedBidsByTravelerId(@Param("travelerId") UUID travelerId);
+
+    @Query("""
+        SELECT b FROM BidEntity b JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId
+          AND (:status IS NULL OR b.status = :status)
+          AND (:announcementId IS NULL OR b.announcementId = :announcementId)
+          AND (:q IS NULL OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%')))
+        ORDER BY b.createdAt DESC
+        """)
+    Page<BidEntity> findByTravelerIdFiltered(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("announcementId") UUID announcementId,
+            @Param("q") String q,
+            Pageable pageable);
 
     @Query("""
         SELECT b FROM BidEntity b, AnnouncementEntity a

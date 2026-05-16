@@ -307,7 +307,10 @@ public class AnnouncementService {
     }
 
     @Transactional
-    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, Pageable pageable) {
+    public Page<AnnouncementResponse> getMyAnnouncements(
+            String firebaseUid, AnnouncementStatus statusFilter, String q,
+            LocalDate date, LocalDate dateFrom, LocalDate dateTo,
+            String departure, String arrival, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
@@ -317,8 +320,22 @@ public class AnnouncementService {
         // without waiting for the hourly scheduler.
         triggerInProgressTransitions();
 
-        return announcementRepository.findByTravelerId(user.getId(), pageable)
-                .map(this::toResponse);
+        String qParam         = (q         != null && !q.isBlank())         ? q.trim()         : null;
+        String departureParam = (departure != null && !departure.isBlank()) ? departure.trim() : null;
+        String arrivalParam   = (arrival   != null && !arrival.isBlank())   ? arrival.trim()   : null;
+        Page<AnnouncementEntity> page = announcementRepository.findByTravelerIdFiltered(
+                user.getId(), statusFilter, qParam, date, dateFrom, dateTo, departureParam, arrivalParam, pageable);
+        return page.map(this::toResponse);
+    }
+
+    public List<com.dony.api.matching.dto.CorridorDto> getMyCorridors(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
+        return announcementRepository
+                .findTopDestinationsForTraveler(user.getId(), PageRequest.of(0, 100))
+                .stream()
+                .map(d -> new com.dony.api.matching.dto.CorridorDto(d.from(), d.to()))
+                .toList();
     }
 
     /**
@@ -594,7 +611,13 @@ public class AnnouncementService {
     }
 
     private AnnouncementResponse toResponse(AnnouncementEntity entity) {
-        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
+        long pendingBidCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
+        long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
+                entity.getId(),
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED)
+        );
+        boolean cashAccepted = entity.getAcceptedPaymentMethods()
+                .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),
@@ -610,11 +633,13 @@ public class AnnouncementService {
                 entity.getPricePerKg(),
                 entity.getTransportMode(),
                 entity.getStatus().name(),
-                bidsCount,
+                pendingBidCount,
+                confirmedParcelCount,
                 entity.getDescription(),
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
                 entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
+                cashAccepted,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

@@ -19,6 +19,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -227,6 +229,16 @@ public class BidService {
                 .filter(b -> !b.isDeletedBySender())
                 .map(b -> toResponse(b, user))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<BidResponse> getTravelerBids(String firebaseUid, String status, UUID announcementId, String q, int page, int size) {
+        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
+        BidStatus bidStatus = (status != null && !status.isBlank()) ? BidStatus.valueOf(status) : null;
+        String qParam = (q != null && !q.isBlank()) ? q.trim() : null;
+        return bidRepository.findByTravelerIdFiltered(
+                traveler.getId(), bidStatus, announcementId, qParam, PageRequest.of(page, size))
+                .map(b -> toResponse(b, traveler));
     }
 
     @Transactional

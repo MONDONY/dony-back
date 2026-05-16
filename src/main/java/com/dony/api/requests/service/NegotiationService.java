@@ -130,7 +130,10 @@ public class NegotiationService {
         auditService.log("NEGOTIATION_THREAD", saved.getId(), "CREATED", travelerId,
             Map.of("price", req.proposedPriceEur().toString()));
 
-        return toResponse(saved, List.of(toMessageResponse(msg)), null, traveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        return toResponse(saved, List.of(toMessageResponse(msg)), null, traveler, request, travelerId, senderName, null);
     }
 
     @Transactional
@@ -186,7 +189,10 @@ public class NegotiationService {
         List<NegotiationMessageResponse> responses = allMsgs.stream().map(this::toMessageResponse).toList();
         UserEntity traveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-        return toResponse(thread, responses, null, traveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        return toResponse(thread, responses, null, traveler, request, callerId, senderName, null);
     }
 
     @Transactional
@@ -220,9 +226,11 @@ public class NegotiationService {
     }
 
     /**
-     * Sender accepts the current price. Thread moves to AWAITING_TRIP.
-     * The traveler is notified to link (or create) a trip via {@link #submitTrip}.
-     * No auto-reject yet — that happens only at payment confirmation.
+     * Bilateral accept — both the sender AND the traveler can accept the other's counter-offer.
+     * <ul>
+     *   <li>If the traveler accepts AND already has a trip linked → AWAITING_PAYMENT (skip trip step).</li>
+     *   <li>Otherwise → AWAITING_TRIP (traveler must still link / create a trip).</li>
+     * </ul>
      */
     @Transactional
     public NegotiationThreadResponse accept(UUID callerId, UUID threadId, NegotiationAcceptRequest req) {
@@ -230,35 +238,71 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
-        if (!callerId.equals(request.getSenderId())) {
+
+        // Participant check — sender OU traveler
+        if (!callerId.equals(request.getSenderId()) && !callerId.equals(thread.getTravelerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
         }
         if (thread.getStatus() != NegotiationThreadStatus.OPEN) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/already-finalized");
         }
 
-        NegotiationMessageEntity msg = NegotiationMessageEntity.create(
+        // On ne peut pas accepter son propre message
+        List<NegotiationMessageEntity> allMessages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
+        if (allMessages.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/inconsistent-thread");
+        }
+        NegotiationMessageEntity lastMsg = allMessages.get(allMessages.size() - 1);
+        if (lastMsg.getFromUserId().equals(callerId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/not-your-turn");
+        }
+
+        NegotiationMessageEntity acceptMsg = NegotiationMessageEntity.create(
             threadId, callerId, NegotiationMessageKind.ACCEPT, null,
             req == null ? null : req.body());
-        messageRepo.save(msg);
+        messageRepo.save(acceptMsg);
 
-        thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+        // Si c'est le voyageur qui accepte ET qu'il a déjà un trajet lié → AWAITING_PAYMENT direct
+        boolean travelerIsAcceptor = callerId.equals(thread.getTravelerId());
+        boolean travelerHasTrip = thread.getTravelerAnnouncementId() != null;
+        NegotiationThreadStatus nextStatus = (travelerIsAcceptor && travelerHasTrip)
+            ? NegotiationThreadStatus.AWAITING_PAYMENT
+            : NegotiationThreadStatus.AWAITING_TRIP;
+
+        thread.setStatus(nextStatus);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
 
-        eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
-            thread.getId(), request.getId(),
-            request.getSenderId(), thread.getTravelerId(),
-            thread.getCurrentPriceEur()
-        ));
-        auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPT_AWAITING_TRIP", callerId,
+        String auditAction = nextStatus == NegotiationThreadStatus.AWAITING_PAYMENT
+            ? "ACCEPT_AWAITING_PAYMENT" : "ACCEPT_AWAITING_TRIP";
+        auditService.log("NEGOTIATION_THREAD", threadId, auditAction, callerId,
             Map.of("price", thread.getCurrentPriceEur().toString()));
 
-        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+        if (nextStatus == NegotiationThreadStatus.AWAITING_PAYMENT) {
+            eventPublisher.publishEvent(new NegotiationAwaitingPaymentEvent(
+                thread.getId(), request.getId(),
+                request.getSenderId(), thread.getTravelerId(),
+                thread.getCurrentPriceEur(), thread.getTravelerAnnouncementId()
+            ));
+        } else {
+            eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
+                thread.getId(), request.getId(),
+                request.getSenderId(), thread.getTravelerId(),
+                thread.getCurrentPriceEur()
+            ));
+        }
+
+        List<NegotiationMessageResponse> responses = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
         UserEntity traveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-        return toResponse(thread, allMsgs, null, traveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
+            ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
+            : null;
+        return toResponse(thread, responses, null, traveler, request, callerId, senderName, linkedAnn);
     }
 
     /**
@@ -285,8 +329,10 @@ public class NegotiationService {
         if (!ann.getTravelerId().equals(callerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "announcement/not-yours");
         }
-        if (!ann.getDepartureCity().equalsIgnoreCase(request.getDepartureCity())
-            || !ann.getArrivalCity().equalsIgnoreCase(request.getArrivalCity())) {
+        // Normalize city names before comparison: "Paris, France" and "Paris" both
+        // reduce to "paris". Legacy announcements were stored with country suffix.
+        if (!cityKey(ann.getDepartureCity()).equals(cityKey(request.getDepartureCity()))
+            || !cityKey(ann.getArrivalCity()).equals(cityKey(request.getArrivalCity()))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "announcement/corridor-mismatch");
         }
@@ -316,7 +362,10 @@ public class NegotiationService {
             .stream().map(this::toMessageResponse).toList();
         UserEntity submitTraveler = userRepository.findById(callerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-        return toResponse(thread, allMsgs, null, submitTraveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        return toResponse(thread, allMsgs, null, submitTraveler, request, callerId, senderName, ann);
     }
 
     /**
@@ -413,7 +462,10 @@ public class NegotiationService {
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        return toResponse(thread, allMsgs, null, traveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        return toResponse(thread, allMsgs, null, traveler, request, callerId, senderName, savedAnn);
     }
 
     /**
@@ -481,7 +533,71 @@ public class NegotiationService {
             .stream().map(this::toMessageResponse).toList();
         UserEntity finalTraveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-        return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
+            ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
+            : null;
+        return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request, callerId, senderName, linkedAnn);
+    }
+
+    @Transactional
+    public NegotiationThreadResponse refuseTrip(UUID callerId, UUID threadId, String reason) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // Seul l'expéditeur peut refuser un trajet lié
+        if (!callerId.equals(request.getSenderId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/sender-only");
+        }
+
+        if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
+        }
+
+        if (thread.getTravelerAnnouncementId() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/no-trip-linked");
+        }
+
+        // Effacer le trajet lié et repasser en AWAITING_TRIP
+        thread.setTravelerAnnouncementId(null);
+        thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        // Persister la raison du refus comme message visible dans le thread
+        if (reason != null && !reason.isBlank()) {
+            NegotiationMessageEntity refusalMsg = new NegotiationMessageEntity();
+            refusalMsg.setThreadId(threadId);
+            refusalMsg.setFromUserId(callerId);
+            refusalMsg.setKind(NegotiationMessageKind.REJECT);
+            refusalMsg.setBody(reason);
+            messageRepo.save(refusalMsg);
+        }
+
+        auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_REFUSED", callerId,
+            Map.of("reason", reason != null ? reason : "sender-refused"));
+
+        // Notifier le voyageur via l'event existant NegotiationAwaitingTripEvent
+        eventPublisher.publishEvent(new NegotiationAwaitingTripEvent(
+            thread.getId(), request.getId(),
+            request.getSenderId(), thread.getTravelerId(),
+            thread.getCurrentPriceEur()
+        ));
+
+        List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        UserEntity traveler = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        // linkedAnn est null car on vient de clear le travelerAnnouncementId
+        return toResponse(thread, messages, null, traveler, request, callerId, senderName, null);
     }
 
     @Transactional(readOnly = true)
@@ -500,20 +616,46 @@ public class NegotiationService {
             .stream().map(this::toMessageResponse).toList();
         UserEntity threadTraveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-        return toResponse(thread, messages, null, threadTraveler, request);
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
+            ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
+            : null;
+        return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn);
     }
 
     @Transactional(readOnly = true)
     public List<NegotiationThreadResponse> listMine(UUID userId) {
-        return threadRepo.findByParticipant(userId).stream()
-            .map(t -> {
+        List<NegotiationThreadEntity> threads = threadRepo.findByParticipant(userId);
+
+        // Batch-load announcements to avoid N+1
+        List<UUID> announcementIds = threads.stream()
+            .map(NegotiationThreadEntity::getTravelerAnnouncementId)
+            .filter(java.util.Objects::nonNull)
+            .toList();
+        Map<UUID, com.dony.api.matching.AnnouncementEntity> annMap =
+            announcementRepo.findAllById(announcementIds).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    com.dony.api.matching.AnnouncementEntity::getId, a -> a));
+
+        return threads.stream()
+            .flatMap(t -> {
                 var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
                     .stream().map(this::toMessageResponse).toList();
-                UserEntity t_traveler = userRepository.findById(t.getTravelerId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-                PackageRequestEntity t_request = requestRepo.findById(t.getPackageRequestId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
-                return toResponse(t, messages, null, t_traveler, t_request);
+                var travelerOpt = userRepository.findById(t.getTravelerId());
+                var requestOpt = requestRepo.findById(t.getPackageRequestId());
+                // Skip orphaned threads (soft-deleted request or unknown user) instead of failing the whole list
+                if (travelerOpt.isEmpty() || requestOpt.isEmpty()) {
+                    return java.util.stream.Stream.empty();
+                }
+                String senderName = userRepository.findById(requestOpt.get().getSenderId())
+                    .map(this::buildDisplayName)
+                    .orElse("Expéditeur");
+                com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
+                    ? annMap.get(t.getTravelerAnnouncementId())
+                    : null;
+                return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn));
             })
             .toList();
     }
@@ -530,13 +672,28 @@ public class NegotiationService {
         if (!request.getSenderId().equals(callerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        return threadRepo.findByPackageRequestId(requestId).stream()
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName)
+            .orElse("Expéditeur");
+        var threads = threadRepo.findByPackageRequestId(requestId);
+        // Batch-load announcements pour éviter N+1
+        List<UUID> announcementIds = threads.stream()
+            .map(t -> t.getTravelerAnnouncementId())
+            .filter(java.util.Objects::nonNull)
+            .toList();
+        Map<UUID, com.dony.api.matching.AnnouncementEntity> annMap = announcementRepo.findAllById(announcementIds).stream()
+            .collect(java.util.stream.Collectors.toMap(
+                com.dony.api.matching.AnnouncementEntity::getId, a -> a));
+        return threads.stream()
             .map(t -> {
                 var messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(t.getId())
                     .stream().map(this::toMessageResponse).toList();
                 UserEntity lt_traveler = userRepository.findById(t.getTravelerId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
-                return toResponse(t, messages, null, lt_traveler, request);
+                com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
+                    ? annMap.get(t.getTravelerAnnouncementId())
+                    : null;
+                return toResponse(t, messages, null, lt_traveler, request, callerId, senderName, linkedAnn);
             })
             .toList();
     }
@@ -545,7 +702,40 @@ public class NegotiationService {
                                           List<NegotiationMessageResponse> messages,
                                           String paymentIntentClientSecret,
                                           UserEntity traveler,
-                                          PackageRequestEntity request) {
+                                          PackageRequestEntity request,
+                                          UUID callerId,
+                                          String senderName,
+                                          com.dony.api.matching.AnnouncementEntity linkedAnn) {
+        boolean isMyTurn = false;
+        boolean canAccept = false;
+        boolean canCounter = false;
+
+        if (t.getStatus() == NegotiationThreadStatus.OPEN && callerId != null && !messages.isEmpty()) {
+            NegotiationMessageResponse last = messages.get(messages.size() - 1);
+            isMyTurn = !last.fromUserId().equals(callerId);
+            boolean lastIsTarifaire = last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.PROPOSAL
+                || last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.COUNTER;
+            canAccept = isMyTurn && lastIsTarifaire;
+            canCounter = isMyTurn && t.getRoundsCount() < config.maxNegotiationRounds();
+        }
+        int roundsRemaining = Math.max(0, config.maxNegotiationRounds() - t.getRoundsCount().intValue());
+
+        com.dony.api.requests.dto.LinkedTripSummary linkedTrip = null;
+        if (linkedAnn != null) {
+            linkedTrip = new com.dony.api.requests.dto.LinkedTripSummary(
+                linkedAnn.getId(),
+                linkedAnn.getDepartureCity(),
+                linkedAnn.getArrivalCity(),
+                linkedAnn.getDepartureDate() != null ? linkedAnn.getDepartureDate().toString() : null,
+                linkedAnn.getDepartureTime() != null ? linkedAnn.getDepartureTime().toString() : null,
+                linkedAnn.getTransportMode() != null ? linkedAnn.getTransportMode().name() : null,
+                linkedAnn.getPickupAddressLabel(),
+                linkedAnn.getDeliveryAddressLabel(),
+                linkedAnn.getAvailableKg() != null ? linkedAnn.getAvailableKg().intValue() : 0,
+                linkedAnn.getDescription()
+            );
+        }
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -554,7 +744,10 @@ public class NegotiationService {
             messages, paymentIntentClientSecret,
             buildDisplayName(traveler), traveler.getAverageRating(),
             traveler.getTotalTrips(), null,
-            request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg()
+            request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg(),
+            senderName,
+            isMyTurn, canAccept, canCounter, roundsRemaining,
+            linkedTrip
         );
     }
 
@@ -576,5 +769,13 @@ public class NegotiationService {
             m.getKind(), m.getProposedPriceEur(), m.getBody(),
             m.getCreatedAt()
         );
+    }
+
+    /** Normalizes a city string for comparison by keeping only the part before
+     *  the first comma and lowercasing. "Paris, France" → "paris". */
+    private static String cityKey(String city) {
+        if (city == null) return "";
+        int comma = city.indexOf(',');
+        return (comma >= 0 ? city.substring(0, comma) : city).strip().toLowerCase();
     }
 }

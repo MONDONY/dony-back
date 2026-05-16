@@ -23,11 +23,13 @@ public record AnnouncementResponse(
         BigDecimal pricePerKg,
         com.dony.api.matching.TransportMode transportMode,
         String status,
-        long bidsCount,
-        String description,
+        long pendingBidCount,
+        long confirmedParcelCount,
+        String senderNote,
         List<String> acceptedContentTypes,
         List<String> refusedTypes,
         List<String> acceptedPaymentMethods,
+        boolean cashAccepted,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}
