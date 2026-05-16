@@ -684,7 +684,7 @@ class NegotiationServiceTest {
             when(config.maxNegotiationRounds()).thenReturn(5);
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
 
-            NegotiationThreadResponse resp = service.refuseTrip(SENDER_ID, threadId);
+            NegotiationThreadResponse resp = service.refuseTrip(SENDER_ID, threadId, "Trajet non adapté");
 
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_TRIP);
             assertThat(thread.getTravelerAnnouncementId()).isNull();
@@ -717,7 +717,7 @@ class NegotiationServiceTest {
             when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
 
-            assertThatThrownBy(() -> service.refuseTrip(TRAVELER_ID, threadId))
+            assertThatThrownBy(() -> service.refuseTrip(TRAVELER_ID, threadId, null))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("403");
         }
@@ -744,7 +744,7 @@ class NegotiationServiceTest {
             when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
 
-            assertThatThrownBy(() -> service.refuseTrip(SENDER_ID, threadId))
+            assertThatThrownBy(() -> service.refuseTrip(SENDER_ID, threadId, null))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("409");
         }
@@ -771,7 +771,7 @@ class NegotiationServiceTest {
             when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
 
-            assertThatThrownBy(() -> service.refuseTrip(SENDER_ID, threadId))
+            assertThatThrownBy(() -> service.refuseTrip(SENDER_ID, threadId, null))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("409");
         }

@@ -85,6 +85,7 @@ public class MatchingService {
                 corridor,
                 announcement.getDepartureDate().toString(),
                 announcement.getAvailableKg().doubleValue(),
+                sender.getId().toString(),
                 senderName,
                 senderInitials,
                 senderRating,
@@ -92,6 +93,7 @@ public class MatchingService {
                 request.getWeightKg().doubleValue(),
                 request.getContentCategory(),
                 budgetPerKg,
+                request.getPhotoUrl(),
                 messageExcerpt,
                 matchScore,
                 request.getCreatedAt().toString()

@@ -232,7 +232,7 @@ class NegotiationControllerIT {
         UUID threadId = UUID.randomUUID();
         NegotiationThreadResponse updated = fakeThread(
             threadId, NegotiationThreadStatus.AWAITING_TRIP, null);
-        when(service.refuseTrip(eq(SENDER_UUID), eq(threadId))).thenReturn(updated);
+        when(service.refuseTrip(eq(SENDER_UUID), eq(threadId), any())).thenReturn(updated);
 
         mockMvc.perform(post("/negotiations/{id}/refuse-trip", threadId)
                 .contentType(MediaType.APPLICATION_JSON)

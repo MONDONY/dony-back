@@ -79,9 +79,10 @@ public class AnnouncementController {
     @GetMapping("/my")
     public ResponseEntity<PageResponse<AnnouncementResponse>> getMyAnnouncements(
             @RequestParam(required = false) AnnouncementStatus status,
+            @RequestParam(required = false) String q,
             Pageable pageable) {
         String firebaseUid = requireFirebaseUid();
-        Page<AnnouncementResponse> page = announcementService.getMyAnnouncements(firebaseUid, status, pageable);
+        Page<AnnouncementResponse> page = announcementService.getMyAnnouncements(firebaseUid, status, q, pageable);
         return ResponseEntity.ok(PageResponse.from(page));
     }
 

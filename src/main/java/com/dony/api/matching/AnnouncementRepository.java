@@ -23,6 +23,21 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     Page<AnnouncementEntity> findByTravelerIdAndStatus(UUID travelerId, AnnouncementStatus status, Pageable pageable);
 
+    @Query("""
+            SELECT a FROM AnnouncementEntity a
+            WHERE a.travelerId = :travelerId
+              AND (:status IS NULL OR a.status = :status)
+              AND (:q IS NULL
+                   OR UPPER(a.departureCity) LIKE UPPER(CONCAT('%', :q, '%'))
+                   OR UPPER(a.arrivalCity)   LIKE UPPER(CONCAT('%', :q, '%')))
+            ORDER BY a.createdAt DESC
+            """)
+    Page<AnnouncementEntity> findByTravelerIdFiltered(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") AnnouncementStatus status,
+            @Param("q") String q,
+            Pageable pageable);
+
     /**
      * Finds ACTIVE or FULL announcements whose departure time has been reached,
      * based on today's date and current time in the announcement's timezone (pre-resolved by caller).

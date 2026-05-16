@@ -83,6 +83,7 @@ class MatchingServiceTest {
             MatchingRequestDto dto = results.get(0);
             assertThat(dto.tripId()).isEqualTo(ANNOUNCEMENT_ID.toString());
             assertThat(dto.tripCorridor()).isEqualTo("Paris → Dakar");
+            assertThat(dto.senderId()).isEqualTo(SENDER_ID.toString());
             assertThat(dto.senderName()).isEqualTo("Marie Dupont");
             assertThat(dto.senderInitials()).isEqualTo("MD");
             assertThat(dto.senderRating()).isEqualTo(4.5);

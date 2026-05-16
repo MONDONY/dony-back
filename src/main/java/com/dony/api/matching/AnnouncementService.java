@@ -307,7 +307,7 @@ public class AnnouncementService {
     }
 
     @Transactional
-    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, AnnouncementStatus statusFilter, Pageable pageable) {
+    public Page<AnnouncementResponse> getMyAnnouncements(String firebaseUid, AnnouncementStatus statusFilter, String q, Pageable pageable) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
@@ -317,9 +317,9 @@ public class AnnouncementService {
         // without waiting for the hourly scheduler.
         triggerInProgressTransitions();
 
-        Page<AnnouncementEntity> page = statusFilter != null
-                ? announcementRepository.findByTravelerIdAndStatus(user.getId(), statusFilter, pageable)
-                : announcementRepository.findByTravelerId(user.getId(), pageable);
+        String qParam = (q != null && !q.isBlank()) ? q.trim() : null;
+        Page<AnnouncementEntity> page = announcementRepository.findByTravelerIdFiltered(
+                user.getId(), statusFilter, qParam, pageable);
         return page.map(this::toResponse);
     }
 

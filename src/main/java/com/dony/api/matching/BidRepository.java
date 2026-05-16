@@ -115,12 +115,14 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
         WHERE a.travelerId = :travelerId
           AND (:status IS NULL OR b.status = :status)
           AND (:announcementId IS NULL OR b.announcementId = :announcementId)
+          AND (:q IS NULL OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', :q, '%')))
         ORDER BY b.createdAt DESC
         """)
     Page<BidEntity> findByTravelerIdFiltered(
             @Param("travelerId") UUID travelerId,
             @Param("status") BidStatus status,
             @Param("announcementId") UUID announcementId,
+            @Param("q") String q,
             Pageable pageable);
 
     @Query("""

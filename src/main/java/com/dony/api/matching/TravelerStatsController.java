@@ -194,10 +194,11 @@ public class TravelerStatsController {
     public ResponseEntity<Page<BidResponse>> getMyBids(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) UUID tripId,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         String firebaseUid = requireFirebaseUid();
-        return ResponseEntity.ok(bidService.getTravelerBids(firebaseUid, status, tripId, page, size));
+        return ResponseEntity.ok(bidService.getTravelerBids(firebaseUid, status, tripId, q, page, size));
     }
 
     private String requireFirebaseUid() {

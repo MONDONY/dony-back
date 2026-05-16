@@ -6,6 +6,7 @@ public record MatchingRequestDto(
         String tripCorridor,
         String tripDepartureDate,
         double tripAvailableKg,
+        String senderId,
         String senderName,
         String senderInitials,
         double senderRating,
@@ -13,6 +14,7 @@ public record MatchingRequestDto(
         double weightKg,
         String contentType,
         double budgetPerKg,
+        String packagePhotoUrl,
         String messageExcerpt,
         int matchScore,
         String requestedAt

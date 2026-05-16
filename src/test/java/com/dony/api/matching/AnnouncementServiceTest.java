@@ -335,11 +335,11 @@ class AnnouncementServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
             when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(2L);
             when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(1L);
-            when(announcementRepository.findByTravelerId(eq(USER_ID), any()))
+            when(announcementRepository.findByTravelerIdFiltered(eq(USER_ID), isNull(), isNull(), any()))
                     .thenReturn(new PageImpl<>(List.of(a)));
 
             Page<AnnouncementResponse> result = announcementService.getMyAnnouncements(
-                    FIREBASE_UID, null, PageRequest.of(0, 10));
+                    FIREBASE_UID, null, null, PageRequest.of(0, 10));
 
             assertThat(result.getContent()).hasSize(1);
             assertThat(result.getContent().get(0).departureCity()).isEqualTo("Paris");
