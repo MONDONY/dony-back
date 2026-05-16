@@ -329,8 +329,10 @@ public class NegotiationService {
         if (!ann.getTravelerId().equals(callerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "announcement/not-yours");
         }
-        if (!ann.getDepartureCity().equalsIgnoreCase(request.getDepartureCity())
-            || !ann.getArrivalCity().equalsIgnoreCase(request.getArrivalCity())) {
+        // Normalize city names before comparison: "Paris, France" and "Paris" both
+        // reduce to "paris". Legacy announcements were stored with country suffix.
+        if (!cityKey(ann.getDepartureCity()).equals(cityKey(request.getDepartureCity()))
+            || !cityKey(ann.getArrivalCity()).equals(cityKey(request.getArrivalCity()))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "announcement/corridor-mismatch");
         }
@@ -757,5 +759,13 @@ public class NegotiationService {
             m.getKind(), m.getProposedPriceEur(), m.getBody(),
             m.getCreatedAt()
         );
+    }
+
+    /** Normalizes a city string for comparison by keeping only the part before
+     *  the first comma and lowercasing. "Paris, France" → "paris". */
+    private static String cityKey(String city) {
+        if (city == null) return "";
+        int comma = city.indexOf(',');
+        return (comma >= 0 ? city.substring(0, comma) : city).strip().toLowerCase();
     }
 }
