@@ -1,5 +1,6 @@
 package com.dony.api.config;
 
+import com.dony.api.common.stripe.StripeWebhookProperties;
 import com.stripe.Stripe;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,22 +9,38 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(StripeConnectProperties.class)
+@EnableConfigurationProperties({StripeConnectProperties.class, StripeWebhookProperties.class})
 public class StripeConfig {
 
     @Value("${stripe.secret-key}")
     private String secretKey;
 
-    @Value("${stripe.webhook-secret}")
+    @Value("${stripe.webhook-secret:}")
     private String webhookSecret;
+
+    @Value("${stripe.webhook.payments-secret:}")
+    private String paymentsWebhookSecret;
+
+    @Value("${stripe.webhook.kyc-secret:}")
+    private String kycWebhookSecret;
 
     @PostConstruct
     public void init() {
         Stripe.apiKey = secretKey;
     }
 
-    @Bean
+    @Bean("stripeWebhookSecret")
     public String stripeWebhookSecret() {
         return webhookSecret;
+    }
+
+    @Bean("stripePaymentsWebhookSecret")
+    public String stripePaymentsWebhookSecret() {
+        return paymentsWebhookSecret;
+    }
+
+    @Bean("stripeKycWebhookSecret")
+    public String stripeKycWebhookSecret() {
+        return kycWebhookSecret;
     }
 }
