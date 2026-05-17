@@ -3,6 +3,7 @@ package com.dony.api.common.stripe;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -36,7 +37,7 @@ public class StripeEventProcessor {
      * @return {@code true} if an event was claimed and processed (success, skipped, or
      *         moved to FAILED/DEAD_LETTER); {@code false} if the queue was empty.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean processOne() {
         return repo.claimNext().map(inbox -> {
             try {
@@ -50,6 +51,7 @@ public class StripeEventProcessor {
 
                 if (newCount >= props.maxRetries()) {
                     inbox.setStatus(StripeEventStatus.DEAD_LETTER);
+                    inbox.setProcessedAt(Instant.now());
                     adminAlert.raise("STRIPE_DEAD_LETTER",
                             "Event " + inbox.getEventId() + " (" + inbox.getEventType() + ") exhausted retries",
                             Map.of("eventId", inbox.getEventId(), "error", String.valueOf(e.getMessage())));

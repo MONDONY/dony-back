@@ -21,7 +21,7 @@ public class StripeEventScheduler {
         this.props = props;
     }
 
-    @Scheduled(fixedDelayString = "#{@stripeWebhookProperties.pollInterval().toMillis()}")
+    @Scheduled(fixedDelayString = "${dony.stripe.webhook.poll-interval:PT10S}")
     public void poll() {
         int processed = 0;
         while (processed < props.batchSize() && processor.processOne()) {

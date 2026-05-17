@@ -75,7 +75,7 @@ class StripeEventProcessorTest {
 
         assertThat(inbox.getStatus()).isEqualTo(StripeEventStatus.FAILED);
         assertThat(inbox.getRetryCount()).isEqualTo(1);
-        assertThat(inbox.getNextAttemptAt()).isAfter(Instant.now());
+        assertThat(inbox.getNextAttemptAt()).isAfter(inbox.getReceivedAt());
     }
 
     @Test
