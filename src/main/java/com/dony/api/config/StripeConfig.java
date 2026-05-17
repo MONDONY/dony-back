@@ -5,8 +5,10 @@ import com.stripe.Stripe;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 @Configuration
 @EnableConfigurationProperties({StripeConnectProperties.class, StripeWebhookProperties.class})
@@ -42,5 +44,13 @@ public class StripeConfig {
     @Bean("stripeKycWebhookSecret")
     public String stripeKycWebhookSecret() {
         return kycWebhookSecret;
+    }
+
+    @Bean
+    @Primary
+    public StripeWebhookProperties stripeWebhookProperties(
+            @Qualifier("dony.stripe.webhook-com.dony.api.common.stripe.StripeWebhookProperties")
+            StripeWebhookProperties props) {
+        return props;
     }
 }
