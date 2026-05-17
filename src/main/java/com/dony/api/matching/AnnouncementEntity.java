@@ -123,6 +123,10 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "accepted_payment_methods", nullable = false)
     private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "capacity_unit", nullable = false, length = 20)
+    private CapacityUnit capacityUnit = CapacityUnit.SUITCASE_23KG;
+
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
@@ -192,4 +196,7 @@ public class AnnouncementEntity extends BaseEntity {
 
     public Set<PaymentMethod> getAcceptedPaymentMethods() { return acceptedPaymentMethods; }
     public void setAcceptedPaymentMethods(Set<PaymentMethod> acceptedPaymentMethods) { this.acceptedPaymentMethods = acceptedPaymentMethods; }
+
+    public CapacityUnit getCapacityUnit() { return capacityUnit; }
+    public void setCapacityUnit(CapacityUnit capacityUnit) { this.capacityUnit = capacityUnit; }
 }

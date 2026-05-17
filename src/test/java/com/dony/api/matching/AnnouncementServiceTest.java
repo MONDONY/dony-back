@@ -2,6 +2,7 @@ package com.dony.api.matching;
 
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
+import com.dony.api.matching.CapacityUnit;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -130,7 +131,7 @@ class AnnouncementServiceTest {
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 mode,
-                null, null, null, null
+                null, null, null, null, null
         );
     }
 
@@ -279,7 +280,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH)
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -308,7 +309,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH)
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -406,7 +407,7 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null
+                    null, null, null, null, null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -461,7 +462,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(35), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null
+                    null, null, null, null, null
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
@@ -722,6 +723,89 @@ class AnnouncementServiceTest {
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
                     null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10)));
+        }
+    }
+
+    // ─── capacityUnit + date validation ───────────────────────────────────────
+
+    @Nested
+    @DisplayName("createAnnouncement — validation capacityUnit & date")
+    class CapacityUnitCreationTest {
+
+        @Test
+        @DisplayName("capacityUnit SUITCASE_32KG → persisté sur l'entité sauvegardée")
+        void create_withCapacityUnit_suitcase32kg_succeeds() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar",
+                    LocalDate.now().plusDays(10),
+                    LocalTime.of(10, 0), LocalTime.of(22, 0),
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(32), BigDecimal.valueOf(8),
+                    TransportMode.PLANE,
+                    null, null, null, null, CapacityUnit.SUITCASE_32KG
+            );
+
+            announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(captor.getValue().getCapacityUnit()).isEqualTo(CapacityUnit.SUITCASE_32KG);
+        }
+
+        @Test
+        @DisplayName("capacityUnit null → défaut SUITCASE_23KG")
+        void create_withNullCapacityUnit_defaultsToSuitcase23Kg() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            assertThat(captor.getValue().getCapacityUnit()).isEqualTo(CapacityUnit.SUITCASE_23KG);
+        }
+
+        @Test
+        @DisplayName("date de départ dans le passé → 422 invalid-departure-date")
+        void create_withPastDepartureDate_throwsUnprocessableEntity() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar",
+                    LocalDate.now().minusDays(1),
+                    null, null,
+                    new AddressDto("CDG", 49.009, 2.547),
+                    new AddressDto("DSS", 14.693, -17.447),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null
+            );
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("invalid-departure-date");
+                        assertThat(ex.getMessage()).contains("passé");
+                    });
         }
     }
 }

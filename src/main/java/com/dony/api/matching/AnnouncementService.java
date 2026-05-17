@@ -188,6 +188,7 @@ public class AnnouncementService {
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
                 entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
+                entity.getCapacityUnit(),
                 entity.getCreatedAt(), entity.getUpdatedAt()
         );
     }
@@ -277,6 +278,17 @@ public class AnnouncementService {
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
         announcement.setAcceptedPaymentMethods(paymentMethods);
+        announcement.setCapacityUnit(
+            request.capacityUnit() != null ? request.capacityUnit() : CapacityUnit.SUITCASE_23KG
+        );
+        if (request.departureDate() != null && request.departureDate().isBefore(LocalDate.now())) {
+            throw new DonyBusinessException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "invalid-departure-date",
+                "Date invalide",
+                "La date de départ ne peut pas être dans le passé"
+            );
+        }
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -495,6 +507,9 @@ public class AnnouncementService {
         if (request.acceptedPaymentMethods() != null) {
             announcement.setAcceptedPaymentMethods(resolvePaymentMethods(request.acceptedPaymentMethods(), user));
         }
+        if (request.capacityUnit() != null) {
+            announcement.setCapacityUnit(request.capacityUnit());
+        }
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
@@ -639,6 +654,7 @@ public class AnnouncementService {
                 entity.getAcceptedContentTypes(),
                 entity.getRefusedTypes(),
                 entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
+                entity.getCapacityUnit(),
                 cashAccepted,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()

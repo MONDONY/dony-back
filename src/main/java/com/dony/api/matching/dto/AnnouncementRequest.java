@@ -55,5 +55,7 @@ public record AnnouncementRequest(
 
         List<String> refusedTypes,
 
-        Set<PaymentMethod> acceptedPaymentMethods
+        Set<PaymentMethod> acceptedPaymentMethods,
+
+        com.dony.api.matching.CapacityUnit capacityUnit
 ) {}
