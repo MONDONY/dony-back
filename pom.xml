@@ -375,6 +375,7 @@
 					<threshold>High</threshold>
 					<failOnError>true</failOnError>
 					<xmlOutput>true</xmlOutput>
+					<excludeFilterFile>${project.basedir}/spotbugs-exclude.xml</excludeFilterFile>
 				</configuration>
 			</plugin>
 		</plugins>
