@@ -66,6 +66,7 @@ public class SecurityConfig {
                     "/auth/**",
                     "/actuator/health",
                     "/actuator/info",
+                    "/actuator/prometheus",
                     "/config/**",
                     "/kyc/webhook",
                     "/payments/webhook",
