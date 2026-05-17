@@ -159,6 +159,12 @@
 			<version>${sentry.version}</version>
 		</dependency>
 
+		<!-- Micrometer — export des métriques au format Prometheus -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+		</dependency>
+
 		<!-- Test -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
