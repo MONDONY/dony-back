@@ -51,6 +51,32 @@ services:
       timeout: 5s
       retries: 10
 
+  db-backup:
+    image: postgres:16-alpine
+    container_name: dony_db_backup_staging
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    networks:
+      - dony_internal
+    # Daily backup at 02:00 UTC, keep last 7 days
+    entrypoint: >
+      sh -c "
+        while true; do
+          sleep 86400 &
+          wait $$!;
+          FILE=/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz;
+          pg_dump -h db -U ${DB_USERNAME} dony_staging | gzip > $$FILE;
+          echo \"Backup created: $$FILE\";
+          find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
+        done
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+
   nginx:
     image: nginx:1.27-alpine
     container_name: dony_nginx
