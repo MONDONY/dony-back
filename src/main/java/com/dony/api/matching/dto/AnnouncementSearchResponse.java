@@ -29,6 +29,7 @@ public record AnnouncementSearchResponse(
         List<String> acceptedContentTypes,
         List<String> refusedTypes,
         List<String> acceptedPaymentMethods,
+        com.dony.api.matching.CapacityUnit capacityUnit,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}
