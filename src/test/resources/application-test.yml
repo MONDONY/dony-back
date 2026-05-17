@@ -40,12 +40,21 @@ aws:
 stripe:
   secret-key: sk_test_dummy
   webhook-secret: whsec_dummy
+  webhook:
+    payments-secret: whsec_test_payments
+    kyc-secret: whsec_test_kyc
 
 dony:
   kyc:
     enforce: false
   stripe:
     enforce: false
+    webhook:
+      scheduler-enabled: false
+      poll-interval: 1s
+      batch-size: 5
+      max-retries: 3
+      retry-backoff-base: 1s
   commission:
     rate: 0.12
     minimum-amount: 1.00

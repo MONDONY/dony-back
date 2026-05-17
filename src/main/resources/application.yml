@@ -120,6 +120,12 @@ dony:
       business-url: "https://dony.app"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
+    webhook:
+      poll-interval: 10s
+      batch-size: 50
+      max-retries: 8
+      retry-backoff-base: 30s
+      scheduler-enabled: true
   referral:
     reward-amount-cents: 500
     max-invitations-per-user: 50
@@ -165,3 +171,9 @@ app:
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
+
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY}
+  webhook:
+    payments-secret: ${STRIPE_WEBHOOK_PAYMENTS_SECRET:${STRIPE_WEBHOOK_SECRET:}}
+    kyc-secret: ${STRIPE_WEBHOOK_KYC_SECRET:${STRIPE_WEBHOOK_SECRET:}}
