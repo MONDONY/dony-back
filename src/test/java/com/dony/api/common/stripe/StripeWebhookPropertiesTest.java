@@ -1,12 +1,9 @@
 package com.dony.api.common.stripe;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 
-@ExtendWith(MockitoExtension.class)
 class StripeWebhookPropertiesTest {
 
     @Test

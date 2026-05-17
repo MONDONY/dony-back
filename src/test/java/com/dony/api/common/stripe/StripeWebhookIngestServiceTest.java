@@ -52,7 +52,11 @@ class StripeWebhookIngestServiceTest {
 
             service.ingest("{}", "sig", StripeWebhookSource.PAYMENTS);
 
-            verify(repo).save(argThat(e -> "evt_new".equals(e.getEventId())));
+            verify(repo).save(argThat(e ->
+                    "evt_new".equals(e.getEventId()) &&
+                    StripeWebhookSource.PAYMENTS == e.getSource() &&
+                    "payment_intent.succeeded".equals(e.getEventType())
+            ));
         }
     }
 
