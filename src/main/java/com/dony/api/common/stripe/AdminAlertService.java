@@ -13,6 +13,9 @@ public class AdminAlertService {
 
     public void raise(String code, String detail, Map<String, Object> context) {
         log.error("[ADMIN ALERT] {} — {} | context={}", code, detail, context);
-        Sentry.captureMessage("[ADMIN ALERT] " + code + " — " + detail);
+        Sentry.withScope(scope -> {
+            context.forEach((k, v) -> scope.setExtra(k, String.valueOf(v)));
+            Sentry.captureMessage("[ADMIN ALERT] " + code + " — " + detail);
+        });
     }
 }
