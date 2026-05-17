@@ -2,6 +2,8 @@ name: Deploy Staging
 
 on:
   workflow_run:
+    # COUPLAGE : ce nom doit rester synchronisé avec le champ `name:` de .github/workflows/ci.yml
+    # Si le nom du workflow CI change, ce déclencheur cesse de fonctionner silencieusement.
     workflows: ["CI"]
     types: [completed]
     branches: [main]

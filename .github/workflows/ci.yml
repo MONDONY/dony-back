@@ -29,9 +29,8 @@ jobs:
         run: |
           chmod +x mvnw
           ./mvnw test -Dspring.profiles.active=test --no-transfer-progress
-      - name: Rapport JaCoCo (non bloquant)
-        run: ./mvnw jacoco:prepare-agent test jacoco:report -Dspring.profiles.active=test --no-transfer-progress
-        continue-on-error: true
+      - name: Rapport JaCoCo + gate couverture (bloquant — seuil configuré dans pom.xml)
+        run: ./mvnw verify -Dspring.profiles.active=test --no-transfer-progress
       - name: Upload rapport couverture
         uses: actions/upload-artifact@v4
         if: always()
