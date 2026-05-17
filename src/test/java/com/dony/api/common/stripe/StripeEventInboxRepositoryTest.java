@@ -22,7 +22,11 @@ class StripeEventInboxRepositoryTest {
                 "payment_intent.succeeded", "{\"id\":\"evt_001\"}");
         repo.save(inbox);
 
-        assertThat(repo.existsById("evt_001")).isTrue();
+        var found = repo.findById("evt_001").orElseThrow();
+        assertThat(found.getSource()).isEqualTo(StripeWebhookSource.PAYMENTS);
+        assertThat(found.getStatus()).isEqualTo(StripeEventStatus.RECEIVED);
+        assertThat(found.getRetryCount()).isZero();
+        assertThat(found.getEventType()).isEqualTo("payment_intent.succeeded");
     }
 
     @Test

@@ -48,8 +48,9 @@ public class StripeEventInbox {
         this.source = source;
         this.eventType = eventType;
         this.payload = payload;
-        this.receivedAt = Instant.now();
-        this.nextAttemptAt = Instant.now();
+        Instant now = Instant.now();
+        this.receivedAt = now;
+        this.nextAttemptAt = now;
     }
 
     public String getEventId() { return eventId; }
