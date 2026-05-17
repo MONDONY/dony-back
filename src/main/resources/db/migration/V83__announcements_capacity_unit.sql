@@ -1,0 +1,2 @@
+ALTER TABLE announcements
+    ADD COLUMN capacity_unit VARCHAR(20) NOT NULL DEFAULT 'SUITCASE_23KG';
