@@ -5,26 +5,16 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
-import com.dony.api.common.ProcessedStripeEvent;
-import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
-import com.dony.api.kyc.events.UserKycVerifiedEvent;
-import com.stripe.exception.SignatureVerificationException;
-import com.stripe.model.Event;
-import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.identity.VerificationSession;
-import com.stripe.net.Webhook;
 import com.stripe.param.identity.VerificationSessionCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.lang.reflect.Field;
@@ -34,7 +24,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -44,15 +33,12 @@ class KycServiceTest {
     @Mock KycRepository kycRepository;
     @Mock UserRepository userRepository;
     @Mock AuditService auditService;
-    @Mock ApplicationEventPublisher eventPublisher;
-    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
 
     KycService service;
 
     @BeforeEach
     void setUp() {
-        service = new KycService(kycRepository, userRepository, auditService, eventPublisher, processedStripeEventRepository);
-        ReflectionTestUtils.setField(service, "webhookSecret", "whsec_test");
+        service = new KycService(kycRepository, userRepository, auditService);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -197,194 +183,6 @@ class KycServiceTest {
             assertThat(user.getKycStatus()).isEqualTo(KycStatus.PENDING);
             verify(userRepository).save(user);
         }
-    }
-
-    // ── processWebhook ────────────────────────────────────────────────────────
-
-    @Test
-    void processWebhook_invalidSignature_throwsBadRequest() {
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenThrow(mock(SignatureVerificationException.class));
-
-            assertThatThrownBy(() -> service.processWebhook("payload", "bad-sig"))
-                    .isInstanceOf(ResponseStatusException.class)
-                    .hasMessageContaining("Signature Stripe invalide");
-        }
-    }
-
-    @Test
-    void processWebhook_unhandledEventType_returnsEarlyNoException() {
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("some.other.event");
-        when(mockEvent.getId()).thenReturn("evt_unhandled_001");
-        when(processedStripeEventRepository.existsByEventId("evt_unhandled_001")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig"); // must not throw
-        }
-        verifyNoInteractions(kycRepository);
-    }
-
-    @Test
-    void processWebhook_duplicateEvent_skipsProcessing() {
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
-        when(mockEvent.getId()).thenReturn("evt_duplicate_001");
-        when(processedStripeEventRepository.existsByEventId("evt_duplicate_001")).thenReturn(true);
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-        verifyNoInteractions(kycRepository);
-    }
-
-    @Test
-    void processWebhook_verifiedEvent_noKycRecord_returnsEarly() {
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
-        when(mockEvent.getId()).thenReturn("evt_verified_no_kyc");
-        when(processedStripeEventRepository.existsByEventId("evt_verified_no_kyc")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_unknown\"}");
-        when(kycRepository.findByStripeVerificationSessionId("vs_unknown")).thenReturn(Optional.empty());
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-        verify(kycRepository, never()).save(any());
-    }
-
-    @Test
-    void processWebhook_verifiedEvent_updatesKycAndPublishesEvent() {
-        UserEntity user = buildUser(KycStatus.PENDING);
-        KycVerificationEntity kyc = buildKyc(user.getId(), KycVerificationStatus.PENDING);
-
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
-        when(mockEvent.getId()).thenReturn("evt_verified_ok");
-        when(processedStripeEventRepository.existsByEventId("evt_verified_ok")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\"}");
-        when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-
-        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.VERIFIED);
-        assertThat(user.getKycStatus()).isEqualTo(KycStatus.VERIFIED);
-        verify(eventPublisher).publishEvent(any(UserKycVerifiedEvent.class));
-        verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_VERIFIED"), any(), any());
-    }
-
-    @Test
-    void processWebhook_requiresInputEvent_setsRejectedStatus() {
-        UserEntity user = buildUser(KycStatus.PENDING);
-        KycVerificationEntity kyc = buildKyc(user.getId(), KycVerificationStatus.PENDING);
-
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.requires_input");
-        when(mockEvent.getId()).thenReturn("evt_requires_input");
-        when(processedStripeEventRepository.existsByEventId("evt_requires_input")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\",\"last_error\":null}");
-        when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-
-        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.REJECTED);
-        assertThat(user.getKycStatus()).isEqualTo(KycStatus.REJECTED);
-        assertThat(kyc.getRejectionReason()).isEqualTo("verification_failed");
-        verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_REJECTED"), any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
-    }
-
-    @Test
-    void processWebhook_canceledEvent_resetsToNotStarted() {
-        UserEntity user = buildUser(KycStatus.PENDING);
-        KycVerificationEntity kyc = buildKyc(user.getId(), KycVerificationStatus.PENDING);
-
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.canceled");
-        when(mockEvent.getId()).thenReturn("evt_canceled");
-        when(processedStripeEventRepository.existsByEventId("evt_canceled")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_canceled\",\"last_error\":null}");
-        when(kycRepository.findByStripeVerificationSessionId("vs_test_canceled")).thenReturn(Optional.of(kyc));
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
-        when(kycRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-
-        // Session abandonnée → kyc_status repassé à NOT_STARTED pour permettre un nouvel essai
-        assertThat(user.getKycStatus()).isEqualTo(KycStatus.NOT_STARTED);
-        assertThat(kyc.getStatus()).isEqualTo(KycVerificationStatus.REJECTED);
-        assertThat(kyc.getRejectionReason()).isEqualTo("session_canceled");
-        verify(auditService).log(eq("kyc_verification"), any(), eq("KYC_CANCELED"), any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
-    }
-
-    @Test
-    void processWebhook_verifiedEvent_noUser_returnsEarly() {
-        KycVerificationEntity kyc = buildKyc(UUID.randomUUID(), KycVerificationStatus.PENDING);
-
-        Event mockEvent = mock(Event.class);
-        when(mockEvent.getType()).thenReturn("identity.verification_session.verified");
-        when(mockEvent.getId()).thenReturn("evt_verified_no_user");
-        when(processedStripeEventRepository.existsByEventId("evt_verified_no_user")).thenReturn(false);
-        when(processedStripeEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
-        when(deserializer.getRawJson()).thenReturn("{\"id\":\"vs_test_001\"}");
-        when(kycRepository.findByStripeVerificationSessionId("vs_test_001")).thenReturn(Optional.of(kyc));
-        when(userRepository.findById(kyc.getUserId())).thenReturn(Optional.empty());
-
-        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
-            wh.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
-                    .thenReturn(mockEvent);
-
-            service.processWebhook("payload", "sig");
-        }
-        verify(kycRepository, never()).save(any());
     }
 
     // ── abandonSession ────────────────────────────────────────────────────────

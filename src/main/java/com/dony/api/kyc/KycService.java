@@ -9,7 +9,6 @@ import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
 import com.stripe.model.identity.VerificationSession;
 import com.stripe.param.identity.VerificationSessionCreateParams;
-import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -28,16 +27,13 @@ public class KycService {
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
-    private final ApplicationEventPublisher eventPublisher;
 
     public KycService(KycRepository kycRepository,
                       UserRepository userRepository,
-                      AuditService auditService,
-                      ApplicationEventPublisher eventPublisher) {
+                      AuditService auditService) {
         this.kycRepository = kycRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
-        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
