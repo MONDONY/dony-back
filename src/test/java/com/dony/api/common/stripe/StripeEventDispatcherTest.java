@@ -16,8 +16,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class StripeEventDispatcherTest {
 
-    @Mock StripeWebhookHandler paymentHandler;
-    @Mock StripeWebhookHandler kycHandler;
+    @Mock(lenient = true) StripeWebhookHandler paymentHandler;
+    @Mock(lenient = true) StripeWebhookHandler kycHandler;
     StripeEventDispatcher dispatcher;
 
     @BeforeEach
@@ -28,6 +28,7 @@ class StripeEventDispatcherTest {
     @Test
     void dispatch_callsMatchingHandler() {
         when(paymentHandler.supports("payment_intent.succeeded")).thenReturn(true);
+        when(kycHandler.supports(any())).thenReturn(false);
         String payload = "{\"id\":\"evt_1\",\"object\":\"event\","
                 + "\"type\":\"payment_intent.succeeded\",\"data\":{\"object\":{}}}";
 

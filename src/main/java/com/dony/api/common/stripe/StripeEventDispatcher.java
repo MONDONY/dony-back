@@ -26,6 +26,11 @@ public class StripeEventDispatcher {
         Event event = ApiResource.GSON.fromJson(payload, Event.class);
         String type = event.getType();
 
+        if (type == null) {
+            log.warn("Stripe event {} has no type — skipping dispatch", event.getId());
+            return false;
+        }
+
         for (StripeWebhookHandler handler : handlers) {
             if (handler.supports(type)) {
                 log.info("Dispatching event {} ({}) to {}", event.getId(), type,
