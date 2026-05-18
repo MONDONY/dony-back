@@ -36,22 +36,39 @@ public class FirebaseConfig {
 
     @PostConstruct
     public void initializeFirebase() {
-        if (serviceAccountPath.isBlank()) {
-            log.warn("Firebase service account path is empty — Firebase disabled (test/ci mode)");
-            return;
-        }
         if (!FirebaseApp.getApps().isEmpty()) {
             return;
         }
+
+        String googleAppCreds = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        boolean usingEnvVar = googleAppCreds != null && !googleAppCreds.isBlank();
+
+        if (!usingEnvVar && serviceAccountPath.isBlank()) {
+            log.warn("Firebase service account path is empty and GOOGLE_APPLICATION_CREDENTIALS is not set — Firebase disabled (test/ci mode)");
+            return;
+        }
+
         try {
-            String path = serviceAccountPath.replaceFirst("^classpath:", "");
-            InputStream stream = new ClassPathResource(path).getInputStream();
-            GoogleCredentials credentials = GoogleCredentials.fromStream(stream);
+            GoogleCredentials credentials;
+            if (usingEnvVar) {
+                // Production path: credentials file referenced by env var, outside the JAR
+                credentials = GoogleCredentials.getApplicationDefault();
+                log.info("Firebase initialized via GOOGLE_APPLICATION_CREDENTIALS");
+            } else {
+                // Dev-only path: credentials bundled as classpath resource.
+                // NEVER use this in production — the private key must not be inside the JAR.
+                log.warn("[SECURITY] Firebase loading credentials from classpath resource '{}'. " +
+                        "Set GOOGLE_APPLICATION_CREDENTIALS env var before deploying to production.",
+                        serviceAccountPath);
+                String path = serviceAccountPath.replaceFirst("^classpath:", "");
+                InputStream stream = new ClassPathResource(path).getInputStream();
+                credentials = GoogleCredentials.fromStream(stream);
+            }
+
             FirebaseOptions options = FirebaseOptions.builder()
                     .setCredentials(credentials)
                     .build();
             FirebaseApp.initializeApp(options);
-            log.info("Firebase initialized — project: {}", getProjectId(path));
         } catch (IOException e) {
             log.error("Failed to initialize Firebase: {}", e.getMessage());
             throw new IllegalStateException("Firebase initialization failed", e);
