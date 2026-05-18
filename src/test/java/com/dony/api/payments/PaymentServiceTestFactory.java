@@ -2,9 +2,11 @@ package com.dony.api.payments;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
 
 import static org.mockito.Mockito.mock;
@@ -51,7 +53,9 @@ class PaymentServiceTestFactory {
                 mock(PaymentRepository.class),
                 mock(AuditService.class),
                 mock(ApplicationEventPublisher.class),
-                defaultConnectProperties()
+                defaultConnectProperties(),
+                new ObjectMapper(),
+                mock(AdminAlertService.class)
         );
     }
 }

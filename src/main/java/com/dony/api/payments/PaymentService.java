@@ -5,8 +5,11 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -56,6 +59,8 @@ public class PaymentService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final StripeConnectProperties stripeConnectProperties;
+    private final ObjectMapper objectMapper;
+    private final AdminAlertService adminAlert;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -66,7 +71,9 @@ public class PaymentService {
                           PaymentRepository paymentRepository,
                           AuditService auditService,
                           ApplicationEventPublisher eventPublisher,
-                          StripeConnectProperties stripeConnectProperties) {
+                          StripeConnectProperties stripeConnectProperties,
+                          ObjectMapper objectMapper,
+                          AdminAlertService adminAlert) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -74,6 +81,8 @@ public class PaymentService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.stripeConnectProperties = stripeConnectProperties;
+        this.objectMapper = objectMapper;
+        this.adminAlert = adminAlert;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -775,6 +784,160 @@ public class PaymentService {
         PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
         pi.capture();
         log.info("PaymentIntent {} captured", paymentIntentId);
+    }
+
+    // ── Task 12 — payment_intent.canceled + transfer.* + payout.* ───────────
+
+    void handlePaymentIntentCanceled(Event event) {
+        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
+            PaymentIntent pi = (PaymentIntent) obj;
+            paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
+                if (payment.getStatus() == PaymentStatus.ESCROW
+                        || payment.getStatus() == PaymentStatus.PENDING) {
+                    payment.setStatus(PaymentStatus.CANCELLED);
+                    paymentRepository.save(payment);
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_INTENT_CANCELED",
+                            payment.getBidId(), Map.of("piId", pi.getId()));
+                    log.info("PaymentIntent {} canceled — payment {} set CANCELLED", pi.getId(), payment.getId());
+                }
+            });
+        });
+    }
+
+    void handleTransferReversed(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String transferId = root.path("id").asText();
+            auditService.log("TRANSFER", null, "TRANSFER_REVERSED", null,
+                    Map.of("transferId", transferId));
+            adminAlert.raise("STRIPE_TRANSFER_REVERSED",
+                    "Transfer " + transferId + " a été reversé",
+                    Map.of("transferId", transferId));
+        } catch (Exception e) {
+            log.warn("Could not parse transfer.reversed event: {}", e.getMessage());
+        }
+    }
+
+    void handleTransferCreated(Event event) {
+        logTransferAudit(event, "TRANSFER_CREATED");
+    }
+
+    void handleTransferUpdated(Event event) {
+        logTransferAudit(event, "TRANSFER_UPDATED");
+    }
+
+    private void logTransferAudit(Event event, String action) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            auditService.log("TRANSFER", null, action, null,
+                    Map.of("transferId", root.path("id").asText()));
+        } catch (Exception e) {
+            log.warn("Could not parse transfer event {}: {}", action, e.getMessage());
+        }
+    }
+
+    void handlePayoutFailed(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String payoutId = root.path("id").asText();
+            String failureCode = root.path("failure_code").asText("unknown");
+            auditService.log("PAYOUT", null, "PAYOUT_FAILED", null,
+                    Map.of("payoutId", payoutId, "failureCode", failureCode));
+            adminAlert.raise("STRIPE_PAYOUT_FAILED",
+                    "Paiement banque " + payoutId + " échoué — code: " + failureCode,
+                    Map.of("payoutId", payoutId));
+        } catch (Exception e) {
+            log.warn("Could not parse payout.failed: {}", e.getMessage());
+        }
+    }
+
+    void handlePayoutPaid(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            auditService.log("PAYOUT", null, "PAYOUT_PAID", null,
+                    Map.of("payoutId", root.path("id").asText()));
+        } catch (Exception e) {
+            log.warn("Could not parse payout.paid: {}", e.getMessage());
+        }
+    }
+
+    // ── Task 13 — account.deauthorized + capability + refund.updated + fraud_warning ──
+
+    void handleAccountDeauthorized(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String accountId = root.path("account").asText(null);
+            if (accountId == null) accountId = root.path("id").asText();
+            final String aid = accountId;
+            userRepository.findByStripeAccountId(aid).ifPresentOrElse(user -> {
+                user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+                userRepository.save(user);
+                auditService.log("USER", user.getId(), "STRIPE_ACCOUNT_DEAUTHORIZED",
+                        user.getId(), Map.of("stripeAccountId", aid));
+                adminAlert.raise("STRIPE_ACCOUNT_DEAUTHORIZED",
+                        "Compte Connect " + aid + " déconnecté",
+                        Map.of("userId", user.getId().toString(), "stripeAccountId", aid));
+            }, () -> log.warn("account.application.deauthorized: no user for accountId={}", aid));
+        } catch (Exception e) {
+            log.warn("Could not parse deauthorized event: {}", e.getMessage());
+        }
+    }
+
+    void handleCapabilityUpdated(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String capId = root.path("id").asText();
+            String accountId = root.path("account").asText(null);
+            String status = root.path("status").asText();
+            if (capId.startsWith("transfers") && !"active".equals(status) && accountId != null) {
+                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+                    user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+                    userRepository.save(user);
+                    auditService.log("USER", user.getId(), "STRIPE_CAPABILITY_LOST",
+                            user.getId(), Map.of("capability", capId, "status", status));
+                    adminAlert.raise("STRIPE_CAPABILITY_LOST",
+                            "Compte " + accountId + " a perdu la capacité " + capId,
+                            Map.of("accountId", accountId, "status", status));
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse capability.updated: {}", e.getMessage());
+        }
+    }
+
+    void handleRefundUpdated(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String refundStatus = root.path("status").asText();
+            if ("failed".equals(refundStatus)) {
+                String refundId = root.path("id").asText();
+                String piId = root.path("payment_intent").asText(null);
+                auditService.log("PAYMENT", null, "REFUND_FAILED", null,
+                        Map.of("refundId", refundId, "piId", String.valueOf(piId)));
+                adminAlert.raise("STRIPE_REFUND_FAILED",
+                        "Remboursement " + refundId + " a échoué",
+                        Map.of("refundId", refundId, "piId", String.valueOf(piId)));
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse charge.refund.updated: {}", e.getMessage());
+        }
+    }
+
+    void handleEarlyFraudWarning(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String warningId = root.path("id").asText();
+            String chargeId  = root.path("charge").asText(null);
+            String fraudType = root.path("fraud_type").asText(null);
+            auditService.log("FRAUD", null, "EARLY_FRAUD_WARNING", null,
+                    Map.of("warningId", warningId, "chargeId", String.valueOf(chargeId),
+                            "fraudType", String.valueOf(fraudType)));
+            adminAlert.raise("STRIPE_EARLY_FRAUD_WARNING",
+                    "Alerte fraude précoce sur charge " + chargeId + " (" + fraudType + ")",
+                    Map.of("warningId", warningId, "chargeId", String.valueOf(chargeId)));
+        } catch (Exception e) {
+            log.warn("Could not parse early_fraud_warning: {}", e.getMessage());
+        }
     }
 
     // ─── Package-request marketplace : escrow on negotiation thread ──────────────

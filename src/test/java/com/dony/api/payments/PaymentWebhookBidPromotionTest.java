@@ -45,7 +45,9 @@ class PaymentWebhookBidPromotionTest {
     void setUp() {
         service = new PaymentService(userRepository, bidRepository, announcementRepository,
             paymentRepository, auditService, eventPublisher,
-            PaymentServiceTestFactory.defaultConnectProperties());
+            PaymentServiceTestFactory.defaultConnectProperties(),
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class));
 
         bid = new BidEntity();
         ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());

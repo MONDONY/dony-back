@@ -73,7 +73,9 @@ class PaymentServiceOnBehalfOfTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                props);
+                props,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class));
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

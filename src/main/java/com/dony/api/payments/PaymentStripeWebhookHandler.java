@@ -15,6 +15,7 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             "account.updated",
             "payment_intent.amount_capturable_updated",
             "payment_intent.payment_failed",
+            "payment_intent.canceled",
             "charge.refunded",
             "setup_intent.succeeded",
             "payment_intent.succeeded",
@@ -22,7 +23,16 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             "charge.dispute.created",
             "charge.dispute.closed",
             "charge.dispute.funds_withdrawn",
-            "charge.dispute.funds_reinstated"
+            "charge.dispute.funds_reinstated",
+            "transfer.created",
+            "transfer.reversed",
+            "transfer.updated",
+            "payout.failed",
+            "payout.paid",
+            "account.application.deauthorized",
+            "capability.updated",
+            "charge.refund.updated",
+            "radar.early_fraud_warning.created"
     );
 
     private final PaymentService paymentService;
@@ -59,6 +69,16 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             case "charge.dispute.closed"              -> chargebackService.handleDisputeClosed(event);
             case "charge.dispute.funds_withdrawn"     -> chargebackService.handleFundsWithdrawn(event);
             case "charge.dispute.funds_reinstated"    -> chargebackService.handleFundsReinstated(event);
+            case "payment_intent.canceled"             -> paymentService.handlePaymentIntentCanceled(event);
+            case "transfer.created"                    -> paymentService.handleTransferCreated(event);
+            case "transfer.reversed"                   -> paymentService.handleTransferReversed(event);
+            case "transfer.updated"                    -> paymentService.handleTransferUpdated(event);
+            case "payout.failed"                       -> paymentService.handlePayoutFailed(event);
+            case "payout.paid"                         -> paymentService.handlePayoutPaid(event);
+            case "account.application.deauthorized"   -> paymentService.handleAccountDeauthorized(event);
+            case "capability.updated"                 -> paymentService.handleCapabilityUpdated(event);
+            case "charge.refund.updated"              -> paymentService.handleRefundUpdated(event);
+            case "radar.early_fraud_warning.created"  -> paymentService.handleEarlyFraudWarning(event);
         }
     }
 }
