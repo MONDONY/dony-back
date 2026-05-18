@@ -163,4 +163,40 @@ class KycStripeWebhookHandlerTest {
 
         verify(kycRepository, never()).save(any());
     }
+
+    @Test
+    void handle_canceled_isIdempotent_whenAlreadyVerified() {
+        UUID userId = UUID.randomUUID();
+        var kyc = new KycVerificationEntity();
+        kyc.setUserId(userId);
+        kyc.setStatus(KycVerificationStatus.VERIFIED);
+        var user = new UserEntity();
+        user.setKycStatus(KycStatus.VERIFIED);
+
+        when(kycRepository.findByStripeVerificationSessionId("vs_004")).thenReturn(Optional.of(kyc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        handler.handle(buildEvent("identity.verification_session.canceled", "vs_004"));
+
+        verify(kycRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void handle_requiresInput_isIdempotent_whenAlreadyVerified() {
+        UUID userId = UUID.randomUUID();
+        var kyc = new KycVerificationEntity();
+        kyc.setUserId(userId);
+        kyc.setStatus(KycVerificationStatus.VERIFIED);
+        var user = new UserEntity();
+        user.setKycStatus(KycStatus.VERIFIED);
+
+        when(kycRepository.findByStripeVerificationSessionId("vs_006")).thenReturn(Optional.of(kyc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        handler.handle(buildEvent("identity.verification_session.requires_input", "vs_006"));
+
+        verify(kycRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
 }

@@ -96,6 +96,10 @@ public class KycStripeWebhookHandler implements StripeWebhookHandler {
                 }
             }
             case "identity.verification_session.canceled" -> {
+                if (kyc.getStatus() == KycVerificationStatus.VERIFIED) {
+                    log.warn("Ignoring canceled event for already-VERIFIED session {}", sessionId);
+                    return;
+                }
                 kyc.setStatus(KycVerificationStatus.REJECTED);
                 kyc.setRejectionReason("session_canceled");
                 user.setKycStatus(KycStatus.NOT_STARTED);
@@ -104,7 +108,11 @@ public class KycStripeWebhookHandler implements StripeWebhookHandler {
                 auditService.log("kyc_verification", kyc.getId(), "KYC_CANCELED",
                         user.getId(), Map.of("sessionId", sessionId, "reason", "session_canceled"));
             }
-            default -> { // requires_input
+            case "identity.verification_session.requires_input" -> {
+                if (kyc.getStatus() == KycVerificationStatus.VERIFIED) {
+                    log.warn("Ignoring requires_input event for already-VERIFIED session {}", sessionId);
+                    return;
+                }
                 kyc.setStatus(KycVerificationStatus.REJECTED);
                 kyc.setRejectionReason(lastErrorReason != null ? lastErrorReason : "verification_failed");
                 user.setKycStatus(KycStatus.REJECTED);
