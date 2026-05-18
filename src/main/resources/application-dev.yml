@@ -35,8 +35,12 @@ aws:
 
 # Stripe (test keys — définir STRIPE_SECRET_KEY et STRIPE_WEBHOOK_SECRET dans les variables d'env)
 stripe:
-  secret-key: ${STRIPE_SECRET_KEY}
-  webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+  secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
+  # Kept for backwards compatibility with existing Stripe CLI local testing scripts
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_local}
+  webhook:
+    payments-secret: ${STRIPE_WEBHOOK_PAYMENTS_SECRET:${STRIPE_WEBHOOK_SECRET:whsec_local}}
+    kyc-secret: ${STRIPE_WEBHOOK_KYC_SECRET:${STRIPE_WEBHOOK_SECRET:whsec_local}}
 
 # Firebase
 firebase:
