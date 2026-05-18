@@ -1,0 +1,14 @@
+# Staging profile — copie durcie de prod avec logs verbeux pour diagnostic
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+server:
+  forward-headers-strategy: framework
+
+logging:
+  level:
+    com.dony.api: DEBUG
+    org.springframework.security: INFO
