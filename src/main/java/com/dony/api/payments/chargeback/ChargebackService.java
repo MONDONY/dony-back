@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.model.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,11 @@ public class ChargebackService {
         this.objectMapper = objectMapper;
     }
 
+    public Page<ChargebackDto> listAll(Pageable pageable) {
+        return chargebackRepository.findAllByOrderByOpenedAtDesc(pageable)
+                .map(ChargebackDto::from);
+    }
+
     @Transactional
     public void handleDisputeCreated(Event event) {
         JsonNode dispute = parseDataObject(event);
@@ -59,7 +66,8 @@ public class ChargebackService {
         chargeback.setAmount(amount);
         chargeback.setCurrency(currency);
         chargeback.setReason(reason);
-        chargeback.setOpenedAt(Instant.now());
+        long created = dispute.path("created").asLong(0L);
+        chargeback.setOpenedAt(created > 0 ? Instant.ofEpochSecond(created) : Instant.now());
 
         if (chargeId != null) {
             paymentRepository.findByStripeChargeId(chargeId).ifPresent(payment -> {
@@ -93,11 +101,13 @@ public class ChargebackService {
             cb.setResolvedAt(Instant.now());
             chargebackRepository.save(cb);
 
-            if ("won".equals(outcome) && cb.getPaymentId() != null) {
+            // Levée du gel — la dispute est résolue dans les deux cas
+            if (cb.getPaymentId() != null) {
                 paymentRepository.findById(cb.getPaymentId()).ifPresent(payment -> {
                     payment.setDisputed(false);
                     paymentRepository.save(payment);
-                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_DISPUTE_WON",
+                    String auditAction = "won".equals(outcome) ? "PAYMENT_DISPUTE_WON" : "PAYMENT_DISPUTE_LOST";
+                    auditService.log("PAYMENT", payment.getId(), auditAction,
                             payment.getBidId(), Map.of("disputeId", disputeId));
                 });
             }

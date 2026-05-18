@@ -143,4 +143,26 @@ class ChargebackServiceTest {
         verify(auditService).log(eq("CHARGEBACK"), any(), eq("CHARGEBACK_CLOSED"), any(), anyMap());
         verify(adminAlert).raise(eq("STRIPE_CHARGEBACK_CLOSED"), anyString(), anyMap());
     }
+
+    @Test
+    void handleDisputeClosed_lost_updatesStatusAndClearsDisputed() {
+        var cb = new ChargebackEntity();
+        cb.setStripeDisputeId("dp_003");
+        var payment = new PaymentEntity();
+        payment.setDisputed(true);
+        UUID paymentId = UUID.randomUUID();
+        cb.setPaymentId(paymentId);
+
+        when(chargebackRepository.findByStripeDisputeId("dp_003")).thenReturn(Optional.of(cb));
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+
+        String json = "{\"id\":\"evt_e\",\"object\":\"event\",\"type\":\"charge.dispute.closed\"," +
+                "\"data\":{\"object\":{\"id\":\"dp_003\",\"status\":\"lost\"}}}";
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleDisputeClosed(event);
+
+        assertThat(cb.getStatus()).isEqualTo(ChargebackStatus.LOST);
+        assertThat(payment.isDisputed()).isFalse();
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_DISPUTE_LOST"), any(), any());
+    }
 }
