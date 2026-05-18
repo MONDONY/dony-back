@@ -865,9 +865,18 @@ public class PaymentService {
 
     void handleAccountDeauthorized(Event event) {
         try {
-            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
-            String accountId = root.path("account").asText(null);
-            if (accountId == null) accountId = root.path("id").asText();
+            String accountId = null;
+            var deserialized = event.getDataObjectDeserializer().getObject();
+            if (deserialized.isPresent() && deserialized.get() instanceof com.stripe.model.Account account) {
+                accountId = account.getId();
+            } else {
+                JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+                accountId = root.path("id").asText(null);
+            }
+            if (accountId == null) {
+                log.warn("account.application.deauthorized: no accountId found in event {}", event.getId());
+                return;
+            }
             final String aid = accountId;
             userRepository.findByStripeAccountId(aid).ifPresentOrElse(user -> {
                 user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
@@ -879,30 +888,34 @@ public class PaymentService {
                         Map.of("userId", user.getId().toString(), "stripeAccountId", aid));
             }, () -> log.warn("account.application.deauthorized: no user for accountId={}", aid));
         } catch (Exception e) {
-            log.warn("Could not parse deauthorized event: {}", e.getMessage());
+            log.warn("Could not parse account.application.deauthorized: {}", e.getMessage());
         }
     }
 
     void handleCapabilityUpdated(Event event) {
-        try {
-            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
-            String capId = root.path("id").asText();
-            String accountId = root.path("account").asText(null);
-            String status = root.path("status").asText();
-            if (capId.startsWith("transfers") && !"active".equals(status) && accountId != null) {
-                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
-                    user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
-                    userRepository.save(user);
-                    auditService.log("USER", user.getId(), "STRIPE_CAPABILITY_LOST",
-                            user.getId(), Map.of("capability", capId, "status", status));
-                    adminAlert.raise("STRIPE_CAPABILITY_LOST",
-                            "Compte " + accountId + " a perdu la capacité " + capId,
-                            Map.of("accountId", accountId, "status", status));
-                });
+        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
+            try {
+                com.stripe.model.Capability cap = (com.stripe.model.Capability) obj;
+                String accountId = cap.getAccount();
+                String status = cap.getStatus();
+                String capabilityId = cap.getId(); // e.g. "transfers", "card_payments"
+                if ("inactive".equals(status) && accountId != null) {
+                    userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+                        user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+                        userRepository.save(user);
+                        auditService.log("USER", user.getId(), "STRIPE_CAPABILITY_LOST",
+                                user.getId(), Map.of("capability", capabilityId, "status", status));
+                        adminAlert.raise("STRIPE_CAPABILITY_LOST",
+                                "Compte " + accountId + " a perdu la capacité " + capabilityId,
+                                Map.of("accountId", accountId, "status", status));
+                    });
+                } else if ("pending".equals(status)) {
+                    log.info("Capability {} pending on account {} — awaiting Stripe review", capabilityId, accountId);
+                }
+            } catch (Exception e) {
+                log.warn("Could not parse capability.updated: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("Could not parse capability.updated: {}", e.getMessage());
-        }
+        });
     }
 
     void handleRefundUpdated(Event event) {
@@ -913,10 +926,10 @@ public class PaymentService {
                 String refundId = root.path("id").asText();
                 String piId = root.path("payment_intent").asText(null);
                 auditService.log("PAYMENT", null, "REFUND_FAILED", null,
-                        Map.of("refundId", refundId, "piId", String.valueOf(piId)));
+                        Map.of("refundId", refundId, "piId", piId != null ? piId : "unknown"));
                 adminAlert.raise("STRIPE_REFUND_FAILED",
                         "Remboursement " + refundId + " a échoué",
-                        Map.of("refundId", refundId, "piId", String.valueOf(piId)));
+                        Map.of("refundId", refundId, "piId", piId != null ? piId : "unknown"));
             }
         } catch (Exception e) {
             log.warn("Could not parse charge.refund.updated: {}", e.getMessage());
@@ -930,11 +943,11 @@ public class PaymentService {
             String chargeId  = root.path("charge").asText(null);
             String fraudType = root.path("fraud_type").asText(null);
             auditService.log("FRAUD", null, "EARLY_FRAUD_WARNING", null,
-                    Map.of("warningId", warningId, "chargeId", String.valueOf(chargeId),
-                            "fraudType", String.valueOf(fraudType)));
+                    Map.of("warningId", warningId, "chargeId", chargeId != null ? chargeId : "unknown",
+                            "fraudType", fraudType != null ? fraudType : "unknown"));
             adminAlert.raise("STRIPE_EARLY_FRAUD_WARNING",
                     "Alerte fraude précoce sur charge " + chargeId + " (" + fraudType + ")",
-                    Map.of("warningId", warningId, "chargeId", String.valueOf(chargeId)));
+                    Map.of("warningId", warningId, "chargeId", chargeId != null ? chargeId : "unknown"));
         } catch (Exception e) {
             log.warn("Could not parse early_fraud_warning: {}", e.getMessage());
         }

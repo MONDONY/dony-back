@@ -58,4 +58,25 @@ class PaymentServiceTestFactory {
                 mock(AdminAlertService.class)
         );
     }
+
+    /**
+     * Overload that accepts specific mocks for targeted handler unit tests.
+     * Repositories and services not provided are mocked internally.
+     */
+    static PaymentService bare(PaymentRepository paymentRepository,
+                               UserRepository userRepository,
+                               AuditService auditService,
+                               AdminAlertService adminAlert) {
+        return new PaymentService(
+                userRepository,
+                mock(BidRepository.class),
+                mock(AnnouncementRepository.class),
+                paymentRepository,
+                auditService,
+                mock(ApplicationEventPublisher.class),
+                defaultConnectProperties(),
+                new ObjectMapper(),
+                adminAlert
+        );
+    }
 }
