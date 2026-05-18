@@ -71,6 +71,11 @@ management:
       show-details: when-authorized
     prometheus:
       enabled: true
+      # Prometheus is scraped by the internal monitoring stack.
+      # It is NOT in the SecurityConfig permitAll list — the scraper
+      # must authenticate (Spring Security) or be restricted at the
+      # network level (Nginx/firewall). Do not add it to permitAll.
+      access: read-only
   prometheus:
     metrics:
       export:

@@ -66,7 +66,11 @@ public class SecurityConfig {
                     "/auth/**",
                     "/actuator/health",
                     "/actuator/info",
-                    "/actuator/prometheus",
+                    // /actuator/prometheus intentionally excluded from permitAll —
+                    // it is scraped by the internal monitoring infrastructure which
+                    // authenticates via Spring Security's built-in management port or
+                    // network-level access control (Nginx/firewall). Exposing metrics
+                    // publicly leaks internal topology and performance data.
                     "/config/**",
                     "/kyc/webhook",
                     "/payments/webhook",
