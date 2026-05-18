@@ -304,7 +304,12 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
-        requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
+
+        boolean isCashPending = bid.getPaymentMethod() == com.dony.api.payments.cash.PaymentMethod.CASH
+                && bid.getStatus() == BidStatus.PENDING;
+        if (!isCashPending) {
+            requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
+        }
 
         bid.setStatus(BidStatus.REJECTED);
         if (request != null) {

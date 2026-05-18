@@ -446,35 +446,49 @@ public class PaymentService {
     // ── Webhook handlers (package-private — appelés depuis PaymentStripeWebhookHandler) ──
 
     void handleAccountUpdated(Event event) {
-        event.getDataObjectDeserializer().getObject().ifPresentOrElse(
-            obj -> {
-                Account account = (Account) obj;
-                String accountId = account.getId();
+        Account account = resolveAccountFromEvent(event);
+        if (account == null) return;
 
-                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
-                    StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
+        String accountId = account.getId();
+        userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+            StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
 
-                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING
-                            && user.getStripeAccountStatus() == StripeAccountStatus.PENDING_ONBOARDING) {
-                        return; // already pending, no state change
-                    }
+            if (newStatus == StripeAccountStatus.PENDING_ONBOARDING
+                    && user.getStripeAccountStatus() == StripeAccountStatus.PENDING_ONBOARDING) {
+                return;
+            }
 
-                    // Only emit event on first transition to ONBOARDING_COMPLETE
-                    if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
-                            && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-                        user.setStripeOnboardingCompletedAt(java.time.Instant.now());
-                        eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
-                        auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
-                                user.getId(), Map.of("stripeAccountId", accountId));
-                        log.info("Stripe onboarding complete for user {}", user.getId());
-                    }
+            if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                    && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+                user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
+                auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
+                        user.getId(), Map.of("stripeAccountId", accountId));
+                log.info("Stripe onboarding complete for user {}", user.getId());
+            }
 
-                    user.setStripeAccountStatus(newStatus);
-                    userRepository.save(user);
-                });
-            },
-            () -> log.warn("handleAccountUpdated: could not deserialize account object for event {}", event.getId())
-        );
+            user.setStripeAccountStatus(newStatus);
+            userRepository.save(user);
+        });
+    }
+
+    private Account resolveAccountFromEvent(Event event) {
+        var deserialized = event.getDataObjectDeserializer().getObject();
+        if (deserialized.isPresent() && deserialized.get() instanceof Account a) {
+            return a;
+        }
+        // Fallback : version API du payload ≠ SDK → récupérer via API
+        String accountId = event.getAccount();
+        if (accountId == null) {
+            log.warn("handleAccountUpdated: no account ID in event {}", event.getId());
+            return null;
+        }
+        try {
+            return Account.retrieve(accountId);
+        } catch (StripeException e) {
+            log.error("handleAccountUpdated: failed to fetch account {} for event {}", accountId, event.getId(), e);
+            return null;
+        }
     }
 
     /**

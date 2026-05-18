@@ -237,8 +237,15 @@ public class CashCommissionService {
             };
         } catch (CardException e) {
             bid.setCommissionStatus(CommissionStatus.FAILED);
+            bid.setCommissionRetryCount(bid.getCommissionRetryCount() + 1);
             bidRepo.save(bid);
-            return AcceptBidResponse.failed("Carte refusée : " + e.getMessage());
+            String userMessage = switch (e.getCode()) {
+                case "expired_card" -> "Votre carte de commission est expirée.";
+                case "insufficient_funds" -> "Fonds insuffisants sur votre carte de commission.";
+                case "authentication_required" -> "Votre carte nécessite une authentification supplémentaire.";
+                default -> "Votre carte de commission a été refusée.";
+            };
+            return AcceptBidResponse.failed(userMessage);
         } catch (StripeException e) {
             throw new CommissionChargeFailedException("Erreur Stripe lors du débit de commission", e);
         }
