@@ -199,4 +199,80 @@ class KycStripeWebhookHandlerTest {
         verify(kycRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
+
+    @Test
+    void handle_requiresInput_withLastErrorReason_usesReason() {
+        UUID userId = UUID.randomUUID();
+        var kyc = new KycVerificationEntity();
+        kyc.setUserId(userId);
+        kyc.setStatus(KycVerificationStatus.PENDING);
+        var user = new UserEntity();
+        user.setKycStatus(KycStatus.PENDING);
+
+        when(kycRepository.findByStripeVerificationSessionId("vs_007")).thenReturn(Optional.of(kyc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // Event with last_error.reason populated
+        String json = "{\"id\":\"evt_kyc7\",\"object\":\"event\"," +
+                "\"type\":\"identity.verification_session.requires_input\"," +
+                "\"data\":{\"object\":{\"id\":\"vs_007\",\"last_error\":{\"reason\":\"document_expired\"}}}}";
+        com.stripe.model.Event event = com.stripe.net.ApiResource.GSON.fromJson(json, com.stripe.model.Event.class);
+
+        handler.handle(event);
+
+        assertThat(kyc.getRejectionReason()).isEqualTo("document_expired");
+        verify(kycRepository).save(kyc);
+    }
+
+    @Test
+    void handle_missingSessionId_returnsEarlyWithoutLookup() {
+        // Event with null/missing id in the data object
+        String json = "{\"id\":\"evt_kyc8\",\"object\":\"event\"," +
+                "\"type\":\"identity.verification_session.verified\"," +
+                "\"data\":{\"object\":{}}}";
+        com.stripe.model.Event event = com.stripe.net.ApiResource.GSON.fromJson(json, com.stripe.model.Event.class);
+
+        handler.handle(event);
+
+        verify(kycRepository, never()).findByStripeVerificationSessionId(any());
+        verify(kycRepository, never()).save(any());
+    }
+
+    @Test
+    void handle_nullSessionId_returnsEarlyWithoutLookup() {
+        // Event with explicit null id
+        String json = "{\"id\":\"evt_kyc9\",\"object\":\"event\"," +
+                "\"type\":\"identity.verification_session.verified\"," +
+                "\"data\":{\"object\":{\"id\":null}}}";
+        com.stripe.model.Event event = com.stripe.net.ApiResource.GSON.fromJson(json, com.stripe.model.Event.class);
+
+        handler.handle(event);
+
+        verify(kycRepository, never()).findByStripeVerificationSessionId(any());
+    }
+
+    @Test
+    void handle_withNullLastError_doesNotSetLastErrorReason() {
+        UUID userId = UUID.randomUUID();
+        var kyc = new KycVerificationEntity();
+        kyc.setUserId(userId);
+        kyc.setStatus(KycVerificationStatus.PENDING);
+        var user = new UserEntity();
+        user.setKycStatus(KycStatus.PENDING);
+
+        when(kycRepository.findByStripeVerificationSessionId("vs_010")).thenReturn(Optional.of(kyc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // Event with last_error: null (explicit JSON null)
+        String json = "{\"id\":\"evt_kyc10\",\"object\":\"event\"," +
+                "\"type\":\"identity.verification_session.requires_input\"," +
+                "\"data\":{\"object\":{\"id\":\"vs_010\",\"last_error\":null}}}";
+        com.stripe.model.Event event = com.stripe.net.ApiResource.GSON.fromJson(json, com.stripe.model.Event.class);
+
+        handler.handle(event);
+
+        // With null last_error, should use default "verification_failed"
+        assertThat(kyc.getRejectionReason()).isEqualTo("verification_failed");
+        verify(kycRepository).save(kyc);
+    }
 }

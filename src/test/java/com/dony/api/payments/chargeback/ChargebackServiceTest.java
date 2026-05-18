@@ -165,4 +165,115 @@ class ChargebackServiceTest {
         assertThat(payment.isDisputed()).isFalse();
         verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_DISPUTE_LOST"), any(), any());
     }
+
+    @Test
+    void listAll_delegatesToRepository() {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        var cb = new ChargebackEntity();
+        cb.setStripeDisputeId("dp_list");
+        cb.setStripeChargeId("ch_list");
+        cb.setAmount(500L);
+        cb.setCurrency("eur");
+        cb.setReason("fraudulent");
+        cb.setStatus(ChargebackStatus.OPEN);
+        cb.setOpenedAt(java.time.Instant.now());
+
+        var page = new org.springframework.data.domain.PageImpl<>(java.util.List.of(cb));
+        when(chargebackRepository.findAllByOrderByOpenedAtDesc(pageable)).thenReturn(page);
+
+        var result = service.listAll(pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).stripeDisputeId()).isEqualTo("dp_list");
+        assertThat(result.getContent().get(0).amount()).isEqualTo(500L);
+        assertThat(result.getContent().get(0).status()).isEqualTo(ChargebackStatus.OPEN);
+    }
+
+    @Test
+    void handleFundsWithdrawn_logsAudit_whenDisputeFound() {
+        String disputeId = "dp_funds_withdrawn";
+        var cb = new ChargebackEntity();
+        cb.setStripeDisputeId(disputeId);
+        cb.setStatus(ChargebackStatus.OPEN);
+
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(java.util.Optional.of(cb));
+
+        String json = String.format(
+                "{\"id\":\"evt_fw\",\"object\":\"event\",\"type\":\"charge.dispute.funds_withdrawn\"," +
+                "\"data\":{\"object\":{\"id\":\"%s\"}}}", disputeId);
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleFundsWithdrawn(event);
+
+        verify(auditService).log(eq("CHARGEBACK"), any(), eq("CHARGEBACK_FUNDS_WITHDRAWN"), isNull(), anyMap());
+    }
+
+    @Test
+    void handleFundsReinstated_logsAudit_whenDisputeFound() {
+        String disputeId = "dp_funds_reinstated";
+        var cb = new ChargebackEntity();
+        cb.setStripeDisputeId(disputeId);
+        cb.setStatus(ChargebackStatus.WON);
+
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(java.util.Optional.of(cb));
+
+        String json = String.format(
+                "{\"id\":\"evt_fr\",\"object\":\"event\",\"type\":\"charge.dispute.funds_reinstated\"," +
+                "\"data\":{\"object\":{\"id\":\"%s\"}}}", disputeId);
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleFundsReinstated(event);
+
+        verify(auditService).log(eq("CHARGEBACK"), any(), eq("CHARGEBACK_FUNDS_REINSTATED"), isNull(), anyMap());
+    }
+
+    @Test
+    void handleFundsWithdrawn_doesNothing_whenDisputeNotFound() {
+        when(chargebackRepository.findByStripeDisputeId(any())).thenReturn(java.util.Optional.empty());
+
+        String json = "{\"id\":\"evt_nf\",\"object\":\"event\",\"type\":\"charge.dispute.funds_withdrawn\"," +
+                "\"data\":{\"object\":{\"id\":\"dp_unknown\"}}}";
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleFundsWithdrawn(event);
+
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void handleDisputeCreated_withNullChargeId_stillSavesChargeback() {
+        String disputeId = "dp_no_charge";
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(Optional.empty());
+
+        // Event with charge=null
+        String json = String.format(
+                "{\"id\":\"evt_nc\",\"object\":\"event\",\"type\":\"charge.dispute.created\"," +
+                "\"data\":{\"object\":{\"id\":\"%s\",\"amount\":500,\"currency\":\"eur\"," +
+                "\"reason\":\"fraudulent\",\"status\":\"needs_response\"}}}",
+                disputeId);
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleDisputeCreated(event);
+
+        verify(chargebackRepository).save(any(ChargebackEntity.class));
+        // No payment lookup when chargeId is null
+        verify(paymentRepository, never()).findByStripeChargeId(any());
+    }
+
+    @Test
+    void handleDisputeClosed_withNullPaymentId_doesNotLookupPayment() {
+        String disputeId = "dp_no_payment";
+        var cb = new ChargebackEntity();
+        cb.setStripeDisputeId(disputeId);
+        cb.setStatus(ChargebackStatus.OPEN);
+        cb.setPaymentId(null); // No associated payment
+
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(Optional.of(cb));
+
+        String json = String.format(
+                "{\"id\":\"evt_close\",\"object\":\"event\",\"type\":\"charge.dispute.closed\"," +
+                "\"data\":{\"object\":{\"id\":\"%s\",\"status\":\"won\"}}}", disputeId);
+        Event event = com.stripe.net.ApiResource.GSON.fromJson(json, Event.class);
+        service.handleDisputeClosed(event);
+
+        assertThat(cb.getStatus()).isEqualTo(ChargebackStatus.WON);
+        verify(paymentRepository, never()).findById(any());
+        verify(chargebackRepository).save(cb);
+    }
 }
