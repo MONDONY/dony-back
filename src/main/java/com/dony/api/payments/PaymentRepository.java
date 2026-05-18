@@ -19,6 +19,8 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
 
     Optional<PaymentEntity> findByStripePaymentIntentId(String stripePaymentIntentId);
 
+    Optional<PaymentEntity> findByStripeChargeId(String chargeId);
+
     List<PaymentEntity> findByStatus(PaymentStatus status);
 
     /** Story 6.5 — Find all payments in a given status whose escrow started before the given threshold. */
