@@ -1,11 +1,9 @@
-name: Security — OWASP Weekly
+name: Security Weekly
 
-# Scan hebdomadaire des CVE dans les dépendances Maven.
-# Séparé du pipeline principal car la base NVD prend 15-30 min à télécharger.
 on:
   schedule:
-    - cron: '0 3 * * 1'  # Lundi 03:00 UTC
-  workflow_dispatch:      # Déclenchement manuel possible
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 env:
   JAVA_VERSION: '21'
@@ -13,30 +11,25 @@ env:
 jobs:
 
   owasp-check:
-    name: 🛡️ OWASP Dependency Check
+    name: OWASP Dependency Check
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: maven
-
-      - name: Cache base NVD (évite re-téléchargement chaque semaine)
+      - name: Cache base NVD
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: owasp-nvd-${{ github.run_id }}
           restore-keys: owasp-nvd-
-
-      - name: OWASP — CVSS ≥ 7 = échec
+      - name: OWASP — CVSS >= 7 = échec
         run: |
           chmod +x mvnw
           ./mvnw org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
-
       - name: Upload rapport HTML
         uses: actions/upload-artifact@v4
         if: always()

@@ -1,4 +1,4 @@
-name: CI — Quality Gates
+name: CI
 
 on:
   push:
@@ -15,31 +15,22 @@ permissions:
 
 jobs:
 
-  # ── Gate 1 : Tests unitaires ──────────────────────────────────────────
-  # JaCoCo est déclenché en étape séparée non bloquante (continue-on-error)
-  # car le JVM Spring Boot peut être tué avant que l'agent écrive l'exec file
   test:
-    name: ✅ Tests & Couverture
+    name: Tests & Couverture
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: maven
-
       - name: Tests unitaires (gate bloquant)
         run: |
           chmod +x mvnw
           ./mvnw test -Dspring.profiles.active=test --no-transfer-progress
-
-      - name: Rapport JaCoCo (optionnel — ne bloque pas le pipeline)
-        run: ./mvnw jacoco:prepare-agent test jacoco:report -Dspring.profiles.active=test --no-transfer-progress
-        continue-on-error: true
-
+      - name: Rapport JaCoCo + gate couverture (bloquant — seuil configuré dans pom.xml)
+        run: ./mvnw verify -Dspring.profiles.active=test --no-transfer-progress
       - name: Upload rapport couverture
         uses: actions/upload-artifact@v4
         if: always()
@@ -48,29 +39,22 @@ jobs:
           path: target/site/jacoco/
           retention-days: 7
 
-  # ── Gate 2 : Analyse statique SpotBugs ────────────────────────────────
-  # SpotBugs n'est pas lié au cycle Maven → invoqué uniquement ici
   static-analysis:
-    name: 🔍 SpotBugs
+    name: SpotBugs
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: maven
-
       - name: Compilation complète (sources + tests)
         run: |
           chmod +x mvnw
           ./mvnw test-compile --no-transfer-progress
-
       - name: SpotBugs — bugs HIGH = échec
         run: ./mvnw spotbugs:check --no-transfer-progress
-
       - name: Upload rapport SpotBugs
         uses: actions/upload-artifact@v4
         if: always()
@@ -79,17 +63,12 @@ jobs:
           path: target/spotbugsXml.xml
           retention-days: 7
 
-  # ── Gate 3 : Scan CVE dépendances (Trivy) ─────────────────────────────
-  # CRITICAL non patchés = échec pipeline
-  # HIGH non patchés     = warning (SARIF visible dans Security tab)
   security-scan:
-    name: 🔒 Trivy CVE Scan
+    name: Trivy CVE Scan
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Trivy — CVE CRITICAL = échec du pipeline
+      - name: Trivy — CVE CRITICAL = échec
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
@@ -99,8 +78,7 @@ jobs:
           ignore-unfixed: true
           format: table
           skip-dirs: target,docs,.github,.mvn
-
-      - name: Trivy — rapport SARIF HIGH/MEDIUM (warning, ne bloque pas)
+      - name: Trivy — rapport SARIF (non bloquant)
         uses: aquasecurity/trivy-action@v0.35.0
         if: always()
         with:
@@ -112,21 +90,17 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           skip-dirs: target,docs,.github,.mvn
-
       - name: Upload SARIF vers GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
 
-  # ── Gate 4 : Lint Dockerfile ──────────────────────────────────────────
   docker-lint:
-    name: 🐳 Hadolint Dockerfile
+    name: Hadolint Dockerfile
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile

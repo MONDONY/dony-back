@@ -64,11 +64,17 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
       base-path: /actuator
   endpoint:
     health:
       show-details: when-authorized
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   server:
     port: 8080
 
@@ -117,7 +123,7 @@ dony:
     connect:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Dony"
-      business-url: "https://dony.app"
+      business-url: "https://yadony.com"
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
     webhook:

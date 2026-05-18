@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!--
+        ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD — StripeConfig.init()
+        Pattern imposé par le SDK Stripe Java : Stripe.apiKey est un champ statique
+        public qui doit être assigné au démarrage. Aucune alternative sans refonte
+        complète vers StripeClient (hors scope MVP).
+    -->
+    <Match>
+        <Class name="com.dony.api.config.StripeConfig"/>
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+    </Match>
+</FindBugsFilter>
