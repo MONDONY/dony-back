@@ -4,8 +4,6 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
@@ -43,8 +41,6 @@ class StripeConnectWebhookAccountUpdatedTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
-    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
-    @Mock CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     PaymentService service;
 
@@ -56,10 +52,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties(),
-                processedStripeEventRepository,
-                cashCommissionWebhookHandler);
+                PaymentServiceTestFactory.defaultConnectProperties());
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
@@ -91,7 +84,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         when(deserializer.getObject()).thenReturn(Optional.of(account));
 
         Event event = mock(Event.class);
-        when(event.getType()).thenReturn("account.updated");
+        lenient().when(event.getType()).thenReturn("account.updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
         return event;
     }
@@ -102,7 +95,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         when(userRepository.findByStripeAccountId(ACCOUNT_ID)).thenReturn(Optional.of(user));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(true, true, null));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(true, true, null));
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.ONBOARDING_COMPLETE);
         assertThat(user.getStripeOnboardingCompletedAt()).isNotNull();
@@ -125,9 +118,9 @@ class StripeConnectWebhookAccountUpdatedTest {
         });
 
         // First call — should transition and emit event
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(true, true, null));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(true, true, null));
         // Second call — user is now ONBOARDING_COMPLETE, no event emitted
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(true, true, null));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(true, true, null));
 
         // Event published exactly once across both calls
         verify(eventPublisher, times(1)).publishEvent(any(StripeOnboardingCompletedEvent.class));
@@ -140,7 +133,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         when(userRepository.findByStripeAccountId(ACCOUNT_ID)).thenReturn(Optional.of(user));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(false, false, "rejected.fraud"));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(false, false, "rejected.fraud"));
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.REJECTED);
         verify(eventPublisher, never()).publishEvent(any(StripeOnboardingCompletedEvent.class));
@@ -153,7 +146,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         when(userRepository.findByStripeAccountId(ACCOUNT_ID)).thenReturn(Optional.of(user));
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(false, false, "requirements.past_due"));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(false, false, "requirements.past_due"));
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.DISABLED);
         verify(eventPublisher, never()).publishEvent(any(StripeOnboardingCompletedEvent.class));
@@ -166,7 +159,7 @@ class StripeConnectWebhookAccountUpdatedTest {
         UserEntity user = buildUser(StripeAccountStatus.PENDING_ONBOARDING);
         when(userRepository.findByStripeAccountId(ACCOUNT_ID)).thenReturn(Optional.of(user));
 
-        service.dispatchWebhookEvent(buildAccountUpdatedEvent(false, false, null));
+        service.handleAccountUpdated(buildAccountUpdatedEvent(false, false, null));
 
         assertThat(user.getStripeAccountStatus()).isEqualTo(StripeAccountStatus.PENDING_ONBOARDING);
         verify(userRepository, never()).save(any());
@@ -186,12 +179,12 @@ class StripeConnectWebhookAccountUpdatedTest {
         when(deserializer.getObject()).thenReturn(Optional.of(account));
 
         Event event = mock(Event.class);
-        when(event.getType()).thenReturn("account.updated");
+        lenient().when(event.getType()).thenReturn("account.updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
 
         when(userRepository.findByStripeAccountId(ACCOUNT_ID)).thenReturn(Optional.empty());
 
-        service.dispatchWebhookEvent(event);
+        service.handleAccountUpdated(event);
 
         verify(userRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());

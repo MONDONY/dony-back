@@ -1,6 +1,8 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.stripe.StripeWebhookIngestService;
+import com.dony.api.common.stripe.StripeWebhookSource;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
@@ -26,9 +28,12 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final StripeWebhookIngestService ingestService;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService,
+                             StripeWebhookIngestService ingestService) {
         this.paymentService = paymentService;
+        this.ingestService = ingestService;
     }
 
     // Story 6.2 — Créer un compte Stripe Express pour le voyageur
@@ -71,12 +76,12 @@ public class PaymentController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Webhook Stripe — endpoint public (signature validée dans PaymentService)
+    // Webhook Stripe — endpoint public (signature validée dans StripeWebhookIngestService)
     @PostMapping("/webhook")
     public ResponseEntity<Void> handleWebhook(
             @RequestBody String payload,
             @RequestHeader("Stripe-Signature") String sigHeader) {
-        paymentService.handleWebhook(payload, sigHeader);
+        ingestService.ingest(payload, sigHeader, StripeWebhookSource.PAYMENTS);
         return ResponseEntity.ok().build();
     }
 

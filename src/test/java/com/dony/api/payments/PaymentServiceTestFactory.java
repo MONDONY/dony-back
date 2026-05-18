@@ -2,11 +2,9 @@ package com.dony.api.payments;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import org.springframework.context.ApplicationEventPublisher;
 
 import static org.mockito.Mockito.mock;
@@ -53,10 +51,7 @@ class PaymentServiceTestFactory {
                 mock(PaymentRepository.class),
                 mock(AuditService.class),
                 mock(ApplicationEventPublisher.class),
-                "whsec_test",
-                defaultConnectProperties(),
-                mock(ProcessedStripeEventRepository.class),
-                mock(CashCommissionWebhookHandler.class)
+                defaultConnectProperties()
         );
     }
 }

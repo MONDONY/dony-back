@@ -4,8 +4,6 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
@@ -43,8 +41,6 @@ class StripeConnectAccountCreationTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
-    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
-    @Mock CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     PaymentService service;
 
@@ -55,10 +51,7 @@ class StripeConnectAccountCreationTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties(),
-                processedStripeEventRepository,
-                cashCommissionWebhookHandler);
+                PaymentServiceTestFactory.defaultConnectProperties());
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

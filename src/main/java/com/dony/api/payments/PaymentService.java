@@ -5,8 +5,6 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.common.ProcessedStripeEvent;
-import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -20,21 +18,18 @@ import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentResponse;
 import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
-import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
-import com.stripe.net.Webhook;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -60,10 +55,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
-    private final String webhookSecret;
     private final StripeConnectProperties stripeConnectProperties;
-    private final ProcessedStripeEventRepository processedStripeEventRepository;
-    private final com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -74,20 +66,14 @@ public class PaymentService {
                           PaymentRepository paymentRepository,
                           AuditService auditService,
                           ApplicationEventPublisher eventPublisher,
-                          @Qualifier("stripeWebhookSecret") String webhookSecret,
-                          StripeConnectProperties stripeConnectProperties,
-                          ProcessedStripeEventRepository processedStripeEventRepository,
-                          com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler) {
+                          StripeConnectProperties stripeConnectProperties) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
-        this.webhookSecret = webhookSecret;
         this.stripeConnectProperties = stripeConnectProperties;
-        this.processedStripeEventRepository = processedStripeEventRepository;
-        this.cashCommissionWebhookHandler = cashCommissionWebhookHandler;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -437,55 +423,9 @@ public class PaymentService {
         }
     }
 
-    // ── Webhook Stripe ────────────────────────────────────────────────────────
+    // ── Webhook handlers (package-private — appelés depuis PaymentStripeWebhookHandler) ──
 
-    public void handleWebhook(String payload, String sigHeader) {
-        Event event;
-        try {
-            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
-        } catch (SignatureVerificationException e) {
-            log.warn("Invalid Stripe webhook signature");
-            throw new DonyBusinessException(HttpStatus.BAD_REQUEST,
-                    "invalid-webhook-signature", "Webhook Error",
-                    "Signature webhook invalide");
-        }
-
-        log.info("Stripe webhook received: {}", event.getType());
-
-        // Idempotency: skip already-processed events
-        if (processedStripeEventRepository.existsByEventId(event.getId())) {
-            log.info("Stripe payment event {} already processed — skipping", event.getId());
-            return;
-        }
-        processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
-
-        dispatchWebhookEvent(event);
-    }
-
-    /**
-     * Dispatches a verified Stripe Event to the appropriate handler.
-     * Package-private to allow tests to invoke without constructing a signed payload.
-     */
-    void dispatchWebhookEvent(Event event) {
-        switch (event.getType()) {
-            case "account.updated" -> handleAccountUpdated(event);
-            // payment_intent.amount_capturable_updated fires when card is authorized (capture_method=manual)
-            case "payment_intent.amount_capturable_updated" -> handlePaymentEscrowActive(event);
-            case "payment_intent.payment_failed" -> {
-                handlePaymentFailed(event);
-                cashCommissionWebhookHandler.handlePaymentIntentFailed(event);
-            }
-            // Story 6.7 — confirm refund initiated by TripCancelledEventListener
-            case "charge.refunded" -> handleChargeRefunded(event);
-            // Cash commission webhook events
-            case "setup_intent.succeeded" -> cashCommissionWebhookHandler.handleSetupIntentSucceeded(event);
-            case "payment_intent.succeeded" -> cashCommissionWebhookHandler.handlePaymentIntentSucceeded(event);
-            case "payment_method.detached" -> cashCommissionWebhookHandler.handlePaymentMethodDetached(event);
-            default -> log.debug("Unhandled webhook event: {}", event.getType());
-        }
-    }
-
-    private void handleAccountUpdated(Event event) {
+    void handleAccountUpdated(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresentOrElse(
             obj -> {
                 Account account = (Account) obj;
@@ -538,7 +478,7 @@ public class PaymentService {
         }
     }
 
-    private void handlePaymentEscrowActive(Event event) {
+    void handlePaymentEscrowActive(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             PaymentIntent pi = (PaymentIntent) obj;
             paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
@@ -666,7 +606,7 @@ public class PaymentService {
         }
     }
 
-    private void handlePaymentFailed(Event event) {
+    void handlePaymentFailed(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             PaymentIntent pi = (PaymentIntent) obj;
             paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
@@ -682,7 +622,7 @@ public class PaymentService {
         });
     }
 
-    private void handleChargeRefunded(Event event) {
+    void handleChargeRefunded(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             Charge charge = (Charge) obj;
             String piId = charge.getPaymentIntent();
