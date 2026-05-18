@@ -273,6 +273,16 @@
   const token = [[${trackingToken}]];
   const statusUrl = '/api/v1/tracking/public/' + token + '/status';
 
+  function esc(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  }
+
   function iconFor(label) {
     if (label === 'Départ confirmé') return '✈️';
     if (label === 'Arrivée confirmée') return '🛬';
@@ -286,19 +296,27 @@
     const timelineEl = document.querySelector('.timeline');
     if (!timelineEl || data.events.length === 0) return;
 
-    timelineEl.innerHTML = data.events.map((e, i) => `
-      <div class="timeline-item">
+    timelineEl.innerHTML = data.events.map((e, i) => {
+      const safeLabel = esc(e.label);
+      const safeScannedAt = esc(e.scannedAt);
+      const safePhotoUrl = esc(e.photoUrl);
+      const icon = iconFor(e.label);
+      const line = i < data.events.length - 1 ? '<div class="timeline-line"></div>' : '';
+      const photo = safePhotoUrl ? `<img src="${safePhotoUrl}" alt="Photo du scan" loading="lazy">` : '';
+      const offline = e.offline ? '<div class="offline-badge">📵 Scan synchronisé (mode offline)</div>' : '';
+      return `<div class="timeline-item">
         <div class="timeline-left">
-          <div class="timeline-dot">${iconFor(e.label)}</div>
-          ${i < data.events.length - 1 ? '<div class="timeline-line"></div>' : ''}
+          <div class="timeline-dot">${icon}</div>
+          ${line}
         </div>
         <div class="timeline-content">
-          <h3>${e.label}</h3>
-          <div class="ts">${e.scannedAt}</div>
-          ${e.photoUrl ? `<img src="${e.photoUrl}" alt="Photo du scan" loading="lazy">` : ''}
-          ${e.offline ? '<div class="offline-badge">📵 Scan synchronisé (mode offline)</div>' : ''}
+          <h3>${safeLabel}</h3>
+          <div class="ts">${safeScannedAt}</div>
+          ${photo}
+          ${offline}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   setInterval(function () {
