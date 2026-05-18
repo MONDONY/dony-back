@@ -36,6 +36,13 @@ public class PaymentController {
         this.ingestService = ingestService;
     }
 
+    // Story 6.2 — Lire l'état du compte Stripe Connect (lecture seule depuis la DB)
+    @GetMapping("/connect/account")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<ConnectAccountResponse> getConnectAccount() {
+        return ResponseEntity.ok(paymentService.getConnectAccountStatus(requireFirebaseUid()));
+    }
+
     // Story 6.2 — Créer un compte Stripe Express pour le voyageur
     @PostMapping("/connect/account")
     @PreAuthorize("hasRole('TRAVELER')")

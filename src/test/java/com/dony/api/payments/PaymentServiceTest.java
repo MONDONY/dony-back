@@ -601,6 +601,73 @@ class PaymentServiceTest {
         }
     }
 
+    @Test
+    void handlePaymentEscrowActive_deserializerEmpty_fallbackToApiSetsEscrow() {
+        PaymentEntity payment = buildPayment(PaymentStatus.PENDING, "pi_fallback");
+
+        Event event = mock(Event.class);
+        lenient().when(event.getId()).thenReturn("evt_test_fallback");
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+        when(deserializer.getObject()).thenReturn(Optional.empty());
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"pi_fallback\"}");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_fallback");
+            when(mockPi.getAmountCapturable()).thenReturn(8400L);
+            when(mockPi.getLatestCharge()).thenReturn(null);
+            when(mockPi.getMetadata()).thenReturn(new java.util.HashMap<>());
+            piStatic.when(() -> PaymentIntent.retrieve("pi_fallback")).thenReturn(mockPi);
+
+            when(paymentRepository.findByStripePaymentIntentId("pi_fallback")).thenReturn(Optional.of(payment));
+            when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bidRepository.findByPaymentIntentId("pi_fallback")).thenReturn(Optional.empty());
+
+            service.handlePaymentEscrowActive(event);
+        }
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.ESCROW);
+        verify(eventPublisher).publishEvent(any(PaymentEscrowReadyEvent.class));
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_ESCROW_ACTIVE"), any(), any());
+    }
+
+    @Test
+    void confirmBidPayment_requiresCapture_alsoSetsPaymentToEscrow() {
+        BidEntity bid = buildBid(BidStatus.AWAITING_PAYMENT);
+        bid.setPaymentIntentId("pi_test2");
+        AnnouncementEntity ann = buildAnnouncement();
+        ann.setDepartureCity("Paris");
+        ann.setArrivalCity("Dakar");
+        UserEntity sender = buildUser(senderId, "uid-sender");
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findByPaymentIntentId("pi_test2")).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+
+        PaymentEntity payment = buildPayment(PaymentStatus.PENDING, "pi_test2");
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getId()).thenReturn("pi_test2");
+            when(pi.getStatus()).thenReturn("requires_capture");
+            when(pi.getLatestCharge()).thenReturn("ch_test2");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test2")).thenReturn(pi);
+
+            boolean result = service.confirmBidPayment(bidId);
+
+            assertThat(result).isTrue();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.PAYMENT_ESCROWED);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.ESCROW);
+            assertThat(payment.getStripeChargeId()).isEqualTo("ch_test2");
+            verify(paymentRepository, atLeastOnce()).save(payment);
+            verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_ESCROW_ACTIVE"), any(), any());
+        }
+    }
+
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────
 
     private Event buildEventWith(String type, Object stripeObj) {

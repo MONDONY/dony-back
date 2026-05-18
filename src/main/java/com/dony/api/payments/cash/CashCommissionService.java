@@ -195,8 +195,9 @@ public class CashCommissionService {
             throw new CommissionMethodMissingException();
         }
 
-        BigDecimal commission = computeCommission(
-                bid.getDeclaredValueEur() != null ? bid.getDeclaredValueEur() : BigDecimal.ZERO);
+        AnnouncementEntity announcement = announcementRepo.findById(bid.getAnnouncementId()).orElseThrow();
+        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
+        BigDecimal commission = computeCommission(cashAmount);
         long amountCents = commission.multiply(new BigDecimal(100)).longValueExact();
         String idempotencyKey = "bid_accept_" + bid.getId() + "_v" + bid.getCommissionRetryCount();
 

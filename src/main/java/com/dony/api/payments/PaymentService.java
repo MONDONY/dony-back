@@ -87,6 +87,11 @@ public class PaymentService {
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
 
+    public ConnectAccountResponse getConnectAccountStatus(String firebaseUid) {
+        UserEntity user = findUser(firebaseUid);
+        return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
+    }
+
     public ConnectAccountResponse createConnectAccount(String firebaseUid) {
         UserEntity user = findUser(firebaseUid);
 
@@ -383,18 +388,24 @@ public class PaymentService {
             // On la demande de manière idempotente : si déjà active, no-op.
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
+            long commissionCents = commission.multiply(BigDecimal.valueOf(100)).longValue();
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(amountCents)
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     .setOnBehalfOf(traveler.getStripeAccountId())
                     .setStatementDescriptorSuffix("DONY")
-                    // No application_fee_amount, no transfer_data: separate charges and transfers model.
-                    // Funds stay on platform balance until DeliveryEventListener triggers Transfer.create
-                    // at delivery confirmation. Commission is held back implicitly (transfer = total - commission).
+                    // Separate charges and transfers: no transfer_data, no application_fee_amount.
+                    // Funds stay on platform balance (on_behalf_of = statement/dashboard only).
+                    // At delivery, DeliveryEventListener creates Transfer(amount - commission).
+                    // Commission is explicit in metadata; fund hold is the implicit collection mechanism.
                     .putMetadata("bid_id", bidId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
+                    .putMetadata("commission_eur", commission.toPlainString())
+                    .putMetadata("commission_rate", commissionRate.toPlainString())
+                    .putMetadata("commission_cents", String.valueOf(commissionCents))
                     .build();
 
             PaymentIntent pi = PaymentIntent.create(params);
@@ -443,8 +454,9 @@ public class PaymentService {
                 userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
                     StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
 
-                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING) {
-                        return; // still pending, no state change
+                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING
+                            && user.getStripeAccountStatus() == StripeAccountStatus.PENDING_ONBOARDING) {
+                        return; // already pending, no state change
                     }
 
                     // Only emit event on first transition to ONBOARDING_COMPLETE
@@ -488,48 +500,68 @@ public class PaymentService {
     }
 
     void handlePaymentEscrowActive(Event event) {
-        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
-            PaymentIntent pi = (PaymentIntent) obj;
-            paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
-                boolean changed = false;
+        PaymentIntent pi;
+        Optional<com.stripe.model.StripeObject> objOpt = event.getDataObjectDeserializer().getObject();
+        if (objOpt.isPresent()) {
+            pi = (PaymentIntent) objOpt.get();
+        } else {
+            // API version mismatch between Stripe CLI/server and Java SDK — fall back to live API fetch.
+            try {
+                String rawJson = event.getDataObjectDeserializer().getRawJson();
+                JsonNode node = objectMapper.readTree(rawJson);
+                String piId = node.get("id").asText();
+                pi = PaymentIntent.retrieve(piId);
+                log.debug("handlePaymentEscrowActive: deserializer was empty for event {}, fetched PI {} via API",
+                        event.getId(), piId);
+            } catch (Exception e) {
+                log.error("handlePaymentEscrowActive: cannot resolve PaymentIntent from event {}: {}",
+                        event.getId(), e.getMessage(), e);
+                return;
+            }
+        }
 
-                // Persist the Stripe Charge id for later Transfer.sourceTransaction reconciliation
-                // (Task 9b). Idempotent: only set once.
-                String chargeId = pi.getLatestCharge();
-                if (chargeId != null && payment.getStripeChargeId() == null) {
-                    payment.setStripeChargeId(chargeId);
-                    changed = true;
-                }
+        final PaymentIntent finalPi = pi;
 
-                if (payment.getStatus() == PaymentStatus.PENDING) {
-                    payment.setStatus(PaymentStatus.ESCROW);
-                    changed = true;
-                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
-                            payment.getBidId(),
-                            Map.of("piId", pi.getId(), "amountCapturable", pi.getAmountCapturable()));
-                    log.info("Payment {} now in ESCROW (PI={})", payment.getId(), pi.getId());
-                    eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
-                }
+        paymentRepository.findByStripePaymentIntentId(finalPi.getId()).ifPresent(payment -> {
+            boolean changed = false;
 
-                if (changed) {
-                    paymentRepository.save(payment);
-                }
-            });
-            // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
-            promoteBidOnPaymentAuthorized(pi.getId());
+            // Persist the Stripe Charge id for later Transfer.sourceTransaction reconciliation.
+            // Idempotent: only set once.
+            String chargeId = finalPi.getLatestCharge();
+            if (chargeId != null && payment.getStripeChargeId() == null) {
+                payment.setStripeChargeId(chargeId);
+                changed = true;
+            }
 
-            // Marketplace package_request flow: if this PI is bound to a negotiation thread,
-            // ask the NegotiationService to finalize via the application context (avoid circular DI).
-            String scope = pi.getMetadata().get("scope");
-            String negotiationThreadId = pi.getMetadata().get("negotiation_thread_id");
-            if ("NEGOTIATION".equals(scope) && negotiationThreadId != null) {
-                eventPublisher.publishEvent(new NegotiationPaymentAuthorizedEvent(
-                        java.util.UUID.fromString(negotiationThreadId),
-                        java.util.UUID.fromString(pi.getMetadata().get("sender_id")),
-                        pi.getId()
-                ));
+            if (payment.getStatus() == PaymentStatus.PENDING) {
+                payment.setStatus(PaymentStatus.ESCROW);
+                changed = true;
+                auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
+                        payment.getBidId(),
+                        Map.of("piId", finalPi.getId(), "amountCapturable", finalPi.getAmountCapturable()));
+                log.info("Payment {} now in ESCROW (PI={})", payment.getId(), finalPi.getId());
+                eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
+            }
+
+            if (changed) {
+                paymentRepository.save(payment);
             }
         });
+
+        // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
+        promoteBidOnPaymentAuthorized(finalPi.getId());
+
+        // Marketplace package_request flow: if this PI is bound to a negotiation thread,
+        // ask the NegotiationService to finalize via the application context (avoid circular DI).
+        String scope = finalPi.getMetadata().get("scope");
+        String negotiationThreadId = finalPi.getMetadata().get("negotiation_thread_id");
+        if ("NEGOTIATION".equals(scope) && negotiationThreadId != null) {
+            eventPublisher.publishEvent(new NegotiationPaymentAuthorizedEvent(
+                    java.util.UUID.fromString(negotiationThreadId),
+                    java.util.UUID.fromString(finalPi.getMetadata().get("sender_id")),
+                    finalPi.getId()
+            ));
+        }
     }
 
     /**
@@ -604,6 +636,27 @@ public class PaymentService {
                     || "succeeded".equals(status)
                     || "processing".equals(status)) {
                 promoteBidOnPaymentAuthorized(piId);
+                // Also transition the payment entity to ESCROW so DeliveryEventListener can release it.
+                paymentRepository.findByBidId(bidId).ifPresent(payment -> {
+                    boolean changed = false;
+                    String chargeId = pi.getLatestCharge();
+                    if (chargeId != null && payment.getStripeChargeId() == null) {
+                        payment.setStripeChargeId(chargeId);
+                        changed = true;
+                    }
+                    if (payment.getStatus() == PaymentStatus.PENDING) {
+                        payment.setStatus(PaymentStatus.ESCROW);
+                        changed = true;
+                        auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
+                                payment.getBidId(),
+                                Map.of("piId", pi.getId(), "source", "confirmBidPayment"));
+                        log.info("Payment {} set to ESCROW via confirmBidPayment (PI={})",
+                                payment.getId(), pi.getId());
+                    }
+                    if (changed) {
+                        paymentRepository.save(payment);
+                    }
+                });
                 return true;
             }
             log.info("Bid {} not promoted: PI {} status={}", bidId, piId, status);
