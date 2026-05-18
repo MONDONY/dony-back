@@ -1,6 +1,7 @@
 package com.dony.api.payments;
 
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
+import com.dony.api.payments.chargeback.ChargebackService;
 import com.stripe.model.Event;
 import com.stripe.net.ApiResource;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,11 +19,12 @@ class PaymentStripeWebhookHandlerTest {
 
     @Mock PaymentService paymentService;
     @Mock CashCommissionWebhookHandler cashHandler;
+    @Mock ChargebackService chargebackService;
     PaymentStripeWebhookHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService);
     }
 
     private Event buildEvent(String type) {
@@ -41,6 +43,10 @@ class PaymentStripeWebhookHandlerTest {
         assertThat(handler.supports("setup_intent.succeeded")).isTrue();
         assertThat(handler.supports("payment_intent.succeeded")).isTrue();
         assertThat(handler.supports("payment_method.detached")).isTrue();
+        assertThat(handler.supports("charge.dispute.created")).isTrue();
+        assertThat(handler.supports("charge.dispute.closed")).isTrue();
+        assertThat(handler.supports("charge.dispute.funds_withdrawn")).isTrue();
+        assertThat(handler.supports("charge.dispute.funds_reinstated")).isTrue();
         assertThat(handler.supports("identity.verification_session.verified")).isFalse();
         assertThat(handler.supports("unknown.event")).isFalse();
     }
@@ -86,5 +92,29 @@ class PaymentStripeWebhookHandlerTest {
     void handle_paymentMethodDetached_callsCashHandler() {
         handler.handle(buildEvent("payment_method.detached"));
         verify(cashHandler).handlePaymentMethodDetached(any());
+    }
+
+    @Test
+    void handle_disputeCreated_callsChargebackService() {
+        handler.handle(buildEvent("charge.dispute.created"));
+        verify(chargebackService).handleDisputeCreated(any());
+    }
+
+    @Test
+    void handle_disputeClosed_callsChargebackService() {
+        handler.handle(buildEvent("charge.dispute.closed"));
+        verify(chargebackService).handleDisputeClosed(any());
+    }
+
+    @Test
+    void handle_disputeFundsWithdrawn_callsChargebackService() {
+        handler.handle(buildEvent("charge.dispute.funds_withdrawn"));
+        verify(chargebackService).handleFundsWithdrawn(any());
+    }
+
+    @Test
+    void handle_disputeFundsReinstated_callsChargebackService() {
+        handler.handle(buildEvent("charge.dispute.funds_reinstated"));
+        verify(chargebackService).handleFundsReinstated(any());
     }
 }

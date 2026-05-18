@@ -2,6 +2,7 @@ package com.dony.api.payments;
 
 import com.dony.api.common.stripe.StripeWebhookHandler;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
+import com.dony.api.payments.chargeback.ChargebackService;
 import com.stripe.model.Event;
 import org.springframework.stereotype.Component;
 
@@ -17,16 +18,23 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             "charge.refunded",
             "setup_intent.succeeded",
             "payment_intent.succeeded",
-            "payment_method.detached"
+            "payment_method.detached",
+            "charge.dispute.created",
+            "charge.dispute.closed",
+            "charge.dispute.funds_withdrawn",
+            "charge.dispute.funds_reinstated"
     );
 
     private final PaymentService paymentService;
     private final CashCommissionWebhookHandler cashHandler;
+    private final ChargebackService chargebackService;
 
     public PaymentStripeWebhookHandler(PaymentService paymentService,
-                                        CashCommissionWebhookHandler cashHandler) {
+                                        CashCommissionWebhookHandler cashHandler,
+                                        ChargebackService chargebackService) {
         this.paymentService = paymentService;
         this.cashHandler = cashHandler;
+        this.chargebackService = chargebackService;
     }
 
     @Override
@@ -43,10 +51,14 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
                 paymentService.handlePaymentFailed(event);
                 cashHandler.handlePaymentIntentFailed(event);
             }
-            case "charge.refunded"          -> paymentService.handleChargeRefunded(event);
-            case "setup_intent.succeeded"   -> cashHandler.handleSetupIntentSucceeded(event);
-            case "payment_intent.succeeded" -> cashHandler.handlePaymentIntentSucceeded(event);
-            case "payment_method.detached"  -> cashHandler.handlePaymentMethodDetached(event);
+            case "charge.refunded"                    -> paymentService.handleChargeRefunded(event);
+            case "setup_intent.succeeded"             -> cashHandler.handleSetupIntentSucceeded(event);
+            case "payment_intent.succeeded"           -> cashHandler.handlePaymentIntentSucceeded(event);
+            case "payment_method.detached"            -> cashHandler.handlePaymentMethodDetached(event);
+            case "charge.dispute.created"             -> chargebackService.handleDisputeCreated(event);
+            case "charge.dispute.closed"              -> chargebackService.handleDisputeClosed(event);
+            case "charge.dispute.funds_withdrawn"     -> chargebackService.handleFundsWithdrawn(event);
+            case "charge.dispute.funds_reinstated"    -> chargebackService.handleFundsReinstated(event);
         }
     }
 }
