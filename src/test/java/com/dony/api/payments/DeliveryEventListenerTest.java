@@ -3,6 +3,7 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -39,13 +40,14 @@ class DeliveryEventListenerTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private BidRepository bidRepository;
+    @Mock private AdminAlertService adminAlert;
 
     private DeliveryEventListener listener;
 
     @BeforeEach
     void setUp() {
         listener = new DeliveryEventListener(paymentRepository, userRepository,
-                auditService, eventPublisher, bidRepository);
+                auditService, eventPublisher, bidRepository, adminAlert);
     }
 
     private PaymentEntity payment(boolean legacy, PaymentStatus status, String chargeId) {

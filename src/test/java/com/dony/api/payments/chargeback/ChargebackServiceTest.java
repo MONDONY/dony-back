@@ -1,0 +1,146 @@
+package com.dony.api.payments.chargeback;
+
+import com.dony.api.common.AuditService;
+import com.dony.api.common.stripe.AdminAlertService;
+import com.dony.api.payments.PaymentEntity;
+import com.dony.api.payments.PaymentRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stripe.model.Event;
+import com.stripe.net.ApiResource;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class ChargebackServiceTest {
+
+    @Mock ChargebackRepository chargebackRepository;
+    @Mock PaymentRepository paymentRepository;
+    @Mock AuditService auditService;
+    @Mock AdminAlertService adminAlert;
+
+    ChargebackService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new ChargebackService(chargebackRepository, paymentRepository,
+                auditService, adminAlert, new ObjectMapper());
+    }
+
+    private static void setId(Object entity, UUID id) throws Exception {
+        Field field = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+        field.setAccessible(true);
+        field.set(entity, id);
+    }
+
+    private Event buildDisputeEvent(String type, String disputeId, String chargeId, String status) {
+        String json = String.format(
+            "{\"id\":\"evt_x\",\"object\":\"event\",\"type\":\"%s\"," +
+            "\"data\":{\"object\":{\"id\":\"%s\",\"charge\":\"%s\"," +
+            "\"amount\":1000,\"currency\":\"eur\",\"reason\":\"fraudulent\"," +
+            "\"status\":\"%s\"}}}", type, disputeId, chargeId, status);
+        return ApiResource.GSON.fromJson(json, Event.class);
+    }
+
+    @Test
+    void handleDisputeCreated_savesChargebackAndFlagsPayment() {
+        String disputeId = "dp_test_001";
+        String chargeId  = "ch_test_001";
+        UUID paymentId   = UUID.randomUUID();
+        UUID bidId       = UUID.randomUUID();
+
+        PaymentEntity payment = new PaymentEntity();
+        payment.setStripePaymentIntentId("pi_test");
+        payment.setAmount(BigDecimal.valueOf(10));
+        payment.setCommissionAmount(BigDecimal.valueOf(1.2));
+
+        // Use reflection / setter to set id
+        when(paymentRepository.findByStripeChargeId(chargeId)).thenReturn(Optional.of(payment));
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(Optional.empty());
+
+        Event event = buildDisputeEvent("charge.dispute.created", disputeId, chargeId, "needs_response");
+        service.handleDisputeCreated(event);
+
+        // chargeback should be saved
+        ArgumentCaptor<ChargebackEntity> captor = ArgumentCaptor.forClass(ChargebackEntity.class);
+        verify(chargebackRepository).save(captor.capture());
+        ChargebackEntity saved = captor.getValue();
+        assertThat(saved.getStripeDisputeId()).isEqualTo(disputeId);
+        assertThat(saved.getStripeChargeId()).isEqualTo(chargeId);
+        assertThat(saved.getAmount()).isEqualTo(1000L);
+        assertThat(saved.getStatus()).isEqualTo(ChargebackStatus.OPEN);
+
+        // payment should be flagged as disputed
+        assertThat(payment.isDisputed()).isTrue();
+        verify(paymentRepository).save(payment);
+
+        // admin alert should be raised
+        verify(adminAlert).raise(eq("STRIPE_CHARGEBACK_OPENED"), anyString(), anyMap());
+
+        // audit should be logged
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_DISPUTED"), any(), anyMap());
+    }
+
+    @Test
+    void handleDisputeCreated_idempotent_skipsIfAlreadyRecorded() {
+        String disputeId = "dp_duplicate";
+        when(chargebackRepository.findByStripeDisputeId(disputeId))
+                .thenReturn(Optional.of(new ChargebackEntity()));
+
+        Event event = buildDisputeEvent("charge.dispute.created", disputeId, "ch_x", "needs_response");
+        service.handleDisputeCreated(event);
+
+        // No new save expected
+        verify(chargebackRepository, never()).save(any());
+        verify(adminAlert, never()).raise(any(), any(), any());
+    }
+
+    @Test
+    void handleDisputeClosed_won_updatesStatusAndClearsPaymentDisputed() throws Exception {
+        String disputeId = "dp_won_001";
+        UUID paymentId   = UUID.randomUUID();
+        UUID cbId        = UUID.randomUUID();
+
+        ChargebackEntity cb = new ChargebackEntity();
+        setId(cb, cbId);
+        cb.setStripeDisputeId(disputeId);
+        cb.setStatus(ChargebackStatus.OPEN);
+        cb.setPaymentId(paymentId);
+        cb.setOpenedAt(java.time.Instant.now());
+
+        PaymentEntity payment = new PaymentEntity();
+        payment.setDisputed(true);
+        payment.setStripePaymentIntentId("pi_test");
+        payment.setAmount(BigDecimal.valueOf(10));
+        payment.setCommissionAmount(BigDecimal.valueOf(1.2));
+
+        when(chargebackRepository.findByStripeDisputeId(disputeId)).thenReturn(Optional.of(cb));
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(payment));
+
+        Event event = buildDisputeEvent("charge.dispute.closed", disputeId, "ch_x", "won");
+        service.handleDisputeClosed(event);
+
+        assertThat(cb.getStatus()).isEqualTo(ChargebackStatus.WON);
+        assertThat(cb.getOutcome()).isEqualTo("won");
+        assertThat(cb.getResolvedAt()).isNotNull();
+        assertThat(payment.isDisputed()).isFalse();
+
+        verify(chargebackRepository).save(cb);
+        verify(paymentRepository).save(payment);
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_DISPUTE_WON"), any(), anyMap());
+        verify(auditService).log(eq("CHARGEBACK"), any(), eq("CHARGEBACK_CLOSED"), any(), anyMap());
+        verify(adminAlert).raise(eq("STRIPE_CHARGEBACK_CLOSED"), anyString(), anyMap());
+    }
+}
