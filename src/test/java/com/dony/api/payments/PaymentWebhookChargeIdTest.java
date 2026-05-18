@@ -2,9 +2,7 @@ package com.dony.api.payments;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.config.StripeConnectProperties;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import com.stripe.model.Event;
@@ -33,17 +31,16 @@ class PaymentWebhookChargeIdTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
-    @Mock private ProcessedStripeEventRepository processedStripeEventRepository;
-    @Mock private CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     private PaymentService service;
 
     @BeforeEach
     void setUp() {
         service = new PaymentService(userRepository, bidRepository, announcementRepository,
-                paymentRepository, auditService, eventPublisher, "whsec_test",
-                PaymentServiceTestFactory.defaultConnectProperties(), processedStripeEventRepository,
-                cashCommissionWebhookHandler);
+                paymentRepository, auditService, eventPublisher,
+                PaymentServiceTestFactory.defaultConnectProperties(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class));
     }
 
     @Test
@@ -64,11 +61,11 @@ class PaymentWebhookChargeIdTest {
 
         Event event = mock(Event.class);
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
+        lenient().when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
         when(deserializer.getObject()).thenReturn(Optional.of(pi));
 
-        service.dispatchWebhookEvent(event);
+        service.handlePaymentEscrowActive(event);
 
         assertThat(payment.getStripeChargeId()).isEqualTo("ch_abc");
         verify(paymentRepository).save(payment);
@@ -92,11 +89,11 @@ class PaymentWebhookChargeIdTest {
 
         Event event = mock(Event.class);
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
+        lenient().when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
         when(deserializer.getObject()).thenReturn(Optional.of(pi));
 
-        service.dispatchWebhookEvent(event);
+        service.handlePaymentEscrowActive(event);
 
         assertThat(payment.getStripeChargeId()).isNull();
     }
@@ -120,11 +117,11 @@ class PaymentWebhookChargeIdTest {
 
         Event event = mock(Event.class);
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
-        when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
+        lenient().when(event.getType()).thenReturn("payment_intent.amount_capturable_updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
         when(deserializer.getObject()).thenReturn(Optional.of(pi));
 
-        service.dispatchWebhookEvent(event);
+        service.handlePaymentEscrowActive(event);
 
         assertThat(payment.getStripeChargeId()).isEqualTo("ch_OLD");
     }

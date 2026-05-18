@@ -2,11 +2,11 @@ package com.dony.api.payments;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
 
 import static org.mockito.Mockito.mock;
@@ -53,10 +53,30 @@ class PaymentServiceTestFactory {
                 mock(PaymentRepository.class),
                 mock(AuditService.class),
                 mock(ApplicationEventPublisher.class),
-                "whsec_test",
                 defaultConnectProperties(),
-                mock(ProcessedStripeEventRepository.class),
-                mock(CashCommissionWebhookHandler.class)
+                new ObjectMapper(),
+                mock(AdminAlertService.class)
+        );
+    }
+
+    /**
+     * Overload that accepts specific mocks for targeted handler unit tests.
+     * Repositories and services not provided are mocked internally.
+     */
+    static PaymentService bare(PaymentRepository paymentRepository,
+                               UserRepository userRepository,
+                               AuditService auditService,
+                               AdminAlertService adminAlert) {
+        return new PaymentService(
+                userRepository,
+                mock(BidRepository.class),
+                mock(AnnouncementRepository.class),
+                paymentRepository,
+                auditService,
+                mock(ApplicationEventPublisher.class),
+                defaultConnectProperties(),
+                new ObjectMapper(),
+                adminAlert
         );
     }
 }

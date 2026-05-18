@@ -4,8 +4,6 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.common.ProcessedStripeEventRepository;
-import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -53,8 +51,6 @@ class PaymentServiceOnBehalfOfTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
-    @Mock ProcessedStripeEventRepository processedStripeEventRepository;
-    @Mock CashCommissionWebhookHandler cashCommissionWebhookHandler;
 
     PaymentService service;
 
@@ -77,8 +73,9 @@ class PaymentServiceOnBehalfOfTest {
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
-                "whsec_test", props, processedStripeEventRepository,
-                cashCommissionWebhookHandler);
+                props,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class));
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

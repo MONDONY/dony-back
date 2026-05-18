@@ -70,6 +70,7 @@ public class SecurityConfig {
                     "/config/**",
                     "/kyc/webhook",
                     "/payments/webhook",
+                    "/payments/stripe/webhook",
                     "/ratings/recipient",
                     "/ratings/user/**",
                     "/tracking/search",

@@ -5,23 +5,12 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
-import com.dony.api.common.ProcessedStripeEvent;
-import com.dony.api.common.ProcessedStripeEventRepository;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
-import com.dony.api.kyc.events.UserKycVerifiedEvent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.identity.VerificationSession;
-import com.stripe.net.Webhook;
-import com.stripe.model.Event;
 import com.stripe.param.identity.VerificationSessionCreateParams;
-import io.sentry.Sentry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,23 +27,13 @@ public class KycService {
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final ProcessedStripeEventRepository processedStripeEventRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${stripe.webhook-secret}")
-    private String webhookSecret;
 
     public KycService(KycRepository kycRepository,
                       UserRepository userRepository,
-                      AuditService auditService,
-                      ApplicationEventPublisher eventPublisher,
-                      ProcessedStripeEventRepository processedStripeEventRepository) {
+                      AuditService auditService) {
         this.kycRepository = kycRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
-        this.eventPublisher = eventPublisher;
-        this.processedStripeEventRepository = processedStripeEventRepository;
     }
 
     @Transactional
@@ -160,107 +139,4 @@ public class KycService {
         return new KycStatusResponse(user.getKycStatus().name(), verificationStatus);
     }
 
-    @Transactional
-    public void processWebhook(String payload, String sigHeader) {
-        Event event;
-        try {
-            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
-        } catch (SignatureVerificationException e) {
-            log.warn("Invalid Stripe webhook signature: {}", e.getMessage());
-            Sentry.captureException(e);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature Stripe invalide");
-        }
-
-        String eventType = event.getType();
-        log.info("Stripe Identity webhook received: {}", eventType);
-
-        // Idempotency: skip already-processed events
-        if (processedStripeEventRepository.existsByEventId(event.getId())) {
-            log.info("Stripe KYC event {} already processed — skipping", event.getId());
-            return;
-        }
-        processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
-
-        if (!"identity.verification_session.verified".equals(eventType) &&
-                !"identity.verification_session.requires_input".equals(eventType) &&
-                !"identity.verification_session.canceled".equals(eventType)) {
-            return;
-        }
-
-        // Extract sessionId from raw JSON to avoid Stripe SDK API version mismatch
-        String rawJson = event.getDataObjectDeserializer().getRawJson();
-        String sessionId;
-        String lastErrorReason = null;
-        try {
-            JsonNode root = objectMapper.readTree(rawJson);
-            JsonNode idNode = root.path("id");
-            if (idNode.isMissingNode() || idNode.isNull()) {
-                log.warn("Stripe webhook missing session id for event {}", eventType);
-                return;
-            }
-            sessionId = idNode.asText();
-            JsonNode lastError = root.path("last_error");
-            if (!lastError.isMissingNode() && !lastError.isNull()) {
-                lastErrorReason = lastError.path("reason").asText(null);
-            }
-        } catch (Exception e) {
-            log.warn("Could not parse Stripe webhook payload for event {}: {}", eventType, e.getMessage());
-            return;
-        }
-
-        KycVerificationEntity kyc = kycRepository.findByStripeVerificationSessionId(sessionId)
-                .orElse(null);
-
-        if (kyc == null) {
-            log.warn("No KYC record found for session {}", sessionId);
-            return;
-        }
-
-        UserEntity user = userRepository.findById(kyc.getUserId())
-                .orElse(null);
-
-        if (user == null) {
-            log.warn("No user found for KYC record {}", kyc.getId());
-            return;
-        }
-
-        if ("identity.verification_session.verified".equals(eventType)) {
-            // Idempotency: only update if not already VERIFIED
-            if (kyc.getStatus() != KycVerificationStatus.VERIFIED) {
-                kyc.setStatus(KycVerificationStatus.VERIFIED);
-                user.setKycStatus(KycStatus.VERIFIED);
-                kycRepository.save(kyc);
-                userRepository.save(user);
-
-                auditService.log("kyc_verification", kyc.getId(), "KYC_VERIFIED",
-                        user.getId(), Map.of("sessionId", sessionId));
-
-                eventPublisher.publishEvent(new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
-            }
-
-        } else if ("identity.verification_session.canceled".equals(eventType)) {
-            // Session abandonnée avant soumission des documents → NOT_STARTED
-            // L'utilisateur n'a pas tenté la vérification ; on lui permet de recommencer proprement.
-            kyc.setStatus(KycVerificationStatus.REJECTED);
-            kyc.setRejectionReason("session_canceled");
-            user.setKycStatus(KycStatus.NOT_STARTED);
-            kycRepository.save(kyc);
-            userRepository.save(user);
-
-            auditService.log("kyc_verification", kyc.getId(), "KYC_CANCELED",
-                    user.getId(), Map.of("sessionId", sessionId, "reason", "session_canceled"));
-
-        } else {
-            // requires_input → documents soumis mais refusés par Stripe
-            kyc.setStatus(KycVerificationStatus.REJECTED);
-            kyc.setRejectionReason(lastErrorReason != null ? lastErrorReason : "verification_failed");
-            user.setKycStatus(KycStatus.REJECTED);
-            kycRepository.save(kyc);
-            userRepository.save(user);
-
-            auditService.log("kyc_verification", kyc.getId(), "KYC_REJECTED",
-                    user.getId(), Map.of("sessionId", sessionId,
-                            "reason", kyc.getRejectionReason()));
-        }
-    }
 }

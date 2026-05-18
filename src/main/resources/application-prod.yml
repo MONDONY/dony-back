@@ -1,0 +1,27 @@
+# Production profile — security hardening
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+server:
+  forward-headers-strategy: framework
+
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY}
+  webhook:
+    payments-secret: ${STRIPE_WEBHOOK_PAYMENTS_SECRET}
+    kyc-secret: ${STRIPE_WEBHOOK_KYC_SECRET}
+
+dony:
+  kyc:
+    enforce: true
+  stripe:
+    enforce: true
+    webhook:
+      scheduler-enabled: true
+      poll-interval: 10s
+      batch-size: 50
+      max-retries: 8
+      retry-backoff-base: 30s

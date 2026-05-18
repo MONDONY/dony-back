@@ -3,6 +3,7 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -52,17 +53,20 @@ public class DeliveryEventListener {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final BidRepository bidRepository;
+    private final AdminAlertService adminAlert;
 
     public DeliveryEventListener(PaymentRepository paymentRepository,
                                  UserRepository userRepository,
                                  AuditService auditService,
                                  ApplicationEventPublisher eventPublisher,
-                                 BidRepository bidRepository) {
+                                 BidRepository bidRepository,
+                                 AdminAlertService adminAlert) {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.bidRepository = bidRepository;
+        this.adminAlert = adminAlert;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -88,6 +92,17 @@ public class DeliveryEventListener {
         if (payment.getStatus() != PaymentStatus.ESCROW) {
             log.info("Payment {} for bid {} has status {} — skipping escrow release",
                     payment.getId(), event.getBidId(), payment.getStatus());
+            return;
+        }
+
+        if (payment.isDisputed()) {
+            log.warn("Payment {} for bid {} is under chargeback dispute — blocking transfer",
+                    payment.getId(), event.getBidId());
+            auditService.log("PAYMENT", payment.getId(), "DELIVERY_TRANSFER_BLOCKED_CHARGEBACK",
+                    payment.getBidId(), Map.of("bidId", event.getBidId().toString()));
+            adminAlert.raise("CHARGEBACK_TRANSFER_BLOCKED",
+                    "Tentative de liberation escrow bloquee — litige ouvert sur payment " + payment.getId(),
+                    Map.of("paymentId", payment.getId().toString(), "bidId", event.getBidId().toString()));
             return;
         }
 

@@ -5,10 +5,11 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.common.ProcessedStripeEvent;
-import com.dony.api.common.ProcessedStripeEventRepository;
+import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -20,21 +21,18 @@ import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentResponse;
 import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
-import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
-import com.stripe.net.Webhook;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -60,10 +58,9 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
-    private final String webhookSecret;
     private final StripeConnectProperties stripeConnectProperties;
-    private final ProcessedStripeEventRepository processedStripeEventRepository;
-    private final com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler;
+    private final ObjectMapper objectMapper;
+    private final AdminAlertService adminAlert;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -74,23 +71,26 @@ public class PaymentService {
                           PaymentRepository paymentRepository,
                           AuditService auditService,
                           ApplicationEventPublisher eventPublisher,
-                          @Qualifier("stripeWebhookSecret") String webhookSecret,
                           StripeConnectProperties stripeConnectProperties,
-                          ProcessedStripeEventRepository processedStripeEventRepository,
-                          com.dony.api.payments.cash.CashCommissionWebhookHandler cashCommissionWebhookHandler) {
+                          ObjectMapper objectMapper,
+                          AdminAlertService adminAlert) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
-        this.webhookSecret = webhookSecret;
         this.stripeConnectProperties = stripeConnectProperties;
-        this.processedStripeEventRepository = processedStripeEventRepository;
-        this.cashCommissionWebhookHandler = cashCommissionWebhookHandler;
+        this.objectMapper = objectMapper;
+        this.adminAlert = adminAlert;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
+
+    public ConnectAccountResponse getConnectAccountStatus(String firebaseUid) {
+        UserEntity user = findUser(firebaseUid);
+        return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
+    }
 
     public ConnectAccountResponse createConnectAccount(String firebaseUid) {
         UserEntity user = findUser(firebaseUid);
@@ -388,18 +388,24 @@ public class PaymentService {
             // On la demande de manière idempotente : si déjà active, no-op.
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
+            long commissionCents = commission.multiply(BigDecimal.valueOf(100)).longValue();
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(amountCents)
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     .setOnBehalfOf(traveler.getStripeAccountId())
                     .setStatementDescriptorSuffix("DONY")
-                    // No application_fee_amount, no transfer_data: separate charges and transfers model.
-                    // Funds stay on platform balance until DeliveryEventListener triggers Transfer.create
-                    // at delivery confirmation. Commission is held back implicitly (transfer = total - commission).
+                    // Separate charges and transfers: no transfer_data, no application_fee_amount.
+                    // Funds stay on platform balance (on_behalf_of = statement/dashboard only).
+                    // At delivery, DeliveryEventListener creates Transfer(amount - commission).
+                    // Commission is explicit in metadata; fund hold is the implicit collection mechanism.
                     .putMetadata("bid_id", bidId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
+                    .putMetadata("commission_eur", commission.toPlainString())
+                    .putMetadata("commission_rate", commissionRate.toPlainString())
+                    .putMetadata("commission_cents", String.valueOf(commissionCents))
                     .build();
 
             PaymentIntent pi = PaymentIntent.create(params);
@@ -437,83 +443,52 @@ public class PaymentService {
         }
     }
 
-    // ── Webhook Stripe ────────────────────────────────────────────────────────
+    // ── Webhook handlers (package-private — appelés depuis PaymentStripeWebhookHandler) ──
 
-    public void handleWebhook(String payload, String sigHeader) {
-        Event event;
-        try {
-            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
-        } catch (SignatureVerificationException e) {
-            log.warn("Invalid Stripe webhook signature");
-            throw new DonyBusinessException(HttpStatus.BAD_REQUEST,
-                    "invalid-webhook-signature", "Webhook Error",
-                    "Signature webhook invalide");
-        }
+    void handleAccountUpdated(Event event) {
+        Account account = resolveAccountFromEvent(event);
+        if (account == null) return;
 
-        log.info("Stripe webhook received: {}", event.getType());
+        String accountId = account.getId();
+        userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+            StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
 
-        // Idempotency: skip already-processed events
-        if (processedStripeEventRepository.existsByEventId(event.getId())) {
-            log.info("Stripe payment event {} already processed — skipping", event.getId());
-            return;
-        }
-        processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
-
-        dispatchWebhookEvent(event);
-    }
-
-    /**
-     * Dispatches a verified Stripe Event to the appropriate handler.
-     * Package-private to allow tests to invoke without constructing a signed payload.
-     */
-    void dispatchWebhookEvent(Event event) {
-        switch (event.getType()) {
-            case "account.updated" -> handleAccountUpdated(event);
-            // payment_intent.amount_capturable_updated fires when card is authorized (capture_method=manual)
-            case "payment_intent.amount_capturable_updated" -> handlePaymentEscrowActive(event);
-            case "payment_intent.payment_failed" -> {
-                handlePaymentFailed(event);
-                cashCommissionWebhookHandler.handlePaymentIntentFailed(event);
+            if (newStatus == StripeAccountStatus.PENDING_ONBOARDING
+                    && user.getStripeAccountStatus() == StripeAccountStatus.PENDING_ONBOARDING) {
+                return;
             }
-            // Story 6.7 — confirm refund initiated by TripCancelledEventListener
-            case "charge.refunded" -> handleChargeRefunded(event);
-            // Cash commission webhook events
-            case "setup_intent.succeeded" -> cashCommissionWebhookHandler.handleSetupIntentSucceeded(event);
-            case "payment_intent.succeeded" -> cashCommissionWebhookHandler.handlePaymentIntentSucceeded(event);
-            case "payment_method.detached" -> cashCommissionWebhookHandler.handlePaymentMethodDetached(event);
-            default -> log.debug("Unhandled webhook event: {}", event.getType());
-        }
+
+            if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
+                    && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+                user.setStripeOnboardingCompletedAt(java.time.Instant.now());
+                eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
+                auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
+                        user.getId(), Map.of("stripeAccountId", accountId));
+                log.info("Stripe onboarding complete for user {}", user.getId());
+            }
+
+            user.setStripeAccountStatus(newStatus);
+            userRepository.save(user);
+        });
     }
 
-    private void handleAccountUpdated(Event event) {
-        event.getDataObjectDeserializer().getObject().ifPresentOrElse(
-            obj -> {
-                Account account = (Account) obj;
-                String accountId = account.getId();
-
-                userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
-                    StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
-
-                    if (newStatus == StripeAccountStatus.PENDING_ONBOARDING) {
-                        return; // still pending, no state change
-                    }
-
-                    // Only emit event on first transition to ONBOARDING_COMPLETE
-                    if (newStatus == StripeAccountStatus.ONBOARDING_COMPLETE
-                            && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-                        user.setStripeOnboardingCompletedAt(java.time.Instant.now());
-                        eventPublisher.publishEvent(new StripeOnboardingCompletedEvent(user.getId()));
-                        auditService.log("USER", user.getId(), "STRIPE_ONBOARDING_COMPLETE",
-                                user.getId(), Map.of("stripeAccountId", accountId));
-                        log.info("Stripe onboarding complete for user {}", user.getId());
-                    }
-
-                    user.setStripeAccountStatus(newStatus);
-                    userRepository.save(user);
-                });
-            },
-            () -> log.warn("handleAccountUpdated: could not deserialize account object for event {}", event.getId())
-        );
+    private Account resolveAccountFromEvent(Event event) {
+        var deserialized = event.getDataObjectDeserializer().getObject();
+        if (deserialized.isPresent() && deserialized.get() instanceof Account a) {
+            return a;
+        }
+        // Fallback : version API du payload ≠ SDK → récupérer via API
+        String accountId = event.getAccount();
+        if (accountId == null) {
+            log.warn("handleAccountUpdated: no account ID in event {}", event.getId());
+            return null;
+        }
+        try {
+            return Account.retrieve(accountId);
+        } catch (StripeException e) {
+            log.error("handleAccountUpdated: failed to fetch account {} for event {}", accountId, event.getId(), e);
+            return null;
+        }
     }
 
     /**
@@ -538,49 +513,69 @@ public class PaymentService {
         }
     }
 
-    private void handlePaymentEscrowActive(Event event) {
-        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
-            PaymentIntent pi = (PaymentIntent) obj;
-            paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
-                boolean changed = false;
+    void handlePaymentEscrowActive(Event event) {
+        PaymentIntent pi;
+        Optional<com.stripe.model.StripeObject> objOpt = event.getDataObjectDeserializer().getObject();
+        if (objOpt.isPresent()) {
+            pi = (PaymentIntent) objOpt.get();
+        } else {
+            // API version mismatch between Stripe CLI/server and Java SDK — fall back to live API fetch.
+            try {
+                String rawJson = event.getDataObjectDeserializer().getRawJson();
+                JsonNode node = objectMapper.readTree(rawJson);
+                String piId = node.get("id").asText();
+                pi = PaymentIntent.retrieve(piId);
+                log.debug("handlePaymentEscrowActive: deserializer was empty for event {}, fetched PI {} via API",
+                        event.getId(), piId);
+            } catch (Exception e) {
+                log.error("handlePaymentEscrowActive: cannot resolve PaymentIntent from event {}: {}",
+                        event.getId(), e.getMessage(), e);
+                return;
+            }
+        }
 
-                // Persist the Stripe Charge id for later Transfer.sourceTransaction reconciliation
-                // (Task 9b). Idempotent: only set once.
-                String chargeId = pi.getLatestCharge();
-                if (chargeId != null && payment.getStripeChargeId() == null) {
-                    payment.setStripeChargeId(chargeId);
-                    changed = true;
-                }
+        final PaymentIntent finalPi = pi;
 
-                if (payment.getStatus() == PaymentStatus.PENDING) {
-                    payment.setStatus(PaymentStatus.ESCROW);
-                    changed = true;
-                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
-                            payment.getBidId(),
-                            Map.of("piId", pi.getId(), "amountCapturable", pi.getAmountCapturable()));
-                    log.info("Payment {} now in ESCROW (PI={})", payment.getId(), pi.getId());
-                    eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
-                }
+        paymentRepository.findByStripePaymentIntentId(finalPi.getId()).ifPresent(payment -> {
+            boolean changed = false;
 
-                if (changed) {
-                    paymentRepository.save(payment);
-                }
-            });
-            // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
-            promoteBidOnPaymentAuthorized(pi.getId());
+            // Persist the Stripe Charge id for later Transfer.sourceTransaction reconciliation.
+            // Idempotent: only set once.
+            String chargeId = finalPi.getLatestCharge();
+            if (chargeId != null && payment.getStripeChargeId() == null) {
+                payment.setStripeChargeId(chargeId);
+                changed = true;
+            }
 
-            // Marketplace package_request flow: if this PI is bound to a negotiation thread,
-            // ask the NegotiationService to finalize via the application context (avoid circular DI).
-            String scope = pi.getMetadata().get("scope");
-            String negotiationThreadId = pi.getMetadata().get("negotiation_thread_id");
-            if ("NEGOTIATION".equals(scope) && negotiationThreadId != null) {
-                eventPublisher.publishEvent(new NegotiationPaymentAuthorizedEvent(
-                        java.util.UUID.fromString(negotiationThreadId),
-                        java.util.UUID.fromString(pi.getMetadata().get("sender_id")),
-                        pi.getId()
-                ));
+            if (payment.getStatus() == PaymentStatus.PENDING) {
+                payment.setStatus(PaymentStatus.ESCROW);
+                changed = true;
+                auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
+                        payment.getBidId(),
+                        Map.of("piId", finalPi.getId(), "amountCapturable", finalPi.getAmountCapturable()));
+                log.info("Payment {} now in ESCROW (PI={})", payment.getId(), finalPi.getId());
+                eventPublisher.publishEvent(new PaymentEscrowReadyEvent(payment.getBidId(), payment.getId()));
+            }
+
+            if (changed) {
+                paymentRepository.save(payment);
             }
         });
+
+        // Promote the AWAITING_PAYMENT bid to PENDING (independent of Payment row state)
+        promoteBidOnPaymentAuthorized(finalPi.getId());
+
+        // Marketplace package_request flow: if this PI is bound to a negotiation thread,
+        // ask the NegotiationService to finalize via the application context (avoid circular DI).
+        String scope = finalPi.getMetadata().get("scope");
+        String negotiationThreadId = finalPi.getMetadata().get("negotiation_thread_id");
+        if ("NEGOTIATION".equals(scope) && negotiationThreadId != null) {
+            eventPublisher.publishEvent(new NegotiationPaymentAuthorizedEvent(
+                    java.util.UUID.fromString(negotiationThreadId),
+                    java.util.UUID.fromString(finalPi.getMetadata().get("sender_id")),
+                    finalPi.getId()
+            ));
+        }
     }
 
     /**
@@ -655,6 +650,27 @@ public class PaymentService {
                     || "succeeded".equals(status)
                     || "processing".equals(status)) {
                 promoteBidOnPaymentAuthorized(piId);
+                // Also transition the payment entity to ESCROW so DeliveryEventListener can release it.
+                paymentRepository.findByBidId(bidId).ifPresent(payment -> {
+                    boolean changed = false;
+                    String chargeId = pi.getLatestCharge();
+                    if (chargeId != null && payment.getStripeChargeId() == null) {
+                        payment.setStripeChargeId(chargeId);
+                        changed = true;
+                    }
+                    if (payment.getStatus() == PaymentStatus.PENDING) {
+                        payment.setStatus(PaymentStatus.ESCROW);
+                        changed = true;
+                        auditService.log("PAYMENT", payment.getId(), "PAYMENT_ESCROW_ACTIVE",
+                                payment.getBidId(),
+                                Map.of("piId", pi.getId(), "source", "confirmBidPayment"));
+                        log.info("Payment {} set to ESCROW via confirmBidPayment (PI={})",
+                                payment.getId(), pi.getId());
+                    }
+                    if (changed) {
+                        paymentRepository.save(payment);
+                    }
+                });
                 return true;
             }
             log.info("Bid {} not promoted: PI {} status={}", bidId, piId, status);
@@ -666,7 +682,7 @@ public class PaymentService {
         }
     }
 
-    private void handlePaymentFailed(Event event) {
+    void handlePaymentFailed(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             PaymentIntent pi = (PaymentIntent) obj;
             paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
@@ -682,7 +698,7 @@ public class PaymentService {
         });
     }
 
-    private void handleChargeRefunded(Event event) {
+    void handleChargeRefunded(Event event) {
         event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
             Charge charge = (Charge) obj;
             String piId = charge.getPaymentIntent();
@@ -835,6 +851,173 @@ public class PaymentService {
         PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
         pi.capture();
         log.info("PaymentIntent {} captured", paymentIntentId);
+    }
+
+    // ── Task 12 — payment_intent.canceled + transfer.* + payout.* ───────────
+
+    void handlePaymentIntentCanceled(Event event) {
+        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
+            PaymentIntent pi = (PaymentIntent) obj;
+            paymentRepository.findByStripePaymentIntentId(pi.getId()).ifPresent(payment -> {
+                if (payment.getStatus() == PaymentStatus.ESCROW
+                        || payment.getStatus() == PaymentStatus.PENDING) {
+                    payment.setStatus(PaymentStatus.CANCELLED);
+                    paymentRepository.save(payment);
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_INTENT_CANCELED",
+                            payment.getBidId(), Map.of("piId", pi.getId()));
+                    log.info("PaymentIntent {} canceled — payment {} set CANCELLED", pi.getId(), payment.getId());
+                }
+            });
+        });
+    }
+
+    void handleTransferReversed(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String transferId = root.path("id").asText();
+            auditService.log("TRANSFER", null, "TRANSFER_REVERSED", null,
+                    Map.of("transferId", transferId));
+            adminAlert.raise("STRIPE_TRANSFER_REVERSED",
+                    "Transfer " + transferId + " a été reversé",
+                    Map.of("transferId", transferId));
+        } catch (Exception e) {
+            log.warn("Could not parse transfer.reversed event: {}", e.getMessage());
+        }
+    }
+
+    void handleTransferCreated(Event event) {
+        logTransferAudit(event, "TRANSFER_CREATED");
+    }
+
+    void handleTransferUpdated(Event event) {
+        logTransferAudit(event, "TRANSFER_UPDATED");
+    }
+
+    private void logTransferAudit(Event event, String action) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            auditService.log("TRANSFER", null, action, null,
+                    Map.of("transferId", root.path("id").asText()));
+        } catch (Exception e) {
+            log.warn("Could not parse transfer event {}: {}", action, e.getMessage());
+        }
+    }
+
+    void handlePayoutFailed(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String payoutId = root.path("id").asText();
+            String failureCode = root.path("failure_code").asText("unknown");
+            auditService.log("PAYOUT", null, "PAYOUT_FAILED", null,
+                    Map.of("payoutId", payoutId, "failureCode", failureCode));
+            adminAlert.raise("STRIPE_PAYOUT_FAILED",
+                    "Paiement banque " + payoutId + " échoué — code: " + failureCode,
+                    Map.of("payoutId", payoutId));
+        } catch (Exception e) {
+            log.warn("Could not parse payout.failed: {}", e.getMessage());
+        }
+    }
+
+    void handlePayoutPaid(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            auditService.log("PAYOUT", null, "PAYOUT_PAID", null,
+                    Map.of("payoutId", root.path("id").asText()));
+        } catch (Exception e) {
+            log.warn("Could not parse payout.paid: {}", e.getMessage());
+        }
+    }
+
+    // ── Task 13 — account.deauthorized + capability + refund.updated + fraud_warning ──
+
+    void handleAccountDeauthorized(Event event) {
+        try {
+            String accountId = null;
+            var deserialized = event.getDataObjectDeserializer().getObject();
+            if (deserialized.isPresent() && deserialized.get() instanceof com.stripe.model.Account account) {
+                accountId = account.getId();
+            } else {
+                JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+                accountId = root.path("id").asText(null);
+            }
+            if (accountId == null) {
+                log.warn("account.application.deauthorized: no accountId found in event {}", event.getId());
+                return;
+            }
+            final String aid = accountId;
+            userRepository.findByStripeAccountId(aid).ifPresentOrElse(user -> {
+                user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+                userRepository.save(user);
+                auditService.log("USER", user.getId(), "STRIPE_ACCOUNT_DEAUTHORIZED",
+                        user.getId(), Map.of("stripeAccountId", aid));
+                adminAlert.raise("STRIPE_ACCOUNT_DEAUTHORIZED",
+                        "Compte Connect " + aid + " déconnecté",
+                        Map.of("userId", user.getId().toString(), "stripeAccountId", aid));
+            }, () -> log.warn("account.application.deauthorized: no user for accountId={}", aid));
+        } catch (Exception e) {
+            log.warn("Could not parse account.application.deauthorized: {}", e.getMessage());
+        }
+    }
+
+    void handleCapabilityUpdated(Event event) {
+        event.getDataObjectDeserializer().getObject().ifPresent(obj -> {
+            try {
+                com.stripe.model.Capability cap = (com.stripe.model.Capability) obj;
+                String accountId = cap.getAccount();
+                String status = cap.getStatus();
+                String capabilityId = cap.getId(); // e.g. "transfers", "card_payments"
+                if ("inactive".equals(status) && accountId != null) {
+                    userRepository.findByStripeAccountId(accountId).ifPresent(user -> {
+                        user.setStripeAccountStatus(StripeAccountStatus.DISABLED);
+                        userRepository.save(user);
+                        auditService.log("USER", user.getId(), "STRIPE_CAPABILITY_LOST",
+                                user.getId(), Map.of("capability", capabilityId, "status", status));
+                        adminAlert.raise("STRIPE_CAPABILITY_LOST",
+                                "Compte " + accountId + " a perdu la capacité " + capabilityId,
+                                Map.of("accountId", accountId, "status", status));
+                    });
+                } else if ("pending".equals(status)) {
+                    log.info("Capability {} pending on account {} — awaiting Stripe review", capabilityId, accountId);
+                }
+            } catch (Exception e) {
+                log.warn("Could not parse capability.updated: {}", e.getMessage());
+            }
+        });
+    }
+
+    void handleRefundUpdated(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String refundStatus = root.path("status").asText();
+            if ("failed".equals(refundStatus)) {
+                String refundId = root.path("id").asText();
+                String piId = root.path("payment_intent").asText(null);
+                auditService.log("PAYMENT", null, "REFUND_FAILED", null,
+                        Map.of("refundId", refundId, "piId", piId != null ? piId : "unknown"));
+                adminAlert.raise("STRIPE_REFUND_FAILED",
+                        "Remboursement " + refundId + " a échoué",
+                        Map.of("refundId", refundId, "piId", piId != null ? piId : "unknown"));
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse charge.refund.updated: {}", e.getMessage());
+        }
+    }
+
+    void handleEarlyFraudWarning(Event event) {
+        try {
+            JsonNode root = objectMapper.readTree(event.getDataObjectDeserializer().getRawJson());
+            String warningId = root.path("id").asText();
+            String chargeId  = root.path("charge").asText(null);
+            String fraudType = root.path("fraud_type").asText(null);
+            auditService.log("FRAUD", null, "EARLY_FRAUD_WARNING", null,
+                    Map.of("warningId", warningId, "chargeId", chargeId != null ? chargeId : "unknown",
+                            "fraudType", fraudType != null ? fraudType : "unknown"));
+            adminAlert.raise("STRIPE_EARLY_FRAUD_WARNING",
+                    "Alerte fraude précoce sur charge " + chargeId + " (" + fraudType + ")",
+                    Map.of("warningId", warningId, "chargeId", chargeId != null ? chargeId : "unknown"));
+        } catch (Exception e) {
+            log.warn("Could not parse early_fraud_warning: {}", e.getMessage());
+        }
     }
 
     // ─── Package-request marketplace : escrow on negotiation thread ──────────────

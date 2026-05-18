@@ -1,9 +1,10 @@
 package com.dony.api.kyc;
 
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.stripe.StripeWebhookIngestService;
+import com.dony.api.common.stripe.StripeWebhookSource;
 import com.dony.api.kyc.dto.KycSessionResponse;
 import com.dony.api.kyc.dto.KycStatusResponse;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -11,21 +12,21 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/kyc")
 public class KycController {
 
     private final KycService kycService;
+    private final StripeWebhookIngestService ingestService;
 
-    public KycController(KycService kycService) {
+    public KycController(KycService kycService, StripeWebhookIngestService ingestService) {
         this.kycService = kycService;
+        this.ingestService = ingestService;
     }
 
     @PostMapping("/session")
@@ -47,14 +48,12 @@ public class KycController {
         return ResponseEntity.ok(kycService.getStatus(firebaseUid));
     }
 
-    // Public endpoint — validated by Stripe signature inside KycService
+    // Public endpoint — signature validated by StripeWebhookIngestService
     @PostMapping("/webhook")
     public ResponseEntity<Void> handleWebhook(
-            HttpServletRequest request,
-            @RequestHeader("Stripe-Signature") String sigHeader
-    ) throws IOException {
-        String payload = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        kycService.processWebhook(payload, sigHeader);
+            @RequestBody String payload,
+            @RequestHeader("Stripe-Signature") String sigHeader) {
+        ingestService.ingest(payload, sigHeader, StripeWebhookSource.KYC);
         return ResponseEntity.ok().build();
     }
 

@@ -53,6 +53,9 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "captured_at")
     private Instant capturedAt;
 
+    @Column(name = "disputed", nullable = false)
+    private boolean disputed = false;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -82,4 +85,7 @@ public class PaymentEntity extends BaseEntity {
 
     public Instant getCapturedAt() { return capturedAt; }
     public void setCapturedAt(Instant capturedAt) { this.capturedAt = capturedAt; }
+
+    public boolean isDisputed() { return disputed; }
+    public void setDisputed(boolean disputed) { this.disputed = disputed; }
 }

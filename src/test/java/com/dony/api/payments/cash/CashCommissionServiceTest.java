@@ -88,8 +88,18 @@ class CashCommissionServiceTest {
         BidEntity b = new BidEntity();
         ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
         b.setDeclaredValueEur(value);
+        b.setWeightKg(new BigDecimal("5"));
+        b.setAnnouncementId(UUID.randomUUID());
         b.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
         return b;
+    }
+
+    private AnnouncementEntity announcementWithPrice(UUID id, BigDecimal pricePerKg) {
+        AnnouncementEntity a = new AnnouncementEntity();
+        ReflectionTestUtils.setField(a, "id", id);
+        a.setPricePerKg(pricePerKg);
+        a.setAvailableKg(new BigDecimal("20"));
+        return a;
     }
 
     // ===================== computeCommission =====================
@@ -283,6 +293,24 @@ class CashCommissionServiceTest {
             ReflectionTestUtils.setField(traveler, "id", travelerId);
             bid = bidWithDeclaredValue(new BigDecimal("100"), travelerId);
             lenient().when(userRepo.findById(travelerId)).thenReturn(Optional.of(traveler));
+            AnnouncementEntity ann = announcementWithPrice(bid.getAnnouncementId(), new BigDecimal("20.00"));
+            lenient().when(announcementRepo.findById(bid.getAnnouncementId())).thenReturn(Optional.of(ann));
+        }
+
+        @Test
+        void commissionIsComputedFromWeightTimesPrice() throws StripeException {
+            // 5 kg × 20 €/kg = 100 € → 12 % = 12.00 € = 1 200 centimes
+            ArgumentCaptor<PaymentIntentCreateParams> captor =
+                    ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_amount_test");
+            mockPi.setStatus("succeeded");
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(captor.capture(), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+                service.chargeCommission(bid, travelerId);
+                assertThat(captor.getValue().getAmount()).isEqualTo(1200L);
+            }
         }
 
         @Test
@@ -481,8 +509,10 @@ class CashCommissionServiceTest {
             ReflectionTestUtils.setField(announcement, "id", announcementId);
             announcement.setTravelerId(travelerId);
             announcement.setAvailableKg(new java.math.BigDecimal("20"));
+            announcement.setPricePerKg(new java.math.BigDecimal("20.00"));
             announcement.setAcceptedPaymentMethods(methods);
             lenient().when(announcementRepo.findByIdForUpdate(announcementId)).thenReturn(Optional.of(announcement));
+            lenient().when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(announcement));
         }
 
         @Test
