@@ -70,7 +70,11 @@ management:
     health:
       show-details: when-authorized
     prometheus:
-      enabled: true
+      # Spring Boot 3.5+: use `access` only — `enabled` is mutually exclusive.
+      # Prometheus is scraped by the internal monitoring stack.
+      # NOT in SecurityConfig permitAll — scraper must authenticate or be
+      # isolated at the network level (Nginx/firewall).
+      access: read-only
   prometheus:
     metrics:
       export:

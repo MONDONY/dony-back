@@ -19,9 +19,11 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -35,6 +37,17 @@ public class StorageService {
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp");
+
+    // Number of bytes needed to check the most demanding magic signature (WebP = 12)
+    private static final int MAGIC_HEADER_SIZE = 12;
+
+    // Magic byte signatures for supported image types (checked before MIME header)
+    private static final Map<String, byte[]> FILE_MAGIC_BYTES = Map.of(
+            "image/jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF},
+            "image/jpg",  new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF},
+            "image/png",  new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47}
+            // WebP validated separately: bytes 0-3 = "RIFF", bytes 8-11 = "WEBP"
+    );
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
@@ -147,6 +160,65 @@ public class StorageService {
         if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "INVALID_FILE_TYPE", "Invalid File Type", "Only JPEG, PNG and WebP images are allowed");
+        }
+        validateFileMagicBytes(file);
+    }
+
+    // Validates actual file content against expected magic bytes to prevent
+    // MIME-type spoofing (e.g. client declaring image/jpeg but uploading a script).
+    private void validateFileMagicBytes(MultipartFile file) {
+        byte[] header = new byte[MAGIC_HEADER_SIZE];
+        int bytesRead;
+        try (InputStream is = file.getInputStream()) {
+            bytesRead = is.read(header, 0, MAGIC_HEADER_SIZE);
+        } catch (IOException e) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "INVALID_FILE_TYPE", "Invalid File Type", "Cannot read file content");
+        }
+        if (bytesRead < 3) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "INVALID_FILE_TYPE", "Invalid File Type", "File content is too small to validate");
+        }
+
+        String contentType = file.getContentType();
+        if ("image/webp".equals(contentType)) {
+            validateWebpMagicBytes(header, bytesRead);
+            return;
+        }
+
+        byte[] expected = FILE_MAGIC_BYTES.get(contentType);
+        if (expected == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "INVALID_FILE_TYPE", "Invalid File Type", "Unsupported file type");
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if (header[i] != expected[i]) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "INVALID_FILE_TYPE", "Invalid File Type", "File content does not match declared type");
+            }
+        }
+    }
+
+    private void validateWebpMagicBytes(byte[] header, int bytesRead) {
+        if (bytesRead < 12) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "INVALID_FILE_TYPE", "Invalid File Type", "File content does not match declared type");
+        }
+        // bytes 0-3: "RIFF"
+        byte[] riff = {'R', 'I', 'F', 'F'};
+        for (int i = 0; i < 4; i++) {
+            if (header[i] != riff[i]) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "INVALID_FILE_TYPE", "Invalid File Type", "File content does not match declared type");
+            }
+        }
+        // bytes 8-11: "WEBP"
+        byte[] webp = {'W', 'E', 'B', 'P'};
+        for (int i = 0; i < 4; i++) {
+            if (header[8 + i] != webp[i]) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "INVALID_FILE_TYPE", "Invalid File Type", "File content does not match declared type");
+            }
         }
     }
 

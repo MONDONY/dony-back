@@ -44,11 +44,11 @@ public class SmsService {
 
     public void send(String phoneNumber, String message) {
         if (!smsEnabled) {
-            log.info("[SMS-DEV] To={} | {}", phoneNumber, message);
+            log.info("[SMS-DEV] To=*** | [message redacted]");
             return;
         }
         if (!sendViaAfricasTalking(phoneNumber, message)) {
-            log.warn("[SMS] Africa's Talking failed for {}, falling back to Twilio", phoneNumber);
+            log.warn("[SMS] Africa's Talking failed, falling back to Twilio");
             sendViaTwilio(phoneNumber, message);
         }
     }
@@ -69,7 +69,7 @@ public class SmsService {
                     AT_URL, new HttpEntity<>(body, headers), String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("[SMS] Africa's Talking: delivered to {}", phoneNumber);
+                log.info("[SMS] Africa's Talking: delivered successfully");
                 return true;
             }
             log.warn("[SMS] Africa's Talking returned HTTP {}", response.getStatusCode());
@@ -97,7 +97,7 @@ public class SmsService {
                     url, new HttpEntity<>(body, headers), String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("[SMS] Twilio: delivered to {}", phoneNumber);
+                log.info("[SMS] Twilio: delivered successfully");
             } else {
                 log.error("[SMS] Twilio returned HTTP {}", response.getStatusCode());
             }
