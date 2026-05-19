@@ -116,4 +116,22 @@ class EmailOtpControllerIntegrationTest {
                         new EmailOtpVerifyRequest("user@example.com", "000000"))))
                 .andExpect(status().isTooManyRequests());
     }
+
+    @Test
+    @DisplayName("verify 422 — code non numérique")
+    void verify_nonNumericCode() throws Exception {
+        mockMvc.perform(post("/auth/email-otp/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"user@example.com\",\"code\":\"abcdef\"}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    @DisplayName("send 422 — email absent (body vide)")
+    void send_missingEmail() throws Exception {
+        mockMvc.perform(post("/auth/email-otp/send")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
 }
