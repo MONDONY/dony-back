@@ -246,6 +246,11 @@ public class AuthService {
                 user.setPhoneNumber(request.phoneNumber());
             }
             case "google.com", "apple.com" -> {
+                if (decodedToken == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "token-required",
+                            "Token Required", "Token Firebase manquant");
+                }
                 String email = decodedToken.getEmail();
                 if (email == null) {
                     throw new DonyBusinessException(
@@ -258,10 +263,17 @@ public class AuthService {
                 user.setEmail(email);
             }
             case "custom" -> {
+                // Pour les custom tokens, l'UID Firebase est l'email utilisé dans createCustomToken(email)
+                // On vérifie que l'email du body correspond à l'UID pour éviter l'usurpation
                 if (request.email() == null) {
                     throw new DonyBusinessException(
                             HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
                             "Email Required", "L'adresse email est requise");
+                }
+                if (!firebaseUid.equalsIgnoreCase(request.email())) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-mismatch",
+                            "Email Mismatch", "L'email fourni ne correspond pas au token Firebase");
                 }
                 if (userRepository.existsByEmail(request.email())) {
                     return toResponse(userRepository.findByEmail(request.email()).orElseThrow());

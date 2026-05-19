@@ -417,7 +417,7 @@ class AuthServiceTest {
         void custom_emailFromBody() {
             com.google.firebase.auth.FirebaseToken token = mockToken("custom", null);
             RegisterRequest req = new RegisterRequest(null, "otp@example.com", Set.of("SENDER"));
-            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(userRepository.findByFirebaseUid("otp@example.com")).thenReturn(Optional.empty());
             when(userRepository.existsByEmail("otp@example.com")).thenReturn(false);
             when(userRepository.save(any())).thenAnswer(i -> {
                 UserEntity u = i.getArgument(0);
@@ -425,7 +425,7 @@ class AuthServiceTest {
                 return u;
             });
 
-            UserResponse result = authService.register(FIREBASE_UID, token, req);
+            UserResponse result = authService.register("otp@example.com", token, req);
 
             assertThat(result).isNotNull();
             verify(userRepository).save(argThat(u -> "otp@example.com".equals(u.getEmail())));
@@ -442,6 +442,40 @@ class AuthServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .extracting(e -> ((DonyBusinessException) e).getStatus())
                     .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        @DisplayName("provider custom — email body ≠ UID token → 422 email-mismatch")
+        void custom_emailMismatch_rejected() {
+            // L'UID du custom token est "real@firebase.com" mais le body envoie un autre email
+            com.google.firebase.auth.FirebaseToken token = mockToken("custom", null);
+            RegisterRequest req = new RegisterRequest(null, "spoofed@evil.com", Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid("real@firebase.com")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register("real@firebase.com", token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("email-mismatch");
+                    });
+        }
+
+        @Test
+        @DisplayName("provider google.com — email null dans le token → 422 email-required")
+        void google_nullEmailInToken_throws() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("google.com", null);
+            // getEmail() non stubbé → retourne null par défaut
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("email-required");
+                    });
         }
     }
 }

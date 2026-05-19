@@ -1,5 +1,6 @@
 package com.dony.api.emailotp;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ public class ResendEmailService {
     private final String fromAddress;
     private final String otpTemplate;
 
+    @Autowired
     public ResendEmailService(EmailOtpProperties props) {
         this.fromAddress = props.getFromAddress();
         this.otpTemplate = props.getOtpTemplate();
@@ -22,6 +24,12 @@ public class ResendEmailService {
                 .baseUrl("https://api.resend.com")
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.getResendApiKey())
                 .build();
+    }
+
+    ResendEmailService(String fromAddress, String otpTemplate, RestClient restClient) {
+        this.fromAddress = fromAddress;
+        this.otpTemplate = otpTemplate;
+        this.restClient = restClient;
     }
 
     public void sendOtp(String to, String code) {

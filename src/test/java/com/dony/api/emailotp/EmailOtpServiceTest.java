@@ -169,6 +169,22 @@ class EmailOtpServiceTest {
         }
 
         @Test
+        @DisplayName("succès — retourne null si firebaseAuth non disponible (mode test)")
+        void firebaseAuth_null_returnsNull() {
+            EmailOtpService serviceWithoutFirebase = new EmailOtpService(
+                    emailOtpRepository, passwordEncoder, resendEmailService, null);
+            EmailOtpEntity token = validToken();
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.of(token));
+            when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
+            when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            String result = serviceWithoutFirebase.verifyOtp(EMAIL, "123456");
+
+            assertThat(result).isNull();
+        }
+
+        @Test
         @DisplayName("500 — FirebaseAuthException lors de createCustomToken")
         void firebaseAuthException() throws Exception {
             EmailOtpEntity token = validToken();
