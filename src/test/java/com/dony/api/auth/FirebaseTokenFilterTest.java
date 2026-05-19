@@ -96,8 +96,8 @@ class FirebaseTokenFilterTest {
     }
 
     @Test
-    @DisplayName("user non inscrit → credentials = null")
-    void unregisteredUser_credentialsIsNull() throws Exception {
+    @DisplayName("user non inscrit → credentials = decoded FirebaseToken (registration flow)")
+    void unregisteredUser_credentialsIsDecodedToken() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
         when(mockToken.getUid()).thenReturn(FIREBASE_UID);
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
@@ -114,7 +114,7 @@ class FirebaseTokenFilterTest {
         var auth = (UsernamePasswordAuthenticationToken)
                 SecurityContextHolder.getContext().getAuthentication();
         assertThat(auth).isNotNull();
-        assertThat(auth.getCredentials()).isNull();
+        assertThat(auth.getCredentials()).isEqualTo(mockToken);
         verify(filterChain).doFilter(request, response);
     }
 

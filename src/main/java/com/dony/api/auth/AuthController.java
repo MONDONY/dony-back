@@ -7,6 +7,7 @@ import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UpgradeToProRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.DonyBusinessException;
+import com.google.firebase.auth.FirebaseToken;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,8 +35,10 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
         String firebaseUid = requireFirebaseUid();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        FirebaseToken decodedToken = auth.getCredentials() instanceof FirebaseToken t ? t : null;
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(authService.register(firebaseUid, request));
+                .body(authService.register(firebaseUid, decodedToken, request));
     }
 
     @GetMapping("/me")

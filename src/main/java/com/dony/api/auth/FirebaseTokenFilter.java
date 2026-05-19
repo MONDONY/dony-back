@@ -75,7 +75,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
             if (user == null) {
                 // New user — not yet registered; allow with empty roles (registration flow)
-                setAuthentication(uid, null, List.of());
+                setAuthentication(uid, decoded, List.of());
                 return false;
             }
 

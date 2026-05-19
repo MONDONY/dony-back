@@ -18,9 +18,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
@@ -54,10 +51,10 @@ public class AuthService {
     }
 
     @Transactional
-    public UserResponse register(String firebaseUid, RegisterRequest request) {
+    public UserResponse register(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
         return userRepository.findByFirebaseUid(firebaseUid)
                 .map(this::toResponse)
-                .orElseGet(() -> createUser(firebaseUid, request));
+                .orElseGet(() -> createUser(firebaseUid, decodedToken, request));
     }
 
     @Transactional(readOnly = true)
@@ -210,59 +207,82 @@ public class AuthService {
         return toResponse(updated);
     }
 
-    private UserResponse createUser(String firebaseUid, RegisterRequest request) {
+    private UserResponse createUser(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
         Set<Role> roles = parseRoles(request.roles());
 
         if (roles.contains(Role.ADMIN)) {
             throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "forbidden-role",
-                    "Forbidden Role",
-                    "Le rôle ADMIN ne peut pas être auto-attribué"
-            );
+                    HttpStatus.FORBIDDEN, "forbidden-role",
+                    "Forbidden Role", "Le rôle ADMIN ne peut pas être auto-attribué");
         }
 
-        if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
-            throw new DonyBusinessException(
-                    HttpStatus.CONFLICT,
-                    "phone-already-exists",
-                    "Phone Number Already Registered",
-                    "Ce numéro est déjà associé à un compte"
-            );
+        String signInProvider = null;
+        if (decodedToken != null) {
+            Object firebaseClaim = decodedToken.getClaims().get("firebase");
+            if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
+                Object provider = firebaseMap.get("sign_in_provider");
+                if (provider instanceof String s) signInProvider = s;
+            }
         }
 
         UserEntity user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
-        user.setPhoneNumber(request.phoneNumber());
         user.setStatus(UserStatus.ACTIVE);
         user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
 
+        switch (signInProvider == null ? "" : signInProvider) {
+            case "phone" -> {
+                if (request.phoneNumber() == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "phone-required",
+                            "Phone Required", "Le numéro de téléphone est requis");
+                }
+                if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
+                    throw new DonyBusinessException(
+                            HttpStatus.CONFLICT, "phone-already-exists",
+                            "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
+                }
+                user.setPhoneNumber(request.phoneNumber());
+            }
+            case "google.com", "apple.com" -> {
+                String email = decodedToken.getEmail();
+                if (email == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
+                            "Email Required", "L'email est introuvable dans le token Firebase");
+                }
+                if (userRepository.existsByEmail(email)) {
+                    return toResponse(userRepository.findByEmail(email).orElseThrow());
+                }
+                user.setEmail(email);
+            }
+            case "custom" -> {
+                if (request.email() == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
+                            "Email Required", "L'adresse email est requise");
+                }
+                if (userRepository.existsByEmail(request.email())) {
+                    return toResponse(userRepository.findByEmail(request.email()).orElseThrow());
+                }
+                user.setEmail(request.email());
+            }
+            default -> throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "invalid-provider",
+                    "Invalid Provider", "Mode d'authentification non supporté");
+        }
+
         UserEntity saved = userRepository.save(user);
 
         auditService.log(
-                "USER",
-                saved.getId(),
-                "USER_CREATED",
-                saved.getId(),
-                Map.of("phoneHash", hashPhone(request.phoneNumber()), "roles", request.roles())
+                "USER", saved.getId(), "USER_CREATED", saved.getId(),
+                Map.of("provider", String.valueOf(signInProvider), "roles", request.roles())
         );
 
         eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getFirebaseUid()));
 
         return toResponse(saved);
-    }
-
-    private static String hashPhone(String phone) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(phone.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) hex.append(String.format("%02x", b));
-            return "SHA256:" + hex.substring(0, 16) + "...";
-        } catch (NoSuchAlgorithmException e) {
-            return "HASHED";
-        }
     }
 
     private Set<Role> parseRoles(Set<String> rawRoles) {

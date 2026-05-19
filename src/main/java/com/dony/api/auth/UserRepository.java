@@ -20,6 +20,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     boolean existsByFirebaseUid(String firebaseUid);
     boolean existsByPhoneNumber(String phoneNumber);
+    boolean existsByEmail(String email);
+
+    Optional<UserEntity> findByEmail(String email);
 
     /**
      * Loads a UserEntity with a pessimistic write lock to prevent concurrent
