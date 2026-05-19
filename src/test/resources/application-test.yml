@@ -45,6 +45,10 @@ stripe:
     kyc-secret: whsec_test_kyc
 
 dony:
+  email:
+    resend-api-key: "test-resend-key"
+    from-address: "noreply@test.dony.app"
+    otp-template: "Test code: %s"
   kyc:
     enforce: false
   stripe:

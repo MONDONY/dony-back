@@ -155,6 +155,10 @@ dony:
     auto-expire-check-cron: "0 */15 * * * *"
     estimation-corridor-recent-trips: 20
     estimation-cache-ttl-minutes: 60
+  email:
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: noreply@dony.app
+    otp-template: "Ton code dony est : %s. Valable 10 minutes."
 
 # Encryption (AES-256 for KYC sensitive data)
 app:
