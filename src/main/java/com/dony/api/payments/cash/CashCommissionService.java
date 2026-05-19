@@ -239,7 +239,8 @@ public class CashCommissionService {
             bid.setCommissionStatus(CommissionStatus.FAILED);
             bid.setCommissionRetryCount(bid.getCommissionRetryCount() + 1);
             bidRepo.save(bid);
-            String userMessage = switch (e.getCode()) {
+            // e.getCode() can be null for some Stripe error subtypes — guard before switch
+            String userMessage = switch (e.getCode() != null ? e.getCode() : "") {
                 case "expired_card" -> "Votre carte de commission est expirée.";
                 case "insufficient_funds" -> "Fonds insuffisants sur votre carte de commission.";
                 case "authentication_required" -> "Votre carte nécessite une authentification supplémentaire.";

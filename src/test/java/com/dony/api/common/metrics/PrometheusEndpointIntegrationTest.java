@@ -22,10 +22,10 @@ class PrometheusEndpointIntegrationTest {
     @MockBean  private FirebaseAuth firebaseAuth;
 
     @Test
-    void prometheusEndpoint_isPublic_andExposesJvmMetrics() throws Exception {
+    void prometheusEndpoint_requiresAuthentication() throws Exception {
+        // Prometheus was moved out of permitAll() — unauthenticated requests must
+        // receive 401 so the metrics surface is not publicly readable.
         mockMvc.perform(get("/actuator/prometheus"))
-            .andExpect(status().isOk())
-            .andExpect(content().string(
-                org.hamcrest.Matchers.containsString("jvm_memory_used_bytes")));
+            .andExpect(status().isUnauthorized());
     }
 }
