@@ -152,6 +152,7 @@ class EmailOtpServiceTest {
                     .isEqualTo(HttpStatus.BAD_REQUEST);
 
             assertThat(token.getAttempts()).isEqualTo(1);
+            verify(emailOtpRepository).save(argThat(e -> e.getAttempts() == 1));
         }
     }
 }
