@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
@@ -42,6 +43,7 @@ public class EmailOtpService {
         this.firebaseAuth       = firebaseAuth;
     }
 
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public Instant sendOtp(String email) {
         LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(RATE_WINDOW_MINUTES);
         if (emailOtpRepository.countByEmailSince(email, since) >= MAX_SENDS_PER_WINDOW) {
@@ -77,13 +79,16 @@ public class EmailOtpService {
                     "Too Many Attempts", "Trop de tentatives échouées");
         }
 
+        // BCrypt appelé avant le check expiration pour éviter les timing attacks
+        boolean validCode = passwordEncoder.matches(code, token.getCodeHash());
+
         if (LocalDateTime.now(ZoneOffset.UTC).isAfter(token.getExpiresAt())) {
             throw new DonyBusinessException(
                     HttpStatus.BAD_REQUEST, "otp-expired",
                     "OTP Expired", "Code expiré");
         }
 
-        if (!passwordEncoder.matches(code, token.getCodeHash())) {
+        if (!validCode) {
             token.setAttempts(token.getAttempts() + 1);
             emailOtpRepository.save(token);
             throw new DonyBusinessException(

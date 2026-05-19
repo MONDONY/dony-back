@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("EmailOtpService — tests unitaires")
@@ -153,6 +154,35 @@ class EmailOtpServiceTest {
 
             assertThat(token.getAttempts()).isEqualTo(1);
             verify(emailOtpRepository).save(argThat(e -> e.getAttempts() == 1));
+        }
+
+        @Test
+        @DisplayName("400 — OTP déjà consommé (usedAt != null, filtré par la query)")
+        void tokenAlreadyUsed() {
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> emailOtpService.verifyOtp(EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .extracting(e -> ((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
+        @Test
+        @DisplayName("500 — FirebaseAuthException lors de createCustomToken")
+        void firebaseAuthException() throws Exception {
+            EmailOtpEntity token = validToken();
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.of(token));
+            when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
+            when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            doThrow(mock(com.google.firebase.auth.FirebaseAuthException.class))
+                    .when(firebaseAuth).createCustomToken(EMAIL);
+
+            assertThatThrownBy(() -> emailOtpService.verifyOtp(EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .extracting(e -> ((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }
