@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -67,7 +68,12 @@ class UserRoleServiceTest {
         verify(userRepository).save(user);
         verify(auditService).log(eq("USER"), eq(user.getId()), eq("USER_ROLE_ADDED"),
                 eq(user.getId()), eq(Map.of("role", "TRAVELER")));
-        verify(eventPublisher).publishEvent(any(UserBecameTravelerEvent.class));
+
+        ArgumentCaptor<UserBecameTravelerEvent> eventCaptor =
+                ArgumentCaptor.forClass(UserBecameTravelerEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getUserId()).isEqualTo(user.getId());
+
         assertThat(result.roles()).containsExactlyInAnyOrder("SENDER", "TRAVELER");
     }
 
