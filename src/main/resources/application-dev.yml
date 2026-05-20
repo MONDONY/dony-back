@@ -53,6 +53,7 @@ dony:
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
   kyc:
     enforce: false
+    return-url: "https://dony.app/kyc/complete"
   stripe:
     enforce: false
     connect:

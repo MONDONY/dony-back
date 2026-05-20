@@ -111,6 +111,20 @@ class RequestEventsListenerTest {
     }
 
     @Test
+    void onNegotiationExpired_notifiesBothParties_whenSenderPresent() {
+        UUID travelerId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        var event = new NegotiationExpiredEvent(
+            UUID.randomUUID(), UUID.randomUUID(), senderId, travelerId
+        );
+
+        listener.onNegotiationExpired(event);
+
+        verify(dispatcher).notifyUser(eq(travelerId), anyString(), anyString(), anyMap());
+        verify(dispatcher).notifyUser(eq(senderId), anyString(), anyString(), anyMap());
+    }
+
+    @Test
     void onPackageRequestCreated_logsButDoesNotDispatch() {
         var event = new PackageRequestCreatedEvent(
             UUID.randomUUID(), UUID.randomUUID(),

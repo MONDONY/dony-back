@@ -123,6 +123,8 @@ dony:
   escrow-timeout-hours: 48
   dispute-sla-hours: 72
   max-declared-value-eur: 500
+  kyc:
+    return-url: "https://dony.app/kyc/complete"
   stripe:
     connect:
       mcc: "4215"

@@ -64,7 +64,7 @@ public class AuthService {
         if (deleted.isPresent()) {
             userRepository.reactivateByFirebaseUid(firebaseUid, UserStatus.ACTIVE.name());
             UserEntity reactivated = userRepository.findByFirebaseUid(firebaseUid).orElseThrow();
-            reactivated.setRoles(parseRoles(request.roles()));
+            reactivated.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER)));
             // Reset pseudonymized fields (GDPR deletion sets placeholder values)
             reactivated.setFirstName(null);
             reactivated.setLastName(null);
@@ -267,13 +267,8 @@ public class AuthService {
     }
 
     private UserResponse createUser(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
-        Set<Role> roles = parseRoles(request.roles());
-
-        if (roles.contains(Role.ADMIN)) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN, "forbidden-role",
-                    "Forbidden Role", "Le rôle ADMIN ne peut pas être auto-attribué");
-        }
+        // Tout nouveau compte reçoit uniquement SENDER — le rôle TRAVELER s'obtient via upgrade explicite
+        Set<Role> roles = new java.util.HashSet<>(Set.of(Role.SENDER));
 
         String signInProvider = null;
         if (decodedToken != null) {
@@ -348,7 +343,7 @@ public class AuthService {
 
         auditService.log(
                 "USER", saved.getId(), "USER_CREATED", saved.getId(),
-                Map.of("provider", String.valueOf(signInProvider), "roles", request.roles())
+                Map.of("provider", String.valueOf(signInProvider))
         );
 
         eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getFirebaseUid()));

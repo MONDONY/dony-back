@@ -37,30 +37,34 @@ public class PaymentController {
     }
 
     // Story 6.2 — Lire l'état du compte Stripe Connect (lecture seule depuis la DB)
+    // SENDER autorisé : utilisé pendant le flow "Devenir voyageur" avant activation du rôle
     @GetMapping("/connect/account")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<ConnectAccountResponse> getConnectAccount() {
         return ResponseEntity.ok(paymentService.getConnectAccountStatus(requireFirebaseUid()));
     }
 
     // Story 6.2 — Créer un compte Stripe Express pour le voyageur
+    // SENDER autorisé : l'onboarding Stripe précède l'activation du rôle TRAVELER
     @PostMapping("/connect/account")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<ConnectAccountResponse> createConnectAccount() {
         return ResponseEntity.ok(paymentService.createConnectAccount(requireFirebaseUid()));
     }
 
     // Story 6.2 — Générer le lien d'onboarding Stripe (WebView)
+    // SENDER autorisé : l'onboarding Stripe précède l'activation du rôle TRAVELER
     @PostMapping("/connect/onboarding-link")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<OnboardingLinkResponse> createOnboardingLink() {
         return ResponseEntity.ok(paymentService.createOnboardingLink(requireFirebaseUid()));
     }
 
     // Re-pulls the Stripe account state and syncs stripe_onboarded. Recovery path when the
     // account.updated webhook was missed (local dev without Stripe CLI, transient outage).
+    // SENDER autorisé : utilisé pour vérifier l'état après retour du WebView Stripe
     @PostMapping("/connect/refresh")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<ConnectAccountResponse> refreshConnectAccount() {
         return ResponseEntity.ok(paymentService.refreshConnectAccount(requireFirebaseUid()));
     }

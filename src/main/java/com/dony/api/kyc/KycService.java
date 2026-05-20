@@ -11,6 +11,7 @@ import com.stripe.model.identity.VerificationSession;
 import com.stripe.param.identity.VerificationSessionCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,9 @@ public class KycService {
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+
+    @Value("${dony.kyc.return-url:https://dony.app/kyc/complete}")
+    private String kycReturnUrl;
 
     public KycService(KycRepository kycRepository,
                       UserRepository userRepository,
@@ -68,7 +72,7 @@ public class KycService {
         try {
             VerificationSessionCreateParams params = VerificationSessionCreateParams.builder()
                     .setType(VerificationSessionCreateParams.Type.DOCUMENT)
-                    .setReturnUrl("https://dony.app/kyc/complete")
+                    .setReturnUrl(kycReturnUrl)
                     .putMetadata("user_id", user.getId().toString())
                     .setOptions(
                             VerificationSessionCreateParams.Options.builder()
@@ -76,6 +80,9 @@ public class KycService {
                                             VerificationSessionCreateParams.Options.Document.builder()
                                                     .setRequireLiveCapture(true)
                                                     .setRequireMatchingSelfie(true)
+                                                    .addAllowedType(VerificationSessionCreateParams.Options.Document.AllowedType.ID_CARD)
+                                                    .addAllowedType(VerificationSessionCreateParams.Options.Document.AllowedType.PASSPORT)
+                                                    .addAllowedType(VerificationSessionCreateParams.Options.Document.AllowedType.DRIVING_LICENSE)
                                                     .build()
                                     )
                                     .build()

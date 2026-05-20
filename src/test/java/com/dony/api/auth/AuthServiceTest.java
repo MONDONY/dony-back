@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -119,19 +120,22 @@ class AuthServiceTest {
         }
 
         @Test
-        @DisplayName("rôle ADMIN auto-attribué → 403 FORBIDDEN")
-        void register_adminRole_throwsForbidden() {
+        @DisplayName("rôle ADMIN dans la requête → ignoré, compte créé avec SENDER seulement")
+        void register_adminRole_ignored_createsSenderOnly() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
+            when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
+                UserEntity u = inv.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
 
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("ADMIN"));
+            authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> {
-                        DonyBusinessException ex = (DonyBusinessException) e;
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
-                        assertThat(ex.getErrorCode()).isEqualTo("forbidden-role");
-                    });
+            ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+            verify(userRepository).save(captor.capture());
+            assertThat(captor.getValue().getRoles()).containsExactly(Role.SENDER);
         }
 
         @Test
@@ -153,24 +157,27 @@ class AuthServiceTest {
 
         @ParameterizedTest
         @ValueSource(strings = {"INVALID", "SUPERUSER", "ROOT"})
-        @DisplayName("rôle invalide → 422 UNPROCESSABLE_ENTITY")
-        void register_invalidRole_throwsUnprocessable(String role) {
+        @DisplayName("rôles non reconnus dans la requête → ignorés, compte créé avec SENDER seulement")
+        void register_unknownRoles_ignored_createsSenderOnly(String role) {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
+            when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
+                UserEntity u = inv.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
 
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of(role));
+            authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> {
-                        DonyBusinessException ex = (DonyBusinessException) e;
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-                        assertThat(ex.getErrorCode()).isEqualTo("invalid-role");
-                    });
+            ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+            verify(userRepository).save(captor.capture());
+            assertThat(captor.getValue().getRoles()).containsExactly(Role.SENDER);
         }
 
         @Test
-        @DisplayName("rôles SENDER+TRAVELER → les deux rôles sont enregistrés")
-        void register_dualRoles_savesBothRoles() {
+        @DisplayName("SENDER+TRAVELER dans la requête → ignorés, seul SENDER est enregistré")
+        void register_dualRoles_ignored_senderOnly() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
             when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
@@ -180,9 +187,13 @@ class AuthServiceTest {
             });
 
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER", "TRAVELER"));
-            UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
+            authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
-            assertThat(result.roles()).containsExactlyInAnyOrder("SENDER", "TRAVELER");
+            ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+            verify(userRepository).save(captor.capture());
+            assertThat(captor.getValue().getRoles())
+                    .containsExactly(Role.SENDER)
+                    .doesNotContain(Role.TRAVELER);
         }
     }
 
@@ -505,5 +516,58 @@ class AuthServiceTest {
                         assertThat(ex.getErrorCode()).isEqualTo("email-required");
                     });
         }
+    }
+
+    // ─── SENDER-par-défaut ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("createUser force SENDER uniquement, ignore request.roles=[TRAVELER,SENDER]")
+    void createUser_forcesSenderOnly_ignoringRequestRoles() {
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByFirebaseUidIncludingDeleted(FIREBASE_UID)).thenReturn(Optional.empty());
+        when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
+
+        UserEntity saved = new UserEntity();
+        saved.setFirebaseUid(FIREBASE_UID);
+        saved.setStatus(UserStatus.ACTIVE);
+        saved.setKycStatus(KycStatus.NOT_STARTED);
+        saved.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER)));
+        saved.setPhoneNumber(PHONE);
+        setId(saved, UUID.randomUUID());
+        when(userRepository.save(any())).thenReturn(saved);
+
+        RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("TRAVELER", "SENDER"));
+        UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
+
+        ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getRoles()).containsExactly(Role.SENDER);
+        assertThat(captor.getValue().getRoles()).doesNotContain(Role.TRAVELER);
+    }
+
+    @Test
+    @DisplayName("register reactivation force SENDER uniquement, ignore request.roles=[TRAVELER]")
+    void register_reactivation_forcesSenderOnly() {
+        UserEntity deleted = buildUser();
+        deleted.getRoles().add(Role.TRAVELER);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByFirebaseUidIncludingDeleted(FIREBASE_UID)).thenReturn(Optional.of(deleted));
+
+        UserEntity reactivated = new UserEntity();
+        reactivated.setFirebaseUid(FIREBASE_UID);
+        reactivated.setStatus(UserStatus.ACTIVE);
+        reactivated.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER)));
+        setId(reactivated, UUID.randomUUID());
+        when(userRepository.findByFirebaseUid(FIREBASE_UID))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(reactivated));
+        when(userRepository.save(any())).thenReturn(reactivated);
+
+        RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("TRAVELER"));
+        authService.register(FIREBASE_UID, mockPhoneToken(), req);
+
+        ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getRoles()).containsExactly(Role.SENDER);
     }
 }
