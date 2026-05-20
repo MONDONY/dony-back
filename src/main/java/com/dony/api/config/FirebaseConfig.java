@@ -4,6 +4,7 @@ import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.cloud.FirestoreClient;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -32,6 +33,15 @@ public class FirebaseConfig {
             return null;
         }
         return FirestoreClient.getFirestore();
+    }
+
+    @Bean
+    public FirebaseAuth firebaseAuth() {
+        if (FirebaseApp.getApps().isEmpty()) {
+            log.warn("FirebaseAuth bean unavailable — Firebase not initialized (test/ci mode)");
+            return null;
+        }
+        return FirebaseAuth.getInstance();
     }
 
     @PostConstruct

@@ -30,11 +30,11 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(FirebaseTokenFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final UserRepository userRepository;
+    private final UserLinkerService userLinkerService;
     private final ObjectMapper objectMapper;
 
-    public FirebaseTokenFilter(UserRepository userRepository, ObjectMapper objectMapper) {
-        this.userRepository = userRepository;
+    public FirebaseTokenFilter(UserLinkerService userLinkerService, ObjectMapper objectMapper) {
+        this.userLinkerService = userLinkerService;
         this.objectMapper = objectMapper;
     }
 
@@ -71,11 +71,11 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         }
 
         try {
-            UserEntity user = userRepository.findByFirebaseUid(uid).orElse(null);
+            UserEntity user = userLinkerService.resolveAndLink(uid, decoded).orElse(null);
 
             if (user == null) {
                 // New user — not yet registered; allow with empty roles (registration flow)
-                setAuthentication(uid, null, List.of());
+                setAuthentication(uid, decoded, List.of());
                 return false;
             }
 

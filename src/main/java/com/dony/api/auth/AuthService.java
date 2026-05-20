@@ -18,12 +18,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -54,10 +52,48 @@ public class AuthService {
     }
 
     @Transactional
-    public UserResponse register(String firebaseUid, RegisterRequest request) {
-        return userRepository.findByFirebaseUid(firebaseUid)
-                .map(this::toResponse)
-                .orElseGet(() -> createUser(firebaseUid, request));
+    public UserResponse register(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
+        // Active user → return as-is
+        Optional<UserEntity> active = userRepository.findByFirebaseUid(firebaseUid);
+        if (active.isPresent()) {
+            return toResponse(active.get());
+        }
+        // Soft-deleted user with same Firebase UID → reactivate via native UPDATE to bypass
+        // @Where filter (em.merge() would SELECT with the filter, find nothing, attempt INSERT → constraint violation)
+        Optional<UserEntity> deleted = userRepository.findByFirebaseUidIncludingDeleted(firebaseUid);
+        if (deleted.isPresent()) {
+            userRepository.reactivateByFirebaseUid(firebaseUid, UserStatus.ACTIVE.name());
+            UserEntity reactivated = userRepository.findByFirebaseUid(firebaseUid).orElseThrow();
+            reactivated.setRoles(parseRoles(request.roles()));
+            // Reset pseudonymized fields (GDPR deletion sets placeholder values)
+            reactivated.setFirstName(null);
+            reactivated.setLastName(null);
+            reactivated.setPhoneNumber(null);
+            reactivated.setEmail(null);
+            reactivated.setKycStatus(KycStatus.NOT_STARTED);
+            // Restore contact info from the re-registration provider
+            String signInProvider = null;
+            if (decodedToken != null) {
+                Object firebaseClaim = decodedToken.getClaims().get("firebase");
+                if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
+                    Object provider = firebaseMap.get("sign_in_provider");
+                    if (provider instanceof String s) signInProvider = s;
+                }
+            }
+            if ("phone".equals(signInProvider) && request.phoneNumber() != null) {
+                reactivated.setPhoneNumber(request.phoneNumber());
+            } else if (("google.com".equals(signInProvider) || "apple.com".equals(signInProvider))
+                    && decodedToken != null && decodedToken.getEmail() != null) {
+                reactivated.setEmail(decodedToken.getEmail());
+            } else if ("custom".equals(signInProvider) && request.email() != null) {
+                reactivated.setEmail(request.email());
+            }
+            userRepository.save(reactivated);
+            auditService.log("USER", reactivated.getId(), "USER_REACTIVATED", reactivated.getId(),
+                    Map.of("firebaseUid", firebaseUid));
+            return toResponse(reactivated);
+        }
+        return createUser(firebaseUid, decodedToken, request);
     }
 
     @Transactional(readOnly = true)
@@ -92,7 +128,17 @@ public class AuthService {
         }
         if (request.email() != null) {
             String v = request.email().trim();
-            user.setEmail(v.isEmpty() ? null : v);
+            if (!v.isEmpty() && !v.equals(user.getEmail())) {
+                if (userRepository.existsByEmail(v)) {
+                    throw new DonyBusinessException(HttpStatus.CONFLICT, "email-already-exists",
+                            "Email Already Registered", "Cet email est déjà associé à un compte actif");
+                }
+                // The email may still be held by a soft-deleted account — free it before claiming it
+                userRepository.freeEmailFromDeletedAccounts(v);
+                user.setEmail(v);
+            } else if (v.isEmpty()) {
+                user.setEmail(null);
+            }
         }
         if (request.birthDate() != null) {
             user.setBirthDate(request.birthDate());
@@ -100,6 +146,16 @@ public class AuthService {
         if (request.city() != null) {
             String v = request.city().trim();
             user.setCity(v.isEmpty() ? null : v);
+        }
+        if (request.phoneNumber() != null) {
+            String v = request.phoneNumber().trim();
+            if (!v.isEmpty() && !v.equals(user.getPhoneNumber())) {
+                if (userRepository.existsByPhoneNumber(v)) {
+                    throw new DonyBusinessException(HttpStatus.CONFLICT, "phone-already-exists",
+                            "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
+                }
+                user.setPhoneNumber(v);
+            }
         }
 
         return toResponse(userRepository.save(user));
@@ -210,59 +266,94 @@ public class AuthService {
         return toResponse(updated);
     }
 
-    private UserResponse createUser(String firebaseUid, RegisterRequest request) {
+    private UserResponse createUser(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
         Set<Role> roles = parseRoles(request.roles());
 
         if (roles.contains(Role.ADMIN)) {
             throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "forbidden-role",
-                    "Forbidden Role",
-                    "Le rôle ADMIN ne peut pas être auto-attribué"
-            );
+                    HttpStatus.FORBIDDEN, "forbidden-role",
+                    "Forbidden Role", "Le rôle ADMIN ne peut pas être auto-attribué");
         }
 
-        if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
-            throw new DonyBusinessException(
-                    HttpStatus.CONFLICT,
-                    "phone-already-exists",
-                    "Phone Number Already Registered",
-                    "Ce numéro est déjà associé à un compte"
-            );
+        String signInProvider = null;
+        if (decodedToken != null) {
+            Object firebaseClaim = decodedToken.getClaims().get("firebase");
+            if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
+                Object provider = firebaseMap.get("sign_in_provider");
+                if (provider instanceof String s) signInProvider = s;
+            }
         }
 
         UserEntity user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
-        user.setPhoneNumber(request.phoneNumber());
         user.setStatus(UserStatus.ACTIVE);
         user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
 
+        switch (signInProvider == null ? "" : signInProvider) {
+            case "phone" -> {
+                if (request.phoneNumber() == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "phone-required",
+                            "Phone Required", "Le numéro de téléphone est requis");
+                }
+                if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
+                    throw new DonyBusinessException(
+                            HttpStatus.CONFLICT, "phone-already-exists",
+                            "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
+                }
+                user.setPhoneNumber(request.phoneNumber());
+            }
+            case "google.com", "apple.com" -> {
+                if (decodedToken == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "token-required",
+                            "Token Required", "Token Firebase manquant");
+                }
+                String email = decodedToken.getEmail();
+                if (email == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
+                            "Email Required", "L'email est introuvable dans le token Firebase");
+                }
+                if (userRepository.existsByEmail(email)) {
+                    return toResponse(userRepository.findByEmail(email).orElseThrow());
+                }
+                user.setEmail(email);
+            }
+            case "custom" -> {
+                // Pour les custom tokens, l'UID Firebase est l'email utilisé dans createCustomToken(email)
+                // On vérifie que l'email du body correspond à l'UID pour éviter l'usurpation
+                if (request.email() == null) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
+                            "Email Required", "L'adresse email est requise");
+                }
+                if (!firebaseUid.equalsIgnoreCase(request.email())) {
+                    throw new DonyBusinessException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "email-mismatch",
+                            "Email Mismatch", "L'email fourni ne correspond pas au token Firebase");
+                }
+                if (userRepository.existsByEmail(request.email())) {
+                    return toResponse(userRepository.findByEmail(request.email()).orElseThrow());
+                }
+                user.setEmail(request.email());
+            }
+            default -> throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "invalid-provider",
+                    "Invalid Provider", "Mode d'authentification non supporté");
+        }
+
         UserEntity saved = userRepository.save(user);
 
         auditService.log(
-                "USER",
-                saved.getId(),
-                "USER_CREATED",
-                saved.getId(),
-                Map.of("phoneHash", hashPhone(request.phoneNumber()), "roles", request.roles())
+                "USER", saved.getId(), "USER_CREATED", saved.getId(),
+                Map.of("provider", String.valueOf(signInProvider), "roles", request.roles())
         );
 
         eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getFirebaseUid()));
 
         return toResponse(saved);
-    }
-
-    private static String hashPhone(String phone) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(phone.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) hex.append(String.format("%02x", b));
-            return "SHA256:" + hex.substring(0, 16) + "...";
-        } catch (NoSuchAlgorithmException e) {
-            return "HASHED";
-        }
     }
 
     private Set<Role> parseRoles(Set<String> rawRoles) {

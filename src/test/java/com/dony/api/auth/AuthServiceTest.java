@@ -71,6 +71,13 @@ class AuthServiceTest {
         }
     }
 
+    private com.google.firebase.auth.FirebaseToken mockPhoneToken() {
+        com.google.firebase.auth.FirebaseToken token = mock(com.google.firebase.auth.FirebaseToken.class);
+        lenient().when(token.getClaims()).thenReturn(java.util.Map.of(
+                "firebase", java.util.Map.of("sign_in_provider", "phone")));
+        return token;
+    }
+
     // ─── register ──────────────────────────────────────────────────────────────
 
     @Nested
@@ -83,8 +90,8 @@ class AuthServiceTest {
             UserEntity existing = buildUser();
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(existing));
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of("SENDER"));
-            UserResponse result = authService.register(FIREBASE_UID, req);
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
+            UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
             verify(userRepository, never()).save(any());
@@ -101,8 +108,8 @@ class AuthServiceTest {
                 return u;
             });
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of("TRAVELER"));
-            UserResponse result = authService.register(FIREBASE_UID, req);
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("TRAVELER"));
+            UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
             assertThat(result.kycStatus()).isEqualTo("NOT_STARTED");
@@ -116,9 +123,9 @@ class AuthServiceTest {
         void register_adminRole_throwsForbidden() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of("ADMIN"));
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("ADMIN"));
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, req))
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
@@ -133,9 +140,9 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
             when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(true);
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of("SENDER"));
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, req))
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
@@ -150,9 +157,9 @@ class AuthServiceTest {
         void register_invalidRole_throwsUnprocessable(String role) {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of(role));
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of(role));
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, req))
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
@@ -172,8 +179,8 @@ class AuthServiceTest {
                 return u;
             });
 
-            RegisterRequest req = new RegisterRequest(PHONE, Set.of("SENDER", "TRAVELER"));
-            UserResponse result = authService.register(FIREBASE_UID, req);
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER", "TRAVELER"));
+            UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
             assertThat(result.roles()).containsExactlyInAnyOrder("SENDER", "TRAVELER");
         }
@@ -232,7 +239,7 @@ class AuthServiceTest {
 
             UpdateProfileRequest req = new UpdateProfileRequest(
                     "Amadou", "Diallo", "amadou@dony.app",
-                    LocalDate.of(1990, 5, 15), "Paris"
+                    LocalDate.of(1990, 5, 15), "Paris", null
             );
 
             UserResponse result = authService.updateProfile(FIREBASE_UID, req);
@@ -253,7 +260,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ");
+            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ", null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isNull();
@@ -268,10 +275,38 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null);
+            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isEqualTo("Original");
+        }
+
+        @Test
+        @DisplayName("ajout numéro de téléphone → sauvegardé en base")
+        void updateProfile_addPhoneNumber_saved() {
+            UserEntity user = buildUser(); // phone = PHONE = "+33612345678"
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.existsByPhoneNumber("+33699000001")).thenReturn(false);
+            when(userRepository.save(any())).thenReturn(user);
+
+            authService.updateProfile(FIREBASE_UID,
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699000001"));
+
+            assertThat(user.getPhoneNumber()).isEqualTo("+33699000001");
+        }
+
+        @Test
+        @DisplayName("numéro déjà pris → 409 CONFLICT")
+        void updateProfile_phoneAlreadyTaken_throws409() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.existsByPhoneNumber("+33699999999")).thenReturn(true);
+
+            assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699999999")))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
         }
 
         @Test
@@ -280,7 +315,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest("A", null, null, null, null)))
+                    new UpdateProfileRequest("A", null, null, null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
@@ -337,6 +372,138 @@ class AuthServiceTest {
             assertThat(resp.isProAccount()).isFalse();
             assertThat(resp.stripeAccountStatus()).isNotNull();
             assertThat(resp.country()).isEqualTo("FR");
+        }
+    }
+
+    // ─── register — routing par provider Firebase ──────────────────────────────
+
+    @Nested
+    @DisplayName("register — routing par provider Firebase")
+    class RegisterWithProvider {
+
+        private com.google.firebase.auth.FirebaseToken mockToken(String signInProvider, String email) {
+            com.google.firebase.auth.FirebaseToken token = mock(com.google.firebase.auth.FirebaseToken.class);
+            when(token.getClaims()).thenReturn(java.util.Map.of(
+                    "firebase", java.util.Map.of("sign_in_provider", signInProvider)));
+            if (email != null) when(token.getEmail()).thenReturn(email);
+            return token;
+        }
+
+        @Test
+        @DisplayName("provider phone — phoneNumber null → 422")
+        void phone_phoneNumberRequired() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("phone", null);
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .extracting(e -> ((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        @DisplayName("provider phone — succès")
+        void phone_success() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("phone", null);
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
+            when(userRepository.save(any())).thenAnswer(i -> {
+                UserEntity u = i.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
+
+            UserResponse result = authService.register(FIREBASE_UID, token, req);
+
+            assertThat(result).isNotNull();
+            verify(userRepository).save(argThat(u -> PHONE.equals(u.getPhoneNumber())));
+        }
+
+        @Test
+        @DisplayName("provider google.com — email depuis token Firebase")
+        void google_emailFromToken() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("google.com", "google@gmail.com");
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(userRepository.existsByEmail("google@gmail.com")).thenReturn(false);
+            when(userRepository.save(any())).thenAnswer(i -> {
+                UserEntity u = i.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
+
+            UserResponse result = authService.register(FIREBASE_UID, token, req);
+
+            assertThat(result).isNotNull();
+            verify(userRepository).save(argThat(u -> "google@gmail.com".equals(u.getEmail())));
+        }
+
+        @Test
+        @DisplayName("provider custom (email OTP) — email depuis body")
+        void custom_emailFromBody() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("custom", null);
+            RegisterRequest req = new RegisterRequest(null, "otp@example.com", Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid("otp@example.com")).thenReturn(Optional.empty());
+            when(userRepository.existsByEmail("otp@example.com")).thenReturn(false);
+            when(userRepository.save(any())).thenAnswer(i -> {
+                UserEntity u = i.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
+
+            UserResponse result = authService.register("otp@example.com", token, req);
+
+            assertThat(result).isNotNull();
+            verify(userRepository).save(argThat(u -> "otp@example.com".equals(u.getEmail())));
+        }
+
+        @Test
+        @DisplayName("provider inconnu → 422")
+        void unknownProvider_422() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("password", null);
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .extracting(e -> ((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        @Test
+        @DisplayName("provider custom — email body ≠ UID token → 422 email-mismatch")
+        void custom_emailMismatch_rejected() {
+            // L'UID du custom token est "real@firebase.com" mais le body envoie un autre email
+            com.google.firebase.auth.FirebaseToken token = mockToken("custom", null);
+            RegisterRequest req = new RegisterRequest(null, "spoofed@evil.com", Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid("real@firebase.com")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register("real@firebase.com", token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("email-mismatch");
+                    });
+        }
+
+        @Test
+        @DisplayName("provider google.com — email null dans le token → 422 email-required")
+        void google_nullEmailInToken_throws() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("google.com", null);
+            // getEmail() non stubbé → retourne null par défaut
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.register(FIREBASE_UID, token, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("email-required");
+                    });
         }
     }
 }
