@@ -113,6 +113,64 @@ class PickupAddressServiceTest {
     }
 
     @Test
+    void update_success_withIsDefault_false_updatesFields() {
+        UUID id = UUID.randomUUID();
+        PickupAddressEntity entity = buildEntity(userId, false);
+        when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.of(entity));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdatePickupAddressRequest request = new UpdatePickupAddressRequest(
+                "Nouveau label", "15 rue Neuve", "69001", "Lyon", "FR",
+                null, null, null, null, false);
+
+        PickupAddressDto result = service.update(userId, id, request);
+
+        assertThat(result.label()).isEqualTo("Nouveau label");
+        assertThat(result.city()).isEqualTo("Lyon");
+        assertThat(result.isDefault()).isFalse();
+        verify(repository, never()).findDefaultByUserId(any());
+        verify(auditService).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void update_success_withIsDefault_true_andEntityNotDefault_unsetsOthers() {
+        UUID id = UUID.randomUUID();
+        PickupAddressEntity entity = buildEntity(userId, false);
+        PickupAddressEntity existingDefault = buildEntity(userId, true);
+        when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.of(entity));
+        when(repository.findDefaultByUserId(userId)).thenReturn(Optional.of(existingDefault));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdatePickupAddressRequest request = new UpdatePickupAddressRequest(
+                "Bureau", "5 av. des Champs", "75008", "Paris", "FR",
+                null, null, null, null, true);
+
+        PickupAddressDto result = service.update(userId, id, request);
+
+        assertThat(existingDefault.isDefault()).isFalse();
+        assertThat(result.isDefault()).isTrue();
+        verify(auditService).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void update_success_withIsDefault_true_andEntityAlreadyDefault_skipsUnset() {
+        UUID id = UUID.randomUUID();
+        PickupAddressEntity entity = buildEntity(userId, true);
+        when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.of(entity));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdatePickupAddressRequest request = new UpdatePickupAddressRequest(
+                "Maison", "10 rue de la Paix", "75001", "Paris", "FR",
+                null, null, null, null, true);
+
+        PickupAddressDto result = service.update(userId, id, request);
+
+        assertThat(result.isDefault()).isTrue();
+        verify(repository, never()).findDefaultByUserId(any());
+        verify(auditService).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
     void setDefault_unsetsAllThenSetsTarget() {
         UUID id = UUID.randomUUID();
         PickupAddressEntity target = buildEntity(userId, false);

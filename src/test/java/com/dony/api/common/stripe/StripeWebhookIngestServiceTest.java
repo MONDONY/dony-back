@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,6 +58,22 @@ class StripeWebhookIngestServiceTest {
                     StripeWebhookSource.PAYMENTS == e.getSource() &&
                     "payment_intent.succeeded".equals(e.getEventType())
             ));
+        }
+    }
+
+    @Test
+    void ingest_withKycSource_usesKycSecret() throws Exception {
+        var fakeEvent = mockEvent("evt_kyc", "identity.verification_session.verified");
+
+        try (MockedStatic<Webhook> wh = mockStatic(Webhook.class)) {
+            wh.when(() -> Webhook.constructEvent(any(), any(), eq("whsec_kyc"))).thenReturn(fakeEvent);
+            when(repo.existsById("evt_kyc")).thenReturn(false);
+            when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.ingest("{}", "sig", StripeWebhookSource.KYC);
+
+            wh.verify(() -> Webhook.constructEvent(any(), any(), eq("whsec_kyc")));
+            verify(repo).save(argThat(e -> StripeWebhookSource.KYC == e.getSource()));
         }
     }
 

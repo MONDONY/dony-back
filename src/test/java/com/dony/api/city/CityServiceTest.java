@@ -44,6 +44,13 @@ class CityServiceTest {
     }
 
     @Test
+    void search_withNullQuery_throwsIllegalArgument() {
+        assertThatThrownBy(() -> cityService.search(null, 10))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("query");
+    }
+
+    @Test
     void search_withBlankQuery_throwsIllegalArgument() {
         assertThatThrownBy(() -> cityService.search("", 10))
             .isInstanceOf(IllegalArgumentException.class)
