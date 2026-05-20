@@ -53,7 +53,7 @@ class UserRoleServiceTest {
         user.setRoles(new HashSet<>(Set.of(Role.SENDER)));
         user.setKycStatus(KycStatus.VERIFIED);
         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
-        when(userRepository.findByFirebaseUidForUpdate("uid-1")).thenReturn(Optional.of(user));
+        when(userRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
     }
 
     @Test

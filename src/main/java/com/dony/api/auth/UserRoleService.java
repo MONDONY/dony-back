@@ -32,7 +32,7 @@ public class UserRoleService {
 
     @Transactional
     public UserResponse activateTravelerRole(String firebaseUid) {
-        UserEntity user = userRepository.findByFirebaseUidForUpdate(firebaseUid)
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found",
                         "User Not Found", "Utilisateur introuvable"));
