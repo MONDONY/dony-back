@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,8 +25,13 @@ public class UserRoleController {
     @PostMapping("/traveler/activate")
     @PreAuthorize("hasRole('SENDER')")
     public ResponseEntity<UserResponse> activateTraveler() {
-        String firebaseUid = requireFirebaseUid();
-        return ResponseEntity.ok(userRoleService.activateTravelerRole(firebaseUid));
+        return ResponseEntity.ok(userRoleService.activateTravelerRole(requireFirebaseUid()));
+    }
+
+    @DeleteMapping("/traveler")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<UserResponse> deactivateTraveler() {
+        return ResponseEntity.ok(userRoleService.deactivateTravelerRole(requireFirebaseUid()));
     }
 
     private String requireFirebaseUid() {

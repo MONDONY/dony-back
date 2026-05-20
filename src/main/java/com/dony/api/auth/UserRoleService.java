@@ -68,6 +68,26 @@ public class UserRoleService {
         return toResponse(user);
     }
 
+    @Transactional
+    public UserResponse deactivateTravelerRole(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found",
+                        "User Not Found", "Utilisateur introuvable"));
+
+        if (!user.getRoles().contains(Role.TRAVELER)) {
+            return toResponse(user);
+        }
+
+        user.getRoles().remove(Role.TRAVELER);
+        userRepository.save(user);
+
+        auditService.log("USER", user.getId(), "USER_ROLE_REMOVED", user.getId(),
+                Map.of("role", "TRAVELER", "reason", "user_self_deactivated"));
+
+        return toResponse(user);
+    }
+
     private UserResponse toResponse(UserEntity user) {
         return new UserResponse(
                 user.getId(),

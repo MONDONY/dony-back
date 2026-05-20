@@ -44,11 +44,10 @@ services:
       retries: 5
 
   # Stripe CLI — forwarde les webhooks KYC (Stripe Identity)
-  # STRIPE_API_KEY est lu automatiquement par la CLI Stripe depuis l'environnement
+  # Requiert : source .env.dev avant docker compose up pour que ${STRIPE_SECRET_KEY} soit résolu
   stripe-cli-kyc:
     image: stripe/stripe-cli:latest
     container_name: dony_stripe_cli_kyc
-    env_file: .env.dev
     environment:
       - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command: ["listen", "--events", "identity.verification_session.verified,identity.verification_session.requires_input,identity.verification_session.canceled", "--forward-to", "http://host.docker.internal:8080/api/v1/kyc/webhook"]
@@ -62,7 +61,6 @@ services:
   stripe-cli-payments:
     image: stripe/stripe-cli:latest
     container_name: dony_stripe_cli_payments
-    env_file: .env.dev
     environment:
       - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command: ["listen", "--events", "account.updated,payment_intent.amount_capturable_updated,payment_intent.payment_failed,charge.refunded", "--forward-connect-to", "http://host.docker.internal:8080/api/v1/payments/webhook", "--forward-to", "http://host.docker.internal:8080/api/v1/payments/webhook"]
