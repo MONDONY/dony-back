@@ -63,6 +63,14 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Optional<UserEntity> findByIdForUpdate(@Param("id") UUID id);
 
     /**
+     * Loads a UserEntity by Firebase UID with a pessimistic write lock.
+     * Used in traveler role activation to guard against concurrent upgrades.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM UserEntity u WHERE u.firebaseUid = :uid")
+    Optional<UserEntity> findByFirebaseUidForUpdate(@Param("uid") String uid);
+
+    /**
      * Finds users with a given status whose deletion grace period has expired.
      * Used to identify accounts ready for final permanent deletion.
      */
