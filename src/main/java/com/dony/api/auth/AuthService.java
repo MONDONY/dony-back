@@ -343,7 +343,7 @@ public class AuthService {
 
         auditService.log(
                 "USER", saved.getId(), "USER_CREATED", saved.getId(),
-                Map.of("provider", String.valueOf(signInProvider), "roles", request.roles())
+                Map.of("provider", String.valueOf(signInProvider))
         );
 
         eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getFirebaseUid()));

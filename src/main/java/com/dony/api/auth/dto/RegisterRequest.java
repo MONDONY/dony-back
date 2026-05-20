@@ -2,7 +2,6 @@ package com.dony.api.auth.dto;
 
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -21,7 +20,7 @@ public record RegisterRequest(
     @Email(message = "Format email invalide")
     String email,
 
-    @NotEmpty(message = "Au moins un rôle est requis")
+    @Nullable
     @Size(max = 2, message = "Maximum 2 rôles")
     Set<String> roles
 ) {}
