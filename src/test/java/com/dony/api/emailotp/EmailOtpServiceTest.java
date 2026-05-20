@@ -1,5 +1,7 @@
 package com.dony.api.emailotp;
 
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,7 @@ class EmailOtpServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ResendEmailService resendEmailService;
     @Mock private FirebaseAuth firebaseAuth;
+    @Mock private UserRepository userRepository;
     @InjectMocks private EmailOtpService emailOtpService;
 
     private static final String EMAIL = "test@example.com";
@@ -83,12 +86,13 @@ class EmailOtpServiceTest {
         }
 
         @Test
-        @DisplayName("succès — retourne customToken Firebase")
+        @DisplayName("succès — nouvel utilisateur, retourne customToken Firebase avec uid=email")
         void success() throws Exception {
             EmailOtpEntity token = validToken();
             when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
                     .thenReturn(Optional.of(token));
             when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
+            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
             when(firebaseAuth.createCustomToken(EMAIL)).thenReturn("firebase-custom-token");
             when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
@@ -96,6 +100,28 @@ class EmailOtpServiceTest {
 
             assertThat(result).isEqualTo("firebase-custom-token");
             assertThat(token.getUsedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("succès — utilisateur existant, customToken créé avec son firebase_uid existant")
+        void success_existingUser_usesExistingFirebaseUid() throws Exception {
+            EmailOtpEntity token = validToken();
+            UserEntity existingUser = new UserEntity();
+            existingUser.setFirebaseUid("existing-firebase-uid-from-phone");
+            existingUser.setEmail(EMAIL);
+
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.of(token));
+            when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
+            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(existingUser));
+            when(firebaseAuth.createCustomToken("existing-firebase-uid-from-phone"))
+                    .thenReturn("firebase-token-with-existing-uid");
+            when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            String result = emailOtpService.verifyOtp(EMAIL, "123456");
+
+            assertThat(result).isEqualTo("firebase-token-with-existing-uid");
+            verify(firebaseAuth).createCustomToken("existing-firebase-uid-from-phone");
         }
 
         @Test
@@ -172,7 +198,7 @@ class EmailOtpServiceTest {
         @DisplayName("succès — retourne null si firebaseAuth non disponible (mode test)")
         void firebaseAuth_null_returnsNull() {
             EmailOtpService serviceWithoutFirebase = new EmailOtpService(
-                    emailOtpRepository, passwordEncoder, resendEmailService, null);
+                    emailOtpRepository, passwordEncoder, resendEmailService, null, userRepository);
             EmailOtpEntity token = validToken();
             when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
                     .thenReturn(Optional.of(token));
@@ -192,6 +218,7 @@ class EmailOtpServiceTest {
                     .thenReturn(Optional.of(token));
             when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
             when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
             doThrow(mock(com.google.firebase.auth.FirebaseAuthException.class))
                     .when(firebaseAuth).createCustomToken(EMAIL);
 

@@ -239,7 +239,7 @@ class AuthServiceTest {
 
             UpdateProfileRequest req = new UpdateProfileRequest(
                     "Amadou", "Diallo", "amadou@dony.app",
-                    LocalDate.of(1990, 5, 15), "Paris"
+                    LocalDate.of(1990, 5, 15), "Paris", null
             );
 
             UserResponse result = authService.updateProfile(FIREBASE_UID, req);
@@ -260,7 +260,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ");
+            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ", null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isNull();
@@ -275,10 +275,38 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null);
+            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isEqualTo("Original");
+        }
+
+        @Test
+        @DisplayName("ajout numéro de téléphone → sauvegardé en base")
+        void updateProfile_addPhoneNumber_saved() {
+            UserEntity user = buildUser(); // phone = PHONE = "+33612345678"
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.existsByPhoneNumber("+33699000001")).thenReturn(false);
+            when(userRepository.save(any())).thenReturn(user);
+
+            authService.updateProfile(FIREBASE_UID,
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699000001"));
+
+            assertThat(user.getPhoneNumber()).isEqualTo("+33699000001");
+        }
+
+        @Test
+        @DisplayName("numéro déjà pris → 409 CONFLICT")
+        void updateProfile_phoneAlreadyTaken_throws409() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.existsByPhoneNumber("+33699999999")).thenReturn(true);
+
+            assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699999999")))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
         }
 
         @Test
@@ -287,7 +315,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest("A", null, null, null, null)))
+                    new UpdateProfileRequest("A", null, null, null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));

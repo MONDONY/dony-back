@@ -1,5 +1,6 @@
 package com.dony.api.emailotp;
 
+import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -32,15 +33,18 @@ public class EmailOtpService {
     private final PasswordEncoder passwordEncoder;
     private final ResendEmailService resendEmailService;
     private final FirebaseAuth firebaseAuth;
+    private final UserRepository userRepository;
 
     public EmailOtpService(EmailOtpRepository emailOtpRepository,
                            PasswordEncoder passwordEncoder,
                            ResendEmailService resendEmailService,
-                           @Autowired(required = false) FirebaseAuth firebaseAuth) {
+                           @Autowired(required = false) FirebaseAuth firebaseAuth,
+                           UserRepository userRepository) {
         this.emailOtpRepository = emailOtpRepository;
         this.passwordEncoder    = passwordEncoder;
         this.resendEmailService = resendEmailService;
         this.firebaseAuth       = firebaseAuth;
+        this.userRepository     = userRepository;
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -67,6 +71,7 @@ public class EmailOtpService {
     }
 
     public String verifyOtp(String email, String code) {
+        log.info("verifyOtp: email='{}' length={}", email, email == null ? -1 : email.length());
         EmailOtpEntity token = emailOtpRepository
                 .findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(email)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -104,7 +109,12 @@ public class EmailOtpService {
             return null;
         }
         try {
-            return firebaseAuth.createCustomToken(email);
+            // Si l'utilisateur existe déjà, on crée le token avec son firebase_uid existant
+            // pour que GET /auth/me fonctionne même si le compte a été créé via un autre provider
+            String uid = userRepository.findByEmail(email)
+                    .map(u -> u.getFirebaseUid())
+                    .orElse(email);
+            return firebaseAuth.createCustomToken(uid);
         } catch (FirebaseAuthException e) {
             throw new DonyBusinessException(
                     HttpStatus.INTERNAL_SERVER_ERROR, "firebase-error",

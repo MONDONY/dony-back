@@ -47,6 +47,10 @@ firebase:
   service-account-path: classpath:firebase-service-account.json
 
 dony:
+  email:
+    resend-api-key: re_XUDoz7om_PorRcS2T5oic4LuvhCQBWGzy
+    from-address: noreply@yadony.com
+    otp-template: "Ton code dony est : %s. Valable 10 minutes."
   kyc:
     enforce: false
   stripe:

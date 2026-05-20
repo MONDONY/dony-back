@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
 @DisplayName("FirebaseTokenFilter — credentials storage")
 class FirebaseTokenFilterTest {
 
-    @Mock private UserRepository userRepository;
+    @Mock private UserLinkerService userLinkerService;
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
     @Mock private FilterChain filterChain;
@@ -45,7 +45,7 @@ class FirebaseTokenFilterTest {
     private static final String FIREBASE_UID = "uid-test-001";
 
     private FirebaseTokenFilter buildFilter() {
-        return new FirebaseTokenFilter(userRepository, new ObjectMapper());
+        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper());
     }
 
     private UserEntity makeUser(UserStatus status) {
@@ -76,7 +76,7 @@ class FirebaseTokenFilterTest {
     void registeredUser_credentialsIsDecodedToken() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
         when(mockToken.getUid()).thenReturn(FIREBASE_UID);
-        when(userRepository.findByFirebaseUid(FIREBASE_UID))
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
                 .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
 
         try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class);
@@ -100,7 +100,8 @@ class FirebaseTokenFilterTest {
     void unregisteredUser_credentialsIsDecodedToken() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
         when(mockToken.getUid()).thenReturn(FIREBASE_UID);
-        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
+                .thenReturn(Optional.empty());
 
         try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class);
              MockedStatic<FirebaseApp> staticApp = mockStatic(FirebaseApp.class)) {
@@ -123,7 +124,7 @@ class FirebaseTokenFilterTest {
     void suspendedUser_returns403() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
         when(mockToken.getUid()).thenReturn(FIREBASE_UID);
-        when(userRepository.findByFirebaseUid(FIREBASE_UID))
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
                 .thenReturn(Optional.of(makeUser(UserStatus.SUSPENDED)));
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
@@ -145,7 +146,7 @@ class FirebaseTokenFilterTest {
     void dbFailure_returns503() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
         when(mockToken.getUid()).thenReturn(FIREBASE_UID);
-        when(userRepository.findByFirebaseUid(FIREBASE_UID))
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
                 .thenThrow(new RuntimeException("DB down"));
 
         try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class);

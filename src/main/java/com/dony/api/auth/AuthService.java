@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -52,9 +53,47 @@ public class AuthService {
 
     @Transactional
     public UserResponse register(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
-        return userRepository.findByFirebaseUid(firebaseUid)
-                .map(this::toResponse)
-                .orElseGet(() -> createUser(firebaseUid, decodedToken, request));
+        // Active user → return as-is
+        Optional<UserEntity> active = userRepository.findByFirebaseUid(firebaseUid);
+        if (active.isPresent()) {
+            return toResponse(active.get());
+        }
+        // Soft-deleted user with same Firebase UID → reactivate via native UPDATE to bypass
+        // @Where filter (em.merge() would SELECT with the filter, find nothing, attempt INSERT → constraint violation)
+        Optional<UserEntity> deleted = userRepository.findByFirebaseUidIncludingDeleted(firebaseUid);
+        if (deleted.isPresent()) {
+            userRepository.reactivateByFirebaseUid(firebaseUid, UserStatus.ACTIVE.name());
+            UserEntity reactivated = userRepository.findByFirebaseUid(firebaseUid).orElseThrow();
+            reactivated.setRoles(parseRoles(request.roles()));
+            // Reset pseudonymized fields (GDPR deletion sets placeholder values)
+            reactivated.setFirstName(null);
+            reactivated.setLastName(null);
+            reactivated.setPhoneNumber(null);
+            reactivated.setEmail(null);
+            reactivated.setKycStatus(KycStatus.NOT_STARTED);
+            // Restore contact info from the re-registration provider
+            String signInProvider = null;
+            if (decodedToken != null) {
+                Object firebaseClaim = decodedToken.getClaims().get("firebase");
+                if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
+                    Object provider = firebaseMap.get("sign_in_provider");
+                    if (provider instanceof String s) signInProvider = s;
+                }
+            }
+            if ("phone".equals(signInProvider) && request.phoneNumber() != null) {
+                reactivated.setPhoneNumber(request.phoneNumber());
+            } else if (("google.com".equals(signInProvider) || "apple.com".equals(signInProvider))
+                    && decodedToken != null && decodedToken.getEmail() != null) {
+                reactivated.setEmail(decodedToken.getEmail());
+            } else if ("custom".equals(signInProvider) && request.email() != null) {
+                reactivated.setEmail(request.email());
+            }
+            userRepository.save(reactivated);
+            auditService.log("USER", reactivated.getId(), "USER_REACTIVATED", reactivated.getId(),
+                    Map.of("firebaseUid", firebaseUid));
+            return toResponse(reactivated);
+        }
+        return createUser(firebaseUid, decodedToken, request);
     }
 
     @Transactional(readOnly = true)
@@ -89,7 +128,17 @@ public class AuthService {
         }
         if (request.email() != null) {
             String v = request.email().trim();
-            user.setEmail(v.isEmpty() ? null : v);
+            if (!v.isEmpty() && !v.equals(user.getEmail())) {
+                if (userRepository.existsByEmail(v)) {
+                    throw new DonyBusinessException(HttpStatus.CONFLICT, "email-already-exists",
+                            "Email Already Registered", "Cet email est déjà associé à un compte actif");
+                }
+                // The email may still be held by a soft-deleted account — free it before claiming it
+                userRepository.freeEmailFromDeletedAccounts(v);
+                user.setEmail(v);
+            } else if (v.isEmpty()) {
+                user.setEmail(null);
+            }
         }
         if (request.birthDate() != null) {
             user.setBirthDate(request.birthDate());
@@ -97,6 +146,16 @@ public class AuthService {
         if (request.city() != null) {
             String v = request.city().trim();
             user.setCity(v.isEmpty() ? null : v);
+        }
+        if (request.phoneNumber() != null) {
+            String v = request.phoneNumber().trim();
+            if (!v.isEmpty() && !v.equals(user.getPhoneNumber())) {
+                if (userRepository.existsByPhoneNumber(v)) {
+                    throw new DonyBusinessException(HttpStatus.CONFLICT, "phone-already-exists",
+                            "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
+                }
+                user.setPhoneNumber(v);
+            }
         }
 
         return toResponse(userRepository.save(user));
