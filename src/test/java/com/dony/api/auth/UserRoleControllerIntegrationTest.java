@@ -17,7 +17,9 @@ import java.util.Set;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -93,6 +95,37 @@ class UserRoleControllerIntegrationTest {
     @DisplayName("Sans authentification → 401")
     void activate_returns401_withoutToken() throws Exception {
         mockMvc.perform(post("/users/me/roles/traveler/activate"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ─── Désactivation ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("désactivation : utilisateur TRAVELER → 200, rôle TRAVELER supprimé")
+    void deactivate_returns200_whenUserIsTraveler() throws Exception {
+        UserEntity user = userRepository.findByFirebaseUid(UID_OK).orElseThrow();
+        user.getRoles().add(Role.TRAVELER);
+        userRepository.save(user);
+
+        mockMvc.perform(delete("/users/me/roles/traveler")
+                        .with(authentication(auth(UID_OK, "ROLE_SENDER", "ROLE_TRAVELER"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roles", not(hasItem("TRAVELER"))));
+    }
+
+    @Test
+    @DisplayName("désactivation idempotente : pas TRAVELER → 200 sans modification")
+    void deactivate_idempotent_returns200_whenNotTraveler() throws Exception {
+        mockMvc.perform(delete("/users/me/roles/traveler")
+                        .with(authentication(auth(UID_OK, "ROLE_SENDER", "ROLE_TRAVELER"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roles", containsInAnyOrder("SENDER")));
+    }
+
+    @Test
+    @DisplayName("désactivation sans authentification → 401")
+    void deactivate_returns401_withoutToken() throws Exception {
+        mockMvc.perform(delete("/users/me/roles/traveler"))
                 .andExpect(status().isUnauthorized());
     }
 

@@ -142,6 +142,28 @@ class FirebaseTokenFilterTest {
     }
 
     @Test
+    @DisplayName("user BANNED → 403, filterChain non appelé")
+    void bannedUser_returns403() throws Exception {
+        when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
+        when(mockToken.getUid()).thenReturn(FIREBASE_UID);
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
+                .thenReturn(Optional.of(makeUser(UserStatus.BANNED)));
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+        try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class);
+             MockedStatic<FirebaseApp> staticApp = mockStatic(FirebaseApp.class)) {
+            staticApp.when(FirebaseApp::getApps).thenReturn(List.of(mock(FirebaseApp.class)));
+            staticAuth.when(FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+            when(mockFirebaseAuth.verifyIdToken("fake-token")).thenReturn(mockToken);
+
+            buildFilter().doFilterInternal(request, response, filterChain);
+        }
+
+        verify(response).setStatus(SC_FORBIDDEN);
+        verify(filterChain, never()).doFilter(any(), any());
+    }
+
+    @Test
     @DisplayName("DB failure → 503, SecurityContext vidé")
     void dbFailure_returns503() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");

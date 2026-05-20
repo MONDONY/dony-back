@@ -107,6 +107,34 @@ class UserLinkerServiceTest {
         verify(userRepository, never()).findByPhoneNumber(any());
     }
 
+    @Test
+    @DisplayName("claims sans clé 'firebase' → vide (pas de provider détecté)")
+    void noFirebaseClaim_returnsEmpty() {
+        FirebaseToken t = mock(FirebaseToken.class);
+        when(t.getClaims()).thenReturn(Map.of());
+        when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
+
+        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, t);
+
+        assertThat(result).isEmpty();
+        verify(userRepository, never()).findByPhoneNumber(any());
+    }
+
+    @Test
+    @DisplayName("phone provider, phone_number absent des claims → vide")
+    void phoneProvider_noPhoneNumberClaim_returnsEmpty() {
+        FirebaseToken t = mock(FirebaseToken.class);
+        when(t.getClaims()).thenReturn(Map.of(
+                "firebase", Map.of("sign_in_provider", "phone")
+        ));
+        when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
+
+        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, t);
+
+        assertThat(result).isEmpty();
+        verify(userRepository, never()).findByPhoneNumber(any());
+    }
+
     private static void setId(Object entity, UUID id) {
         try {
             Class<?> c = entity.getClass();

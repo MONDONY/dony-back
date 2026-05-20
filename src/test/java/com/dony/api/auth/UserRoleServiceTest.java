@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -54,7 +55,7 @@ class UserRoleServiceTest {
         user.setRoles(new HashSet<>(Set.of(Role.SENDER)));
         user.setKycStatus(KycStatus.VERIFIED);
         user.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
-        when(userRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
+        lenient().when(userRepository.findByFirebaseUid("uid-1")).thenReturn(Optional.of(user));
     }
 
     @Test
@@ -131,6 +132,54 @@ class UserRoleServiceTest {
                     assertThat((List<String>) ex.getProperties().get("missingRequirements"))
                             .containsExactlyInAnyOrder("KYC_NOT_VERIFIED", "STRIPE_ACCOUNT_NOT_COMPLETE");
                 });
+    }
+
+    // ─── deactivateTravelerRole ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("désactivation : supprime TRAVELER, sauvegarde, audite")
+    void deactivateTraveler_success_removesRole_audits() {
+        user.getRoles().add(Role.TRAVELER);
+        when(userRepository.save(user)).thenReturn(user);
+
+        UserResponse result = userRoleService.deactivateTravelerRole("uid-1");
+
+        assertThat(user.getRoles()).containsExactly(Role.SENDER);
+        verify(userRepository).save(user);
+        verify(auditService).log(eq("USER"), eq(user.getId()), eq("USER_ROLE_REMOVED"),
+                eq(user.getId()), eq(Map.of("role", "TRAVELER", "reason", "user_self_deactivated")));
+        assertThat(result.roles()).containsExactly("SENDER");
+    }
+
+    @Test
+    @DisplayName("désactivation idempotente : pas TRAVELER → retourne sans modification")
+    void deactivateTraveler_idempotent_returnsWithoutChange() {
+        userRoleService.deactivateTravelerRole("uid-1");
+
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    @DisplayName("désactivation : utilisateur introuvable → 404")
+    void deactivateTraveler_userNotFound_throws404() {
+        when(userRepository.findByFirebaseUid("uid-unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userRoleService.deactivateTravelerRole("uid-unknown"))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("activation : utilisateur introuvable → 404")
+    void activateTraveler_userNotFound_throws404() {
+        when(userRepository.findByFirebaseUid("uid-unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userRoleService.activateTravelerRole("uid-unknown"))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     private static void setId(Object entity, UUID id) {

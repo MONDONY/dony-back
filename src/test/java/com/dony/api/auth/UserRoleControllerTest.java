@@ -74,4 +74,22 @@ class UserRoleControllerTest {
                 .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
     }
+
+    @Test
+    @DisplayName("deactivateTraveler : principal valide → délègue à UserRoleService et retourne 200")
+    void deactivateTraveler_validAuth_delegates() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("uid-1", null, List.of()));
+
+        UserResponse fakeResponse = new UserResponse(
+                UUID.randomUUID(), null, null, null, null, null, null,
+                Set.of("SENDER"), "NOT_STARTED", "ACTIVE", 0, 0,
+                false, null, "FR");
+        when(userRoleService.deactivateTravelerRole("uid-1")).thenReturn(fakeResponse);
+
+        var response = controller.deactivateTraveler();
+
+        assertThat(response.getStatusCode()).isEqualTo(org.springframework.http.HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(fakeResponse);
+    }
 }

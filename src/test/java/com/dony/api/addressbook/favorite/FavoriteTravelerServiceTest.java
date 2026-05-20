@@ -151,4 +151,44 @@ class FavoriteTravelerServiceTest {
 
         verify(repository, never()).save(any());
     }
+
+    @Test
+    void findAll_whenTravelerNotFound_returnsVoyageurDisplayName() {
+        FavoriteTravelerEntity e = buildEntity(userId, travelerId);
+        when(repository.findByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(e));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.empty());
+
+        List<FavoriteTravelerDto> result = service.findAll(userId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).displayName()).isEqualTo("Voyageur");
+        assertThat(result.get(0).averageRating()).isNull();
+    }
+
+    @Test
+    void add_travelerWithNoFirstName_displayNameIsVoyageur() {
+        UserEntity traveler = new UserEntity();
+        traveler.setFirstName(null);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(repository.existsByUserIdAndTravelerId(userId, travelerId)).thenReturn(false);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        FavoriteTravelerDto result = service.add(userId, new AddFavoriteTravelerRequest(travelerId, null));
+
+        assertThat(result.displayName()).isEqualTo("Voyageur");
+    }
+
+    @Test
+    void add_travelerWithFirstNameOnly_displayNameIsFirstName() {
+        UserEntity traveler = new UserEntity();
+        traveler.setFirstName("Ahmed");
+        traveler.setLastName(null);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(repository.existsByUserIdAndTravelerId(userId, travelerId)).thenReturn(false);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        FavoriteTravelerDto result = service.add(userId, new AddFavoriteTravelerRequest(travelerId, null));
+
+        assertThat(result.displayName()).isEqualTo("Ahmed");
+    }
 }

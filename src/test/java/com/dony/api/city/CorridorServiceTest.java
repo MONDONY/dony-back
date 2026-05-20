@@ -11,6 +11,8 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -58,6 +60,20 @@ class CorridorServiceTest {
 
         verify(corridorRepository).save(any(CorridorEntity.class));
         verify(corridorRepository, never()).incrementUsageCount(any(), any());
+    }
+
+    @Test
+    void upsertCorridor_withNullCountries_usesEmptyString() {
+        when(corridorRepository.existsByDepartureCityAndArrivalCity("Lyon", "Bamako"))
+            .thenReturn(false);
+        ArgumentCaptor<CorridorEntity> captor = ArgumentCaptor.forClass(CorridorEntity.class);
+        when(corridorRepository.save(captor.capture())).thenReturn(new CorridorEntity());
+
+        corridorService.upsertCorridor("Lyon", null, "Bamako", null);
+
+        CorridorEntity saved = captor.getValue();
+        assertThat(saved.getDepartureCountry()).isEqualTo("");
+        assertThat(saved.getArrivalCountry()).isEqualTo("");
     }
 
     @Test
