@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.matching.PricingMode;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.cash.PaymentMethodSetConverter;
 import jakarta.persistence.CollectionTable;
@@ -127,6 +128,10 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "capacity_unit", nullable = false, length = 20)
     private CapacityUnit capacityUnit = CapacityUnit.SUITCASE_23KG;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pricing_mode", nullable = false, length = 10)
+    private PricingMode pricingMode = PricingMode.KG;
+
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
 
@@ -199,4 +204,7 @@ public class AnnouncementEntity extends BaseEntity {
 
     public CapacityUnit getCapacityUnit() { return capacityUnit; }
     public void setCapacityUnit(CapacityUnit capacityUnit) { this.capacityUnit = capacityUnit; }
+
+    public PricingMode getPricingMode() { return pricingMode; }
+    public void setPricingMode(PricingMode pricingMode) { this.pricingMode = pricingMode; }
 }
