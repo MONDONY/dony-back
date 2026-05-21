@@ -60,6 +60,7 @@ public class AnnouncementService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final DonyConfigProperties config;
+    private final PriceGridService priceGridService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -73,7 +74,8 @@ public class AnnouncementService {
             UserRepository userRepository,
             AuditService auditService,
             ApplicationEventPublisher eventPublisher,
-            DonyConfigProperties config
+            DonyConfigProperties config,
+            PriceGridService priceGridService
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -81,6 +83,7 @@ public class AnnouncementService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.config = config;
+        this.priceGridService = priceGridService;
     }
 
     @Transactional(readOnly = true)
@@ -281,6 +284,8 @@ public class AnnouncementService {
         announcement.setCapacityUnit(
             request.capacityUnit() != null ? request.capacityUnit() : CapacityUnit.SUITCASE_23KG
         );
+        PricingMode pricingMode = request.pricingMode() != null ? request.pricingMode() : PricingMode.KG;
+        announcement.setPricingMode(pricingMode);
         if (request.departureDate() != null && request.departureDate().isBefore(LocalDate.now())) {
             throw new DonyBusinessException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
@@ -291,6 +296,10 @@ public class AnnouncementService {
         }
 
         AnnouncementEntity saved = announcementRepository.save(announcement);
+
+        if (pricingMode == PricingMode.MIXED) {
+            priceGridService.snapshotToAnnouncement(user.getId(), saved.getId());
+        }
 
         auditService.log(
                 "USER",
@@ -433,6 +442,11 @@ public class AnnouncementService {
                         kycVerified)
                 : null;
 
+        List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
+                announcement.getPricingMode() == PricingMode.MIXED
+                        ? priceGridService.getAnnouncementGridItems(announcement.getId())
+                        : List.of();
+
         return new AnnouncementDetailResponse(
                 announcement.getId(),
                 announcement.getTravelerId(),
@@ -455,7 +469,9 @@ public class AnnouncementService {
                 announcement.getRefusedTypes(),
                 announcement.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 announcement.getCreatedAt(),
-                announcement.getUpdatedAt()
+                announcement.getUpdatedAt(),
+                announcement.getPricingMode(),
+                gridItems
         );
     }
 
@@ -537,6 +553,11 @@ public class AnnouncementService {
                 buildDisplayName(user),
                 null, null, false, user.isProAccount(), kycVerified);
 
+        List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> updatedGridItems =
+                saved.getPricingMode() == PricingMode.MIXED
+                        ? priceGridService.getAnnouncementGridItems(saved.getId())
+                        : List.of();
+
         return new AnnouncementDetailResponse(
                 saved.getId(),
                 saved.getTravelerId(),
@@ -559,7 +580,9 @@ public class AnnouncementService {
                 saved.getRefusedTypes(),
                 saved.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 saved.getCreatedAt(),
-                saved.getUpdatedAt()
+                saved.getUpdatedAt(),
+                saved.getPricingMode(),
+                updatedGridItems
         );
     }
 

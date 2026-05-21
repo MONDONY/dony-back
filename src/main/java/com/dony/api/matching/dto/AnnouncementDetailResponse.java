@@ -30,5 +30,7 @@ public record AnnouncementDetailResponse(
         List<String> refusedTypes,
         List<String> acceptedPaymentMethods,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        com.dony.api.matching.PricingMode pricingMode,
+        List<AnnouncementPriceGridItemResponse> priceGridItems
 ) {}

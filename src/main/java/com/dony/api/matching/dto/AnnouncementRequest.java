@@ -57,5 +57,7 @@ public record AnnouncementRequest(
 
         Set<PaymentMethod> acceptedPaymentMethods,
 
-        com.dony.api.matching.CapacityUnit capacityUnit
+        com.dony.api.matching.CapacityUnit capacityUnit,
+
+        com.dony.api.matching.PricingMode pricingMode
 ) {}
