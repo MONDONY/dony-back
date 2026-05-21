@@ -437,6 +437,21 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("annonce KG_FREE → capacityUnit présent dans le détail (regression)")
+        void getDetail_kgFreeAnnouncement_returnsCapacityUnit() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setCapacityUnit(CapacityUnit.KG_FREE);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.capacityUnit()).isEqualTo(CapacityUnit.KG_FREE);
+        }
+
+        @Test
         @DisplayName("annonce introuvable → 404 NOT_FOUND")
         void getDetail_unknownAnnouncement_throwsNotFound() {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
