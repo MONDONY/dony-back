@@ -680,7 +680,8 @@ public class AnnouncementService {
                 entity.getCapacityUnit(),
                 cashAccepted,
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getPricingMode()
         );
     }
 

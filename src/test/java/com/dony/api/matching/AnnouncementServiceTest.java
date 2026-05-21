@@ -352,6 +352,7 @@ class AnnouncementServiceTest {
 
             verify(priceGridService).snapshotToAnnouncement(USER_ID, ANNOUNCEMENT_ID);
             assertThat(captor.getValue().getPricingMode()).isEqualTo(PricingMode.MIXED);
+            assertThat(result.pricingMode()).isEqualTo(PricingMode.MIXED);
         }
 
         @Test
