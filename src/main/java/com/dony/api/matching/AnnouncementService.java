@@ -177,6 +177,10 @@ public class AnnouncementService {
                         kycVerified)
                 : null;
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
+        List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
+                entity.getPricingMode() == PricingMode.MIXED
+                        ? priceGridService.getAnnouncementGridItems(entity.getId())
+                        : List.of();
         return new AnnouncementSearchResponse(
                 entity.getId(), entity.getTravelerId(),
                 entity.getDepartureCity(), entity.getArrivalCity(),
@@ -192,7 +196,9 @@ public class AnnouncementService {
                 entity.getRefusedTypes(),
                 entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
                 entity.getCapacityUnit(),
-                entity.getCreatedAt(), entity.getUpdatedAt()
+                entity.getCreatedAt(), entity.getUpdatedAt(),
+                entity.getPricingMode(),
+                gridItems
         );
     }
 
@@ -286,6 +292,15 @@ public class AnnouncementService {
         );
         PricingMode pricingMode = request.pricingMode() != null ? request.pricingMode() : PricingMode.KG;
         announcement.setPricingMode(pricingMode);
+        if (pricingMode == PricingMode.KG &&
+                (request.pricePerKg() == null || request.pricePerKg().compareTo(java.math.BigDecimal.ZERO) <= 0)) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-price",
+                    "Prix invalide",
+                    "Le prix par kg est obligatoire en mode KG"
+            );
+        }
         if (request.departureDate() != null && request.departureDate().isBefore(LocalDate.now())) {
             throw new DonyBusinessException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
@@ -501,6 +516,17 @@ public class AnnouncementService {
 
         final com.dony.api.matching.TransportMode oldTransportMode = announcement.getTransportMode();
 
+        PricingMode updatePricingMode = request.pricingMode() != null ? request.pricingMode() : announcement.getPricingMode();
+        if (updatePricingMode == PricingMode.KG &&
+                (request.pricePerKg() == null || request.pricePerKg().compareTo(java.math.BigDecimal.ZERO) <= 0)) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-price",
+                    "Prix invalide",
+                    "Le prix par kg est obligatoire en mode KG"
+            );
+        }
+
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureDate(request.departureDate());
@@ -656,6 +682,10 @@ public class AnnouncementService {
         );
         boolean cashAccepted = entity.getAcceptedPaymentMethods()
                 .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
+        List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
+                entity.getPricingMode() == PricingMode.MIXED
+                        ? priceGridService.getAnnouncementGridItems(entity.getId())
+                        : List.of();
         return new AnnouncementResponse(
                 entity.getId(),
                 entity.getTravelerId(),
@@ -681,7 +711,8 @@ public class AnnouncementService {
                 cashAccepted,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
-                entity.getPricingMode()
+                entity.getPricingMode(),
+                gridItems
         );
     }
 

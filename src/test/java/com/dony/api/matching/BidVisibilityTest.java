@@ -32,6 +32,8 @@ class BidVisibilityTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RatingRepository ratingRepository;
     @Mock private CancellationRepository cancellationRepository;
+    @Mock private BidGridItemRepository bidGridItemRepository;
+    @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
 
     @InjectMocks private BidService bidService;
 

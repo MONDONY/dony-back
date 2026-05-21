@@ -671,6 +671,16 @@ public class BidService {
                 ? cancellation.getContestationDeadline()
                 : null;
 
+        // Compute total net: sum of grid items + KG part (for display in Flutter)
+        java.math.BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
+                .map(i -> i.getUnitPriceNetSnapshot().multiply(java.math.BigDecimal.valueOf(i.getQuantity())))
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+        java.math.BigDecimal kgNet = (bid.getWeightKg() != null && pricePerKg != null)
+                ? bid.getWeightKg().multiply(pricePerKg)
+                : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal totalNetAmountEur = gridNet.add(kgNet)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
         return new BidResponse(
                 bid.getId(),
                 bid.getAnnouncementId(),
@@ -721,7 +731,8 @@ public class BidService {
                 cancellationNoShowStatus,
                 contestationDeadline,
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
-                bid.getPricingMode()
+                bid.getPricingMode(),
+                totalNetAmountEur
         );
     }
 }

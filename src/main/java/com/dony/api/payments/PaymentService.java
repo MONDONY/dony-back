@@ -613,7 +613,7 @@ public class PaymentService {
 
             auditService.log("BID", bid.getId(), "BID_CREATED", bid.getSenderId(),
                     Map.of("announcementId", bid.getAnnouncementId().toString(),
-                            "weightKg", bid.getWeightKg().toString(),
+                            "weightKg", bid.getWeightKg() != null ? bid.getWeightKg().toString() : "0",
                             "paymentIntentId", paymentIntentId));
 
             eventPublisher.publishEvent(new BidCreatedEvent(

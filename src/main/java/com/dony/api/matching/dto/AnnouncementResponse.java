@@ -33,5 +33,6 @@ public record AnnouncementResponse(
         boolean cashAccepted,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        com.dony.api.matching.PricingMode pricingMode
+        com.dony.api.matching.PricingMode pricingMode,
+        List<AnnouncementPriceGridItemResponse> priceGridItems
 ) {}
