@@ -34,19 +34,22 @@ public class BidCheckoutService {
     private final AuditService auditService;
     private final PaymentService paymentService;
     private final String stripePublishableKey;
+    private final BidGridItemRepository bidGridItemRepository;
 
     public BidCheckoutService(BidRepository bidRepository,
                               AnnouncementRepository announcementRepository,
                               UserRepository userRepository,
                               AuditService auditService,
                               PaymentService paymentService,
-                              @Value("${stripe.publishable-key:}") String stripePublishableKey) {
+                              @Value("${stripe.publishable-key:}") String stripePublishableKey,
+                              BidGridItemRepository bidGridItemRepository) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.paymentService = paymentService;
         this.stripePublishableKey = stripePublishableKey;
+        this.bidGridItemRepository = bidGridItemRepository;
     }
 
     @Transactional
@@ -106,7 +109,7 @@ public class BidCheckoutService {
                 "Vous avez déjà une demande en cours pour ce trajet");
         }
 
-        if (req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        if (req.weightKg() != null && req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "weight-exceeds-capacity", "Weight Exceeds Capacity",
                 "Poids demandé supérieur à la capacité disponible");
@@ -137,9 +140,19 @@ public class BidCheckoutService {
 
         BidEntity saved = bidRepository.save(bid);
 
+        // Calcul totalNet = gridNet + kgNet
+        BigDecimal gridNet = bidGridItemRepository.findByBidId(saved.getId()).stream()
+            .map(i -> i.getUnitPriceNetSnapshot().multiply(BigDecimal.valueOf(i.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal kgNet = (saved.getWeightKg() != null && announcement.getPricePerKg() != null)
+            ? saved.getWeightKg().multiply(announcement.getPricePerKg())
+            : BigDecimal.ZERO;
+        BigDecimal totalNet = gridNet.add(kgNet);
+
         // Délégation à PaymentService — crée le PaymentIntent Stripe
         CreatePaymentRequest paymentReq = new CreatePaymentRequest();
         paymentReq.setBidId(saved.getId());
+        paymentReq.setTotalNetEur(totalNet);
         PaymentResponse paymentResp = paymentService.createEscrow(paymentReq, firebaseUid);
 
         // Backfill paymentIntentId on the bid so schedulers can find it

@@ -37,6 +37,7 @@ class BidCheckoutServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private PaymentService paymentService;
+    @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidCheckoutService service;
