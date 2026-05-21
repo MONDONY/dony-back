@@ -383,6 +383,11 @@ public class PaymentService {
             totalNet = bid.getWeightKg().multiply(announcement.getPricePerKg())
                          .setScale(2, RoundingMode.HALF_UP);
         }
+        if (totalNet.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "invalid-amount", "Invalid Amount",
+                "Le montant calculé est invalide (≤ 0)");
+        }
         BigDecimal amount = totalNet.multiply(new BigDecimal("1.12")).setScale(2, RoundingMode.HALF_UP);
         BigDecimal commission = totalNet.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();

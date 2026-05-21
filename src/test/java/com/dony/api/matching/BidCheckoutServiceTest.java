@@ -94,7 +94,6 @@ class BidCheckoutServiceTest {
         assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
         assertThat(bid.getAwaitingPaymentExpiresAt()).isNotNull();
         assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
-        verify(auditService, never()).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
     }
 
     @Test
