@@ -40,11 +40,12 @@ public class PriceGridService {
 
     @Transactional
     public PriceGridItemResponse addItem(UUID travelerId, PriceGridItemRequest req, UUID actorId) {
-        if (gridRepo.countByTravelerId(travelerId) >= MAX_GRID_ITEMS) {
+        long currentCount = gridRepo.countByTravelerId(travelerId);
+        if (currentCount >= MAX_GRID_ITEMS) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "price-grid-limit: maximum 20 articles autorisés");
         }
-        int position = (int) gridRepo.countByTravelerId(travelerId);
+        int position = (int) currentCount;
         PriceGridItemEntity entity = new PriceGridItemEntity();
         entity.setTravelerId(travelerId);
         entity.setLabel(req.label());
@@ -56,7 +57,7 @@ public class PriceGridService {
             saved.getId(),
             "PRICE_GRID_ITEM_CREATED",
             actorId,
-            Map.of("label", req.label(), "unitPriceNet", req.unitPriceNet().toString())
+            java.util.Map.<String, Object>of("label", req.label(), "unitPriceNet", req.unitPriceNet().toString())
         );
         return toResponse(saved);
     }
@@ -76,7 +77,7 @@ public class PriceGridService {
             saved.getId(),
             "PRICE_GRID_ITEM_UPDATED",
             actorId,
-            Map.of("label", req.label(), "unitPriceNet", req.unitPriceNet().toString())
+            java.util.Map.<String, Object>of("label", req.label(), "unitPriceNet", req.unitPriceNet().toString())
         );
         return toResponse(saved);
     }
@@ -94,7 +95,7 @@ public class PriceGridService {
             itemId,
             "PRICE_GRID_ITEM_DELETED",
             actorId,
-            Map.of("label", entity.getLabel())
+            java.util.Map.<String, Object>of("label", entity.getLabel())
         );
     }
 
@@ -113,13 +114,14 @@ public class PriceGridService {
             snap.setPosition(item.getPosition());
             return snap;
         }).toList();
+        annGridRepo.deleteByAnnouncementId(announcementId);
         annGridRepo.saveAll(snapshots);
         auditService.log(
             "ANNOUNCEMENT",
             announcementId,
             "ANNOUNCEMENT_PRICE_GRID_SNAPSHOTTED",
             travelerId,
-            Map.of("itemCount", String.valueOf(items.size()))
+            java.util.Map.<String, Object>of("itemCount", String.valueOf(items.size()))
         );
     }
 
