@@ -161,6 +161,6 @@ class PriceGridControllerTest {
     @Test
     void getMyPriceGrid_unauthenticated_returns401or403() throws Exception {
         mockMvc.perform(get("/travelers/me/price-grid"))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnauthorized());
     }
 }
