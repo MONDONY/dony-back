@@ -47,6 +47,7 @@ public class NotificationPrefsService {
         this.userRepository = userRepository;
     }
 
+    @Transactional(readOnly = true)
     public NotificationPrefsDto getPrefs(String firebaseUid) {
         UUID userId = resolveUserId(firebaseUid);
         return repository.findById(userId)
