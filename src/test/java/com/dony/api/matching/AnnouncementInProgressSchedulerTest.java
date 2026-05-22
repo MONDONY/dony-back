@@ -71,7 +71,8 @@ class AnnouncementInProgressTransitionTest {
         service = new AnnouncementService(
                 announcementRepository, bidRepository,
                 mock(com.dony.api.auth.UserRepository.class),
-                auditService, eventPublisher, config);
+                auditService, eventPublisher, config,
+                mock(PriceGridService.class));
     }
 
     private static void setId(Object entity, UUID id) {

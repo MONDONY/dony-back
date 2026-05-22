@@ -41,8 +41,8 @@ public record AnnouncementRequest(
         @DecimalMin(value = "1.0", message = "La capacité doit être d'au moins 1 kg")
         BigDecimal availableKg,
 
-        @NotNull(message = "Le prix par kg est obligatoire")
-        @DecimalMin(value = "0.01", message = "Le prix doit être positif")
+        // Nullable en mode MIXED (grille seule) ; validé côté service si mode KG
+        @DecimalMin(value = "0.0", message = "Le prix ne peut pas être négatif")
         BigDecimal pricePerKg,
 
         @NotNull(message = "Le mode de transport est obligatoire")
@@ -57,5 +57,7 @@ public record AnnouncementRequest(
 
         Set<PaymentMethod> acceptedPaymentMethods,
 
-        com.dony.api.matching.CapacityUnit capacityUnit
+        com.dony.api.matching.CapacityUnit capacityUnit,
+
+        com.dony.api.matching.PricingMode pricingMode
 ) {}

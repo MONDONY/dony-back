@@ -1,16 +1,17 @@
 package com.dony.api.matching.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record BidRequest(
-        @NotNull(message = "Le poids est obligatoire")
         @DecimalMin(value = "0.1", message = "Le poids minimum est 0.1 kg")
-        BigDecimal weightKg,
+        BigDecimal weightKg,  // nullable désormais (GRID mode = pas de poids)
 
         @NotNull(message = "La valeur déclarée est obligatoire")
         @DecimalMin(value = "0.01", message = "La valeur déclarée doit être positive")
@@ -32,5 +33,7 @@ public record BidRequest(
         @NotNull(message = "Le disclaimer légal doit être accepté")
         Boolean disclaimerSigned,
 
-        String paymentMethod
+        String paymentMethod,
+
+        @Valid List<BidGridItemRequest> gridItems  // peut être null ou vide
 ) {}

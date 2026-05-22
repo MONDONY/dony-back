@@ -6,6 +6,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
@@ -43,6 +44,8 @@ public class BidService {
     private final ApplicationEventPublisher eventPublisher;
     private final RatingRepository ratingRepository;
     private final CancellationRepository cancellationRepository;
+    private final BidGridItemRepository bidGridItemRepository;
+    private final AnnouncementPriceGridItemRepository annGridItemRepository;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -50,7 +53,9 @@ public class BidService {
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
                       ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
-                      CancellationRepository cancellationRepository) {
+                      CancellationRepository cancellationRepository,
+                      BidGridItemRepository bidGridItemRepository,
+                      AnnouncementPriceGridItemRepository annGridItemRepository) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -58,6 +63,8 @@ public class BidService {
         this.eventPublisher = eventPublisher;
         this.ratingRepository = ratingRepository;
         this.cancellationRepository = cancellationRepository;
+        this.bidGridItemRepository = bidGridItemRepository;
+        this.annGridItemRepository = annGridItemRepository;
     }
 
     @Transactional
@@ -101,7 +108,7 @@ public class BidService {
                     "Vous avez déjà une demande en cours ou acceptée pour ce trajet");
         }
 
-        if (request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        if (request.weightKg() != null && request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "weight-exceeds-capacity", "Weight Exceeds Capacity",
                     "Poids demandé supérieur à la capacité disponible");
@@ -118,6 +125,20 @@ public class BidService {
                     HttpStatus.UNPROCESSABLE_ENTITY, "disclaimer-not-signed", "Disclaimer Not Signed",
                     "Le disclaimer légal doit être accepté");
         }
+
+        List<BidGridItemRequest> gridItems = request.gridItems() != null ? request.gridItems() : List.of();
+        boolean hasGrid = !gridItems.isEmpty();
+        boolean hasKg   = request.weightKg() != null && request.weightKg().compareTo(BigDecimal.ZERO) > 0;
+
+        if (!hasGrid && !hasKg) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "bid-empty", "Bid Empty",
+                "Au moins un article ou un poids doit être renseigné");
+        }
+
+        BidPricingMode bidMode = hasGrid && hasKg ? BidPricingMode.MIXED
+                               : hasGrid          ? BidPricingMode.GRID
+                               :                    BidPricingMode.KG;
 
         com.dony.api.payments.cash.PaymentMethod pm;
         try {
@@ -142,7 +163,8 @@ public class BidService {
         BidEntity bid = new BidEntity();
         bid.setAnnouncementId(announcementId);
         bid.setSenderId(sender.getId());
-        bid.setWeightKg(request.weightKg());
+        bid.setWeightKg(request.weightKg());  // peut être null pour GRID mode
+        bid.setPricingMode(bidMode);
         bid.setDeclaredValueEur(request.declaredValueEur());
         bid.setDescription(request.description());
         bid.setContentCategory(request.contentCategory());
@@ -156,14 +178,35 @@ public class BidService {
         BidEntity saved = bidRepository.save(bid);
 
         auditService.log("BID", saved.getId(), "BID_CREATED", sender.getId(),
-                Map.of(
+                Map.<String, Object>of(
                         "announcementId", announcementId.toString(),
-                        "weightKg", saved.getWeightKg().toString(),
+                        "weightKg", saved.getWeightKg() != null ? saved.getWeightKg().toString() : "null",
+                        "pricingMode", bidMode.name(),
                         "declaredValueEur", saved.getDeclaredValueEur().toString(),
                         "contentCategory", String.valueOf(saved.getContentCategory()),
                         "disclaimerSignedAt", saved.getDisclaimerSignedAt().toString(),
                         "disclaimerSignedIp", clientIp
                 ));
+
+        if (hasGrid) {
+            List<BidGridItemEntity> bidGridItems = new java.util.ArrayList<>();
+            for (BidGridItemRequest gReq : gridItems) {
+                AnnouncementPriceGridItemEntity annItem = annGridItemRepository
+                    .findById(gReq.announcementGridItemId())
+                    .filter(i -> i.getAnnouncementId().equals(announcement.getId()))
+                    .orElseThrow(() -> new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-grid-item", "Invalid Grid Item",
+                        "Article hors grille de cette annonce : " + gReq.announcementGridItemId()));
+                BidGridItemEntity bgi = new BidGridItemEntity();
+                bgi.setBidId(saved.getId());
+                bgi.setAnnouncementGridItemId(gReq.announcementGridItemId());
+                bgi.setLabelSnapshot(annItem.getLabel());
+                bgi.setUnitPriceNetSnapshot(annItem.getUnitPriceNet());
+                bgi.setQuantity(gReq.quantity());
+                bidGridItems.add(bgi);
+            }
+            bidGridItemRepository.saveAll(bidGridItems);
+        }
 
         // Note: BidCreatedEvent is no longer published here. Traveler notification
         // happens after the sender's payment is authorized — see
@@ -263,7 +306,7 @@ public class BidService {
                     "Le voyageur est déjà parti, ce trajet n'accepte plus de colis");
         }
 
-        if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        if (bid.getWeightKg() != null && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",
                     "Capacité insuffisante pour accepter cette demande");
@@ -279,7 +322,9 @@ public class BidService {
         if (bid.getTrackingToken() == null) {
             bid.setTrackingToken(java.util.UUID.randomUUID().toString());
         }
-        announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        if (bid.getWeightKg() != null) {
+            announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+        }
         if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
             announcement.setStatus(AnnouncementStatus.FULL);
         }
@@ -287,8 +332,8 @@ public class BidService {
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_ACCEPTED", traveler.getId(),
-                Map.of("announcementId", announcement.getId().toString(),
-                       "weightKg", bid.getWeightKg().toString()));
+                Map.<String, Object>of("announcementId", announcement.getId().toString(),
+                       "weightKg", bid.getWeightKg() != null ? bid.getWeightKg().toString() : "null"));
 
         eventPublisher.publishEvent(new BidAcceptedEvent(
                 bidId, bid.getSenderId(), traveler.getId(), announcement.getId()));
@@ -403,7 +448,9 @@ public class BidService {
         if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
             AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
-                announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+                if (bid.getWeightKg() != null) {
+                    announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+                }
                 if (announcement.getStatus() == AnnouncementStatus.FULL) {
                     announcement.setStatus(AnnouncementStatus.ACTIVE);
                 }
@@ -624,6 +671,16 @@ public class BidService {
                 ? cancellation.getContestationDeadline()
                 : null;
 
+        // Compute total net: sum of grid items + KG part (for display in Flutter)
+        java.math.BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
+                .map(i -> i.getUnitPriceNetSnapshot().multiply(java.math.BigDecimal.valueOf(i.getQuantity())))
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+        java.math.BigDecimal kgNet = (bid.getWeightKg() != null && pricePerKg != null)
+                ? bid.getWeightKg().multiply(pricePerKg)
+                : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal totalNetAmountEur = gridNet.add(kgNet)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
         return new BidResponse(
                 bid.getId(),
                 bid.getAnnouncementId(),
@@ -673,7 +730,9 @@ public class BidService {
                 bid.getConfirmationCodeRefreshWindowStart(),
                 cancellationNoShowStatus,
                 contestationDeadline,
-                bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE"
+                bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
+                bid.getPricingMode(),
+                totalNetAmountEur
         );
     }
 }

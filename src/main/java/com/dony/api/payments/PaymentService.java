@@ -375,10 +375,21 @@ public class PaymentService {
             throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
-        BigDecimal amount = bid.getWeightKg()
-                .multiply(announcement.getPricePerKg())
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal commission = amount.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
+        // Nouvelle formule NET×1.12 si totalNetEur fourni, sinon calcul GROSS legacy
+        BigDecimal totalNet;
+        if (request.getTotalNetEur() != null) {
+            totalNet = request.getTotalNetEur().setScale(2, RoundingMode.HALF_UP);
+        } else {
+            totalNet = bid.getWeightKg().multiply(announcement.getPricePerKg())
+                         .setScale(2, RoundingMode.HALF_UP);
+        }
+        if (totalNet.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "invalid-amount", "Invalid Amount",
+                "Le montant calculé est invalide (≤ 0)");
+        }
+        BigDecimal amount = totalNet.multiply(new BigDecimal("1.12")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal commission = totalNet.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
 
         try {
@@ -602,7 +613,7 @@ public class PaymentService {
 
             auditService.log("BID", bid.getId(), "BID_CREATED", bid.getSenderId(),
                     Map.of("announcementId", bid.getAnnouncementId().toString(),
-                            "weightKg", bid.getWeightKg().toString(),
+                            "weightKg", bid.getWeightKg() != null ? bid.getWeightKg().toString() : "0",
                             "paymentIntentId", paymentIntentId));
 
             eventPublisher.publishEvent(new BidCreatedEvent(
