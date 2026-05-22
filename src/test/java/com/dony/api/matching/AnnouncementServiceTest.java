@@ -55,6 +55,7 @@ class AnnouncementServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private PriceGridService priceGridService;
 
     private AnnouncementService announcementService;
 
@@ -63,7 +64,7 @@ class AnnouncementServiceTest {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, config);
+                auditService, eventPublisher, config, priceGridService);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -131,7 +132,7 @@ class AnnouncementServiceTest {
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 mode,
-                null, null, null, null, null
+                null, null, null, null, null, null
         );
     }
 
@@ -280,7 +281,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -309,7 +310,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -319,6 +320,72 @@ class AnnouncementServiceTest {
             verify(announcementRepository).save(captor.capture());
             assertThat(captor.getValue().getAcceptedPaymentMethods())
                     .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
+
+        @Test
+        @DisplayName("pricingMode MIXED → snapshotToAnnouncement appelé + pricingMode MIXED dans l'entité")
+        void createAnnouncement_MIXED_calls_snapshotToAnnouncement() {
+            UserEntity traveler = buildTraveler();
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", LocalDate.now().plusDays(10),
+                    LocalTime.of(10, 0), LocalTime.of(22, 0),
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null, PricingMode.MIXED
+            );
+
+            AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            verify(priceGridService).snapshotToAnnouncement(USER_ID, ANNOUNCEMENT_ID);
+            assertThat(captor.getValue().getPricingMode()).isEqualTo(PricingMode.MIXED);
+            assertThat(result.pricingMode()).isEqualTo(PricingMode.MIXED);
+        }
+
+        @Test
+        @DisplayName("pricingMode MIXED + grille vide → 422 propagé")
+        void createAnnouncement_MIXED_propagates_422_when_grid_empty() {
+            UserEntity traveler = buildTraveler();
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            doThrow(new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    "price-grid-empty: au moins 1 article requis pour le mode MIXED"))
+                    .when(priceGridService).snapshotToAnnouncement(any(), any());
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", LocalDate.now().plusDays(10),
+                    LocalTime.of(10, 0), LocalTime.of(22, 0),
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null, PricingMode.MIXED
+            );
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                    .satisfies(e -> assertThat(((org.springframework.web.server.ResponseStatusException) e).getStatusCode())
+                            .isEqualTo(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY));
         }
     }
 
@@ -370,6 +437,21 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("annonce KG_FREE → capacityUnit présent dans le détail (regression)")
+        void getDetail_kgFreeAnnouncement_returnsCapacityUnit() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setCapacityUnit(CapacityUnit.KG_FREE);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.capacityUnit()).isEqualTo(CapacityUnit.KG_FREE);
+        }
+
+        @Test
         @DisplayName("annonce introuvable → 404 NOT_FOUND")
         void getDetail_unknownAnnouncement_throwsNotFound() {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
@@ -407,7 +489,7 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null, null
+                    null, null, null, null, null, null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -462,7 +544,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(35), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null, null
+                    null, null, null, null, null, null
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
@@ -754,7 +836,7 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport LSS", 14.739, -17.490),
                     BigDecimal.valueOf(32), BigDecimal.valueOf(8),
                     TransportMode.PLANE,
-                    null, null, null, null, CapacityUnit.SUITCASE_32KG
+                    null, null, null, null, CapacityUnit.SUITCASE_32KG, null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -795,7 +877,7 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, null, null
+                    null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))

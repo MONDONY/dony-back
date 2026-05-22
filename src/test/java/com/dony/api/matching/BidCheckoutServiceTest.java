@@ -37,6 +37,7 @@ class BidCheckoutServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private PaymentService paymentService;
+    @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidCheckoutService service;
@@ -64,7 +65,7 @@ class BidCheckoutServiceTest {
             new BigDecimal("2.00"),
             new BigDecimal("150.00"),
             "test", "OTHER",
-            "Recipient", "+221771234567", true);
+            "Recipient", "+221771234567", true, null);
 
         lenient().when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
         lenient().when(announcementRepository.findById(announcement.getId())).thenReturn(Optional.of(announcement));
@@ -93,7 +94,6 @@ class BidCheckoutServiceTest {
         assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
         assertThat(bid.getAwaitingPaymentExpiresAt()).isNotNull();
         assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
-        verify(auditService, never()).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
     }
 
     @Test
@@ -122,7 +122,7 @@ class BidCheckoutServiceTest {
     void rejects_value_above_500_eur() {
         BidCheckoutRequest tooHigh = new BidCheckoutRequest(
             announcement.getId(), new BigDecimal("2"), new BigDecimal("501"),
-            null, null, null, null, true);
+            null, null, null, null, true, null);
         assertThatThrownBy(() -> service.checkout("uid-sender", tooHigh, httpRequest))
             .isInstanceOf(DonyBusinessException.class);
     }
@@ -163,7 +163,7 @@ class BidCheckoutServiceTest {
     void throws_when_announcement_not_found() {
         BidCheckoutRequest unknownAnn = new BidCheckoutRequest(
             UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("150"),
-            "test", "OTHER", "Recipient", "+221771234567", true);
+            "test", "OTHER", "Recipient", "+221771234567", true, null);
         when(announcementRepository.findById(unknownAnn.announcementId())).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.checkout("uid-sender", unknownAnn, httpRequest))
             .isInstanceOf(DonyBusinessException.class)

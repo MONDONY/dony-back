@@ -7,6 +7,7 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.dto.BidCheckoutRequest;
 import com.dony.api.matching.dto.BidCheckoutResponse;
+import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.payments.PaymentService;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.PaymentResponse;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,19 +36,25 @@ public class BidCheckoutService {
     private final AuditService auditService;
     private final PaymentService paymentService;
     private final String stripePublishableKey;
+    private final BidGridItemRepository bidGridItemRepository;
+    private final AnnouncementPriceGridItemRepository annGridItemRepository;
 
     public BidCheckoutService(BidRepository bidRepository,
                               AnnouncementRepository announcementRepository,
                               UserRepository userRepository,
                               AuditService auditService,
                               PaymentService paymentService,
-                              @Value("${stripe.publishable-key:}") String stripePublishableKey) {
+                              @Value("${stripe.publishable-key:}") String stripePublishableKey,
+                              BidGridItemRepository bidGridItemRepository,
+                              AnnouncementPriceGridItemRepository annGridItemRepository) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.paymentService = paymentService;
         this.stripePublishableKey = stripePublishableKey;
+        this.bidGridItemRepository = bidGridItemRepository;
+        this.annGridItemRepository = annGridItemRepository;
     }
 
     @Transactional
@@ -106,7 +114,7 @@ public class BidCheckoutService {
                 "Vous avez déjà une demande en cours pour ce trajet");
         }
 
-        if (req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        if (req.weightKg() != null && req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "weight-exceeds-capacity", "Weight Exceeds Capacity",
                 "Poids demandé supérieur à la capacité disponible");
@@ -118,13 +126,28 @@ public class BidCheckoutService {
                 "Valeur maximum : 500 €");
         }
 
+        List<BidGridItemRequest> gridItems = req.gridItems() != null ? req.gridItems() : List.of();
+        boolean hasGrid = !gridItems.isEmpty();
+        boolean hasKg   = req.weightKg() != null && req.weightKg().compareTo(BigDecimal.ZERO) > 0;
+
+        if (!hasGrid && !hasKg) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "bid-empty", "Bid Empty",
+                "Au moins un article ou un poids doit être renseigné");
+        }
+
+        BidPricingMode bidMode = hasGrid && hasKg ? BidPricingMode.MIXED
+                               : hasGrid          ? BidPricingMode.GRID
+                               :                    BidPricingMode.KG;
+
         String ip = resolveClientIp(httpRequest);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
         BidEntity bid = new BidEntity();
         bid.setAnnouncementId(announcement.getId());
         bid.setSenderId(sender.getId());
-        bid.setWeightKg(req.weightKg());
+        bid.setWeightKg(hasKg ? req.weightKg() : null);
+        bid.setPricingMode(bidMode);
         bid.setDeclaredValueEur(req.declaredValueEur());
         bid.setDescription(req.description());
         bid.setContentCategory(req.contentCategory());
@@ -137,9 +160,38 @@ public class BidCheckoutService {
 
         BidEntity saved = bidRepository.save(bid);
 
+        // Traitement grid items et calcul gridNet
+        BigDecimal gridNet = BigDecimal.ZERO;
+        if (hasGrid) {
+            List<BidGridItemEntity> bidGridItems = new ArrayList<>();
+            for (BidGridItemRequest gReq : gridItems) {
+                AnnouncementPriceGridItemEntity annItem = annGridItemRepository
+                    .findById(gReq.announcementGridItemId())
+                    .filter(i -> i.getAnnouncementId().equals(announcement.getId()))
+                    .orElseThrow(() -> new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-grid-item", "Invalid Grid Item",
+                        "Article hors grille de cette annonce : " + gReq.announcementGridItemId()));
+                BidGridItemEntity bgi = new BidGridItemEntity();
+                bgi.setBidId(saved.getId());
+                bgi.setAnnouncementGridItemId(gReq.announcementGridItemId());
+                bgi.setLabelSnapshot(annItem.getLabel());
+                bgi.setUnitPriceNetSnapshot(annItem.getUnitPriceNet());
+                bgi.setQuantity(gReq.quantity());
+                bidGridItems.add(bgi);
+                gridNet = gridNet.add(annItem.getUnitPriceNet().multiply(BigDecimal.valueOf(gReq.quantity())));
+            }
+            bidGridItemRepository.saveAll(bidGridItems);
+        }
+
+        BigDecimal kgNet = hasKg && announcement.getPricePerKg() != null
+            ? saved.getWeightKg().multiply(announcement.getPricePerKg())
+            : BigDecimal.ZERO;
+        BigDecimal totalNet = gridNet.add(kgNet);
+
         // Délégation à PaymentService — crée le PaymentIntent Stripe
         CreatePaymentRequest paymentReq = new CreatePaymentRequest();
         paymentReq.setBidId(saved.getId());
+        paymentReq.setTotalNetEur(totalNet);
         PaymentResponse paymentResp = paymentService.createEscrow(paymentReq, firebaseUid);
 
         // Backfill paymentIntentId on the bid so schedulers can find it

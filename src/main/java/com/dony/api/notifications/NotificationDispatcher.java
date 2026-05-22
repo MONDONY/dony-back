@@ -82,8 +82,11 @@ public class NotificationDispatcher {
 
     @EventListener @Async
     public void onBidCreated(BidCreatedEvent event) {
-        String body = String.format("%s veut envoyer %.1f kg — %s",
-                event.getSenderFirstName(), event.getWeightKg().doubleValue(), event.getCorridor());
+        String body = event.getWeightKg() != null
+                ? String.format("%s veut envoyer %.1f kg — %s",
+                        event.getSenderFirstName(), event.getWeightKg().doubleValue(), event.getCorridor())
+                : String.format("%s a une demande d'envoi — %s",
+                        event.getSenderFirstName(), event.getCorridor());
         notifyUser(event.getTravelerId(), "Nouvelle demande d'envoi", body,
                 Map.of("type", "BID_CREATED",
                        "bidId", event.getBidId().toString(),

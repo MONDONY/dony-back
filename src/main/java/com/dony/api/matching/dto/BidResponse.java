@@ -55,5 +55,7 @@ public record BidResponse(
         LocalDateTime confirmationCodeRefreshWindowStart,
         String cancellationNoShowStatus,
         java.time.OffsetDateTime contestationDeadline,
-        String paymentMethod
+        String paymentMethod,
+        com.dony.api.matching.BidPricingMode pricingMode,
+        BigDecimal totalNetAmountEur
 ) {}

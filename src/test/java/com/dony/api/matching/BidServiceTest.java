@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
@@ -54,6 +55,8 @@ class BidServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RatingRepository ratingRepository;
     @Mock private CancellationRepository cancellationRepository;
+    @Mock private BidGridItemRepository bidGridItemRepository;
+    @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -134,7 +137,7 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null);
+                "Aminata Diallo", "+221701234567", true, null, null);
     }
 
     @BeforeEach
@@ -243,7 +246,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false, null); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -401,7 +404,7 @@ class BidServiceTest {
             });
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null);
 
             BidResponse result = bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
@@ -425,7 +428,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH");
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
@@ -449,13 +452,87 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN");
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("invalid-payment-method"));
+        }
+
+        @Test
+        @DisplayName("createBid GRID → pricingMode GRID + bidGridItems sauvegardés")
+        @SuppressWarnings("unchecked")
+        void createBid_GRID_saves_grid_items() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setPricingMode(com.dony.api.matching.PricingMode.MIXED);
+            UUID gridItemId = UUID.randomUUID();
+
+            AnnouncementPriceGridItemEntity annGridItem = new AnnouncementPriceGridItemEntity();
+            annGridItem.setAnnouncementId(ANNOUNCEMENT_ID);
+            annGridItem.setLabel("Valise cabine");
+            annGridItem.setUnitPriceNet(new BigDecimal("10.00"));
+            annGridItem.setPosition(0);
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any())).thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+            when(annGridItemRepository.findById(gridItemId)).thenReturn(Optional.of(annGridItem));
+            when(bidGridItemRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(ratingRepository.existsByBidIdAndRaterId(any(), any())).thenReturn(false);
+            lenient().when(cancellationRepository.findByBidId(any())).thenReturn(Optional.empty());
+            lenient().when(userRepository.findById(any())).thenReturn(Optional.of(sender));
+
+            BidRequest req = new BidRequest(
+                null,  // weightKg null → GRID mode
+                new BigDecimal("50.00"),
+                "Mes affaires", "VETEMENTS",
+                "Mamadou Diallo", "+221771234567",
+                true, "STRIPE",
+                List.of(new BidGridItemRequest(gridItemId, 2))
+            );
+
+            BidResponse resp = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest);
+
+            verify(bidGridItemRepository).saveAll(argThat(items -> {
+                List<BidGridItemEntity> list = (List<BidGridItemEntity>) items;
+                return list.size() == 1
+                    && list.get(0).getQuantity() == 2
+                    && list.get(0).getLabelSnapshot().equals("Valise cabine");
+            }));
+            assertThat(resp.pricingMode()).isEqualTo(BidPricingMode.GRID);
+        }
+
+        @Test
+        @DisplayName("createBid — weightKg null ET gridItems vide → 422")
+        void createBid_fails_when_both_weightKg_and_gridItems_absent() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any())).thenReturn(false);
+
+            BidRequest req = new BidRequest(
+                null,                    // weightKg null
+                new BigDecimal("50.00"),
+                "Test", "CAT",
+                "Name", "+33600000000",
+                true, "STRIPE",
+                List.of()               // gridItems vide
+            );
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
         }
     }
 

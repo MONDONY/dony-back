@@ -3,6 +3,7 @@ package com.dony.api.matching;
 import com.dony.api.common.BaseEntity;
 import com.dony.api.payments.cash.CommissionStatus;
 import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.matching.BidPricingMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -25,7 +26,7 @@ public class BidEntity extends BaseEntity {
     @Column(name = "sender_id", nullable = false)
     private UUID senderId;
 
-    @Column(name = "weight_kg", nullable = false, precision = 5, scale = 2)
+    @Column(name = "weight_kg", precision = 5, scale = 2)
     private BigDecimal weightKg;
 
     @Column(name = "declared_value_eur", precision = 10, scale = 2)
@@ -142,6 +143,10 @@ public class BidEntity extends BaseEntity {
     @Column(name = "commission_retry_count", nullable = false)
     private int commissionRetryCount = 0;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pricing_mode", nullable = false, length = 10)
+    private BidPricingMode pricingMode = BidPricingMode.KG;
+
     public UUID getAnnouncementId() { return announcementId; }
     public void setAnnouncementId(UUID announcementId) { this.announcementId = announcementId; }
 
@@ -255,4 +260,7 @@ public class BidEntity extends BaseEntity {
 
     public int getCommissionRetryCount() { return commissionRetryCount; }
     public void setCommissionRetryCount(int commissionRetryCount) { this.commissionRetryCount = commissionRetryCount; }
+
+    public BidPricingMode getPricingMode() { return pricingMode; }
+    public void setPricingMode(BidPricingMode pricingMode) { this.pricingMode = pricingMode; }
 }
