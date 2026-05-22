@@ -28,10 +28,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Start application in dev mode (requires Docker Compose for PostgreSQL)
-./mvnw spring-boot:run -Dspring.profiles.active=dev
+source .env.dev && set +a && ./mvnw spring-boot:run -Dspring.profiles.active=dev  
 
 # Start with live reload
-./mvnw spring-boot:run -Dspring.profiles.active=dev -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+source .env.dev && set +a && ./mvnw spring-boot:run -Dspring.profiles.active=dev -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
 
 # Run all tests
 ./mvnw test
