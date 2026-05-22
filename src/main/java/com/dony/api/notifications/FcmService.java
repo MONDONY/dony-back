@@ -23,17 +23,25 @@ public class FcmService {
     private static final Logger log = LoggerFactory.getLogger(FcmService.class);
 
     private final UserRepository userRepository;
+    private final NotificationPrefsService notificationPrefsService;
 
-    public FcmService(UserRepository userRepository) {
+    public FcmService(UserRepository userRepository,
+                      NotificationPrefsService notificationPrefsService) {
         this.userRepository = userRepository;
+        this.notificationPrefsService = notificationPrefsService;
     }
 
     /**
      * Send a push notification to a user by userId.
-     * Returns true if the message was dispatched, false if the user has no token.
+     * Returns true if the message was dispatched, false if the user has no token or prefs block it.
      */
     @Transactional
     public boolean sendToUser(UUID userId, String title, String body, Map<String, String> data) {
+        String notifType = data != null ? data.get("type") : null;
+        if (!notificationPrefsService.isAllowed(userId, notifType)) {
+            log.debug("[FCM] Notification supprimée par pref user={} type={}", userId, notifType);
+            return false;
+        }
         return userRepository.findById(userId)
                 .map(user -> {
                     String token = user.getFcmToken();
