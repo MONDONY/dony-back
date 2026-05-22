@@ -1,7 +1,9 @@
 package com.dony.api.auth;
 
+import com.dony.api.auth.dto.RegisterDeviceRequest;
 import com.dony.api.auth.dto.UserDeviceDto;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,15 @@ public class ConnectedDevicesController {
                                        AuthService authService) {
         this.devicesService = devicesService;
         this.authService = authService;
+    }
+
+    @PostMapping
+    public ResponseEntity<Void> registerDevice(@Valid @RequestBody RegisterDeviceRequest request,
+                                               HttpServletRequest httpRequest) {
+        UUID userId = authService.requireUserId();
+        String deviceId = requireDeviceId(httpRequest);
+        devicesService.upsertDevice(userId, deviceId, request.deviceName(), request.platform(), null);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping

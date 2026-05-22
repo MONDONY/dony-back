@@ -99,4 +99,59 @@ class ConnectedDevicesControllerTest {
                         .header("X-Device-Id", "dev-1"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void POST_register_web_retourne204() throws Exception {
+        when(authService.requireUserId()).thenReturn(USER_ID);
+        doNothing().when(devicesService).upsertDevice(eq(USER_ID), eq("web-session-abc"),
+                eq("Chrome / Windows"), eq("web"), isNull());
+
+        mvc.perform(post("/users/me/devices")
+                        .with(authentication(auth()))
+                        .header("X-Device-Id", "web-session-abc")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"deviceName": "Chrome / Windows", "platform": "web"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(devicesService).upsertDevice(USER_ID, "web-session-abc", "Chrome / Windows", "web", null);
+    }
+
+    @Test
+    void POST_register_sans_deviceId_retourne400() throws Exception {
+        when(authService.requireUserId()).thenReturn(USER_ID);
+
+        mvc.perform(post("/users/me/devices")
+                        .with(authentication(auth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"deviceName": "Chrome / Windows", "platform": "web"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void POST_register_platform_invalide_retourne422() throws Exception {
+        when(authService.requireUserId()).thenReturn(USER_ID);
+
+        mvc.perform(post("/users/me/devices")
+                        .with(authentication(auth()))
+                        .header("X-Device-Id", "web-session-abc")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"deviceName": "Appareil test", "platform": "desktop"}
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void POST_register_sans_auth_retourne401() throws Exception {
+        mvc.perform(post("/users/me/devices")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"deviceName": "Chrome / Windows", "platform": "web"}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
 }

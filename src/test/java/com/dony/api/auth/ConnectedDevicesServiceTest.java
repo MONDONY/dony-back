@@ -94,6 +94,21 @@ class ConnectedDevicesServiceTest {
         ));
     }
 
+    @Test
+    void upsertDevice_acceptePlatformWebSansFcmToken() {
+        // La plateforme web n'a pas de token FCM — fcmToken doit être null accepté
+        when(deviceRepo.findByUserIdAndDeviceId(userId, "web-session-abc")).thenReturn(Optional.empty());
+        when(deviceRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.upsertDevice(userId, "web-session-abc", "Chrome / Windows", "web", null);
+
+        verify(deviceRepo).save(argThat(e ->
+            e.getDeviceId().equals("web-session-abc")
+                && "web".equals(e.getPlatform())
+                && e.getFcmToken() == null
+        ));
+    }
+
     private UserDeviceEntity deviceEntity(UUID userId, String deviceId, String name, String platform) {
         UserDeviceEntity e = new UserDeviceEntity();
         e.setId(UUID.randomUUID());
