@@ -7,7 +7,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
@@ -35,12 +35,12 @@ public class NotificationPrefsEntity {
     private boolean pushPromo = false;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 
     @PrePersist
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+        updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     public UUID getUserId() { return userId; }
@@ -55,5 +55,5 @@ public class NotificationPrefsEntity {
     public void setPushTripReminder(boolean v) { this.pushTripReminder = v; }
     public boolean isPushPromo() { return pushPromo; }
     public void setPushPromo(boolean v) { this.pushPromo = v; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }
