@@ -18,11 +18,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,19 +39,22 @@ public class AuthService {
     private final PaymentRepository paymentRepository;
     private final AccountFinalizationService accountFinalizationService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ConnectedDevicesService connectedDevicesService;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
                        UserService userService,
                        PaymentRepository paymentRepository,
                        AccountFinalizationService accountFinalizationService,
-                       ApplicationEventPublisher eventPublisher) {
+                       ApplicationEventPublisher eventPublisher,
+                       ConnectedDevicesService connectedDevicesService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
         this.paymentRepository = paymentRepository;
         this.accountFinalizationService = accountFinalizationService;
         this.eventPublisher = eventPublisher;
+        this.connectedDevicesService = connectedDevicesService;
     }
 
     @Transactional
@@ -162,7 +168,8 @@ public class AuthService {
     }
 
     @Transactional
-    public void updateFcmToken(String firebaseUid, String fcmToken) {
+    public void updateFcmToken(String firebaseUid, String fcmToken,
+                                String deviceId, String deviceName, String platform) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND,
@@ -172,6 +179,24 @@ public class AuthService {
                 ));
         user.setFcmToken(fcmToken);
         userRepository.save(user);
+
+        if (deviceId != null && !deviceId.isBlank()
+                && deviceName != null && platform != null) {
+            connectedDevicesService.upsertDevice(user.getId(), deviceId, deviceName, platform, fcmToken);
+        }
+    }
+
+    /**
+     * Retourne l'UUID de l'utilisateur courant à partir du FirebaseUID dans le SecurityContext.
+     */
+    @Transactional(readOnly = true)
+    public UUID requireUserId() {
+        String firebaseUid = (String) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal();
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Utilisateur introuvable"))
+                .getId();
     }
 
     /**
