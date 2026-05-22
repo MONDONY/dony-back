@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,9 +26,12 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final NotificationPrefsService notificationPrefsService;
 
-    public NotificationController(NotificationService notificationService) {
+    public NotificationController(NotificationService notificationService,
+                                  NotificationPrefsService notificationPrefsService) {
         this.notificationService = notificationService;
+        this.notificationPrefsService = notificationPrefsService;
     }
 
     @GetMapping
@@ -63,6 +68,17 @@ public class NotificationController {
     @PostMapping("/{id}/ack")
     public ResponseEntity<Void> ack(@PathVariable UUID id) {
         notificationService.ack(requireUid(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/preferences")
+    public ResponseEntity<NotificationPrefsDto> getPreferences() {
+        return ResponseEntity.ok(notificationPrefsService.getPrefs(requireUid()));
+    }
+
+    @PutMapping("/preferences")
+    public ResponseEntity<Void> updatePreferences(@RequestBody NotificationPrefsDto dto) {
+        notificationPrefsService.upsert(requireUid(), dto);
         return ResponseEntity.noContent().build();
     }
 
