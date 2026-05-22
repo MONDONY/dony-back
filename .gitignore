@@ -39,3 +39,4 @@ application-prod.yml
 .env.dev.worktrees/
 .env.dev
 .worktrees
+CLAUDE.md

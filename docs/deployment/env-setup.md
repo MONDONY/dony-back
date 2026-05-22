@@ -127,7 +127,91 @@ scp firebase-service-account.json ubuntu@<IP_VPS>:~/dony/firebase-service-accoun
 
 ---
 
-## 5. Comment générer les clés
+## 5. Firebase Cloud Functions — variables d'environnement
+
+Les Cloud Functions utilisent le système de **params Firebase v2** (`defineString`). Les valeurs sont lues depuis un fichier `.env` déployé avec les fonctions (≠ `.env.local` qui est réservé à l'émulateur local).
+
+### 5.1 Variables requises
+
+| Variable | Description | Exemple |
+|---|---|---|
+| `BACKEND_URL` | URL publique du backend Spring Boot (sans `/api/v1`) | `https://api.yadony.com` |
+| `INTERNAL_SECRET` | Secret partagé entre la function et le backend | chaîne aléatoire ≥ 32 chars |
+
+> `INTERNAL_SECRET` doit correspondre exactement à `dony.internal.secret` dans le fichier `.env` du VPS (propriété Spring Boot `@Value("${dony.internal.secret:}")`).
+
+### 5.2 Créer le fichier `.env` de production
+
+```bash
+cd /path/to/dony-functions
+
+# Créer le fichier .env (déployé en production — ne jamais committer)
+cat > .env << 'EOF'
+BACKEND_URL=https://api.yadony.com
+INTERNAL_SECRET=<secret_aléatoire_32_chars_min>
+EOF
+```
+
+> **Attention :** `.env.local` (déjà présent) est uniquement pour l'émulateur local. En production, Firebase lit `.env`. Les deux fichiers coexistent.
+
+### 5.3 Ajouter `dony.internal.secret` sur les VPS
+
+Dans `~/dony/.env` sur le VPS staging et prod, ajouter :
+
+```dotenv
+# ── Sécurité interne (Cloud Functions → Backend) ─────────────────
+DONY_INTERNAL_SECRET=<même_valeur_que_INTERNAL_SECRET_dans_.env_functions>
+```
+
+Et dans `application-staging.yml` / `application-prod.yml` (ou via variable d'environnement dans Docker Compose) :
+
+```yaml
+dony:
+  internal:
+    secret: ${DONY_INTERNAL_SECRET}
+```
+
+### 5.4 Déployer les fonctions avec les variables
+
+```bash
+cd dony-functions
+
+# Déployer (le fichier .env est envoyé automatiquement avec la function)
+firebase deploy --only functions
+
+# Vérifier que les variables sont bien reçues
+firebase functions:config:get  # (deprecated mais toujours lisible)
+# ou depuis la Google Cloud Console → Cloud Run → onNewMessage → Variables
+```
+
+### 5.5 Générer le secret interne
+
+```bash
+# Générer un secret fort (≥ 32 chars)
+openssl rand -base64 32
+```
+
+Utiliser la **même valeur** dans `.env` (functions) et dans le `.env` du VPS.
+
+### 5.6 Développement local — utiliser l'émulateur
+
+Pour tester les push notifications en local sans déployer :
+
+```bash
+# Terminal 1 — Spring Boot backend
+cd dony-back && ./mvnw spring-boot:run -Dspring.profiles.active=dev
+
+# Terminal 2 — Émulateur Firebase (lit .env.local automatiquement)
+cd dony-functions && firebase emulators:start --only functions,firestore
+# → BACKEND_URL=http://localhost:8080 depuis .env.local
+# → La function appelle bien le backend local
+```
+
+> **Ne pas** tester les push avec la function déployée en prod si le backend tourne en local — la function tourne dans Google Cloud et ne peut pas atteindre `localhost:8080`.
+
+---
+
+## 6. Comment générer les clés
 
 ### Clé SSH pour GitHub Actions → VPS
 
@@ -202,10 +286,21 @@ openssl rand -base64 24
 - [ ] Clés Stripe **live** (pas test)
 - [ ] `DONY_IMAGE_TAG=staging` présent dans `.env` (valeur initiale)
 
+### Cloud Functions Firebase
+- [ ] Fichier `dony-functions/.env` créé avec `BACKEND_URL` et `INTERNAL_SECRET`
+- [ ] `DONY_INTERNAL_SECRET` ajouté dans `~/dony/.env` sur chaque VPS
+- [ ] `dony.internal.secret: ${DONY_INTERNAL_SECRET}` dans `application-staging.yml` et `application-prod.yml`
+- [ ] `firebase deploy --only functions` exécuté après création du `.env`
+- [ ] `dony-functions/.env` ajouté dans `.gitignore` (ne jamais committer)
+
 ### Vérification finale
 ```bash
 # Sur le VPS, tester que Docker Compose lit bien le .env
 cd ~/dony
-docker compose -f docker-compose.staging.yml config | grep -E "DB_USERNAME|STRIPE"
+docker compose -f docker-compose.staging.yml config | grep -E "DB_USERNAME|STRIPE|INTERNAL"
 # Les valeurs réelles doivent apparaître (pas les placeholders ${...})
+
+# Vérifier que la Cloud Function reçoit bien les variables
+# Google Cloud Console → Cloud Run → onNewMessage → Variables et secrets
+# BACKEND_URL et INTERNAL_SECRET doivent apparaître avec leurs valeurs
 ```
