@@ -85,4 +85,18 @@ class ConnectedDevicesControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void DELETE_device_sans_auth_retourne401() throws Exception {
+        mvc.perform(delete("/users/me/devices/dev-2")
+                        .header("X-Device-Id", "dev-1"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void DELETE_others_sans_auth_retourne401() throws Exception {
+        mvc.perform(delete("/users/me/devices/others")
+                        .header("X-Device-Id", "dev-1"))
+                .andExpect(status().isUnauthorized());
+    }
 }

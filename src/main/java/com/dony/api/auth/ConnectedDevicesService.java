@@ -3,6 +3,8 @@ package com.dony.api.auth;
 import com.dony.api.auth.dto.UserDeviceDto;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +16,8 @@ import java.util.UUID;
 
 @Service
 public class ConnectedDevicesService {
+
+    private static final Logger log = LoggerFactory.getLogger(ConnectedDevicesService.class);
 
     private final UserDeviceJpaRepository deviceRepo;
     private final UserRepository userRepository;
@@ -57,14 +61,16 @@ public class ConnectedDevicesService {
     public void revokeOthers(UUID userId, String currentDeviceId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable"));
-        firebaseAuth.ifPresent(auth -> {
+        if (firebaseAuth.isEmpty()) {
+            log.warn("FirebaseAuth non disponible — révocation des tokens Firebase ignorée pour userId={}", userId);
+        } else {
             try {
-                auth.revokeRefreshTokens(user.getFirebaseUid());
+                firebaseAuth.get().revokeRefreshTokens(user.getFirebaseUid());
             } catch (FirebaseAuthException e) {
                 throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                         "Erreur lors de la révocation Firebase");
             }
-        });
+        }
         deviceRepo.deleteByUserIdAndDeviceIdNot(userId, currentDeviceId);
     }
 
@@ -75,6 +81,7 @@ public class ConnectedDevicesService {
                 existing -> {
                     existing.setDeviceName(deviceName);
                     existing.setFcmToken(fcmToken);
+                    existing.setPlatform(platform);
                     deviceRepo.save(existing);
                 },
                 () -> {
