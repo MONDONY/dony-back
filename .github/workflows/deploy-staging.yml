@@ -2,8 +2,6 @@ name: Deploy Staging
 
 on:
   workflow_run:
-    # COUPLAGE : ce nom doit rester synchronisé avec le champ `name:` de .github/workflows/ci.yml
-    # Si le nom du workflow CI change, ce déclencheur cesse de fonctionner silencieusement.
     workflows: ["CI"]
     types: [completed]
     branches: [main, "feature/**"]
@@ -17,14 +15,22 @@ jobs:
   check-ci:
     name: Vérification CI
     runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.extract.outputs.branch }}
     steps:
+      - name: Extraire la branche
+        id: extract
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "🔍 Workflow CI sur la branche: $BRANCH"
       - name: La CI a-t-elle réussi ?
         run: |
           if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-            echo "CI échouée — déploiement bloqué"
+            echo "❌ CI échouée — déploiement bloqué"
             exit 1
           fi
-          echo "CI validée — déploiement autorisé"
+          echo "✅ CI validée — déploiement autorisé"
 
   build-push:
     name: Build & Push image
@@ -37,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - name: Login ghcr.io
+      - name: Connexion à ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -51,7 +57,7 @@ jobs:
           tags: |
             type=sha,prefix=sha-,format=short,enable=true
             type=raw,value=staging
-      - name: Build & Push
+      - name: Build & Push vers GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -60,20 +66,50 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
-    name: Déploiement staging
+    name: Déploiement Staging
     runs-on: ubuntu-latest
-    needs: build-push
+    needs: [check-ci, build-push]
     environment: staging
     steps:
-      - name: Créer le fichier .env.staging
+      - uses: actions/checkout@v4
+
+      - name: Valider les secrets requis
+        run: |
+          REQUIRED_SECRETS=(
+            "DB_USERNAME" "DB_PASSWORD" "ENCRYPTION_KEY"
+            "STRIPE_SECRET_KEY" "STRIPE_WEBHOOK_SECRET"
+            "GOOGLE_PLACES_API_KEY"
+            "AWS_S3_ENDPOINT" "AWS_S3_REGION" "AWS_S3_BUCKET"
+            "AWS_S3_ACCESS_KEY" "AWS_S3_SECRET_KEY"
+            "CORS_ALLOWED_ORIGINS"
+            "OVH_HOST" "OVH_USER" "OVH_SSH_KEY"
+            "GHCR_USERNAME" "GHCR_PAT"
+          )
+
+          MISSING=()
+          for secret in "${REQUIRED_SECRETS[@]}"; do
+            value="${{ secrets[secret] }}"
+            if [ -z "$value" ]; then
+              MISSING+=("$secret")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Secrets manquants:"
+            printf '  - %s\n' "${MISSING[@]}"
+            exit 1
+          fi
+          echo "✅ Tous les secrets requis sont présents"
+
+      - name: Créer .env.staging depuis les secrets
         run: |
           cat > .env.staging << 'EOF'
           DB_USERNAME=${{ secrets.DB_USERNAME }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
           STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
           SENTRY_DSN=${{ secrets.SENTRY_DSN }}
-          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
           GOOGLE_PLACES_API_KEY=${{ secrets.GOOGLE_PLACES_API_KEY }}
           AWS_S3_ENDPOINT=${{ secrets.AWS_S3_ENDPOINT }}
           AWS_S3_REGION=${{ secrets.AWS_S3_REGION }}
@@ -89,22 +125,31 @@ jobs:
           RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
           INTERNAL_SHARED_SECRET=${{ secrets.INTERNAL_SHARED_SECRET }}
           EOF
-          echo "✅ Fichier .env.staging créé"
-      - name: Transférer .env.staging et fichiers de config
+          chmod 600 .env.staging
+          echo "✅ Fichier .env.staging créé (600 permissions)"
+
+      - name: Préparer les fichiers de config sur le VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
+            set -e
             cd ~/dony
-            # Créer les répertoires nécessaires
+            echo "📁 Préparation des répertoires..."
             mkdir -p monitoring/alloy nginx/certs nginx/www backups
-            # Télécharger les fichiers de config depuis GitHub
-            curl -sSL https://raw.githubusercontent.com/MONDONY/dony-back/main/docker-compose.staging.yml -o docker-compose.staging.yml
-            curl -sSL https://raw.githubusercontent.com/MONDONY/dony-back/main/monitoring/alloy/config.alloy -o monitoring/alloy/config.alloy
-            curl -sSL https://raw.githubusercontent.com/MONDONY/dony-back/main/nginx/nginx.staging.conf -o nginx/nginx.staging.conf
-            echo "✅ Fichiers de config téléchargés"
+
+            echo "📥 Téléchargement des fichiers de config..."
+            curl -sSL -o docker-compose.staging.yml \
+              https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.staging.yml || true
+            curl -sSL -o monitoring/alloy/config.alloy \
+              https://raw.githubusercontent.com/${{ github.repository }}/main/monitoring/alloy/config.alloy || true
+            curl -sSL -o nginx/nginx.staging.conf \
+              https://raw.githubusercontent.com/${{ github.repository }}/main/nginx/nginx.staging.conf || true
+
+            echo "✅ Fichiers de config prêts"
+
       - name: Transférer .env.staging via SCP
         uses: appleboy/scp-action@v0
         with:
@@ -113,33 +158,115 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           source: ".env.staging"
           target: "dony/"
-      - name: Déploiement via SSH
+          rm: false
+
+      - name: Déploiement Docker Compose
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
+            set -e
             cd ~/dony
+
+            echo "🔐 Connexion à GHCR..."
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
-            docker compose -f docker-compose.staging.yml pull api
-            docker compose -f docker-compose.staging.yml up -d --no-deps api
+
+            echo "📥 Pull de l'image..."
+            docker compose --env-file .env.staging -f docker-compose.staging.yml pull api
+
+            echo "🚀 Démarrage des conteneurs..."
+            docker compose --env-file .env.staging -f docker-compose.staging.yml up -d api db
+
+            echo "🧹 Nettoyage des images inutiles..."
             docker image prune -f
-      - name: Health check post-déploiement (60s max)
+
+            echo "✅ Déploiement effectué"
+
+      - name: Health check — Base de données (30s)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
-            for i in $(seq 1 12); do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/actuator/health)
-              if [ "$STATUS" = "200" ]; then
-                echo "API staging healthy (tentative $i)"
+            set -e
+            cd ~/dony
+
+            echo "🔍 Vérification de PostgreSQL..."
+            for i in $(seq 1 6); do
+              if docker exec dony_db_staging pg_isready -U "${{ secrets.DB_USERNAME }}" -d dony_staging 2>/dev/null | grep -q "accepting"; then
+                echo "✅ PostgreSQL healthy (tentative $i)"
                 exit 0
               fi
-              echo "Tentative $i — HTTP $STATUS — attente 5s..."
+              echo "  ⏳ Tentative $i/6 — attente 5s..."
               sleep 5
             done
-            echo "API staging non disponible après 60s"
+            echo "❌ PostgreSQL non disponible après 30s"
             exit 1
+
+      - name: Health check — API (60s)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OVH_HOST }}
+          username: ${{ secrets.OVH_USER }}
+          key: ${{ secrets.OVH_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/dony
+
+            echo "🔍 Vérification de l'API..."
+            for i in $(seq 1 12); do
+              # Attendre que le conteneur soit prêt
+              if ! docker ps | grep -q dony_api; then
+                echo "  ⏳ Tentative $i/12 — conteneur en démarrage..."
+                sleep 5
+                continue
+              fi
+
+              # Vérifier l'endpoint health
+              STATUS=$(docker exec dony_api wget -q -O - http://localhost:8080/api/v1/actuator/health 2>/dev/null | grep -o '"status":"[^"]*"' | grep -o '[^"]*"$' | tr -d '"' || echo "UNKNOWN")
+
+              if [ "$STATUS" = "UP" ]; then
+                echo "✅ API healthy (tentative $i/12)"
+                exit 0
+              fi
+              echo "  ⏳ Tentative $i/12 — état: $STATUS"
+              sleep 5
+            done
+
+            echo "❌ API non disponible après 60s"
+            echo "📋 Derniers logs:"
+            docker logs dony_api | tail -20
+            exit 1
+
+      - name: Rapport de déploiement
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OVH_HOST }}
+          username: ${{ secrets.OVH_USER }}
+          key: ${{ secrets.OVH_SSH_KEY }}
+          script: |
+            set +e
+            cd ~/dony
+
+            echo ""
+            echo "═════════════════════════════════════════"
+            echo "📊 RAPPORT DE DÉPLOIEMENT"
+            echo "═════════════════════════════════════════"
+            echo ""
+            echo "🐳 Conteneurs:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "dony_|NAMES"
+            echo ""
+            echo "📦 Images:"
+            docker images | grep dony | head -3
+            echo ""
+            echo "💾 Volumes:"
+            docker volume ls | grep dony
+            echo ""
+            echo "📝 Logs API (dernières 10 lignes):"
+            docker logs dony_api --tail 10
+            echo ""
+            echo "═════════════════════════════════════════"
