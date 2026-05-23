@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 public class EmailOtpService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailOtpService.class);
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private static final int MAX_SENDS_PER_WINDOW = 3;
     private static final int RATE_WINDOW_MINUTES  = 5;
@@ -56,7 +57,7 @@ public class EmailOtpService {
                     "Too Many Requests", "Trop de tentatives, réessaie dans 5 min");
         }
 
-        String code = String.format("%06d", new SecureRandom().nextInt(1_000_000));
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusMinutes(OTP_VALID_MINUTES);
 
         EmailOtpEntity entity = new EmailOtpEntity();
