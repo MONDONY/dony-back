@@ -1,14 +1,10 @@
-// ── Sortie métriques : Grafana Cloud (Prometheus) ────────────────────────
-prometheus.remote_write "grafana_cloud" {
+// ── Sortie métriques : Prometheus local ─────────────────────────────────────
+prometheus.remote_write "local_prometheus" {
   external_labels = {
-    env = sys.env("DONY_ENV"),
+    env = "staging",
   }
   endpoint {
-    url = sys.env("GRAFANA_PROM_URL")
-    basic_auth {
-      username = sys.env("GRAFANA_PROM_USER")
-      password = sys.env("GRAFANA_CLOUD_TOKEN")
-    }
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 
@@ -20,14 +16,12 @@ prometheus.scrape "dony_api" {
       "__metrics_path__" = "/api/v1/actuator/prometheus",
     },
   ]
-  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  forward_to      = [prometheus.remote_write.local_prometheus.receiver]
   scrape_interval = "30s"
   job_name        = "dony-api"
 }
 
 // ── Scrape des métriques de l'hôte (CPU, RAM, disque) ─────────────────────
-// Les chemins pointent vers les systèmes de fichiers de l'hôte montés
-// dans le conteneur (voir les volumes du service `alloy`).
 prometheus.exporter.unix "host" {
   rootfs_path = "/host/root"
   procfs_path = "/host/proc"
@@ -36,48 +30,7 @@ prometheus.exporter.unix "host" {
 
 prometheus.scrape "host" {
   targets         = prometheus.exporter.unix.host.targets
-  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  forward_to      = [prometheus.remote_write.local_prometheus.receiver]
   scrape_interval = "30s"
   job_name        = "host"
-}
-
-// ── Sortie logs : Grafana Cloud (Loki) ───────────────────────────────────
-loki.write "grafana_cloud" {
-  endpoint {
-    url = sys.env("GRAFANA_LOKI_URL")
-    basic_auth {
-      username = sys.env("GRAFANA_LOKI_USER")
-      password = sys.env("GRAFANA_CLOUD_TOKEN")
-    }
-  }
-}
-
-// ── Découverte et collecte des logs des conteneurs Docker ────────────────
-discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
-}
-
-discovery.relabel "docker_logs" {
-  targets = discovery.docker.containers.targets
-
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/(.*)"
-    target_label  = "container"
-  }
-}
-
-loki.source.docker "containers" {
-  host       = "unix:///var/run/docker.sock"
-  targets    = discovery.relabel.docker_logs.output
-  forward_to = [loki.process.add_env_label.receiver]
-}
-
-loki.process "add_env_label" {
-  stage.static_labels {
-    values = {
-      env = sys.env("DONY_ENV"),
-    }
-  }
-  forward_to = [loki.write.grafana_cloud.receiver]
 }
