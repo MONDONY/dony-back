@@ -132,7 +132,7 @@ jobs:
           chmod 600 .env.staging
           echo "✅ Fichier .env.staging créé (600 permissions)"
 
-      - name: Préparer les fichiers de config sur le VPS
+      - name: Préparer répertoires sur le VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
@@ -141,18 +141,22 @@ jobs:
           script: |
             set -e
             cd ~/dony
-            echo "📁 Préparation des répertoires..."
+            echo "📁 Création des répertoires..."
             mkdir -p monitoring/alloy nginx/certs nginx/www backups
+            echo "✅ Répertoires prêts"
 
-            echo "📥 Téléchargement des fichiers de config..."
-            curl -sSL -o docker-compose.staging.yml \
-              https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.staging.yml || true
-            curl -sSL -o monitoring/alloy/config.alloy \
-              https://raw.githubusercontent.com/${{ github.repository }}/main/monitoring/alloy/config.alloy || true
-            curl -sSL -o nginx/nginx.staging.conf \
-              https://raw.githubusercontent.com/${{ github.repository }}/main/nginx/nginx.staging.conf || true
-
-            echo "✅ Fichiers de config prêts"
+      - name: Transférer fichiers de config via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.OVH_HOST }}
+          username: ${{ secrets.OVH_USER }}
+          key: ${{ secrets.OVH_SSH_KEY }}
+          source: |
+            docker-compose.staging.yml
+            monitoring/alloy/config.alloy
+            nginx/nginx.staging.conf
+          target: "dony/"
+          strip_components: 0
 
       - name: Transférer .env.staging via SCP
         uses: appleboy/scp-action@master
