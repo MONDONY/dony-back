@@ -1,0 +1,77 @@
+{
+  "dashboard": {
+    "title": "Dony API — Métriques Applicatives",
+    "description": "Monitoring en temps réel des performances de l'API Spring Boot",
+    "tags": ["dony", "api", "spring-boot"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "title": "Requêtes HTTP / sec",
+        "targets": [
+          {
+            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\"}[1m])",
+            "legendFormat": "{{method}} {{uri}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Latence p99 (ms)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) * 1000",
+            "legendFormat": "{{method}} {{uri}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Erreurs HTTP (5xx) / sec",
+        "targets": [
+          {
+            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"5..\"}[1m])",
+            "legendFormat": "{{status}} {{uri}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Taux de succès (%)",
+        "targets": [
+          {
+            "expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"2..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m]))",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 8}
+      },
+      {
+        "title": "Connexions BD actives",
+        "targets": [
+          {
+            "expr": "hikaricp_connections_active{job=\"dony-api\"}",
+            "legendFormat": "Actives"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 8}
+      },
+      {
+        "title": "Mémoire JVM (MB)",
+        "targets": [
+          {
+            "expr": "jvm_memory_used_bytes{job=\"dony-api\"} / 1024 / 1024",
+            "legendFormat": "{{area}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+      }
+    ],
+    "refresh": "30s"
+  }
+}

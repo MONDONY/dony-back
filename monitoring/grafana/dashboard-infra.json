@@ -1,0 +1,100 @@
+{
+  "dashboard": {
+    "title": "Dony Infrastructure — Système et Hôte",
+    "description": "Ressources système : CPU, RAM, disque, réseau",
+    "tags": ["dony", "infrastructure", "system"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "title": "Utilisation CPU (%)",
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{job=\"host\", mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Utilisation RAM (%)",
+        "targets": [
+          {
+            "expr": "100 * (1 - ((node_memory_MemAvailable_bytes{job=\"host\"} or (node_memory_MemFree_bytes{job=\"host\"} + node_memory_Buffers_bytes{job=\"host\"} + node_memory_Cached_bytes{job=\"host\"}) ) / node_memory_MemTotal_bytes{job=\"host\"}))",
+            "legendFormat": "RAM"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Utilisation Disque (%)",
+        "targets": [
+          {
+            "expr": "100 - (node_filesystem_avail_bytes{job=\"host\", mountpoint=\"/\"} / node_filesystem_size_bytes{job=\"host\", mountpoint=\"/\"} * 100)",
+            "legendFormat": "Root (/)"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "title": "Charge système (1m, 5m, 15m)",
+        "targets": [
+          {
+            "expr": "node_load1{job=\"host\"}",
+            "legendFormat": "1m"
+          },
+          {
+            "expr": "node_load5{job=\"host\"}",
+            "legendFormat": "5m"
+          },
+          {
+            "expr": "node_load15{job=\"host\"}",
+            "legendFormat": "15m"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "title": "I/O Disque (KB/s)",
+        "targets": [
+          {
+            "expr": "rate(node_disk_read_bytes_total{job=\"host\"}[5m]) / 1024",
+            "legendFormat": "Read {{device}}"
+          },
+          {
+            "expr": "rate(node_disk_written_bytes_total{job=\"host\"}[5m]) / 1024",
+            "legendFormat": "Write {{device}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "title": "Connexions réseau",
+        "targets": [
+          {
+            "expr": "node_netstat_Tcp_CurrEstab{job=\"host\"}",
+            "legendFormat": "TCP Established"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "title": "Uptime (jours)",
+        "targets": [
+          {
+            "expr": "node_boot_time_seconds{job=\"host\"}",
+            "legendFormat": "Boot time"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+      }
+    ],
+    "refresh": "30s"
+  }
+}

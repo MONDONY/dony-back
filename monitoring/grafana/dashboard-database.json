@@ -1,0 +1,96 @@
+{
+  "dashboard": {
+    "title": "Dony Database — PostgreSQL",
+    "description": "Performance et santé de la base de données",
+    "tags": ["dony", "database", "postgresql"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "title": "Connexions BD",
+        "targets": [
+          {
+            "expr": "hikaricp_connections_active{job=\"dony-api\"}",
+            "legendFormat": "Actives"
+          },
+          {
+            "expr": "hikaricp_connections_idle{job=\"dony-api\"}",
+            "legendFormat": "Idle"
+          },
+          {
+            "expr": "hikaricp_connections_max{job=\"dony-api\"}",
+            "legendFormat": "Max"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+      },
+      {
+        "title": "Temps attente pool BD (ms)",
+        "targets": [
+          {
+            "expr": "hikaricp_connection_timeout_total{job=\"dony-api\"}",
+            "legendFormat": "Timeouts"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+      },
+      {
+        "title": "Transactions / sec",
+        "targets": [
+          {
+            "expr": "rate(db_postgresql_transaction_duration_seconds_count[1m])",
+            "legendFormat": "Transactions"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8}
+      },
+      {
+        "title": "Slow queries (>500ms)",
+        "targets": [
+          {
+            "expr": "increase(db_postgresql_transaction_duration_seconds_bucket{le=\"0.5\"}[5m]) > 0",
+            "legendFormat": "Slow"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8}
+      },
+      {
+        "title": "Erreurs BD / min",
+        "targets": [
+          {
+            "expr": "rate(db_postgresql_error_total[1m])",
+            "legendFormat": "Errors"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8}
+      },
+      {
+        "title": "Taille DB (MB)",
+        "targets": [
+          {
+            "expr": "pg_database_size_bytes{job=\"dony-api\"} / 1024 / 1024",
+            "legendFormat": "Size"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "title": "Rows par table",
+        "targets": [
+          {
+            "expr": "pg_table_row_count{job=\"dony-api\"}",
+            "legendFormat": "{{table}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+      }
+    ],
+    "refresh": "30s"
+  }
+}
