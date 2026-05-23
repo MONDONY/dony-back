@@ -89,6 +89,7 @@ public class SecurityConfig {
                     "/v3/api-docs/**",
                     "/swagger-ui/**",
                     "/swagger-ui.html",
+                    "/dev/**",
                     // Internal messaging notify: kept in permitAll because the caller (Firebase Functions)
                     // does not carry a Firebase user token. Security is enforced at the controller level
                     // via constant-time comparison of X-Internal-Secret header (option b from the fix spec).

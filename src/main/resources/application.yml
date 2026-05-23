@@ -86,8 +86,15 @@ management:
 springdoc:
   api-docs:
     enabled: ${SWAGGER_ENABLED:false}
+    path: /v3/api-docs
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    try-it-out-enabled: true
+    display-request-duration: true
+  packages-to-scan: com.dony.api
 
 # Logging
 logging:
