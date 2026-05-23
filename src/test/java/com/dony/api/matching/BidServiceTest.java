@@ -57,6 +57,7 @@ class BidServiceTest {
     @Mock private CancellationRepository cancellationRepository;
     @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
+    @Mock private com.dony.api.auth.BlockService blockService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -466,6 +467,7 @@ class BidServiceTest {
         @SuppressWarnings("unchecked")
         void createBid_GRID_saves_grid_items() {
             UserEntity sender = buildSender();
+            sender.setKycStatus(com.dony.api.auth.KycStatus.VERIFIED); // passe le filtre contactKycOnly (défaut true)
             AnnouncementEntity announcement = buildAnnouncement();
             announcement.setPricingMode(com.dony.api.matching.PricingMode.MIXED);
             UUID gridItemId = UUID.randomUUID();

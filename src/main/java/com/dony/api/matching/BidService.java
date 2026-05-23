@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.BlockService;
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
@@ -46,6 +47,7 @@ public class BidService {
     private final CancellationRepository cancellationRepository;
     private final BidGridItemRepository bidGridItemRepository;
     private final AnnouncementPriceGridItemRepository annGridItemRepository;
+    private final BlockService blockService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -55,7 +57,8 @@ public class BidService {
                       ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
                       CancellationRepository cancellationRepository,
                       BidGridItemRepository bidGridItemRepository,
-                      AnnouncementPriceGridItemRepository annGridItemRepository) {
+                      AnnouncementPriceGridItemRepository annGridItemRepository,
+                      BlockService blockService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -65,6 +68,7 @@ public class BidService {
         this.cancellationRepository = cancellationRepository;
         this.bidGridItemRepository = bidGridItemRepository;
         this.annGridItemRepository = annGridItemRepository;
+        this.blockService = blockService;
     }
 
     @Transactional
@@ -97,6 +101,24 @@ public class BidService {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
+        }
+
+        UUID travelerId = announcement.getTravelerId();
+
+        // Confidentialité v2 — blocage : 404 masque délibérément le blocage
+        if (blockService.isBlockedEitherWay(sender.getId(), travelerId)) {
+            throw new DonyBusinessException(
+                    HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
+                    "Annonce introuvable");
+        }
+
+        // Confidentialité v2 — filtre KYC : la cible n'accepte que les profils vérifiés
+        UserEntity traveler = userRepository.findById(travelerId).orElse(null);
+        if (traveler != null && traveler.isContactKycOnly()
+                && sender.getKycStatus() != KycStatus.VERIFIED) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN, "contact-kyc-required", "KYC Required",
+                    "Cet utilisateur n'accepte que les profils vérifiés");
         }
 
         boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
