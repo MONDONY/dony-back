@@ -23,8 +23,10 @@ services:
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/
     volumes:
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+      - ./application-staging.yml:/app/config/application-staging.yml:ro
     depends_on:
       db:
         condition: service_healthy

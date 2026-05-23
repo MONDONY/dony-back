@@ -4,6 +4,16 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Environment variables (secrets)
+.env*
+!.env.staging.template
+/.env.staging
+
+# Deployment
+/backups/
+/nginx/certs/
+/nginx/www/
+
 ### STS ###
 .apt_generated
 .classpath
