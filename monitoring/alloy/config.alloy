@@ -34,3 +34,40 @@ prometheus.scrape "host" {
   scrape_interval = "30s"
   job_name        = "host"
 }
+
+// ── Sortie logs : Loki local ────────────────────────────────────────────────
+loki.write "local_loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// ── Découverte et collecte des logs des conteneurs Docker ────────────────────
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.add_labels.receiver]
+}
+
+loki.process "add_labels" {
+  stage.static_labels {
+    values = {
+      env = "staging",
+    }
+  }
+  forward_to = [loki.write.local_loki.receiver]
+}

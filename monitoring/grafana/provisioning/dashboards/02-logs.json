@@ -1,0 +1,72 @@
+{
+  "dashboard": {
+    "title": "Dony — Logs",
+    "description": "Visualization des logs des conteneurs",
+    "tags": ["dony", "logs"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Logs en temps réel",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{job=\"docker\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8}
+      },
+      {
+        "id": 2,
+        "title": "Logs API",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{container=\"dony_api\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 3,
+        "title": "Logs Base de données",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{container=\"dony_db_staging\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 4,
+        "title": "Logs Nginx",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{container=\"dony_nginx\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "id": 5,
+        "title": "Erreurs et Warnings",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{env=\"staging\"} |= \"ERROR\" or |= \"WARN\" or |= \"error\" or |= \"warn\"",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+      }
+    ],
+    "refresh": "10s"
+  },
+  "overwrite": true
+}
