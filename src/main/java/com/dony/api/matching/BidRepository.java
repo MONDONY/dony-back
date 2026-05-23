@@ -188,4 +188,20 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     List<BidEntity> findByCommissionStatusAndUpdatedAtBefore(
             CommissionStatus commissionStatus, LocalDateTime before);
+
+    /**
+     * True if there is at least one active (in-flight) transaction between two users,
+     * in either direction (sender↔traveler). Used to prevent blocking a user mid-deal.
+     */
+    @Query("""
+        SELECT COUNT(b) > 0 FROM BidEntity b
+        JOIN AnnouncementEntity a ON a.id = b.announcementId
+        WHERE b.status IN :activeStatuses AND (
+              (b.senderId = :userA AND a.travelerId = :userB)
+           OR (b.senderId = :userB AND a.travelerId = :userA))
+        """)
+    boolean hasActiveTransactionBetween(
+            @Param("userA") UUID userA,
+            @Param("userB") UUID userB,
+            @Param("activeStatuses") List<BidStatus> activeStatuses);
 }
