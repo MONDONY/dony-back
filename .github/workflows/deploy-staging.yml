@@ -6,7 +6,7 @@ on:
     # Si le nom du workflow CI change, ce déclencheur cesse de fonctionner silencieusement.
     workflows: ["CI"]
     types: [completed]
-    branches: [main]
+    branches: [main, "feature/**"]
 
 env:
   REGISTRY: ghcr.io
