@@ -23,7 +23,7 @@ public class UserBlockEntity {
 
     @PrePersist
     void prePersist() {
-        createdAt = OffsetDateTime.now();
+        createdAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
     }
 
     public UUID getId() { return id; }

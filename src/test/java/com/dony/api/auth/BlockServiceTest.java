@@ -11,7 +11,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -83,7 +82,7 @@ class BlockServiceTest {
         u.setFirstName("Mamadou");
         u.setLastName("Diallo");
         when(blockRepo.findByBlockerIdOrderByCreatedAtDesc(me)).thenReturn(List.of(b));
-        when(userRepository.findById(other)).thenReturn(Optional.of(u));
+        when(userRepository.findAllById(List.of(other))).thenReturn(List.of(u));
         List<BlockedUserDto> result = service.listBlocked(me);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).userId()).isEqualTo(other);

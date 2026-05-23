@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class BlockService {
@@ -56,14 +58,19 @@ public class BlockService {
 
     @Transactional(readOnly = true)
     public List<BlockedUserDto> listBlocked(UUID blockerId) {
-        return blockRepo.findByBlockerIdOrderByCreatedAtDesc(blockerId).stream()
+        List<UserBlockEntity> blocks = blockRepo.findByBlockerIdOrderByCreatedAtDesc(blockerId);
+        Map<UUID, UserEntity> usersById = userRepository
+                .findAllById(blocks.stream().map(UserBlockEntity::getBlockedId).toList())
+                .stream()
+                .collect(Collectors.toMap(UserEntity::getId, u -> u));
+        return blocks.stream()
                 .map(b -> {
-                    UserEntity u = userRepository.findById(b.getBlockedId()).orElse(null);
+                    UserEntity u = usersById.get(b.getBlockedId());
                     String name = (u != null)
-                            ? u.getFirstName() + " " + (u.getLastName() != null && !u.getLastName().isEmpty()
-                                ? u.getLastName().charAt(0) + "." : "")
+                            ? (u.getFirstName() + " " + (u.getLastName() != null && !u.getLastName().isEmpty()
+                                ? u.getLastName().charAt(0) + "." : "")).trim()
                             : "Utilisateur";
-                    return new BlockedUserDto(b.getBlockedId(), name.trim(), b.getCreatedAt());
+                    return new BlockedUserDto(b.getBlockedId(), name, b.getCreatedAt());
                 })
                 .toList();
     }
