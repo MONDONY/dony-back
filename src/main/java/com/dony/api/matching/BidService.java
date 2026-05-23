@@ -622,14 +622,18 @@ public class BidService {
         return toResponse(bid, sender, null);
     }
 
-    private static String maskPhone(String phone) {
-        if (phone == null || phone.length() < 4) return null;
-        return phone.substring(0, Math.min(4, phone.length())) + "••••••" + phone.substring(phone.length() - 2);
+    private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
+            BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
+
+    /** Numéro révélé en clair seulement si l'offre est acceptée ou au-delà, sinon null. */
+    static String phoneForStatus(String phone, BidStatus status) {
+        if (phone == null) return null;
+        return PHONE_VISIBLE_STATUSES.contains(status) ? phone : null;
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
-        String senderPhone = sender != null ? maskPhone(sender.getPhoneNumber()) : null;
+        String senderPhone = sender != null ? phoneForStatus(sender.getPhoneNumber(), bid.getStatus()) : null;
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         boolean senderKycVerified = sender != null
                 && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
@@ -651,7 +655,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = traveler != null ? maskPhone(traveler.getPhoneNumber()) : null;
+        String travelerPhone = traveler != null ? phoneForStatus(traveler.getPhoneNumber(), bid.getStatus()) : null;
         boolean travelerKycVerified = traveler != null
                 && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         boolean travelerIsProAccount = traveler != null && traveler.isProAccount();
