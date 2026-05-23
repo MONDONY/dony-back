@@ -80,23 +80,6 @@ jobs:
           trivyignores: .trivyignore
           format: table
           skip-dirs: target,docs,.github,.mvn
-      - name: Trivy — rapport SARIF (non bloquant)
-        uses: aquasecurity/trivy-action@v0.35.0
-        if: always()
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,MEDIUM
-          exit-code: '0'
-          ignore-unfixed: true
-          format: sarif
-          output: trivy-results.sarif
-          skip-dirs: target,docs,.github,.mvn
-      - name: Upload SARIF vers GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
 
   docker-lint:
     name: Hadolint Dockerfile
