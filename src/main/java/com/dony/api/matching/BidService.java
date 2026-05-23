@@ -112,13 +112,16 @@ public class BidService {
                     "Annonce introuvable");
         }
 
-        // Confidentialité v2 — filtre KYC : la cible n'accepte que les profils vérifiés
-        UserEntity traveler = userRepository.findById(travelerId).orElse(null);
-        if (traveler != null && traveler.isContactKycOnly()
-                && sender.getKycStatus() != KycStatus.VERIFIED) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN, "contact-kyc-required", "KYC Required",
-                    "Cet utilisateur n'accepte que les profils vérifiés");
+        // Filtre contact KYC : seuls les senders vérifiés passent si la cible l'exige.
+        // On ne charge le voyageur que si nécessaire (sender non vérifié).
+        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+            UserEntity traveler = userRepository.findById(travelerId).orElse(null);
+            // traveler null (suppression/race) => on laisse passer : la FK garantit normalement sa présence.
+            if (traveler != null && traveler.isContactKycOnly()) {
+                throw new DonyBusinessException(
+                        HttpStatus.FORBIDDEN, "contact-kyc-required", "KYC Required",
+                        "Cet utilisateur n'accepte que les profils vérifiés");
+            }
         }
 
         boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
