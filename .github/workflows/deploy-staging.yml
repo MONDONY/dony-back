@@ -155,7 +155,7 @@ jobs:
             echo "✅ Fichiers de config prêts"
 
       - name: Transférer .env.staging via SCP
-        uses: appleboy/scp-action@v0
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
