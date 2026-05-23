@@ -257,6 +257,27 @@ jobs:
                   db:
                     condition: service_healthy
 
+              certbot:
+                image: certbot/certbot:latest
+                container_name: dony_certbot
+                restart: unless-stopped
+                volumes:
+                  - ./nginx/certs:/etc/letsencrypt
+                  - ./nginx/www:/var/www/certbot
+                entrypoint: >
+                  sh -c "
+                    certbot certonly --webroot -w /var/www/certbot -d api-staging.dony.store
+                    --non-interactive --agree-tos --email ops@dony.store
+                    --keep-until-expiring --quiet;
+                    while true; do
+                      sleep 86400 &
+                      wait $$!
+                      certbot renew --webroot -w /var/www/certbot --quiet
+                    done
+                  "
+                depends_on:
+                  - nginx
+
               nginx:
                 image: nginx:1.27-alpine
                 container_name: dony_nginx
