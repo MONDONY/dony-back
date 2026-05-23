@@ -29,6 +29,6 @@ class DevTokenControllerTest {
 
         assertThatThrownBy(() -> controller.getDevToken(Role.SENDER))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("FIREBASE_WEB_API_KEY");
+                .hasMessageContaining("FIREBASE_API_KEY");
     }
 }
