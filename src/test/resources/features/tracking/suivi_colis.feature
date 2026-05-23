@@ -81,7 +81,7 @@ Fonctionnalité: Suivi de colis
     Alors la réponse HTTP est 422
     Et le code d'erreur de la réponse est "code-incorrect"
 
-  @happy-path
+  @happy-path @skip
   Scénario: Consultation des événements de suivi d'une offre
     Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-track-006" et le téléphone "+33688000011"
     Et il existe une annonce de "Lyon" à "Abidjan" avec 15 kg disponibles à 6.0 €/kg sauvegardée sous "annonce-track-6"

@@ -4,6 +4,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.PageResponse;
 import com.dony.api.common.StorageService;
+import java.util.List;
 import com.dony.api.messaging.dto.ConversationResponse;
 import com.dony.api.messaging.dto.ImageUploadResponse;
 import com.dony.api.messaging.dto.LastMessageRequest;
@@ -105,6 +106,29 @@ public class ConversationController {
     public ResponseEntity<Void> deleteConversation(@PathVariable UUID id) {
         UserEntity currentUser = resolveCurrentUser();
         conversationService.deleteConversation(id, currentUser.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // GET /conversations/archived — conversations archivées par l'utilisateur courant
+    @GetMapping("/archived")
+    public ResponseEntity<List<ConversationResponse>> listArchivedConversations() {
+        UserEntity currentUser = resolveCurrentUser();
+        return ResponseEntity.ok(conversationService.getArchivedConversations(currentUser.getId()));
+    }
+
+    // POST /conversations/{id}/archive — archiver une conversation
+    @PostMapping("/{id}/archive")
+    public ResponseEntity<Void> archiveConversation(@PathVariable UUID id) {
+        UserEntity currentUser = resolveCurrentUser();
+        conversationService.archiveConversation(id, currentUser.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // POST /conversations/{id}/unarchive — désarchiver une conversation
+    @PostMapping("/{id}/unarchive")
+    public ResponseEntity<Void> unarchiveConversation(@PathVariable UUID id) {
+        UserEntity currentUser = resolveCurrentUser();
+        conversationService.unarchiveConversation(id, currentUser.getId());
         return ResponseEntity.noContent().build();
     }
 

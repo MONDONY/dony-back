@@ -12,12 +12,14 @@ import com.dony.api.messaging.dto.ConversationResponse;
 import com.dony.api.messaging.dto.ParticipantDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -177,6 +179,39 @@ public class ConversationService {
         } catch (Exception e) {
             log.warn("Firestore markConversationDeleted failed for {}: {}", conversationId, e.getMessage());
         }
+    }
+
+    @Transactional
+    public void archiveConversation(UUID conversationId, UUID requestingUserId) {
+        ConversationEntity conv = conversationRepository
+            .findByIdAndParticipantIgnoreArchived(conversationId, requestingUserId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Conversation not found or access denied"));
+        conv.archiveForUser(requestingUserId);
+        conversationRepository.save(conv);
+        auditService.log("conversation", conversationId, "CONVERSATION_ARCHIVED", requestingUserId, Map.of());
+    }
+
+    @Transactional
+    public void unarchiveConversation(UUID conversationId, UUID requestingUserId) {
+        ConversationEntity conv = conversationRepository
+            .findByIdAndParticipantIgnoreArchived(conversationId, requestingUserId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Conversation not found or access denied"));
+        if (!conv.isArchivedByUser(requestingUserId)) {
+            return;
+        }
+        conv.unarchiveForUser(requestingUserId);
+        conversationRepository.save(conv);
+        auditService.log("conversation", conversationId, "CONVERSATION_UNARCHIVED", requestingUserId, Map.of());
+    }
+
+    public List<ConversationResponse> getArchivedConversations(UUID userId) {
+        return conversationRepository
+            .findArchivedByParticipant(userId, Pageable.unpaged())
+            .stream()
+            .map(c -> toResponse(c, userId))
+            .toList();
     }
 
     public void updateLastMessage(String firestoreConversationId, String preview) {

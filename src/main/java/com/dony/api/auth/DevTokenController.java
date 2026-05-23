@@ -65,7 +65,7 @@ public class DevTokenController {
         }
         if (firebaseWebApiKey.isBlank()) {
             throw new IllegalStateException(
-                    "Variable FIREBASE_WEB_API_KEY manquante dans .env.dev (Web API Key Firebase console > Project Settings > General)");
+                    "Variable FIREBASE_API_KEY manquante dans .env.dev (Web API Key Firebase console > Paramètres du projet > Général)");
         }
 
         String uid = "dev-test-" + role.name().toLowerCase();
@@ -104,6 +104,7 @@ public class DevTokenController {
 
         FirebaseTokenResponse response = restClient.post()
                 .uri(FIREBASE_TOKEN_URL + firebaseWebApiKey)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(new ExchangeRequest(customToken, true))
                 .retrieve()
                 .body(FirebaseTokenResponse.class);

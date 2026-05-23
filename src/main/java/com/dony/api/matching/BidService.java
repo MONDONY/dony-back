@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.BlockService;
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
@@ -46,6 +47,7 @@ public class BidService {
     private final CancellationRepository cancellationRepository;
     private final BidGridItemRepository bidGridItemRepository;
     private final AnnouncementPriceGridItemRepository annGridItemRepository;
+    private final BlockService blockService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -55,7 +57,8 @@ public class BidService {
                       ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
                       CancellationRepository cancellationRepository,
                       BidGridItemRepository bidGridItemRepository,
-                      AnnouncementPriceGridItemRepository annGridItemRepository) {
+                      AnnouncementPriceGridItemRepository annGridItemRepository,
+                      BlockService blockService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -65,6 +68,7 @@ public class BidService {
         this.cancellationRepository = cancellationRepository;
         this.bidGridItemRepository = bidGridItemRepository;
         this.annGridItemRepository = annGridItemRepository;
+        this.blockService = blockService;
     }
 
     @Transactional
@@ -97,6 +101,27 @@ public class BidService {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
+        }
+
+        UUID travelerId = announcement.getTravelerId();
+
+        // Confidentialité v2 — blocage : 404 masque délibérément le blocage
+        if (blockService.isBlockedEitherWay(sender.getId(), travelerId)) {
+            throw new DonyBusinessException(
+                    HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
+                    "Annonce introuvable");
+        }
+
+        // Filtre contact KYC : seuls les senders vérifiés passent si la cible l'exige.
+        // On ne charge le voyageur que si nécessaire (sender non vérifié).
+        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+            UserEntity traveler = userRepository.findById(travelerId).orElse(null);
+            // traveler null (suppression/race) => on laisse passer : la FK garantit normalement sa présence.
+            if (traveler != null && traveler.isContactKycOnly()) {
+                throw new DonyBusinessException(
+                        HttpStatus.FORBIDDEN, "contact-kyc-required", "KYC Required",
+                        "Cet utilisateur n'accepte que les profils vérifiés");
+            }
         }
 
         boolean alreadyHasBid = bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
@@ -622,14 +647,18 @@ public class BidService {
         return toResponse(bid, sender, null);
     }
 
-    private static String maskPhone(String phone) {
-        if (phone == null || phone.length() < 4) return null;
-        return phone.substring(0, Math.min(4, phone.length())) + "••••••" + phone.substring(phone.length() - 2);
+    private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
+            BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
+
+    /** Numéro révélé en clair seulement si l'offre est acceptée ou au-delà, sinon null. */
+    static String phoneForStatus(String phone, BidStatus status) {
+        if (phone == null) return null;
+        return PHONE_VISIBLE_STATUSES.contains(status) ? phone : null;
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
-        String senderPhone = sender != null ? maskPhone(sender.getPhoneNumber()) : null;
+        String senderPhone = sender != null ? phoneForStatus(sender.getPhoneNumber(), bid.getStatus()) : null;
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         boolean senderKycVerified = sender != null
                 && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
@@ -651,7 +680,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = traveler != null ? maskPhone(traveler.getPhoneNumber()) : null;
+        String travelerPhone = traveler != null ? phoneForStatus(traveler.getPhoneNumber(), bid.getStatus()) : null;
         boolean travelerKycVerified = traveler != null
                 && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         boolean travelerIsProAccount = traveler != null && traveler.isProAccount();

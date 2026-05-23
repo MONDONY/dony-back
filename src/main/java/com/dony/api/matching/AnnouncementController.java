@@ -67,7 +67,7 @@ public class AnnouncementController {
                 minAvailableKg, maxAvailableKg, maxPricePerKg, minRating, kiloProOnly, weekendOnly,
                 transportMode, kycVerifiedOnly, contentType,
                 userLat, userLng, radiusKm,
-                sortBy, sortDir, pageable);
+                sortBy, sortDir, pageable, currentFirebaseUidOrNull());
         return ResponseEntity.ok(PageResponse.from(page));
     }
 
@@ -120,6 +120,20 @@ public class AnnouncementController {
         String firebaseUid = requireFirebaseUid();
         announcementService.deleteAnnouncement(id, firebaseUid);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Returns the current user's Firebase UID, or {@code null} if the request is
+     * unauthenticated. Search is publicly accessible, but when a user is logged in
+     * we use their UID to filter out announcements from blocked travelers (both directions).
+     */
+    private String currentFirebaseUidOrNull() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return null;
+        }
+        Object principal = auth.getPrincipal();
+        return principal instanceof String s ? s : null;
     }
 
     private String requireFirebaseUid() {

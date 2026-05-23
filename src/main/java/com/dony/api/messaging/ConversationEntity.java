@@ -29,6 +29,12 @@ public class ConversationEntity extends BaseEntity {
     @Column(name = "traveler_deleted_at")
     private LocalDateTime travelerDeletedAt;
 
+    @Column(name = "sender_archived_at")
+    private LocalDateTime senderArchivedAt;
+
+    @Column(name = "traveler_archived_at")
+    private LocalDateTime travelerArchivedAt;
+
     public ConversationEntity() {}
 
     public ConversationEntity(UUID bidId, UUID senderId, UUID travelerId, String firestoreConversationId) {
@@ -60,6 +66,28 @@ public class ConversationEntity extends BaseEntity {
         return false;
     }
 
+    public void archiveForUser(UUID userId) {
+        if (userId.equals(senderId)) {
+            this.senderArchivedAt = LocalDateTime.now(ZoneOffset.UTC);
+        } else if (userId.equals(travelerId)) {
+            this.travelerArchivedAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+    }
+
+    public void unarchiveForUser(UUID userId) {
+        if (userId.equals(senderId)) {
+            this.senderArchivedAt = null;
+        } else if (userId.equals(travelerId)) {
+            this.travelerArchivedAt = null;
+        }
+    }
+
+    public boolean isArchivedByUser(UUID userId) {
+        if (userId.equals(senderId)) return senderArchivedAt != null;
+        if (userId.equals(travelerId)) return travelerArchivedAt != null;
+        return false;
+    }
+
     public boolean isReadOnlyFor(UUID userId) {
         // Read-only when the OTHER party deleted, but current user hasn't
         if (userId.equals(senderId)) return travelerDeletedAt != null && senderDeletedAt == null;
@@ -73,4 +101,6 @@ public class ConversationEntity extends BaseEntity {
     public String getFirestoreConversationId() { return firestoreConversationId; }
     public LocalDateTime getSenderDeletedAt() { return senderDeletedAt; }
     public LocalDateTime getTravelerDeletedAt() { return travelerDeletedAt; }
+    public LocalDateTime getSenderArchivedAt() { return senderArchivedAt; }
+    public LocalDateTime getTravelerArchivedAt() { return travelerArchivedAt; }
 }

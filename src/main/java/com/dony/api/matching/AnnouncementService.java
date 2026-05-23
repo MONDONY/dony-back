@@ -87,7 +87,7 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber + '_' + #viewerFirebaseUid")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
@@ -96,10 +96,23 @@ public class AnnouncementService {
             Boolean kiloProOnly, Boolean weekendOnly,
             String transportMode, Boolean kycVerifiedOnly, String contentType,
             Double userLat, Double userLng, Double radiusKm,
-            String sortBy, String sortDir, Pageable pageable) {
+            String sortBy, String sortDir, Pageable pageable,
+            String viewerFirebaseUid) {
+
+        // Confidentialité v2 — exclure (dans les deux sens) les voyageurs en relation
+        // de blocage avec le viewer. Le firebaseUid est intégré à la clé de cache pour
+        // éviter qu'un utilisateur reçoive les résultats filtrés d'un autre.
+        UUID viewerId = (viewerFirebaseUid == null || viewerFirebaseUid.isBlank())
+                ? null
+                : userRepository.findByFirebaseUid(viewerFirebaseUid)
+                        .map(UserEntity::getId)
+                        .orElse(null);
 
         Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE)
                 .and(AnnouncementSpecification.publicOnly());
+
+        if (viewerId != null)
+            spec = spec.and(AnnouncementSpecification.notBlockedBy(viewerId));
 
         if (departureCity != null && !departureCity.isBlank())
             spec = spec.and(AnnouncementSpecification.hasDepartureCity(departureCity));

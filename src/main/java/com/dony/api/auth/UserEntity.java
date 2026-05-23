@@ -54,6 +54,9 @@ public class UserEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private KycStatus kycStatus = KycStatus.NOT_STARTED;
 
+    @Column(name = "contact_kyc_only", nullable = false)
+    private boolean contactKycOnly = true;
+
     @Column(name = "fcm_token", length = 512)
     private String fcmToken;
 
@@ -168,6 +171,9 @@ public class UserEntity extends BaseEntity {
 
     public KycStatus getKycStatus() { return kycStatus; }
     public void setKycStatus(KycStatus kycStatus) { this.kycStatus = kycStatus; }
+
+    public boolean isContactKycOnly() { return contactKycOnly; }
+    public void setContactKycOnly(boolean contactKycOnly) { this.contactKycOnly = contactKycOnly; }
 
     public String getFcmToken() { return fcmToken; }
     public void setFcmToken(String fcmToken) { this.fcmToken = fcmToken; }
