@@ -131,7 +131,7 @@ dony:
   dispute-sla-hours: 72
   max-declared-value-eur: 500
   kyc:
-    return-url: "https://dony.app/kyc/complete"
+    return-url: "https://dony.store/kyc/complete"
   stripe:
     connect:
       mcc: "4215"
@@ -166,7 +166,7 @@ dony:
     estimation-cache-ttl-minutes: 60
   email:
     resend-api-key: ${RESEND_API_KEY:}
-    from-address: noreply@dony.app
+    from-address: noreply@dony.store
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
 
 # Encryption (AES-256 for KYC sensitive data)

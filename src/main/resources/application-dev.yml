@@ -55,13 +55,13 @@ dony:
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
   kyc:
     enforce: false
-    return-url: "https://dony.app/kyc/complete"
+    return-url: "https://dony.store/kyc/complete"
   stripe:
     enforce: false
     connect:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Dony"
-      business-url: "https://dony.app"
+      business-url: "https://dony.store"
       # Stripe n'accepte pas les deep links (dony://) — on passe par des endpoints HTTP intermédiaires
       # Émulateur Android : 10.0.2.2 = localhost machine. Appareil physique : remplacer par l'IP locale
       return-url: "http://10.0.2.2:8080/api/v1/payments/onboarding/return"
