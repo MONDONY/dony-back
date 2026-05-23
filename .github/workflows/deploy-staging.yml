@@ -132,7 +132,7 @@ jobs:
           chmod 600 .env.staging
           echo "✅ Fichier .env.staging créé (600 permissions)"
 
-      - name: Préparer répertoires sur le VPS
+      - name: Préparer répertoires et fichiers sur le VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
@@ -143,30 +143,167 @@ jobs:
             cd ~/dony
             echo "📁 Création des répertoires..."
             mkdir -p monitoring/alloy nginx/certs nginx/www backups
-            echo "✅ Répertoires prêts"
 
-      - name: Transférer fichiers de config via SCP
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.OVH_HOST }}
-          username: ${{ secrets.OVH_USER }}
-          key: ${{ secrets.OVH_SSH_KEY }}
-          source: |
-            docker-compose.staging.yml
-            monitoring/alloy/config.alloy
-            nginx/nginx.staging.conf
-          target: "dony/"
-          strip_components: 0
+            echo "📝 Création docker-compose.staging.yml..."
+            cat > docker-compose.staging.yml << 'DOCKERCOMPOSE_EOF'
+            services:
+              api:
+                image: ghcr.io/mondony/dony-back:staging
+                container_name: dony_api
+                restart: unless-stopped
+                environment:
+                  SPRING_PROFILES_ACTIVE: staging
+                  DB_USERNAME: ${DB_USERNAME}
+                  DB_PASSWORD: ${DB_PASSWORD}
+                  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+                  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+                  SENTRY_DSN: ${SENTRY_DSN}
+                  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+                  GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
+                  AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT}
+                  AWS_S3_REGION: ${AWS_S3_REGION}
+                  AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+                  AWS_S3_ACCESS_KEY: ${AWS_S3_ACCESS_KEY}
+                  AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
+                  APP_BASE_URL: https://api-staging.dony.store
+                  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+                  SPRING_DATASOURCE_URL: jdbc:postgresql://dony_db_staging:5432/dony_staging
+                  SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+                  SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+                  SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+                  SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/
+                volumes:
+                  - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+                  - ./application-staging.yml:/app/config/application-staging.yml:ro
+                depends_on:
+                  db:
+                    condition: service_healthy
+                networks:
+                  - dony_internal
+                healthcheck:
+                  test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/actuator/health || exit 1"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 5
+                  start_period: 60s
 
-      - name: Transférer .env.staging via SCP
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.OVH_HOST }}
-          username: ${{ secrets.OVH_USER }}
-          key: ${{ secrets.OVH_SSH_KEY }}
-          source: ".env.staging"
-          target: "dony/"
-          rm: false
+              alloy:
+                image: grafana/alloy:v1.8.3
+                container_name: dony_alloy
+                restart: unless-stopped
+                command:
+                  - run
+                  - /etc/alloy/config.alloy
+                  - --storage.path=/var/lib/alloy/data
+                environment:
+                  DONY_ENV: staging
+                  GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
+                  GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
+                  GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
+                  GRAFANA_LOKI_USER: ${GRAFANA_LOKI_USER}
+                  GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN}
+                volumes:
+                  - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+                  - /var/run/docker.sock:/var/run/docker.sock:ro
+                  - dony_alloy_data:/var/lib/alloy/data
+                  - /proc:/host/proc:ro
+                  - /sys:/host/sys:ro
+                  - /:/host/root:ro,rslave
+                networks:
+                  - dony_internal
+                depends_on:
+                  - api
+
+              db:
+                image: postgres:16-alpine
+                container_name: dony_db_staging
+                restart: unless-stopped
+                environment:
+                  POSTGRES_DB: dony_staging
+                  POSTGRES_USER: ${DB_USERNAME}
+                  POSTGRES_PASSWORD: ${DB_PASSWORD}
+                volumes:
+                  - dony_db_staging_data:/var/lib/postgresql/data
+                networks:
+                  - dony_internal
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d dony_staging"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 10
+
+              db-backup:
+                image: postgres:16-alpine
+                container_name: dony_db_backup_staging
+                restart: unless-stopped
+                environment:
+                  PGPASSWORD: ${DB_PASSWORD}
+                volumes:
+                  - ./backups:/backups
+                networks:
+                  - dony_internal
+                entrypoint: >
+                  sh -c "
+                    backup() {
+                      FILE=/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz;
+                      pg_dump -h db -U ${DB_USERNAME} dony_staging | gzip > $$FILE;
+                      echo \"Backup created: $$FILE\";
+                      find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
+                    };
+                    backup;
+                    while true; do sleep 86400 & wait $$!; backup; done
+                  "
+                depends_on:
+                  db:
+                    condition: service_healthy
+
+              nginx:
+                image: nginx:1.27-alpine
+                container_name: dony_nginx
+                restart: unless-stopped
+                ports:
+                  - "80:80"
+                  - "443:443"
+                volumes:
+                  - ./nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+                  - ./nginx/certs:/etc/letsencrypt:ro
+                  - ./nginx/www:/var/www/certbot:ro
+                depends_on:
+                  - api
+                networks:
+                  - dony_internal
+
+            volumes:
+              dony_db_staging_data:
+              dony_alloy_data:
+
+            networks:
+              dony_internal:
+                driver: bridge
+            DOCKERCOMPOSE_EOF
+            echo "✅ docker-compose.staging.yml créé"
+
+            echo "✅ Répertoires et fichiers prêts"
+
+      - name: Transférer fichiers de config et .env au VPS
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OVH_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          echo "📤 Transfert de .env.staging..."
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
+            .env.staging debian@${{ secrets.OVH_HOST }}:~/dony/
+
+          echo "📤 Transfert de nginx.staging.conf..."
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
+            nginx/nginx.staging.conf debian@${{ secrets.OVH_HOST }}:~/dony/nginx/
+
+          echo "📤 Transfert de config.alloy..."
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
+            monitoring/alloy/config.alloy debian@${{ secrets.OVH_HOST }}:~/dony/monitoring/alloy/
+
+          echo "✅ Tous les fichiers transférés"
 
       - name: Déploiement Docker Compose
         uses: appleboy/ssh-action@v1
