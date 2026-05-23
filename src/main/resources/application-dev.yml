@@ -5,6 +5,11 @@ springdoc:
   swagger-ui:
     enabled: true
 
+# Firebase Web API Key — requis pour GET /dev/token (échange custom token → ID token)
+# Disponible dans Firebase Console > Project Settings > General > Web API Key
+firebase:
+  web-api-key: ${FIREBASE_WEB_API_KEY:}
+
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/dony_dev
