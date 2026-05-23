@@ -186,6 +186,31 @@ public class AuthService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public com.dony.api.auth.dto.PrivacySettingsResponse getPrivacySettings(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        return new com.dony.api.auth.dto.PrivacySettingsResponse(user.isContactKycOnly());
+    }
+
+    @Transactional
+    public void updatePrivacySettings(String firebaseUid, boolean contactKycOnly) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        user.setContactKycOnly(contactKycOnly);
+        userRepository.save(user);
+    }
+
     /**
      * Retourne l'UUID de l'utilisateur courant à partir du FirebaseUID dans le SecurityContext.
      */

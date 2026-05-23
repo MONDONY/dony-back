@@ -61,6 +61,18 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/me/privacy-settings")
+    public ResponseEntity<com.dony.api.auth.dto.PrivacySettingsResponse> getPrivacySettings() {
+        return ResponseEntity.ok(authService.getPrivacySettings(requireFirebaseUid()));
+    }
+
+    @PutMapping("/me/privacy-settings")
+    public ResponseEntity<Void> updatePrivacySettings(
+            @Valid @RequestBody com.dony.api.auth.dto.PrivacySettingsRequest request) {
+        authService.updatePrivacySettings(requireFirebaseUid(), request.contactKycOnly());
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteAccount() {
         String firebaseUid = requireFirebaseUid();
