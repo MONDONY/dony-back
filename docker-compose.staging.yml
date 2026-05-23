@@ -19,6 +19,10 @@ services:
       AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
       APP_BASE_URL: https://api-staging.dony.store
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://dony_db_staging:5432/dony_staging
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
     volumes:
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
     depends_on:
