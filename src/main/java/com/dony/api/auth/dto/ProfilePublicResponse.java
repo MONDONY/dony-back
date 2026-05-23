@@ -14,5 +14,7 @@ public record ProfilePublicResponse(
         BigDecimal averageRating,
         int ratingCount,
         String memberSince,
-        List<String> badges
+        List<String> badges,
+        String contactMode,
+        Integer responseDelayHours
 ) {}

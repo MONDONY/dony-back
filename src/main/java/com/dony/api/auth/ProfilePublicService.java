@@ -4,6 +4,8 @@ import com.dony.api.auth.dto.ProfilePublicResponse;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
+import com.dony.api.settings.UserBusinessPrefsEntity;
+import com.dony.api.settings.UserBusinessPrefsRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +20,14 @@ public class ProfilePublicService {
 
     private final UserRepository userRepository;
     private final RatingService ratingService;
+    private final UserBusinessPrefsRepository userBusinessPrefsRepository;
 
-    public ProfilePublicService(UserRepository userRepository, RatingService ratingService) {
+    public ProfilePublicService(UserRepository userRepository,
+                                RatingService ratingService,
+                                UserBusinessPrefsRepository userBusinessPrefsRepository) {
         this.userRepository = userRepository;
         this.ratingService = ratingService;
+        this.userBusinessPrefsRepository = userBusinessPrefsRepository;
     }
 
     public ProfilePublicResponse getProfilePublic(UUID userId) {
@@ -36,6 +42,10 @@ public class ProfilePublicService {
 
         UserRatingsSummaryResponse ratingSummary = ratingService.getUserRatings(userId, 0, 3);
 
+        UserBusinessPrefsEntity prefs = userBusinessPrefsRepository.findById(userId).orElse(null);
+        String contactMode = prefs != null ? prefs.getContactMode() : null;
+        Integer responseDelayHours = prefs != null ? prefs.getResponseDelayHours() : null;
+
         return new ProfilePublicResponse(
                 userId.toString(),
                 displayName,
@@ -47,7 +57,9 @@ public class ProfilePublicService {
                 ratingSummary.averageRating(),
                 ratingSummary.ratingCount(),
                 memberSince,
-                List.of()
+                List.of(),
+                contactMode,
+                responseDelayHours
         );
     }
 

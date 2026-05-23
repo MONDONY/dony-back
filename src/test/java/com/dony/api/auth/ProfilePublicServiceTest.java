@@ -5,6 +5,8 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.RatingItemResponse;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
+import com.dony.api.settings.UserBusinessPrefsEntity;
+import com.dony.api.settings.UserBusinessPrefsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,7 @@ class ProfilePublicServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private RatingService ratingService;
+    @Mock private UserBusinessPrefsRepository userBusinessPrefsRepository;
 
     @InjectMocks private ProfilePublicService profilePublicService;
 
@@ -53,6 +56,11 @@ class ProfilePublicServiceTest {
         setField(user, "totalTrips", 7);
         setField(user, "totalShipments", 5);
         setField(user, "createdAt", LocalDateTime.of(2025, 3, 15, 10, 0));
+        // Default: no business prefs row → contactMode and responseDelayHours are null
+        // lenient: the "user not found" test never reaches this call
+        org.mockito.Mockito.lenient()
+                .when(userBusinessPrefsRepository.findById(USER_ID))
+                .thenReturn(Optional.empty());
     }
 
     private UserRatingsSummaryResponse stubRatingSummary() {
@@ -148,6 +156,37 @@ class ProfilePublicServiceTest {
                 .map(rc -> rc.getName())
                 .toList();
         assertThat(fields).doesNotContain("phone", "phoneNumber");
+    }
+
+    @Test
+    @DisplayName("pas de prefs → contactMode et responseDelayHours sont null")
+    void getProfilePublic_noPrefs_contactModeAndDelayAreNull() {
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(ratingService.getUserRatings(eq(USER_ID), eq(0), eq(3))).thenReturn(stubRatingSummary());
+        // userBusinessPrefsRepository already stubbed to return empty in setUp()
+
+        ProfilePublicResponse response = profilePublicService.getProfilePublic(USER_ID);
+
+        assertThat(response.contactMode()).isNull();
+        assertThat(response.responseDelayHours()).isNull();
+    }
+
+    @Test
+    @DisplayName("prefs présentes → contactMode et responseDelayHours exposés")
+    void getProfilePublic_withPrefs_exposesBothFields() throws Exception {
+        UserBusinessPrefsEntity prefs = new UserBusinessPrefsEntity();
+        setField(prefs, "userId", USER_ID);
+        setField(prefs, "contactMode", "WHATSAPP");
+        setField(prefs, "responseDelayHours", 24);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(ratingService.getUserRatings(eq(USER_ID), eq(0), eq(3))).thenReturn(stubRatingSummary());
+        when(userBusinessPrefsRepository.findById(USER_ID)).thenReturn(Optional.of(prefs));
+
+        ProfilePublicResponse response = profilePublicService.getProfilePublic(USER_ID);
+
+        assertThat(response.contactMode()).isEqualTo("WHATSAPP");
+        assertThat(response.responseDelayHours()).isEqualTo(24);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -56,7 +56,9 @@ class ProfilePublicControllerTest {
                 new BigDecimal("4.80"),
                 10,
                 "Membre depuis mars 2025",
-                List.of());
+                List.of(),
+                null,
+                null);
     }
 
     @Test
