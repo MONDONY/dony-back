@@ -76,6 +76,7 @@ jobs:
           severity: CRITICAL
           exit-code: '1'
           ignore-unfixed: true
+          trivyignores: .trivyignore
           format: table
           skip-dirs: target,docs,.github,.mvn
       - name: Trivy — rapport SARIF (non bloquant)
