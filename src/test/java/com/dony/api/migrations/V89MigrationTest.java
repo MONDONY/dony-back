@@ -52,9 +52,9 @@ class V89MigrationTest {
         // All NOT NULL columns must be provided explicitly (H2 DDL from JPA, no defaults from SQL).
         String insertUser =
                 "INSERT INTO users (id, firebase_uid, status, kyc_status, stripe_account_status, " +
-                "cancellation_count, is_pro_account, country, kilo_pro, total_trips, total_shipments, " +
-                "no_show_count, refused_count, rating_count, version, created_at, updated_at) " +
-                "VALUES (?, ?, 'ACTIVE', ?, ?, 0, false, 'FR', false, 0, 0, 0, 0, 0, 0, NOW(), NOW())";
+                "cancellation_count, is_pro_account, contact_kyc_only, country, kilo_pro, total_trips, " +
+                "total_shipments, no_show_count, refused_count, rating_count, version, created_at, updated_at) " +
+                "VALUES (?, ?, 'ACTIVE', ?, ?, 0, false, true, 'FR', false, 0, 0, 0, 0, 0, 0, NOW(), NOW())";
 
         jdbc.update(insertUser, user1Id, "uid-v89-user1", "VERIFIED",  "ONBOARDING_COMPLETE");
         jdbc.update(insertUser, user2Id, "uid-v89-user2", "PENDING",   "NOT_CREATED");
