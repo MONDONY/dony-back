@@ -65,6 +65,21 @@ jobs:
     needs: build-push
     environment: staging
     steps:
+      - name: Préparation des fichiers de config
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OVH_HOST }}
+          username: ${{ secrets.OVH_USER }}
+          key: ${{ secrets.OVH_SSH_KEY }}
+          script: |
+            cd ~/dony
+            # Créer les répertoires nécessaires
+            mkdir -p monitoring/alloy nginx/certs nginx/www backups
+            # Télécharger les fichiers de config depuis GitHub
+            curl -sSL https://raw.githubusercontent.com/mondony/dony/feat/settings-screen/dony-back/docker-compose.staging.yml -o docker-compose.staging.yml
+            curl -sSL https://raw.githubusercontent.com/mondony/dony/feat/settings-screen/dony-back/monitoring/alloy/config.alloy -o monitoring/alloy/config.alloy
+            curl -sSL https://raw.githubusercontent.com/mondony/dony/feat/settings-screen/dony-back/nginx/nginx.staging.conf -o nginx/nginx.staging.conf
+            echo "✅ Fichiers de config téléchargés"
       - name: Déploiement via SSH
         uses: appleboy/ssh-action@v1
         with:
