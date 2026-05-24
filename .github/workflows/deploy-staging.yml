@@ -132,7 +132,7 @@ jobs:
           chmod 600 .env.staging
           echo "✅ Fichier .env.staging créé (600 permissions)"
 
-      - name: Préparer répertoires et fichiers sur le VPS
+      - name: Préparer répertoires sur le VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.OVH_HOST }}
@@ -140,225 +140,33 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set -e
+            mkdir -p ~/dony
             cd ~/dony
             echo "📁 Création des répertoires..."
-            mkdir -p monitoring/alloy nginx/certs nginx/www backups
+            mkdir -p nginx/certs nginx/www backups
+            echo "🧹 Réinitialisation du dossier monitoring (config régénérée depuis le repo)..."
+            rm -rf monitoring
+            echo "✅ Répertoires prêts"
 
-            echo "📝 Création docker-compose.staging.yml..."
-            cat > docker-compose.staging.yml << 'DOCKERCOMPOSE_EOF'
-            services:
-              api:
-                image: ghcr.io/mondony/dony-back:staging
-                container_name: dony_api
-                restart: unless-stopped
-                environment:
-                  SPRING_PROFILES_ACTIVE: staging
-                  DB_USERNAME: ${DB_USERNAME}
-                  DB_PASSWORD: ${DB_PASSWORD}
-                  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-                  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-                  SENTRY_DSN: ${SENTRY_DSN}
-                  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-                  GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
-                  AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT}
-                  AWS_S3_REGION: ${AWS_S3_REGION}
-                  AWS_S3_BUCKET: ${AWS_S3_BUCKET}
-                  AWS_S3_ACCESS_KEY: ${AWS_S3_ACCESS_KEY}
-                  AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
-                  APP_BASE_URL: https://api-staging.dony.store
-                  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-                  SPRING_DATASOURCE_URL: jdbc:postgresql://dony_db_staging:5432/dony_staging
-                  SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
-                  SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-                  SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
-                  SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/
-                volumes:
-                  - ./firebase-service-account.json:/app/firebase-service-account.json:ro
-                  - ./application-staging.yml:/app/config/application-staging.yml:ro
-                depends_on:
-                  db:
-                    condition: service_healthy
-                networks:
-                  - dony_internal
-                healthcheck:
-                  test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/actuator/health || exit 1"]
-                  interval: 30s
-                  timeout: 10s
-                  retries: 5
-                  start_period: 60s
-
-              alloy:
-                image: grafana/alloy:v1.8.3
-                container_name: dony_alloy
-                restart: unless-stopped
-                command:
-                  - run
-                  - /etc/alloy/config.alloy
-                  - --storage.path=/var/lib/alloy/data
-                environment:
-                  DONY_ENV: staging
-                  GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
-                  GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
-                  GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
-                  GRAFANA_LOKI_USER: ${GRAFANA_LOKI_USER}
-                  GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN}
-                volumes:
-                  - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
-                  - /var/run/docker.sock:/var/run/docker.sock:ro
-                  - dony_alloy_data:/var/lib/alloy/data
-                  - /proc:/host/proc:ro
-                  - /sys:/host/sys:ro
-                  - /:/host/root:ro,rslave
-                networks:
-                  - dony_internal
-                depends_on:
-                  - api
-
-              db:
-                image: postgres:16-alpine
-                container_name: dony_db_staging
-                restart: unless-stopped
-                environment:
-                  POSTGRES_DB: dony_staging
-                  POSTGRES_USER: ${DB_USERNAME}
-                  POSTGRES_PASSWORD: ${DB_PASSWORD}
-                volumes:
-                  - dony_db_staging_data:/var/lib/postgresql/data
-                networks:
-                  - dony_internal
-                healthcheck:
-                  test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d dony_staging"]
-                  interval: 10s
-                  timeout: 5s
-                  retries: 10
-
-              db-backup:
-                image: postgres:16-alpine
-                container_name: dony_db_backup_staging
-                restart: unless-stopped
-                environment:
-                  PGPASSWORD: ${DB_PASSWORD}
-                volumes:
-                  - ./backups:/backups
-                networks:
-                  - dony_internal
-                entrypoint: >
-                  sh -c "
-                    backup() {
-                      FILE=/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz;
-                      pg_dump -h db -U ${DB_USERNAME} dony_staging | gzip > $$FILE;
-                      echo \"Backup created: $$FILE\";
-                      find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
-                    };
-                    backup;
-                    while true; do sleep 86400 & wait $$!; backup; done
-                  "
-                depends_on:
-                  db:
-                    condition: service_healthy
-
-              certbot:
-                image: certbot/certbot:latest
-                container_name: dony_certbot
-                restart: unless-stopped
-                volumes:
-                  - ./nginx/certs:/etc/letsencrypt
-                  - ./nginx/www:/var/www/certbot
-                entrypoint: >
-                  sh -c "
-                    certbot certonly --webroot -w /var/www/certbot -d api-staging.dony.store
-                    --non-interactive --agree-tos --email ops@dony.store
-                    --keep-until-expiring --quiet;
-                    while true; do
-                      sleep 86400 &
-                      wait $$!
-                      certbot renew --webroot -w /var/www/certbot --quiet
-                    done
-                  "
-                depends_on:
-                  - nginx
-
-              nginx:
-                image: nginx:1.27-alpine
-                container_name: dony_nginx
-                restart: unless-stopped
-                ports:
-                  - "80:80"
-                  - "443:443"
-                volumes:
-                  - ./nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
-                  - ./nginx/certs:/etc/letsencrypt:ro
-                  - ./nginx/www:/var/www/certbot:ro
-                depends_on:
-                  - api
-                networks:
-                  - dony_internal
-
-              stripe-cli-payments:
-                image: stripe/stripe-cli:latest
-                container_name: dony_stripe_cli_payments
-                restart: unless-stopped
-                environment:
-                  STRIPE_API_KEY: \${STRIPE_SECRET_KEY}
-                command: >
-                  listen
-                  --api-key \${STRIPE_SECRET_KEY}
-                  --device-name staging-payments
-                  --forward-to http://api:8080/api/v1/payments/webhook
-                  --events charge.captured,charge.failed,charge.refunded,payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled
-                depends_on:
-                  api:
-                    condition: service_healthy
-                networks:
-                  - dony_internal
-
-              stripe-cli-kyc:
-                image: stripe/stripe-cli:latest
-                container_name: dony_stripe_cli_kyc
-                restart: unless-stopped
-                environment:
-                  STRIPE_API_KEY: \${STRIPE_SECRET_KEY}
-                command: >
-                  listen
-                  --api-key \${STRIPE_SECRET_KEY}
-                  --device-name staging-kyc
-                  --forward-to http://api:8080/api/v1/kyc/webhook
-                  --events identity.verification_session.verified,identity.verification_session.requires_input
-                depends_on:
-                  api:
-                    condition: service_healthy
-                networks:
-                  - dony_internal
-
-            volumes:
-              dony_db_staging_data:
-              dony_alloy_data:
-
-            networks:
-              dony_internal:
-                driver: bridge
-            DOCKERCOMPOSE_EOF
-            echo "✅ docker-compose.staging.yml créé"
-
-            echo "✅ Répertoires et fichiers prêts"
-
-      - name: Transférer fichiers de config et .env au VPS
+      - name: Transférer compose, config et .env au VPS
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.OVH_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519"
+          DEST="${{ secrets.OVH_USER }}@${{ secrets.OVH_HOST }}:~/dony"
 
-          echo "📤 Transfert de .env.staging..."
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
-            .env.staging debian@${{ secrets.OVH_HOST }}:~/dony/
+          echo "📤 docker-compose.staging.yml (source unique)..."
+          scp $SSH_OPTS docker-compose.staging.yml "$DEST/"
 
-          echo "📤 Transfert de nginx.staging.conf..."
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
-            nginx/nginx.staging.conf debian@${{ secrets.OVH_HOST }}:~/dony/nginx/
+          echo "📤 .env.staging..."
+          scp $SSH_OPTS .env.staging "$DEST/"
 
-          echo "📤 Transfert de config.alloy..."
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 \
-            monitoring/alloy/config.alloy debian@${{ secrets.OVH_HOST }}:~/dony/monitoring/alloy/
+          echo "📤 nginx.staging.conf..."
+          scp $SSH_OPTS nginx/nginx.staging.conf "$DEST/nginx/"
+
+          echo "📤 monitoring/ (alloy, prometheus, grafana)..."
+          scp $SSH_OPTS -r monitoring "$DEST/"
 
           echo "✅ Tous les fichiers transférés"
 
@@ -375,11 +183,11 @@ jobs:
             echo "🔐 Connexion à GHCR..."
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            echo "📥 Pull de l'image..."
+            echo "📥 Pull de l'image API..."
             docker compose --env-file .env.staging -f docker-compose.staging.yml pull api
 
-            echo "🚀 Démarrage des conteneurs..."
-            docker compose --env-file .env.staging -f docker-compose.staging.yml up -d api db
+            echo "🚀 Démarrage de TOUS les services (api, db, nginx, monitoring, stripe-cli)..."
+            docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --remove-orphans
 
             echo "🧹 Nettoyage des images inutiles..."
             docker image prune -f

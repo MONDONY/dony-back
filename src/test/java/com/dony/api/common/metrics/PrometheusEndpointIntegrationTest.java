@@ -22,10 +22,13 @@ class PrometheusEndpointIntegrationTest {
     @MockBean  private FirebaseAuth firebaseAuth;
 
     @Test
-    void prometheusEndpoint_requiresAuthentication() throws Exception {
-        // Prometheus was moved out of permitAll() — unauthenticated requests must
-        // receive 401 so the metrics surface is not publicly readable.
+    void prometheusEndpoint_isReachableForInternalScrape() throws Exception {
+        // /actuator/prometheus is permitAll so the internal monitoring stack
+        // (Prometheus/Alloy on the private Docker network) can scrape it without a
+        // Firebase token. Public exposure is prevented at the network level:
+        // port 8080 is never published to the host and Nginx 404s /api/v1/actuator/*.
         mockMvc.perform(get("/actuator/prometheus"))
-            .andExpect(status().isUnauthorized());
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("# HELP")));
     }
 }

@@ -1,0 +1,80 @@
+{
+  "uid": "dony-logs-errors",
+  "title": "Dony — Logs & Erreurs",
+  "description": "Volume de logs par niveau via Micrometer (logback_events_total) — sans Loki",
+  "tags": ["dony", "logs", "errors"],
+  "timezone": "UTC",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Erreurs (1h)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(increase(logback_events_total{job=\"dony-api\",level=\"error\"}[1h]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 10}]}}},
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 2,
+      "title": "Warnings (1h)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(increase(logback_events_total{job=\"dony-api\",level=\"warn\"}[1h]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 10}]}}},
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 3,
+      "title": "Taux d'erreurs (err/s)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(logback_events_total{job=\"dony-api\",level=\"error\"}[5m]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 3}},
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 4,
+      "title": "Total events (5m)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(logback_events_total{job=\"dony-api\"}[5m]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2}},
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 5,
+      "title": "Logs par niveau (events/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (level) (rate(logback_events_total{job=\"dony-api\"}[5m]))", "legendFormat": "{{level}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 20, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8}
+    },
+    {
+      "id": 6,
+      "title": "Erreurs & Warnings (events/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(logback_events_total{job=\"dony-api\",level=\"error\"}[5m]))", "legendFormat": "error", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "sum(rate(logback_events_total{job=\"dony-api\",level=\"warn\"}[5m]))", "legendFormat": "warn", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8}
+    }
+  ]
+}

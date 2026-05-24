@@ -1,0 +1,127 @@
+{
+  "uid": "dony-jvm",
+  "title": "Dony — JVM",
+  "description": "Santé de la JVM : mémoire, GC, threads, CPU process",
+  "tags": ["dony", "jvm"],
+  "timezone": "UTC",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Uptime",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_uptime_seconds{job=\"dony-api\"}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "decimals": 0}},
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 2,
+      "title": "CPU process (%)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_cpu_usage{job=\"dony-api\"} * 100", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "decimals": 1, "max": 100}},
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 3,
+      "title": "Threads vivants",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "jvm_threads_live_threads{job=\"dony-api\"}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 4,
+      "title": "Classes chargées",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "jvm_classes_loaded_classes{job=\"dony-api\"}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 5,
+      "title": "Mémoire Heap (utilisée vs max)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(jvm_memory_used_bytes{job=\"dony-api\",area=\"heap\"})", "legendFormat": "utilisée", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "sum(jvm_memory_max_bytes{job=\"dony-api\",area=\"heap\"} > 0)", "legendFormat": "max", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "sum(jvm_memory_committed_bytes{job=\"dony-api\",area=\"heap\"})", "legendFormat": "committed", "refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "id": 6,
+      "title": "Mémoire Non-Heap (utilisée)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (id) (jvm_memory_used_bytes{job=\"dony-api\",area=\"nonheap\"})", "legendFormat": "{{id}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 15, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "id": 7,
+      "title": "Pauses GC (s/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (action, cause) (rate(jvm_gc_pause_seconds_sum{job=\"dony-api\"}[5m]))", "legendFormat": "{{action}} ({{cause}})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "id": 8,
+      "title": "Threads par état",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (state) (jvm_threads_states_threads{job=\"dony-api\"})", "legendFormat": "{{state}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 15, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "id": 9,
+      "title": "CPU process vs système (%)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_cpu_usage{job=\"dony-api\"} * 100", "legendFormat": "process", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "system_cpu_usage{job=\"dony-api\"} * 100", "legendFormat": "système", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100}},
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8}
+    },
+    {
+      "id": 10,
+      "title": "Descripteurs de fichiers (ouverts vs max)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_files_open_files{job=\"dony-api\"}", "legendFormat": "ouverts", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "process_files_max_files{job=\"dony-api\"}", "legendFormat": "max", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8}
+    }
+  ]
+}
