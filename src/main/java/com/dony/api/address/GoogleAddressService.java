@@ -162,12 +162,17 @@ public class GoogleAddressService {
             .collect(Collectors.joining("|"));
     }
 
+    // Google Places (New) autorise au plus 15 valeurs included_region_codes.
+    // Au-delà, l'API renvoie 400 INVALID_ARGUMENT — on plafonne donc à 15.
+    private static final int MAX_REGION_CODES = 15;
+
     private List<String> buildRegionCodes() {
         if (props.allowedCountries() == null || props.allowedCountries().isBlank()) return List.of();
         return Arrays.stream(props.allowedCountries().split(","))
             .map(String::trim)
             .filter(c -> !c.isEmpty())
             .map(String::toUpperCase)
+            .limit(MAX_REGION_CODES)
             .collect(Collectors.toList());
     }
 
