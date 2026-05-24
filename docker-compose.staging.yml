@@ -47,13 +47,6 @@ services:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
-    environment:
-      DONY_ENV: staging
-      GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
-      GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
-      GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
-      GRAFANA_LOKI_USER: ${GRAFANA_LOKI_USER}
-      GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN}
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -183,9 +176,49 @@ services:
     networks:
       - dony_internal
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dony_prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-remote-write-receiver'
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - dony_prometheus_data:/prometheus
+    networks:
+      - dony_internal
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dony_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SERVER_ROOT_URL: http://141.95.41.96:3000
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - dony_grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - dony_internal
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   dony_db_staging_data:
   dony_alloy_data:
+  dony_prometheus_data:
+  dony_grafana_data:
 
 networks:
   dony_internal:

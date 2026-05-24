@@ -73,11 +73,13 @@ public class SecurityConfig {
                     "/auth/**",
                     "/actuator/health",
                     "/actuator/info",
-                    // /actuator/prometheus intentionally excluded from permitAll —
-                    // it is scraped by the internal monitoring infrastructure which
-                    // authenticates via Spring Security's built-in management port or
-                    // network-level access control (Nginx/firewall). Exposing metrics
-                    // publicly leaks internal topology and performance data.
+                    // /actuator/prometheus is scraped by the internal monitoring stack
+                    // (Prometheus/Alloy) over the private Docker network `dony_internal`.
+                    // It is NOT publicly exposed: the API port 8080 is never published to
+                    // the host, and Nginx returns 404 for /api/v1/actuator/* (except health).
+                    // permitAll here only enables the internal scrape; network-level
+                    // isolation (no host port + Nginx edge block) prevents public access.
+                    "/actuator/prometheus",
                     "/config/**",
                     "/kyc/webhook",
                     "/payments/webhook",

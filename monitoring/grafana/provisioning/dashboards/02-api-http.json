@@ -1,0 +1,114 @@
+{
+  "uid": "dony-api-http",
+  "title": "Dony — API HTTP",
+  "description": "Trafic HTTP de l'API : débit, erreurs, latence par endpoint",
+  "tags": ["dony", "api", "http"],
+  "timezone": "UTC",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Débit total (req/s)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[1m]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "decimals": 2}},
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 2,
+      "title": "Taux d'erreur 5xx (%)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"dony-api\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])), 0.001)", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "decimals": 2, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}},
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 3,
+      "title": "Taux d'erreur 4xx (%)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"dony-api\",status=~\"4..\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])), 0.001)", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "decimals": 2, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 5}, {"color": "red", "value": 20}]}}},
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 4,
+      "title": "Latence moyenne (ms)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "1000 * sum(rate(http_server_requests_seconds_sum{job=\"dony-api\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])), 0.001)", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms", "decimals": 1}},
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+    },
+    {
+      "id": 5,
+      "title": "Débit par code de statut (req/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (status) (rate(http_server_requests_seconds_count{job=\"dony-api\"}[1m]))", "legendFormat": "{{status}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"fillOpacity": 20, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "id": 6,
+      "title": "Latence p50 / p95 / p99 (ms)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "1000 * histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p50", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "1000 * histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "1000 * histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "id": 7,
+      "title": "Top 10 endpoints par débit (req/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])))", "legendFormat": "{{uri}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}},
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "id": 8,
+      "title": "Top 10 endpoints les plus lents (latence moy. ms)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "topk(10, 1000 * sum by (uri) (rate(http_server_requests_seconds_sum{job=\"dony-api\"}[5m])) / clamp_min(sum by (uri) (rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])), 0.001))", "legendFormat": "{{uri}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8}
+    },
+    {
+      "id": 9,
+      "title": "Requêtes en erreur par endpoint (4xx/5xx, req/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"dony-api\",status=~\"[45]..\"}[5m])) > 0", "legendFormat": "{{status}} {{uri}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}},
+      "gridPos": {"x": 0, "y": 20, "w": 24, "h": 8}
+    }
+  ]
+}

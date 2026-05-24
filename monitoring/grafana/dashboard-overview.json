@@ -1,0 +1,130 @@
+{
+  "dashboard": {
+    "title": "Dony — Vue Globale",
+    "description": "État global du système : API, DB, Infrastructure",
+    "tags": ["dony", "overview"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "title": "Santé API",
+        "targets": [
+          {
+            "expr": "up{job=\"dony-api\"}",
+            "legendFormat": "API UP"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "thresholds": [
+          {"color": "red", "value": 0},
+          {"color": "yellow", "value": 0.5},
+          {"color": "green", "value": 1}
+        ]
+      },
+      {
+        "title": "Santé Infrastructure",
+        "targets": [
+          {
+            "expr": "up{job=\"host\"}",
+            "legendFormat": "Host UP"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+        "thresholds": [
+          {"color": "red", "value": 0},
+          {"color": "green", "value": 1}
+        ]
+      },
+      {
+        "title": "Requêtes / sec (24h)",
+        "targets": [
+          {
+            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\"}[24h])",
+            "legendFormat": "RPS"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "title": "Erreurs (24h)",
+        "targets": [
+          {
+            "expr": "sum(increase(http_server_requests_seconds_count{job=\"dony-api\", status=~\"5..\"}[24h]))",
+            "legendFormat": "5xx"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "title": "Taux succès (24h)",
+        "targets": [
+          {
+            "expr": "100 * sum(increase(http_server_requests_seconds_count{job=\"dony-api\", status=~\"2..\"}[24h])) / sum(increase(http_server_requests_seconds_count{job=\"dony-api\"}[24h]))",
+            "legendFormat": "Success %"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 0, "y": 4, "w": 6, "h": 6}
+      },
+      {
+        "title": "Latence p95 (24h)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[24h])) * 1000",
+            "legendFormat": "p95 (ms)"
+          }
+        ],
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 4, "w": 6, "h": 6}
+      },
+      {
+        "title": "CPU moyen (24h)",
+        "targets": [
+          {
+            "expr": "100 - (avg(irate(node_cpu_seconds_total{job=\"host\", mode=\"idle\"}[24h])) * 100)",
+            "legendFormat": "CPU %"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 12, "y": 4, "w": 6, "h": 6}
+      },
+      {
+        "title": "RAM moyen (24h)",
+        "targets": [
+          {
+            "expr": "100 * (1 - (avg(node_memory_MemAvailable_bytes{job=\"host\"}) / avg(node_memory_MemTotal_bytes{job=\"host\"})))",
+            "legendFormat": "RAM %"
+          }
+        ],
+        "type": "gauge",
+        "gridPos": {"x": 18, "y": 4, "w": 6, "h": 6}
+      },
+      {
+        "title": "Requêtes par endpoint (top 10)",
+        "targets": [
+          {
+            "expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])))",
+            "legendFormat": "{{uri}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 10, "w": 12, "h": 10}
+      },
+      {
+        "title": "Erreurs par endpoint (top 5)",
+        "targets": [
+          {
+            "expr": "topk(5, sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"[45]..\"}[5m])))",
+            "legendFormat": "{{uri}} {{status}}"
+          }
+        ],
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 10, "w": 12, "h": 10}
+      }
+    ],
+    "refresh": "1m"
+  }
+}
