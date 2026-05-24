@@ -23,3 +23,13 @@ spring:
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
+
+# Stripe Connect : Stripe exige des URLs HTTPS pour return/refresh.
+# Le défaut de application.yml (dony://) est un deep link invalide côté Stripe.
+# Ces endpoints backend (StripeOnboardingRedirectController) redirigent en 302
+# vers le deep link dony:// pour revenir dans l'app.
+dony:
+  stripe:
+    connect:
+      return-url: "https://api-staging.dony.store/api/v1/payments/onboarding/return"
+      refresh-url: "https://api-staging.dony.store/api/v1/payments/onboarding/refresh"
