@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: staging
+      GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
