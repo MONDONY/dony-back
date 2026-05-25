@@ -173,7 +173,9 @@ jobs:
           scp $SSH_OPTS nginx/nginx.staging.conf "$DEST/nginx/"
 
           echo "📤 monitoring/ (alloy, prometheus, grafana)..."
-          scp $SSH_OPTS -r monitoring "$DEST/"
+          # -O force le protocole SCP historique : le mode SFTP par défaut
+          # (OpenSSH 9.x) ne crée pas les sous-dossiers imbriqués manquants.
+          scp $SSH_OPTS -O -r monitoring "$DEST/"
 
           echo "✅ Tous les fichiers transférés"
 
