@@ -56,6 +56,7 @@ class SubscriptionServiceTest {
         TravelerSubscriptionEntity existing = new TravelerSubscriptionEntity();
         existing.setSenderId(senderId); existing.setTravelerId(travelerId);
         existing.setDeletedAt(java.time.LocalDateTime.now());
+        existing.setHasNew(true);
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(sender));
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(new UserEntity()));
         when(repo.findBySenderIdAndTravelerIdIncludingDeleted(senderId, travelerId)).thenReturn(Optional.of(existing));
@@ -63,6 +64,7 @@ class SubscriptionServiceTest {
         service.subscribe(uid, travelerId);
 
         assertThat(existing.getDeletedAt()).isNull();
+        assertThat(existing.isHasNew()).isFalse();
         verify(repo).save(existing);
     }
 

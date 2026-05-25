@@ -5,11 +5,13 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.subscriptions.dto.SubscriptionItemResponse;
 import com.dony.api.subscriptions.dto.SubscriptionStatusResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,8 +42,9 @@ public class SubscriptionService {
         var existing = subscriptionRepository.findBySenderIdAndTravelerIdIncludingDeleted(sid, travelerId);
         if (existing.isPresent()) {
             TravelerSubscriptionEntity sub = existing.get();
-            if (sub.getDeletedAt() != null) {
+            if (sub.getDeletedAt() != null) {   // réactiver un abonnement soft-deleted
                 sub.setDeletedAt(null);
+                sub.setHasNew(false);           // indicateur "nouveau" obsolète après désabonnement
                 subscriptionRepository.save(sub);
             }
             return;
@@ -49,14 +52,19 @@ public class SubscriptionService {
         TravelerSubscriptionEntity sub = new TravelerSubscriptionEntity();
         sub.setSenderId(sid);
         sub.setTravelerId(travelerId);
-        subscriptionRepository.save(sub);
+        try {
+            subscriptionRepository.save(sub);
+        } catch (DataIntegrityViolationException e) {
+            // Double-tap concurrent : la contrainte UNIQUE(sender_id, traveler_id) a déjà
+            // créé la ligne — abonnement idempotent, on ignore.
+        }
     }
 
     @Transactional
     public void unsubscribe(String firebaseUid, UUID travelerId) {
         UUID sid = senderId(firebaseUid);
         subscriptionRepository.findBySenderIdAndTravelerId(sid, travelerId).ifPresent(sub -> {
-            sub.setDeletedAt(LocalDateTime.now());
+            sub.setDeletedAt(LocalDateTime.now(ZoneOffset.UTC));
             subscriptionRepository.save(sub);
         });
     }
