@@ -198,4 +198,27 @@ class NotificationDispatcherTest {
         dispatcher.notifyBySms("+221701234567", "Bonjour");
         verify(smsService).send("+221701234567", "Bonjour");
     }
+
+    // ── notifyUser(push on/off) ───────────────────────────────────────────────
+
+    @Test
+    void notifyUser_withPushFalse_persistsInAppButNoFcm() {
+        UUID userId = UUID.randomUUID();
+
+        dispatcher.notifyUser(userId, "T", "B", Map.of("type", "X"), false);
+
+        verify(notificationService).persist(eq(userId), eq("X"), eq("T"), eq("B"), anyMap(), eq(false));
+        verifyNoInteractions(fcmService);
+    }
+
+    @Test
+    void notifyUser_withPushTrue_persistsAndSendsFcm() {
+        UUID userId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.notifyUser(userId, "T", "B", Map.of("type", "X"), true);
+
+        verify(notificationService).persist(eq(userId), eq("X"), eq("T"), eq("B"), anyMap(), eq(false));
+        verify(fcmService).sendToUser(eq(userId), eq("T"), eq("B"), anyMap());
+    }
 }
