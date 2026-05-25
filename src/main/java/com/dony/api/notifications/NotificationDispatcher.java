@@ -56,9 +56,15 @@ public class NotificationDispatcher {
     // ── Public API ───────────────────────────────────────────────────────────
 
     public void notifyUser(UUID userId, String title, String body, Map<String, String> data) {
+        notifyUser(userId, title, body, data, true);
+    }
+
+    public void notifyUser(UUID userId, String title, String body, Map<String, String> data, boolean push) {
         var saved = notificationService.persist(userId, data.getOrDefault("type", ""), title, body, data, false);
-        Map<String, String> dataWithId = withNotificationId(data, saved.getId());
-        fcmService.sendToUser(userId, title, body, dataWithId);
+        if (push) {
+            Map<String, String> dataWithId = withNotificationId(data, saved.getId());
+            fcmService.sendToUser(userId, title, body, dataWithId);
+        }
     }
 
     // Critical: persisted with is_critical=true → SmsFallbackScheduler sends SMS if no ACK in 60s

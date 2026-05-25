@@ -1,0 +1,15 @@
+package com.dony.api.matching.dto;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.UUID;
+
+public record TravelerAnnouncementResponse(
+    UUID id,
+    String departureCity,
+    String arrivalCity,
+    LocalDate departureDate,
+    BigDecimal pricePerKg,
+    BigDecimal availableKg,
+    String status
+) {}

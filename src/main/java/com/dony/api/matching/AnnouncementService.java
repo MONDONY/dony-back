@@ -19,6 +19,7 @@ import com.dony.api.matching.dto.TravelerProfileDto;
 import com.dony.api.matching.events.AnnouncementDeletedEvent;
 import com.dony.api.matching.events.AnnouncementInProgressEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
+import com.dony.api.matching.AnnouncementPublishedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -350,6 +351,14 @@ public class AnnouncementService {
             "",
             saved.getArrivalCity(),
             ""
+        ));
+
+        eventPublisher.publishEvent(new AnnouncementPublishedEvent(
+            saved.getId(),
+            saved.getTravelerId(),
+            user.getFirstName() + " " + user.getLastName(),
+            saved.getDepartureCity(),
+            saved.getArrivalCity()
         ));
 
         return toResponse(saved);
@@ -729,6 +738,19 @@ public class AnnouncementService {
                 entity.getPricingMode(),
                 gridItems
         );
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<com.dony.api.matching.dto.TravelerAnnouncementResponse> getTravelerAnnouncements(java.util.UUID travelerId) {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 50,
+            org.springframework.data.domain.Sort.by("departureDate").ascending());
+        var active = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.ACTIVE, pageable).getContent();
+        var full   = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.FULL, pageable).getContent();
+        return java.util.stream.Stream.concat(active.stream(), full.stream())
+            .map(a -> new com.dony.api.matching.dto.TravelerAnnouncementResponse(
+                a.getId(), a.getDepartureCity(), a.getArrivalCity(),
+                a.getDepartureDate(), a.getPricePerKg(), a.getAvailableKg(), a.getStatus().name()))
+            .toList();
     }
 
     @EventListener
