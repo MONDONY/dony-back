@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,6 +46,7 @@ public class TravelerStatsController {
     private final PackageRequestRepository packageRequestRepository;
     private final NotificationDispatcher notificationDispatcher;
     private final BidService bidService;
+    private final AnnouncementService announcementService;
 
     public TravelerStatsController(
             TravelerStatsService statsService,
@@ -54,7 +56,8 @@ public class TravelerStatsController {
             MatchingService matchingService,
             PackageRequestRepository packageRequestRepository,
             NotificationDispatcher notificationDispatcher,
-            BidService bidService) {
+            BidService bidService,
+            AnnouncementService announcementService) {
         this.statsService = statsService;
         this.userRepository = userRepository;
         this.analyticsService = analyticsService;
@@ -63,6 +66,7 @@ public class TravelerStatsController {
         this.packageRequestRepository = packageRequestRepository;
         this.notificationDispatcher = notificationDispatcher;
         this.bidService = bidService;
+        this.announcementService = announcementService;
     }
 
     @GetMapping("/me/stats")
@@ -199,6 +203,12 @@ public class TravelerStatsController {
             @RequestParam(defaultValue = "20") int size) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.getTravelerBids(firebaseUid, status, tripId, q, page, size));
+    }
+
+    @GetMapping("/{travelerId}/announcements")
+    public ResponseEntity<List<com.dony.api.matching.dto.TravelerAnnouncementResponse>> travelerAnnouncements(
+            @PathVariable UUID travelerId) {
+        return ResponseEntity.ok(announcementService.getTravelerAnnouncements(travelerId));
     }
 
     private String requireFirebaseUid() {

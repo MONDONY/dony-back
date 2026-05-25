@@ -98,7 +98,9 @@ public class SecurityConfig {
                     "/internal/messaging/notify",
                     // Stripe redirige ici après onboarding — pas de token Firebase (browser Stripe)
                     "/payments/onboarding/return",
-                    "/payments/onboarding/refresh"
+                    "/payments/onboarding/refresh",
+                    // Public traveler profile: list active/full announcements without auth
+                    "/travelers/*/announcements"
                 ).permitAll()
                 .anyRequest().authenticated()
             )

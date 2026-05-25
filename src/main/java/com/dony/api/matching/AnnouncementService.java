@@ -740,6 +740,19 @@ public class AnnouncementService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public java.util.List<com.dony.api.matching.dto.TravelerAnnouncementResponse> getTravelerAnnouncements(java.util.UUID travelerId) {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 50,
+            org.springframework.data.domain.Sort.by("departureDate").ascending());
+        var active = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.ACTIVE, pageable).getContent();
+        var full   = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.FULL, pageable).getContent();
+        return java.util.stream.Stream.concat(active.stream(), full.stream())
+            .map(a -> new com.dony.api.matching.dto.TravelerAnnouncementResponse(
+                a.getId(), a.getDepartureCity(), a.getArrivalCity(),
+                a.getDepartureDate(), a.getPricePerKg(), a.getAvailableKg(), a.getStatus().name()))
+            .toList();
+    }
+
     @EventListener
     @Transactional
     public void onUserProStatusChanged(UserProStatusChangedEvent event) {

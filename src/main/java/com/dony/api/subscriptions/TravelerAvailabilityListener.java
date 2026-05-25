@@ -4,6 +4,7 @@ import com.dony.api.matching.AnnouncementPublishedEvent;
 import com.dony.api.notifications.NotificationDispatcher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
@@ -24,7 +25,7 @@ public class TravelerAvailabilityListener {
     }
 
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAnnouncementPublished(AnnouncementPublishedEvent event) {
         List<TravelerSubscriptionEntity> subs =
