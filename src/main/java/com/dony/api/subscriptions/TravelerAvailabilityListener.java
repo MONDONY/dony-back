@@ -4,12 +4,12 @@ import com.dony.api.matching.AnnouncementPublishedEvent;
 import com.dony.api.notifications.NotificationDispatcher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Component
 public class TravelerAvailabilityListener {
@@ -24,22 +24,25 @@ public class TravelerAvailabilityListener {
     }
 
     @Async
+    @Transactional
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAnnouncementPublished(AnnouncementPublishedEvent event) {
-        List<UUID> senderIds = subscriptionRepository
-            .findSenderIdsByTravelerId(event.travelerId());
+        List<TravelerSubscriptionEntity> subs =
+            subscriptionRepository.findAllByTravelerId(event.travelerId());
+        if (subs.isEmpty()) return;
 
-        if (senderIds.isEmpty()) return;
-
-        String title = "Votre voyageur " + event.travelerName() + " a publié un nouveau départ";
-        String body  = event.departureCity() + " → " + event.arrivalCity() + " — Réservez en 1 tap !";
+        String title = event.travelerName() + " a publié un nouveau trajet";
+        String body  = event.departureCity() + " → " + event.arrivalCity();
         Map<String, String> data = Map.of(
-            "type", "TRAVELER_AVAILABLE",
+            "type", "TRAVELER_NEW_ANNOUNCEMENT",
+            "announcementId", event.announcementId().toString(),
             "travelerId", event.travelerId().toString()
         );
 
-        senderIds.forEach(senderId ->
-            notificationDispatcher.notifyUser(senderId, title, body, data)
-        );
+        for (TravelerSubscriptionEntity sub : subs) {
+            sub.setHasNew(true);
+            subscriptionRepository.save(sub);
+            notificationDispatcher.notifyUser(sub.getSenderId(), title, body, data, sub.isPushEnabled());
+        }
     }
 }

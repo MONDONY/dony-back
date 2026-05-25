@@ -19,6 +19,8 @@ public interface TravelerSubscriptionRepository extends JpaRepository<TravelerSu
 
     List<TravelerSubscriptionEntity> findAllBySenderId(UUID senderId);
 
+    List<TravelerSubscriptionEntity> findAllByTravelerId(UUID travelerId);
+
     @Query(value = "SELECT * FROM traveler_subscriptions WHERE sender_id = :senderId AND traveler_id = :travelerId LIMIT 1", nativeQuery = true)
     Optional<TravelerSubscriptionEntity> findBySenderIdAndTravelerIdIncludingDeleted(@Param("senderId") UUID senderId,
                                                                                      @Param("travelerId") UUID travelerId);
