@@ -137,30 +137,6 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
     List<AnnouncementEntity> findActiveByTravelerId(@Param("travelerId") UUID travelerId);
 
     /**
-     * Returns the next upcoming announcement for a given traveler on a specific corridor
-     * (departureCity → arrivalCity) with a departure date >= fromDate.
-     * Only ACTIVE or FULL announcements are considered (not COMPLETED, CANCELLED, ARCHIVED).
-     * Used by RebookingService for 1-tap rebooking.
-     */
-    @Query("""
-        SELECT a FROM AnnouncementEntity a
-        WHERE a.travelerId = :travelerId
-          AND a.departureCity = :departureCity
-          AND a.arrivalCity   = :arrivalCity
-          AND a.departureDate >= :fromDate
-          AND a.status IN (
-              com.dony.api.matching.AnnouncementStatus.ACTIVE,
-              com.dony.api.matching.AnnouncementStatus.FULL)
-        ORDER BY a.departureDate ASC
-        """)
-    Optional<AnnouncementEntity> findNextUpcomingByTravelerAndCities(
-        @Param("travelerId")    UUID travelerId,
-        @Param("departureCity") String departureCity,
-        @Param("arrivalCity")   String arrivalCity,
-        @Param("fromDate")      LocalDate fromDate
-    );
-
-    /**
      * Returns recent announcements on a corridor (departure→arrival) with a future or
      * today departure date, ordered newest first. Used by PriceEstimationService.
      */

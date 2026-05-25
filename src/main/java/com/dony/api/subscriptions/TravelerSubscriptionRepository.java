@@ -1,4 +1,4 @@
-package com.dony.api.rebooking;
+package com.dony.api.subscriptions;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;

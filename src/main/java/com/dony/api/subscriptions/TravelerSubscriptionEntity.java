@@ -1,4 +1,4 @@
-package com.dony.api.rebooking;
+package com.dony.api.subscriptions;
 
 import com.dony.api.common.BaseEntity;
 import jakarta.persistence.*;

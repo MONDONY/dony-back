@@ -1,4 +1,4 @@
-package com.dony.api.rebooking;
+package com.dony.api.subscriptions;
 
 import com.dony.api.matching.AnnouncementPublishedEvent;
 import com.dony.api.notifications.NotificationDispatcher;
