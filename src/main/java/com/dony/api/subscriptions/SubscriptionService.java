@@ -106,10 +106,13 @@ public class SubscriptionService {
     private SubscriptionItemResponse mapRow(Object[] r) {
         SubscriptionItemResponse.LastAnnouncement last = null;
         if (r[7] != null) {
+            LocalDateTime published = r[11] instanceof java.sql.Timestamp ts
+                ? ts.toLocalDateTime()
+                : ((java.time.Instant) r[11]).atZone(ZoneOffset.UTC).toLocalDateTime();
             last = new SubscriptionItemResponse.LastAnnouncement(
                 (UUID) r[7], (String) r[8], (String) r[9],
                 (BigDecimal) r[10],
-                ((java.sql.Timestamp) r[11]).toLocalDateTime()
+                published
             );
         }
         return new SubscriptionItemResponse(
