@@ -19,6 +19,7 @@ import com.dony.api.matching.dto.TravelerProfileDto;
 import com.dony.api.matching.events.AnnouncementDeletedEvent;
 import com.dony.api.matching.events.AnnouncementInProgressEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
+import com.dony.api.matching.AnnouncementPublishedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -350,6 +351,14 @@ public class AnnouncementService {
             "",
             saved.getArrivalCity(),
             ""
+        ));
+
+        eventPublisher.publishEvent(new AnnouncementPublishedEvent(
+            saved.getId(),
+            saved.getTravelerId(),
+            user.getFirstName() + " " + user.getLastName(),
+            saved.getDepartureCity(),
+            saved.getArrivalCity()
         ));
 
         return toResponse(saved);
