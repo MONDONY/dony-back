@@ -23,7 +23,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/addressbook/pickup-addresses")
-@PreAuthorize("hasRole('SENDER')")
+@PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
 public class PickupAddressController {
 
     private final PickupAddressService service;
