@@ -1,8 +1,6 @@
-package com.dony.api.addressbook.pickup;
+package com.dony.api.addressbook.delivery;
 
-import com.dony.api.addressbook.pickup.dto.CreatePickupAddressRequest;
-import com.dony.api.addressbook.pickup.dto.PickupAddressDto;
-import com.dony.api.addressbook.pickup.dto.UpdatePickupAddressRequest;
+import com.dony.api.addressbook.delivery.dto.*;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
 import jakarta.validation.Valid;
@@ -10,55 +8,46 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/addressbook/pickup-addresses")
+@RequestMapping("/addressbook/delivery-addresses")
 @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
-public class PickupAddressController {
+public class DeliveryAddressController {
 
-    private final PickupAddressService service;
+    private final DeliveryAddressService service;
     private final UserRepository userRepository;
 
-    public PickupAddressController(PickupAddressService service, UserRepository userRepository) {
+    public DeliveryAddressController(DeliveryAddressService service, UserRepository userRepository) {
         this.service = service;
         this.userRepository = userRepository;
     }
 
     @GetMapping
-    public ResponseEntity<List<PickupAddressDto>> list(@AuthenticationPrincipal String firebaseUid) {
+    public ResponseEntity<List<DeliveryAddressDto>> list(@AuthenticationPrincipal String firebaseUid) {
         return ResponseEntity.ok(service.findAll(userId(firebaseUid)));
     }
 
     @PostMapping
-    public ResponseEntity<PickupAddressDto> create(
+    public ResponseEntity<DeliveryAddressDto> create(
             @AuthenticationPrincipal String firebaseUid,
-            @Valid @RequestBody CreatePickupAddressRequest request) {
-        PickupAddressDto dto = service.create(userId(firebaseUid), request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+            @Valid @RequestBody CreateDeliveryAddressRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.create(userId(firebaseUid), request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<PickupAddressDto> update(
+    public ResponseEntity<DeliveryAddressDto> update(
             @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id,
-            @Valid @RequestBody UpdatePickupAddressRequest request) {
+            @Valid @RequestBody UpdateDeliveryAddressRequest request) {
         return ResponseEntity.ok(service.update(userId(firebaseUid), id, request));
     }
 
     @PatchMapping("/{id}/set-default")
-    public ResponseEntity<PickupAddressDto> setDefault(
+    public ResponseEntity<DeliveryAddressDto> setDefault(
             @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id) {
         return ResponseEntity.ok(service.setDefault(userId(firebaseUid), id));

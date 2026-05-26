@@ -3,6 +3,8 @@ package com.dony.api.addressbook.recipient;
 import com.dony.api.addressbook.recipient.dto.CreateRecipientRequest;
 import com.dony.api.addressbook.recipient.dto.RecipientDto;
 import com.dony.api.addressbook.recipient.dto.UpdateRecipientRequest;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.DonyNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,41 +28,45 @@ import java.util.UUID;
 public class RecipientController {
 
     private final RecipientService service;
+    private final UserRepository userRepository;
 
-    public RecipientController(RecipientService service) {
+    public RecipientController(RecipientService service, UserRepository userRepository) {
         this.service = service;
+        this.userRepository = userRepository;
     }
 
     @GetMapping
-    public ResponseEntity<List<RecipientDto>> list(@AuthenticationPrincipal String uid) {
-        UUID userId = UUID.fromString(uid);
-        return ResponseEntity.ok(service.findAll(userId));
+    public ResponseEntity<List<RecipientDto>> list(@AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(service.findAll(userId(firebaseUid)));
     }
 
     @PostMapping
     public ResponseEntity<RecipientDto> create(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @Valid @RequestBody CreateRecipientRequest request) {
-        UUID userId = UUID.fromString(uid);
-        RecipientDto dto = service.create(userId, request);
+        RecipientDto dto = service.create(userId(firebaseUid), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<RecipientDto> update(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateRecipientRequest request) {
-        UUID userId = UUID.fromString(uid);
-        return ResponseEntity.ok(service.update(userId, id, request));
+        return ResponseEntity.ok(service.update(userId(firebaseUid), id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id) {
-        UUID userId = UUID.fromString(uid);
-        service.delete(userId, id);
+        service.delete(userId(firebaseUid), id);
         return ResponseEntity.noContent().build();
+    }
+
+    private UUID userId(String firebaseUid) {
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyNotFoundException("Utilisateur introuvable"))
+                .getId();
     }
 }
