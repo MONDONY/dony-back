@@ -3,6 +3,8 @@ package com.dony.api.addressbook.pickup;
 import com.dony.api.addressbook.pickup.dto.CreatePickupAddressRequest;
 import com.dony.api.addressbook.pickup.dto.PickupAddressDto;
 import com.dony.api.addressbook.pickup.dto.UpdatePickupAddressRequest;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.common.DonyNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,49 +29,52 @@ import java.util.UUID;
 public class PickupAddressController {
 
     private final PickupAddressService service;
+    private final UserRepository userRepository;
 
-    public PickupAddressController(PickupAddressService service) {
+    public PickupAddressController(PickupAddressService service, UserRepository userRepository) {
         this.service = service;
+        this.userRepository = userRepository;
     }
 
     @GetMapping
-    public ResponseEntity<List<PickupAddressDto>> list(@AuthenticationPrincipal String uid) {
-        UUID userId = UUID.fromString(uid);
-        return ResponseEntity.ok(service.findAll(userId));
+    public ResponseEntity<List<PickupAddressDto>> list(@AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(service.findAll(userId(firebaseUid)));
     }
 
     @PostMapping
     public ResponseEntity<PickupAddressDto> create(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @Valid @RequestBody CreatePickupAddressRequest request) {
-        UUID userId = UUID.fromString(uid);
-        PickupAddressDto dto = service.create(userId, request);
+        PickupAddressDto dto = service.create(userId(firebaseUid), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<PickupAddressDto> update(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePickupAddressRequest request) {
-        UUID userId = UUID.fromString(uid);
-        return ResponseEntity.ok(service.update(userId, id, request));
+        return ResponseEntity.ok(service.update(userId(firebaseUid), id, request));
     }
 
     @PatchMapping("/{id}/set-default")
     public ResponseEntity<PickupAddressDto> setDefault(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id) {
-        UUID userId = UUID.fromString(uid);
-        return ResponseEntity.ok(service.setDefault(userId, id));
+        return ResponseEntity.ok(service.setDefault(userId(firebaseUid), id));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
-            @AuthenticationPrincipal String uid,
+            @AuthenticationPrincipal String firebaseUid,
             @PathVariable UUID id) {
-        UUID userId = UUID.fromString(uid);
-        service.delete(userId, id);
+        service.delete(userId(firebaseUid), id);
         return ResponseEntity.noContent().build();
+    }
+
+    private UUID userId(String firebaseUid) {
+        return userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyNotFoundException("Utilisateur introuvable"))
+                .getId();
     }
 }

@@ -1,8 +1,10 @@
 package com.dony.api.addressbook.pickup;
 
+import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.auth.UserStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,8 +18,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -38,12 +38,12 @@ class PickupAddressControllerIntegrationTest {
     @Autowired PickupAddressRepository pickupAddressRepository;
     @Autowired UserRepository userRepository;
 
-    private static final UUID SENDER_ID = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001");
-    private static final UUID OTHER_ID  = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000002");
+    private static final String SENDER_UID = "firebase-sender-uid";
+    private static final String OTHER_UID  = "firebase-other-uid";
 
-    private static UsernamePasswordAuthenticationToken asSender(UUID userId) {
+    private static UsernamePasswordAuthenticationToken asSender(String firebaseUid) {
         return new UsernamePasswordAuthenticationToken(
-                userId.toString(), null,
+                firebaseUid, null,
                 List.of(new SimpleGrantedAuthority("ROLE_SENDER")));
     }
 
@@ -51,6 +51,18 @@ class PickupAddressControllerIntegrationTest {
     void cleanDb() {
         pickupAddressRepository.deleteAll();
         userRepository.deleteAll();
+        seedUser(SENDER_UID, "+33600000001");
+        seedUser(OTHER_UID, "+33600000002");
+    }
+
+    private void seedUser(String firebaseUid, String phone) {
+        var user = new UserEntity();
+        user.setFirebaseUid(firebaseUid);
+        user.setPhoneNumber(phone);
+        user.setStatus(UserStatus.ACTIVE);
+        user.setKycStatus(KycStatus.PENDING);
+        user.setRoles(new java.util.HashSet<>(List.of(Role.SENDER)));
+        userRepository.save(user);
     }
 
     private String createRequest(String label) throws Exception {
@@ -67,7 +79,7 @@ class PickupAddressControllerIntegrationTest {
     @Test
     void list_emptyDb_returnsEmptyArray() throws Exception {
         mockMvc.perform(get("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
@@ -76,7 +88,7 @@ class PickupAddressControllerIntegrationTest {
     @Test
     void create_validRequest_returns201WithBody() throws Exception {
         mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Maison")))
                 .andExpect(status().isCreated())
@@ -88,13 +100,13 @@ class PickupAddressControllerIntegrationTest {
     @Test
     void create_thenList_returnsCreatedAddress() throws Exception {
         mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Bureau")))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].label").value("Bureau"));
@@ -110,7 +122,7 @@ class PickupAddressControllerIntegrationTest {
         }});
 
         mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
                 .andExpect(status().isUnprocessableEntity())
@@ -120,7 +132,7 @@ class PickupAddressControllerIntegrationTest {
     @Test
     void delete_existing_returns204ThenListEmpty() throws Exception {
         String createdResponse = mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Maison")))
                 .andExpect(status().isCreated())
@@ -129,11 +141,11 @@ class PickupAddressControllerIntegrationTest {
         String id = objectMapper.readTree(createdResponse).get("id").asText();
 
         mockMvc.perform(delete("/addressbook/pickup-addresses/" + id)
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
@@ -142,7 +154,7 @@ class PickupAddressControllerIntegrationTest {
     void delete_otherUserAddress_returns404() throws Exception {
         // SENDER creates an address
         String createdResponse = mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Maison Sender")))
                 .andExpect(status().isCreated())
@@ -152,7 +164,7 @@ class PickupAddressControllerIntegrationTest {
 
         // OTHER tries to delete it → 404 (ownership check)
         mockMvc.perform(delete("/addressbook/pickup-addresses/" + id)
-                .with(authentication(asSender(OTHER_ID))))
+                .with(authentication(asSender(OTHER_UID))))
                 .andExpect(status().isNotFound());
     }
 
@@ -166,7 +178,7 @@ class PickupAddressControllerIntegrationTest {
     void setDefault_changesDefaultFlag() throws Exception {
         // create first address without default
         String r1 = mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Addr1")))
                 .andExpect(status().isCreated())
@@ -175,7 +187,7 @@ class PickupAddressControllerIntegrationTest {
         String id1 = objectMapper.readTree(r1).get("id").asText();
 
         mockMvc.perform(patch("/addressbook/pickup-addresses/" + id1 + "/set-default")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isDefault").value(true));
     }
@@ -183,7 +195,7 @@ class PickupAddressControllerIntegrationTest {
     @Test
     void update_existingAddress_returnsUpdatedDto() throws Exception {
         String created = mockMvc.perform(post("/addressbook/pickup-addresses")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest("Original")))
                 .andExpect(status().isCreated())
@@ -201,7 +213,7 @@ class PickupAddressControllerIntegrationTest {
         }});
 
         mockMvc.perform(put("/addressbook/pickup-addresses/" + id)
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(updateBody))
                 .andExpect(status().isOk())

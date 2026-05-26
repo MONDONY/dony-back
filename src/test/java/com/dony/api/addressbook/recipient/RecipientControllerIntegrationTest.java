@@ -1,5 +1,10 @@
 package com.dony.api.addressbook.recipient;
 
+import com.dony.api.auth.KycStatus;
+import com.dony.api.auth.Role;
+import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
+import com.dony.api.auth.UserStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +18,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -31,19 +35,33 @@ class RecipientControllerIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired RecipientRepository recipientRepository;
+    @Autowired UserRepository userRepository;
 
-    private static final UUID SENDER_ID = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000001");
-    private static final UUID OTHER_ID  = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+    private static final String SENDER_UID = "firebase-recipient-sender";
+    private static final String OTHER_UID  = "firebase-recipient-other";
 
-    private static UsernamePasswordAuthenticationToken asSender(UUID userId) {
+    private static UsernamePasswordAuthenticationToken asSender(String firebaseUid) {
         return new UsernamePasswordAuthenticationToken(
-                userId.toString(), null,
+                firebaseUid, null,
                 List.of(new SimpleGrantedAuthority("ROLE_SENDER")));
     }
 
     @BeforeEach
     void cleanDb() {
         recipientRepository.deleteAll();
+        userRepository.deleteAll();
+        seedUser(SENDER_UID, "+33600000021");
+        seedUser(OTHER_UID, "+33600000022");
+    }
+
+    private void seedUser(String firebaseUid, String phone) {
+        var user = new UserEntity();
+        user.setFirebaseUid(firebaseUid);
+        user.setPhoneNumber(phone);
+        user.setStatus(UserStatus.ACTIVE);
+        user.setKycStatus(KycStatus.PENDING);
+        user.setRoles(new java.util.HashSet<>(List.of(Role.SENDER)));
+        userRepository.save(user);
     }
 
     private String validCreateBody() throws Exception {
@@ -58,7 +76,7 @@ class RecipientControllerIntegrationTest {
     @Test
     void list_empty_returnsEmptyArray() throws Exception {
         mockMvc.perform(get("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
@@ -67,7 +85,7 @@ class RecipientControllerIntegrationTest {
     @Test
     void create_validRequest_returns201() throws Exception {
         mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validCreateBody()))
                 .andExpect(status().isCreated())
@@ -86,7 +104,7 @@ class RecipientControllerIntegrationTest {
         }});
 
         mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
                 .andExpect(status().isUnprocessableEntity())
@@ -103,7 +121,7 @@ class RecipientControllerIntegrationTest {
         }});
 
         mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
                 .andExpect(status().isUnprocessableEntity())
@@ -113,13 +131,13 @@ class RecipientControllerIntegrationTest {
     @Test
     void createThenList_returnsRecipient() throws Exception {
         mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validCreateBody()))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].fullName").value("Mamadou Diallo"));
@@ -128,7 +146,7 @@ class RecipientControllerIntegrationTest {
     @Test
     void delete_existing_returns204ThenEmpty() throws Exception {
         String created = mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validCreateBody()))
                 .andExpect(status().isCreated())
@@ -137,11 +155,11 @@ class RecipientControllerIntegrationTest {
         String id = objectMapper.readTree(created).get("id").asText();
 
         mockMvc.perform(delete("/addressbook/recipients/" + id)
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID))))
+                .with(authentication(asSender(SENDER_UID))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
@@ -149,7 +167,7 @@ class RecipientControllerIntegrationTest {
     @Test
     void delete_otherUserRecipient_returns404() throws Exception {
         String created = mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validCreateBody()))
                 .andExpect(status().isCreated())
@@ -158,14 +176,14 @@ class RecipientControllerIntegrationTest {
         String id = objectMapper.readTree(created).get("id").asText();
 
         mockMvc.perform(delete("/addressbook/recipients/" + id)
-                .with(authentication(asSender(OTHER_ID))))
+                .with(authentication(asSender(OTHER_UID))))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void update_existingRecipient_returnsUpdated() throws Exception {
         String created = mockMvc.perform(post("/addressbook/recipients")
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validCreateBody()))
                 .andExpect(status().isCreated())
@@ -181,7 +199,7 @@ class RecipientControllerIntegrationTest {
         }});
 
         mockMvc.perform(put("/addressbook/recipients/" + id)
-                .with(authentication(asSender(SENDER_ID)))
+                .with(authentication(asSender(SENDER_UID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(updateBody))
                 .andExpect(status().isOk())
