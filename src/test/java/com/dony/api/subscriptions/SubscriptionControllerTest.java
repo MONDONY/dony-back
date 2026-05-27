@@ -1,5 +1,6 @@
 package com.dony.api.subscriptions;
 
+import com.dony.api.subscriptions.dto.SubscriberResponse;
 import com.dony.api.subscriptions.dto.SubscriptionItemResponse;
 import com.dony.api.subscriptions.dto.SubscriptionStatusResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -218,5 +219,33 @@ class SubscriptionControllerTest {
         mockMvc.perform(post("/me/subscriptions/{id}/mark-seen", TRAVELER_ID)
                         .with(authentication(asTraveler())))
                 .andExpect(status().isForbidden());
+    }
+
+    // ── mySubscribers ─────────────────────────────────────────────────────────
+
+    @Test
+    void mySubscribers_asTraveler_returnsItems() throws Exception {
+        UUID subscriberId = UUID.randomUUID();
+        when(subscriptionService.getMySubscribers(FIREBASE_UID)).thenReturn(List.of(
+                new SubscriberResponse(subscriberId, "Fatou N.", java.time.LocalDateTime.now())));
+
+        mockMvc.perform(get("/me/subscribers")
+                        .with(authentication(asTraveler())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].senderId").value(subscriberId.toString()))
+                .andExpect(jsonPath("$[0].displayName").value("Fatou N."));
+    }
+
+    @Test
+    void mySubscribers_asSender_returns403() throws Exception {
+        mockMvc.perform(get("/me/subscribers")
+                        .with(authentication(asSender())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void mySubscribers_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/me/subscribers"))
+                .andExpect(status().isUnauthorized());
     }
 }

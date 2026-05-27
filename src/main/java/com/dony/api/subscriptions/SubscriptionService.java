@@ -3,6 +3,7 @@ package com.dony.api.subscriptions;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.subscriptions.dto.SubscriberResponse;
 import com.dony.api.subscriptions.dto.SubscriptionItemResponse;
 import com.dony.api.subscriptions.dto.SubscriptionStatusResponse;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -101,6 +102,29 @@ public class SubscriptionService {
         return subscriptionRepository.findEnrichedBySenderId(sid).stream()
             .map(this::mapRow)
             .toList();
+    }
+
+    /** Expéditeurs abonnés au voyageur courant (côté voyageur). */
+    @Transactional(readOnly = true)
+    public List<SubscriberResponse> getMySubscribers(String firebaseUid) {
+        UUID travelerId = senderId(firebaseUid); // résout l'utilisateur courant
+        return subscriptionRepository.findAllByTravelerId(travelerId).stream()
+            .map(sub -> {
+                String name = userRepository.findById(sub.getSenderId())
+                    .map(this::buildSubscriberName)
+                    .orElse("Expéditeur");
+                return new SubscriberResponse(sub.getSenderId(), name, sub.getCreatedAt());
+            })
+            .toList();
+    }
+
+    private String buildSubscriberName(UserEntity u) {
+        String first = u.getFirstName();
+        if (first != null && !first.isBlank()) {
+            String last = u.getLastName();
+            return (last != null && !last.isBlank()) ? first + " " + last.charAt(0) + "." : first;
+        }
+        return "Expéditeur";
     }
 
     private SubscriptionItemResponse mapRow(Object[] r) {
