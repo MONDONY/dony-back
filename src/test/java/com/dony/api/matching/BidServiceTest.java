@@ -783,6 +783,70 @@ class BidServiceTest {
             verify(eventPublisher).publishEvent(captor.capture());
             assertThat(captor.getValue().getBidId()).isEqualTo(BID_ID);
         }
+
+        @Test
+        @DisplayName("bid WAVE en PENDING → rejectBid réussit sans exception (bypass off-platform)")
+        void rejectBid_wavePending_succeeds() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.WAVE);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            assertThatCode(() ->
+                bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"))
+            ).doesNotThrowAnyException();
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.REJECTED);
+        }
+
+        @Test
+        @DisplayName("bid ORANGE_MONEY en PENDING → rejectBid réussit sans exception (bypass off-platform)")
+        void rejectBid_orangeMoneyPending_succeeds() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.ORANGE_MONEY);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            assertThatCode(() ->
+                bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"))
+            ).doesNotThrowAnyException();
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.REJECTED);
+        }
+
+        @Test
+        @DisplayName("bid STRIPE en PENDING → rejectBid lève 409 (STRIPE doit être en PAYMENT_ESCROWED)")
+        void rejectBid_stripePending_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.STRIPE);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() ->
+                bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("raison"))
+            ).isInstanceOf(DonyBusinessException.class)
+             .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                     .isEqualTo(HttpStatus.CONFLICT));
+        }
     }
 
     // ─── cancelBid ─────────────────────────────────────────────────────────────

@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS public.mobile_money_payments (
     expires_at           TIMESTAMPTZ,
     webhook_received_at  TIMESTAMPTZ,
     created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at           TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_mm_payments_bid       ON public.mobile_money_payments (bid_id);
