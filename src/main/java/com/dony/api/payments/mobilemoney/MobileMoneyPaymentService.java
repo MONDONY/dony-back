@@ -50,12 +50,18 @@ public class MobileMoneyPaymentService {
     /**
      * Initiate (or retrieve an existing non-expired) Mobile Money payment for a bid.
      * Idempotent: returns the existing PENDING entity if it has not yet expired.
+     * Only the sender of the bid is allowed to initiate a Mobile Money payment.
      */
     @Transactional
-    public MobileMoneyPaymentEntity initiate(UUID bidId) {
+    public MobileMoneyPaymentEntity initiate(UUID bidId, UUID callerId) {
         BidEntity bid = bidRepository.findById(bidId)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "bid-not-found", "Bid Not Found", "Offre introuvable : " + bidId));
+
+        if (!bid.getSenderId().equals(callerId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "access-denied", "Access Denied",
+                    "Vous n'êtes pas l'expéditeur de ce bid");
+        }
 
         PaymentMethod pm = bid.getPaymentMethod();
 
@@ -169,9 +175,26 @@ public class MobileMoneyPaymentService {
 
     /**
      * Returns the most recent Mobile Money payment for a bid, if any.
+     * Only the sender or the traveler of the bid is allowed to view the payment status.
      */
     @Transactional(readOnly = true)
-    public Optional<MobileMoneyPaymentEntity> getStatus(UUID bidId) {
+    public Optional<MobileMoneyPaymentEntity> getStatus(UUID bidId, UUID callerId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "bid-not-found", "Bid Not Found", "Offre introuvable : " + bidId));
+
+        var announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found",
+                        "Annonce introuvable : " + bid.getAnnouncementId()));
+
+        boolean isSender   = bid.getSenderId().equals(callerId);
+        boolean isTraveler = announcement.getTravelerId().equals(callerId);
+        if (!isSender && !isTraveler) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "access-denied", "Access Denied",
+                    "Vous n'avez pas accès à ce paiement");
+        }
+
         return repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId);
     }
 }

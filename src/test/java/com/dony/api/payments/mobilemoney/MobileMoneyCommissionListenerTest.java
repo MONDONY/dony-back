@@ -47,6 +47,7 @@ class MobileMoneyCommissionListenerTest {
         listener.onBidPaidByMobileMoney(new BidPaidByMobileMoneyEvent(bidId, travelerId));
 
         verify(commissionService).chargeCommissionForMobileMoney(eq(bid), eq(travelerId));
+        verify(auditService).log(eq("MM_COMMISSION"), any(), eq("COMMISSION_CHARGED"), eq(travelerId), any());
     }
 
     @Test

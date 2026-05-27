@@ -43,6 +43,7 @@ class MobileMoneyPaymentServiceTest {
 
     private final UUID bidId       = UUID.randomUUID();
     private final UUID travelerId  = UUID.randomUUID();
+    private final UUID senderId    = UUID.randomUUID();
     private final UUID annoId      = UUID.randomUUID();
 
     @BeforeEach
@@ -66,11 +67,24 @@ class MobileMoneyPaymentServiceTest {
         ArgumentCaptor<MobileMoneyPaymentEntity> captor = ArgumentCaptor.forClass(MobileMoneyPaymentEntity.class);
         when(repository.save(captor.capture())).thenAnswer(inv -> inv.getArgument(0));
 
-        MobileMoneyPaymentEntity result = service.initiate(bidId);
+        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
 
         assertThat(result.getStatus()).isEqualTo("PENDING");
         assertThat(result.getExternalReference()).isEqualTo("wave_ref_123");
         assertThat(result.getTravelerId()).isEqualTo(travelerId);
+    }
+
+    @Test
+    void initiate_callerIsNotSender_throwsForbidden() {
+        BidEntity bid = waveBid();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId)).thenReturn(Optional.empty());
+
+        UUID randomCaller = UUID.randomUUID();
+        assertThatThrownBy(() -> service.initiate(bidId, randomCaller))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
     }
 
     @Test
@@ -85,7 +99,7 @@ class MobileMoneyPaymentServiceTest {
         when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
                 .thenReturn(Optional.of(existing));
 
-        MobileMoneyPaymentEntity result = service.initiate(bidId);
+        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
 
         assertThat(result).isSameAs(existing);
         verify(waveGateway, never()).generatePaymentLink(any());
@@ -143,13 +157,45 @@ class MobileMoneyPaymentServiceTest {
     }
 
     @Test
-    void getStatus_delegatesToRepository() {
+    void getStatus_senderCanView() {
+        BidEntity bid = waveBid();
+        AnnouncementEntity ann = announcement();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
         when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
                 .thenReturn(Optional.empty());
 
-        Optional<MobileMoneyPaymentEntity> result = service.getStatus(bidId);
+        Optional<MobileMoneyPaymentEntity> result = service.getStatus(bidId, senderId);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getStatus_travelerCanView() {
+        BidEntity bid = waveBid();
+        AnnouncementEntity ann = announcement();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
+        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
+                .thenReturn(Optional.empty());
+
+        Optional<MobileMoneyPaymentEntity> result = service.getStatus(bidId, travelerId);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getStatus_randomCallerThrowsForbidden() {
+        BidEntity bid = waveBid();
+        AnnouncementEntity ann = announcement();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
+
+        UUID randomCaller = UUID.randomUUID();
+        assertThatThrownBy(() -> service.getStatus(bidId, randomCaller))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
     }
 
     private BidEntity waveBid() {
@@ -159,6 +205,7 @@ class MobileMoneyPaymentServiceTest {
         bid.setMobileMoneyCountryCode("CI");
         bid.setDeclaredValueEur(new BigDecimal("50.00"));
         bid.setAnnouncementId(annoId);
+        bid.setSenderId(senderId);
         // Injecter l'ID via réflexion (BaseEntity champ privé)
         try {
             var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");

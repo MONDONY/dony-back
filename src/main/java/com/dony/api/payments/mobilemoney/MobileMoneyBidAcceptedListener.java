@@ -51,7 +51,7 @@ public class MobileMoneyBidAcceptedListener {
         }
 
         try {
-            MobileMoneyPaymentEntity mmPayment = mmPaymentService.initiate(event.getBidId());
+            MobileMoneyPaymentEntity mmPayment = mmPaymentService.initiate(event.getBidId(), bid.getSenderId());
             notificationDispatcher.notifyUser(
                     event.getSenderId(),
                     "Payez votre trajet",

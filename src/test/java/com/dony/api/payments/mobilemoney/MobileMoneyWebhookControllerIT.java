@@ -45,6 +45,8 @@ class MobileMoneyWebhookControllerIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reference\":\"om_ref_1\",\"status\":\"SUCCESS\"}"))
                 .andExpect(status().isOk());
+
+        verify(paymentService).handleWebhook(eq(PaymentMethod.ORANGE_MONEY), anyString(), eq("valid-sig"));
     }
 
     @Test
