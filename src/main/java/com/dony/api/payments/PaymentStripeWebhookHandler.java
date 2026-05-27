@@ -3,10 +3,16 @@ package com.dony.api.payments;
 import com.dony.api.common.stripe.StripeWebhookHandler;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
+import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.model.Event;
+import com.stripe.model.PaymentIntent;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Set;
+import java.util.UUID;
 
 @Component
 public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
@@ -38,13 +44,16 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
     private final PaymentService paymentService;
     private final CashCommissionWebhookHandler cashHandler;
     private final ChargebackService chargebackService;
+    private final WalletService walletService;
 
     public PaymentStripeWebhookHandler(PaymentService paymentService,
                                         CashCommissionWebhookHandler cashHandler,
-                                        ChargebackService chargebackService) {
+                                        ChargebackService chargebackService,
+                                        WalletService walletService) {
         this.paymentService = paymentService;
         this.cashHandler = cashHandler;
         this.chargebackService = chargebackService;
+        this.walletService = walletService;
     }
 
     @Override
@@ -63,7 +72,21 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             }
             case "charge.refunded"                    -> paymentService.handleChargeRefunded(event);
             case "setup_intent.succeeded"             -> cashHandler.handleSetupIntentSucceeded(event);
-            case "payment_intent.succeeded"           -> cashHandler.handlePaymentIntentSucceeded(event);
+            case "payment_intent.succeeded" -> {
+                PaymentIntent pi = (PaymentIntent) event.getDataObjectDeserializer()
+                    .getObject().orElse(null);
+                if (pi != null
+                        && pi.getMetadata() != null
+                        && "true".equals(pi.getMetadata().get("wallet_topup"))) {
+                    UUID userId = UUID.fromString(pi.getMetadata().get("user_id"));
+                    BigDecimal amount = BigDecimal.valueOf(pi.getAmount())
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    walletService.credit(userId, amount, WalletTransactionType.TOP_UP,
+                        pi.getId(), "stripe-" + pi.getId());
+                } else {
+                    cashHandler.handlePaymentIntentSucceeded(event);
+                }
+            }
             case "payment_method.detached"            -> cashHandler.handlePaymentMethodDetached(event);
             case "charge.dispute.created"             -> chargebackService.handleDisputeCreated(event);
             case "charge.dispute.closed"              -> chargebackService.handleDisputeClosed(event);

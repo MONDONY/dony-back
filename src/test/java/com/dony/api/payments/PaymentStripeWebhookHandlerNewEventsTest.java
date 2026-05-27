@@ -2,6 +2,7 @@ package com.dony.api.payments;
 
 import com.dony.api.payments.chargeback.ChargebackService;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
+import com.dony.api.payments.wallet.WalletService;
 import com.stripe.model.Event;
 import com.stripe.net.ApiResource;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,11 +20,12 @@ class PaymentStripeWebhookHandlerNewEventsTest {
     @Mock PaymentService paymentService;
     @Mock CashCommissionWebhookHandler cashHandler;
     @Mock ChargebackService chargebackService;
+    @Mock WalletService walletService;
     PaymentStripeWebhookHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService);
     }
 
     private Event evt(String type) {

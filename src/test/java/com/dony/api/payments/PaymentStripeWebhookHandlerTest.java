@@ -2,7 +2,11 @@ package com.dony.api.payments;
 
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
+import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
+import com.stripe.model.PaymentIntent;
 import com.stripe.net.ApiResource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,21 +14,33 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentStripeWebhookHandlerTest {
 
+    private static final String TEST_USER_ID = "00000000-0000-0000-0000-000000000042";
+
     @Mock PaymentService paymentService;
     @Mock CashCommissionWebhookHandler cashHandler;
     @Mock ChargebackService chargebackService;
+    @Mock WalletService walletService;
     PaymentStripeWebhookHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService);
     }
 
     private Event buildEvent(String type) {
@@ -116,5 +132,49 @@ class PaymentStripeWebhookHandlerTest {
     void handle_disputeFundsReinstated_callsChargebackService() {
         handler.handle(buildEvent("charge.dispute.funds_reinstated"));
         verify(chargebackService).handleFundsReinstated(any());
+    }
+
+    @Test
+    void handle_paymentIntentSucceeded_walletTopup_creditsWallet() {
+        PaymentIntent pi = mock(PaymentIntent.class);
+        when(pi.getId()).thenReturn("pi_test");
+        when(pi.getAmount()).thenReturn(5000L);
+        when(pi.getMetadata()).thenReturn(Map.of("wallet_topup", "true", "user_id", TEST_USER_ID));
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(pi));
+
+        Event event = mock(Event.class);
+        when(event.getType()).thenReturn("payment_intent.succeeded");
+        when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        handler.handle(event);
+
+        verify(walletService).credit(
+            eq(UUID.fromString(TEST_USER_ID)),
+            eq(new BigDecimal("50.00")),
+            eq(WalletTransactionType.TOP_UP),
+            eq("pi_test"),
+            eq("stripe-pi_test")
+        );
+        verify(cashHandler, never()).handlePaymentIntentSucceeded(any());
+    }
+
+    @Test
+    void handle_paymentIntentSucceeded_notWalletTopup_callsCashHandler() {
+        PaymentIntent pi = mock(PaymentIntent.class);
+        when(pi.getMetadata()).thenReturn(Map.of());
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(pi));
+
+        Event event = mock(Event.class);
+        when(event.getType()).thenReturn("payment_intent.succeeded");
+        when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        handler.handle(event);
+
+        verify(cashHandler).handlePaymentIntentSucceeded(any());
+        verify(walletService, never()).credit(any(), any(), any(), any(), any());
     }
 }
