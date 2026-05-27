@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
@@ -43,12 +44,13 @@ public class OrangeMoneyGateway implements MobileMoneyGateway {
     @Override
     public boolean verifyWebhookSignature(String rawPayload, String signatureHeader) {
         if (props.orangeMoney().webhookSecret() == null || props.orangeMoney().webhookSecret().isBlank()) {
-            return true;
+            log.error("OrangeMoney webhook secret not configured — rejecting webhook");
+            return false;
         }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(props.orangeMoney().webhookSecret().getBytes(), "HmacSHA256"));
-            String computed = HexFormat.of().formatHex(mac.doFinal(rawPayload.getBytes()));
+            mac.init(new SecretKeySpec(props.orangeMoney().webhookSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String computed = HexFormat.of().formatHex(mac.doFinal(rawPayload.getBytes(StandardCharsets.UTF_8)));
             return computed.equalsIgnoreCase(signatureHeader);
         } catch (Exception e) {
             log.error("OrangeMoney webhook signature verification failed", e);

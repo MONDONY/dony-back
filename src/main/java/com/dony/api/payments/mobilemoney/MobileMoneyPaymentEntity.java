@@ -1,6 +1,8 @@
 package com.dony.api.payments.mobilemoney;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Where;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -8,6 +10,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "mobile_money_payments")
+@Where(clause = "deleted_at IS NULL")
 public class MobileMoneyPaymentEntity {
 
     @Id

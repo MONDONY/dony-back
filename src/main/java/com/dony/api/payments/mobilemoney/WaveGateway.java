@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
@@ -44,12 +45,13 @@ public class WaveGateway implements MobileMoneyGateway {
     @Override
     public boolean verifyWebhookSignature(String rawPayload, String signatureHeader) {
         if (props.wave().webhookSecret() == null || props.wave().webhookSecret().isBlank()) {
-            return true;
+            log.error("Wave webhook secret not configured — rejecting webhook");
+            return false;
         }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(props.wave().webhookSecret().getBytes(), "HmacSHA256"));
-            String computed = HexFormat.of().formatHex(mac.doFinal(rawPayload.getBytes()));
+            mac.init(new SecretKeySpec(props.wave().webhookSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String computed = HexFormat.of().formatHex(mac.doFinal(rawPayload.getBytes(StandardCharsets.UTF_8)));
             return computed.equalsIgnoreCase(signatureHeader);
         } catch (Exception e) {
             log.error("Wave webhook signature verification failed", e);
