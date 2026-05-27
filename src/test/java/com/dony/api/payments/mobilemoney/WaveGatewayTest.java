@@ -94,6 +94,45 @@ class WaveGatewayTest {
         assertThat(gateway.extractFailureReason("{\"status\":\"SUCCEEDED\"}")).isNull();
     }
 
+    @Test
+    void generatePaymentLink_returnsLinkWithRefAndPhone() {
+        MobileMoneyPaymentRequest req = new MobileMoneyPaymentRequest(
+                java.util.UUID.randomUUID(), "+2250700000001", "CI",
+                java.math.BigDecimal.valueOf(50), "XOF");
+        MobileMoneyLinkResult result = gateway.generatePaymentLink(req);
+
+        assertThat(result.externalReference()).startsWith("wave_");
+        assertThat(result.paymentLink()).contains("https://wave-stub.test");
+        assertThat(result.paymentLink()).contains("+2250700000001");
+        assertThat(result.expiresAt()).isAfter(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+    }
+
+    @Test
+    void verifyWebhookSignature_nullSecret_returnsFalse() {
+        MobileMoneyProperties propsNullSecret = new MobileMoneyProperties(
+                new MobileMoneyProperties.ProviderConfig("key", "https://wave-stub.test", null),
+                new MobileMoneyProperties.ProviderConfig("key", "https://om-stub.test", "om-secret"),
+                30
+        );
+        WaveGateway gwNullSecret = new WaveGateway(propsNullSecret);
+        assertThat(gwNullSecret.verifyWebhookSignature("{}", "any-sig")).isFalse();
+    }
+
+    @Test
+    void extractExternalReference_invalidJson_returnsNull() {
+        assertThat(gateway.extractExternalReference("not-json-at-all")).isNull();
+    }
+
+    @Test
+    void isPaymentConfirmed_invalidJson_returnsFalse() {
+        assertThat(gateway.isPaymentConfirmed("not-json")).isFalse();
+    }
+
+    @Test
+    void extractFailureReason_invalidJson_returnsNull() {
+        assertThat(gateway.extractFailureReason("not-json")).isNull();
+    }
+
     private static String computeHmac(String payload, String secret) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));

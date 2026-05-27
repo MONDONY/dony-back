@@ -185,6 +185,85 @@ class MobileMoneyPaymentServiceTest {
     }
 
     @Test
+    void handleWebhook_paymentFailed_marksFailedAndLogsAudit() {
+        String payload = "{\"reference\":\"wave_ref_fail\",\"status\":\"FAILED\",\"failure_reason\":\"insufficient funds\"}";
+        String signature = "sig";
+
+        MobileMoneyPaymentEntity payment = new MobileMoneyPaymentEntity();
+        payment.setBidId(bidId);
+        payment.setTravelerId(travelerId);
+        payment.setStatus("PENDING");
+
+        when(waveGateway.verifyWebhookSignature(payload, signature)).thenReturn(true);
+        when(waveGateway.extractExternalReference(payload)).thenReturn("wave_ref_fail");
+        when(waveGateway.isPaymentConfirmed(payload)).thenReturn(false);
+        when(waveGateway.extractFailureReason(payload)).thenReturn("insufficient funds");
+        when(repository.findByExternalReference("wave_ref_fail")).thenReturn(Optional.of(payment));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.handleWebhook(PaymentMethod.WAVE, payload, signature);
+
+        assertThat(payment.getStatus()).isEqualTo("FAILED");
+        assertThat(payment.getFailureReason()).isEqualTo("insufficient funds");
+        verify(events, never()).publishEvent(any(BidPaidByMobileMoneyEvent.class));
+    }
+
+    @Test
+    void handleWebhook_nullReference_returnsEarly() {
+        String payload = "{\"no_reference\":true}";
+        String signature = "sig";
+
+        when(waveGateway.verifyWebhookSignature(payload, signature)).thenReturn(true);
+        when(waveGateway.extractExternalReference(payload)).thenReturn(null);
+
+        service.handleWebhook(PaymentMethod.WAVE, payload, signature);
+
+        verify(repository, never()).findByExternalReference(any());
+        verify(events, never()).publishEvent(any());
+    }
+
+    @Test
+    void handleWebhook_paymentNotFound_returnsEarly() {
+        String payload = "{\"reference\":\"unknown_ref\",\"status\":\"SUCCEEDED\"}";
+        String signature = "sig";
+
+        when(waveGateway.verifyWebhookSignature(payload, signature)).thenReturn(true);
+        when(waveGateway.extractExternalReference(payload)).thenReturn("unknown_ref");
+        when(repository.findByExternalReference("unknown_ref")).thenReturn(Optional.empty());
+
+        service.handleWebhook(PaymentMethod.WAVE, payload, signature);
+
+        verify(events, never()).publishEvent(any());
+    }
+
+    @Test
+    void initiate_existingExpiredPending_generatesNewLink() {
+        BidEntity bid = waveBid();
+        AnnouncementEntity ann = announcement();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
+
+        // Expired PENDING entity
+        MobileMoneyPaymentEntity expired = new MobileMoneyPaymentEntity();
+        expired.setBidId(bidId);
+        expired.setStatus("PENDING");
+        expired.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5)); // expired
+        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
+                .thenReturn(Optional.of(expired));
+
+        MobileMoneyLinkResult stubResult = new MobileMoneyLinkResult(
+                "wave_new_ref", "https://wave.test/pay?ref=wave_new_ref",
+                LocalDateTime.now(ZoneOffset.UTC).plusMinutes(30));
+        when(waveGateway.generatePaymentLink(any())).thenReturn(stubResult);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
+
+        assertThat(result.getExternalReference()).isEqualTo("wave_new_ref");
+        verify(waveGateway).generatePaymentLink(any());
+    }
+
+    @Test
     void getStatus_randomCallerThrowsForbidden() {
         BidEntity bid = waveBid();
         AnnouncementEntity ann = announcement();
