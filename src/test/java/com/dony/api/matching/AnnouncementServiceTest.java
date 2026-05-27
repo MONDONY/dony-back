@@ -452,6 +452,38 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("annonce acceptant le CASH → cashAccepted=true dans le détail (regression)")
+        void getDetail_cashAccepted_returnsCashAcceptedTrue() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setAcceptedPaymentMethods(java.util.EnumSet.of(
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                    com.dony.api.payments.cash.PaymentMethod.CASH));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.cashAccepted()).isTrue();
+            assertThat(result.acceptedPaymentMethods()).contains("CASH");
+        }
+
+        @Test
+        @DisplayName("annonce STRIPE seul → cashAccepted=false dans le détail")
+        void getDetail_stripeOnly_returnsCashAcceptedFalse() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.cashAccepted()).isFalse();
+        }
+
+        @Test
         @DisplayName("annonce introuvable → 404 NOT_FOUND")
         void getDetail_unknownAnnouncement_throwsNotFound() {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
