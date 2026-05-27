@@ -54,4 +54,12 @@ class MobileMoneyWebhookControllerIT {
                 .content("{}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void webhook_cashProvider_returns400() throws Exception {
+        mockMvc.perform(post("/webhooks/mobile-money/CASH")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
 }
