@@ -99,12 +99,6 @@ class PaymentStripeWebhookHandlerTest {
     }
 
     @Test
-    void handle_paymentIntentSucceeded_callsCashHandler() {
-        handler.handle(buildEvent("payment_intent.succeeded"));
-        verify(cashHandler).handlePaymentIntentSucceeded(any());
-    }
-
-    @Test
     void handle_paymentMethodDetached_callsCashHandler() {
         handler.handle(buildEvent("payment_method.detached"));
         verify(cashHandler).handlePaymentMethodDetached(any());

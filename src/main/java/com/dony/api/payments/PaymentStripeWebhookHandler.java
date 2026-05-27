@@ -7,6 +7,8 @@ import com.dony.api.payments.wallet.WalletService;
 import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -16,6 +18,8 @@ import java.util.UUID;
 
 @Component
 public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentStripeWebhookHandler.class);
 
     private static final Set<String> SUPPORTED = Set.of(
             "account.updated",
@@ -78,7 +82,12 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
                 if (pi != null
                         && pi.getMetadata() != null
                         && "true".equals(pi.getMetadata().get("wallet_topup"))) {
-                    UUID userId = UUID.fromString(pi.getMetadata().get("user_id"));
+                    String rawUserId = pi.getMetadata().get("user_id");
+                    if (rawUserId == null) {
+                        log.warn("wallet_topup webhook sans user_id, event ignoré: {}", pi.getId());
+                        return;
+                    }
+                    UUID userId = UUID.fromString(rawUserId);
                     BigDecimal amount = BigDecimal.valueOf(pi.getAmount())
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
                     walletService.credit(userId, amount, WalletTransactionType.TOP_UP,
