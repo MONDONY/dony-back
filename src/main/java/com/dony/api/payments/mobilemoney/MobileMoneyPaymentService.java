@@ -1,5 +1,6 @@
 package com.dony.api.payments.mobilemoney;
 
+import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,17 +31,20 @@ public class MobileMoneyPaymentService {
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
     private final ApplicationEventPublisher events;
+    private final AuditService auditService;
 
     public MobileMoneyPaymentService(MobileMoneyPaymentRepository repository,
                                      MobileMoneyGatewayRegistry registry,
                                      BidRepository bidRepository,
                                      AnnouncementRepository announcementRepository,
-                                     ApplicationEventPublisher events) {
+                                     ApplicationEventPublisher events,
+                                     AuditService auditService) {
         this.repository             = repository;
         this.registry               = registry;
         this.bidRepository          = bidRepository;
         this.announcementRepository = announcementRepository;
         this.events                 = events;
+        this.auditService           = auditService;
     }
 
     /**
@@ -48,7 +53,10 @@ public class MobileMoneyPaymentService {
      */
     @Transactional
     public MobileMoneyPaymentEntity initiate(UUID bidId) {
-        BidEntity bid = bidRepository.findById(bidId).orElseThrow();
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "bid-not-found", "Bid Not Found", "Offre introuvable : " + bidId));
+
         PaymentMethod pm = bid.getPaymentMethod();
 
         // Idempotence: return existing PENDING payment if still valid
@@ -63,10 +71,12 @@ public class MobileMoneyPaymentService {
         }
 
         // Resolve travelerId via announcement
-        UUID travelerId = announcementRepository
+        var announcement = announcementRepository
                 .findById(bid.getAnnouncementId())
-                .orElseThrow()
-                .getTravelerId();
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found",
+                        "Annonce introuvable : " + bid.getAnnouncementId()));
+        UUID travelerId = announcement.getTravelerId();
 
         MobileMoneyGateway gateway = registry.getGateway(pm);
         BigDecimal amount = bid.getDeclaredValueEur();
@@ -133,12 +143,26 @@ public class MobileMoneyPaymentService {
         if (gateway.isPaymentConfirmed(rawPayload)) {
             payment.setStatus("COMPLETED");
             repository.save(payment);
+            auditService.log(
+                    "MM_PAYMENT",
+                    payment.getId(),
+                    "PAYMENT_COMPLETED",
+                    payment.getTravelerId(),
+                    Map.of("provider", provider.name(), "bidId", payment.getBidId().toString()));
             events.publishEvent(new BidPaidByMobileMoneyEvent(payment.getBidId(), payment.getTravelerId()));
             log.info("MM webhook {}: ref={} COMPLETED for bidId={}", provider, externalRef, payment.getBidId());
         } else {
             payment.setStatus("FAILED");
             payment.setFailureReason(gateway.extractFailureReason(rawPayload));
             repository.save(payment);
+            auditService.log(
+                    "MM_PAYMENT",
+                    payment.getId(),
+                    "PAYMENT_FAILED",
+                    payment.getTravelerId(),
+                    Map.of("provider", provider.name(),
+                           "failureReason", payment.getFailureReason() != null ? payment.getFailureReason() : "",
+                           "bidId", payment.getBidId().toString()));
             log.warn("MM webhook {}: ref={} FAILED: {}", provider, externalRef, payment.getFailureReason());
         }
     }

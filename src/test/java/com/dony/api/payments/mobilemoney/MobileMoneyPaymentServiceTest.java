@@ -1,5 +1,6 @@
 package com.dony.api.payments.mobilemoney;
 
+import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -36,6 +37,7 @@ class MobileMoneyPaymentServiceTest {
     @Mock private BidRepository bidRepository;
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private ApplicationEventPublisher events;
+    @Mock private AuditService auditService;
 
     @InjectMocks private MobileMoneyPaymentService service;
 
@@ -110,6 +112,8 @@ class MobileMoneyPaymentServiceTest {
 
         assertThat(payment.getStatus()).isEqualTo("COMPLETED");
         verify(events).publishEvent(any(BidPaidByMobileMoneyEvent.class));
+        verify(auditService).log(eq("MM_PAYMENT"), any(), eq("PAYMENT_COMPLETED"),
+                eq(travelerId), any());
     }
 
     @Test
@@ -117,7 +121,9 @@ class MobileMoneyPaymentServiceTest {
         when(waveGateway.verifyWebhookSignature(any(), any())).thenReturn(false);
 
         assertThatThrownBy(() -> service.handleWebhook(PaymentMethod.WAVE, "{}", "bad-sig"))
-                .isInstanceOf(DonyBusinessException.class);
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(org.springframework.http.HttpStatus.UNAUTHORIZED));
     }
 
     @Test

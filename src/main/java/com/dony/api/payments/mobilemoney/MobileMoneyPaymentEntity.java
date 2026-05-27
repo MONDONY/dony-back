@@ -1,21 +1,17 @@
 package com.dony.api.payments.mobilemoney;
 
+import com.dony.api.common.BaseEntity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Entity
 @Table(name = "mobile_money_payments")
 @Where(clause = "deleted_at IS NULL")
-public class MobileMoneyPaymentEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class MobileMoneyPaymentEntity extends BaseEntity {
 
     @Column(name = "bid_id", nullable = false)
     private UUID bidId;
@@ -56,28 +52,7 @@ public class MobileMoneyPaymentEntity {
     @Column(name = "webhook_received_at")
     private LocalDateTime webhookReceivedAt;
 
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now(ZoneOffset.UTC);
-        updatedAt = createdAt;
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now(ZoneOffset.UTC);
-    }
-
     // Getters / Setters
-    public UUID getId() { return id; }
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
     public UUID getTravelerId() { return travelerId; }
@@ -104,8 +79,4 @@ public class MobileMoneyPaymentEntity {
     public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
     public LocalDateTime getWebhookReceivedAt() { return webhookReceivedAt; }
     public void setWebhookReceivedAt(LocalDateTime webhookReceivedAt) { this.webhookReceivedAt = webhookReceivedAt; }
-    public LocalDateTime getDeletedAt() { return deletedAt; }
-    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
 }
