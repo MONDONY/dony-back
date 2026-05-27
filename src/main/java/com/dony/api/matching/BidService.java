@@ -183,6 +183,22 @@ public class BidService {
                     "Cette annonce n'accepte pas le paiement en espèces");
         }
 
+        if ((pm == com.dony.api.payments.cash.PaymentMethod.WAVE
+                || pm == com.dony.api.payments.cash.PaymentMethod.ORANGE_MONEY)
+                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "mobile-money-not-accepted", "Mobile Money Not Accepted",
+                    "Cette annonce n'accepte pas le paiement " + pm.name());
+        }
+
+        if ((pm == com.dony.api.payments.cash.PaymentMethod.WAVE
+                || pm == com.dony.api.payments.cash.PaymentMethod.ORANGE_MONEY)
+                && (request.phoneNumber() == null || request.countryCode() == null)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "mobile-money-phone-required", "Phone Required",
+                    "Le numéro de téléphone et le pays sont requis pour le paiement Mobile Money");
+        }
+
         String clientIp = resolveClientIp(httpRequest);
 
         BidEntity bid = new BidEntity();
@@ -199,6 +215,12 @@ public class BidService {
         bid.setDisclaimerSignedIp(clientIp);
         bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
+
+        if (pm == com.dony.api.payments.cash.PaymentMethod.WAVE
+                || pm == com.dony.api.payments.cash.PaymentMethod.ORANGE_MONEY) {
+            bid.setMobileMoneyPhone(request.phoneNumber());
+            bid.setMobileMoneyCountryCode(request.countryCode());
+        }
 
         BidEntity saved = bidRepository.save(bid);
 

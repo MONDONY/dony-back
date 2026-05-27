@@ -138,7 +138,7 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null, null);
+                "Aminata Diallo", "+221701234567", true, null, null, null, null);
     }
 
     @BeforeEach
@@ -247,7 +247,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false, null, null); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null, null, null, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -405,7 +405,7 @@ class BidServiceTest {
             });
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null);
 
             BidResponse result = bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
@@ -429,7 +429,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
@@ -453,13 +453,97 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("invalid-payment-method"));
+        }
+
+        @Test
+        @DisplayName("paymentMethod=WAVE + annonce accepte WAVE + phone/country fournis → bid créé avec WAVE")
+        void createBid_wave_accepted_setsMobileMoneyOnBid() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                                         com.dony.api.payments.cash.PaymentMethod.WAVE));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
+                    true, "WAVE", "+221771234567", "SN", null);
+
+            BidResponse result = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest);
+
+            assertThat(result.paymentMethod()).isEqualTo("WAVE");
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            assertThat(captor.getValue().getPaymentMethod())
+                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.WAVE);
+            assertThat(captor.getValue().getMobileMoneyPhone()).isEqualTo("+221771234567");
+            assertThat(captor.getValue().getMobileMoneyCountryCode()).isEqualTo("SN");
+        }
+
+        @Test
+        @DisplayName("paymentMethod=WAVE + annonce n'accepte pas WAVE → 422 UNPROCESSABLE_ENTITY")
+        void createBid_waveNotAcceptedByAnnouncement_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement(); // default = STRIPE only
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
+                    true, "WAVE", "+221771234567", "SN", null);
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-not-accepted");
+                    });
+        }
+
+        @Test
+        @DisplayName("paymentMethod=ORANGE_MONEY + phone manquant → 422 UNPROCESSABLE_ENTITY")
+        void createBid_orangeMoney_missingPhone_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.ORANGE_MONEY));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest omReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
+                    true, "ORANGE_MONEY", null, "CI", null); // phoneNumber null
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, omReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-phone-required");
+                    });
         }
 
         @Test
@@ -498,6 +582,7 @@ class BidServiceTest {
                 "Mes affaires", "VETEMENTS",
                 "Mamadou Diallo", "+221771234567",
                 true, "STRIPE",
+                null, null,  // phoneNumber, countryCode
                 List.of(new BidGridItemRequest(gridItemId, 2))
             );
 
@@ -528,6 +613,7 @@ class BidServiceTest {
                 "Test", "CAT",
                 "Name", "+33600000000",
                 true, "STRIPE",
+                null, null,              // phoneNumber, countryCode
                 List.of()               // gridItems vide
             );
 
