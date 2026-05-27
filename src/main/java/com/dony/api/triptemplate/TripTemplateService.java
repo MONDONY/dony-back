@@ -39,7 +39,7 @@ public class TripTemplateService {
                 request.departureLat(), request.departureLng(), request.arrivalCity(),
                 request.arrivalLat(), request.arrivalLng(), request.transportMode(),
                 request.capacityUnit(), request.availableKg(), request.pricePerKg(),
-                request.acceptedCategories());
+                request.acceptedCategories(), request.cashAccepted(), request.arrivalTime());
         repository.save(entity);
 
         auditService.log("TRIP_TEMPLATE", entity.getId(), "TRIP_TEMPLATE_CREATED", userId,
@@ -57,7 +57,7 @@ public class TripTemplateService {
                 request.departureLat(), request.departureLng(), request.arrivalCity(),
                 request.arrivalLat(), request.arrivalLng(), request.transportMode(),
                 request.capacityUnit(), request.availableKg(), request.pricePerKg(),
-                request.acceptedCategories());
+                request.acceptedCategories(), request.cashAccepted(), request.arrivalTime());
         repository.save(entity);
 
         auditService.log("TRIP_TEMPLATE", entity.getId(), "TRIP_TEMPLATE_UPDATED", userId,
@@ -80,7 +80,8 @@ public class TripTemplateService {
                              String departureCity, Double departureLat, Double departureLng,
                              String arrivalCity, Double arrivalLat, Double arrivalLng,
                              String transportMode, String capacityUnit, Integer availableKg,
-                             Double pricePerKg, List<String> acceptedCategories) {
+                             Double pricePerKg, List<String> acceptedCategories,
+                             boolean cashAccepted, java.time.LocalTime arrivalTime) {
         entity.setLabel(label);
         entity.setEmoji(emoji);
         entity.setDepartureCity(departureCity);
@@ -94,6 +95,8 @@ public class TripTemplateService {
         entity.setAvailableKg(availableKg);
         entity.setPricePerKg(pricePerKg);
         entity.setAcceptedCategories(joinCategories(acceptedCategories));
+        entity.setCashAccepted(cashAccepted);
+        entity.setArrivalTime(arrivalTime);
     }
 
     private String joinCategories(List<String> categories) {
@@ -116,6 +119,7 @@ public class TripTemplateService {
                 e.getDepartureCity(), e.getDepartureLat(), e.getDepartureLng(),
                 e.getArrivalCity(), e.getArrivalLat(), e.getArrivalLng(),
                 e.getTransportMode(), e.getCapacityUnit(), e.getAvailableKg(), e.getPricePerKg(),
-                splitCategories(e.getAcceptedCategories()), e.getCreatedAt(), e.getUpdatedAt());
+                splitCategories(e.getAcceptedCategories()), e.isCashAccepted(), e.getArrivalTime(),
+                e.getCreatedAt(), e.getUpdatedAt());
     }
 }

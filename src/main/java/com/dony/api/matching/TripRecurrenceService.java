@@ -147,12 +147,15 @@ public class TripRecurrenceService {
     }
 
     private AnnouncementRequest buildRequest(TripRecurrenceEntity rec, LocalDate date) {
+        Set<PaymentMethod> paymentMethods = rec.isCashAccepted()
+                ? Set.of(PaymentMethod.STRIPE, PaymentMethod.CASH)
+                : Set.of(PaymentMethod.STRIPE);
         return new AnnouncementRequest(
                 rec.getDepartureCity(),
                 rec.getArrivalCity(),
                 date,
                 rec.getDepartureTime(),
-                null,
+                rec.getArrivalTime(),
                 new AddressDto(rec.getPickupLabel(), rec.getPickupLat(), rec.getPickupLng()),
                 new AddressDto(rec.getDeliveryLabel(), rec.getDeliveryLat(), rec.getDeliveryLng()),
                 BigDecimal.valueOf(rec.getAvailableKg()),
@@ -161,7 +164,7 @@ public class TripRecurrenceService {
                 null,
                 splitCategories(rec.getAcceptedCategories()),
                 List.of(),
-                Set.of(PaymentMethod.STRIPE),
+                paymentMethods,
                 CapacityUnit.valueOf(rec.getCapacityUnit()),
                 PricingMode.KG
         );
@@ -183,6 +186,8 @@ public class TripRecurrenceService {
         e.setDeliveryLat(r.deliveryAddress().lat());
         e.setDeliveryLng(r.deliveryAddress().lng());
         e.setDepartureTime(r.departureTime());
+        e.setArrivalTime(r.arrivalTime());
+        e.setCashAccepted(r.cashAccepted());
         e.setWeekdays(r.weekdays());
         e.setHorizonDays(r.horizonDays() != null ? r.horizonDays() : 14);
         e.setActive(r.active());
@@ -207,7 +212,8 @@ public class TripRecurrenceService {
                 splitCategories(e.getAcceptedCategories()),
                 new AddressDto(e.getPickupLabel(), e.getPickupLat(), e.getPickupLng()),
                 new AddressDto(e.getDeliveryLabel(), e.getDeliveryLat(), e.getDeliveryLng()),
-                e.getDepartureTime(), e.getWeekdays(), e.getHorizonDays(), e.isActive(),
+                e.getDepartureTime(), e.getArrivalTime(), e.isCashAccepted(),
+                e.getWeekdays(), e.getHorizonDays(), e.isActive(),
                 e.getLastGeneratedDate(), e.getCreatedAt(), e.getUpdatedAt());
     }
 }

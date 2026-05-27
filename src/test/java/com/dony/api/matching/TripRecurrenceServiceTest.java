@@ -5,9 +5,12 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.matching.dto.AddressDto;
+import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.TripRecurrenceRequest;
+import com.dony.api.payments.cash.PaymentMethod;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -76,6 +79,22 @@ class TripRecurrenceServiceTest {
         assertThat(created).isEqualTo(7);
         verify(announcementService, times(7)).createAnnouncement(eq("firebase-uid"), any());
         assertThat(rec.getLastGeneratedDate()).isEqualTo(LocalDate.now().plusDays(6));
+    }
+
+    @Test
+    void generate_includesCashAndArrivalTimeFromRecurrence() {
+        mockUser();
+        TripRecurrenceEntity rec = entity("1111111", 0, null);
+        rec.setCashAccepted(true);
+        rec.setArrivalTime(LocalTime.of(18, 30));
+
+        service.generateForRecurrence(rec);
+
+        ArgumentCaptor<AnnouncementRequest> cap = ArgumentCaptor.forClass(AnnouncementRequest.class);
+        verify(announcementService).createAnnouncement(eq("firebase-uid"), cap.capture());
+        assertThat(cap.getValue().acceptedPaymentMethods())
+                .contains(PaymentMethod.STRIPE, PaymentMethod.CASH);
+        assertThat(cap.getValue().arrivalTime()).isEqualTo(LocalTime.of(18, 30));
     }
 
     @Test
@@ -183,6 +202,6 @@ class TripRecurrenceServiceTest {
                 23.0, 8.0, List.of("Vêtements", "Documents"),
                 new AddressDto("12 rue de la Paix", 48.86, 2.33),
                 new AddressDto("Aéroport CDG", 49.01, 2.55),
-                LocalTime.of(14, 0), weekdays, horizon, active);
+                LocalTime.of(14, 0), LocalTime.of(18, 30), false, weekdays, horizon, active);
     }
 }

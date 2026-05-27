@@ -62,6 +62,12 @@ public class TripRecurrenceEntity extends BaseEntity {
     @Column(name = "departure_time")
     private LocalTime departureTime;
 
+    @Column(name = "arrival_time")
+    private LocalTime arrivalTime;
+
+    @Column(name = "cash_accepted", nullable = false)
+    private boolean cashAccepted = false;
+
     @Column(name = "weekdays", nullable = false, length = 7)
     private String weekdays;
 
@@ -106,6 +112,10 @@ public class TripRecurrenceEntity extends BaseEntity {
     public void setDeliveryLng(Double deliveryLng) { this.deliveryLng = deliveryLng; }
     public LocalTime getDepartureTime() { return departureTime; }
     public void setDepartureTime(LocalTime departureTime) { this.departureTime = departureTime; }
+    public LocalTime getArrivalTime() { return arrivalTime; }
+    public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }
+    public boolean isCashAccepted() { return cashAccepted; }
+    public void setCashAccepted(boolean cashAccepted) { this.cashAccepted = cashAccepted; }
     public String getWeekdays() { return weekdays; }
     public void setWeekdays(String weekdays) { this.weekdays = weekdays; }
     public Integer getHorizonDays() { return horizonDays; }

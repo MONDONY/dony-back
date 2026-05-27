@@ -24,6 +24,9 @@ public record TripRecurrenceRequest(
         @Valid @NotNull AddressDto deliveryAddress,
 
         @JsonFormat(pattern = "HH:mm") LocalTime departureTime,
+        @JsonFormat(pattern = "HH:mm") LocalTime arrivalTime,
+
+        boolean cashAccepted,
 
         @NotBlank @Pattern(regexp = "[01]{7}", message = "weekdays doit être 7 caractères 0/1 (Lun..Dim)")
         String weekdays,

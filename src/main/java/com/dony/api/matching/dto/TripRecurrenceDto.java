@@ -19,6 +19,8 @@ public record TripRecurrenceDto(
         AddressDto pickupAddress,
         AddressDto deliveryAddress,
         LocalTime departureTime,
+        LocalTime arrivalTime,
+        boolean cashAccepted,
         String weekdays,
         Integer horizonDays,
         boolean active,

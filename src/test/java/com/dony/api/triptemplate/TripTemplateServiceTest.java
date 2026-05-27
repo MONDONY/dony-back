@@ -32,7 +32,7 @@ class TripTemplateServiceTest {
                 "Mon Paris->Dakar", "🇸🇳",
                 "Paris", 48.85, 2.35,
                 "Dakar", 14.71, -17.46,
-                "PLANE", "SUITCASE_23KG", 23, 8.0, categories);
+                "PLANE", "SUITCASE_23KG", 23, 8.0, categories, false, null);
     }
 
     @Test
@@ -92,7 +92,7 @@ class TripTemplateServiceTest {
 
         var req = new UpdateTripTemplateRequest(
                 "new label", null, "Marseille", null, null, "Dakar", null, null,
-                "BOAT", "KG_FREE", 30, 9.0, List.of("Documents"));
+                "BOAT", "KG_FREE", 30, 9.0, List.of("Documents"), true, java.time.LocalTime.of(18, 30));
         var dto = service.update(userId, id, req);
 
         assertThat(dto.label()).isEqualTo("new label");
@@ -107,7 +107,7 @@ class TripTemplateServiceTest {
         when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.update(userId, id,
                 new UpdateTripTemplateRequest("x", null, "A", null, null, "B", null, null,
-                        "PLANE", "SUITCASE_23KG", 23, 8.0, null)))
+                        "PLANE", "SUITCASE_23KG", 23, 8.0, null, false, null)))
                 .isInstanceOf(DonyNotFoundException.class);
         verify(repository, never()).save(any());
     }

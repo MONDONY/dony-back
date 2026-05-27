@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
+import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
@@ -54,6 +55,12 @@ public class TripTemplateEntity extends BaseEntity {
     @Column(name = "accepted_categories", columnDefinition = "TEXT")
     private String acceptedCategories;
 
+    @Column(name = "cash_accepted", nullable = false)
+    private boolean cashAccepted = false;
+
+    @Column(name = "arrival_time")
+    private LocalTime arrivalTime;
+
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
     public String getLabel() { return label; }
@@ -82,4 +89,8 @@ public class TripTemplateEntity extends BaseEntity {
     public void setPricePerKg(Double pricePerKg) { this.pricePerKg = pricePerKg; }
     public String getAcceptedCategories() { return acceptedCategories; }
     public void setAcceptedCategories(String acceptedCategories) { this.acceptedCategories = acceptedCategories; }
+    public boolean isCashAccepted() { return cashAccepted; }
+    public void setCashAccepted(boolean cashAccepted) { this.cashAccepted = cashAccepted; }
+    public LocalTime getArrivalTime() { return arrivalTime; }
+    public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }
 }

@@ -1,6 +1,8 @@
 package com.dony.api.triptemplate.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.*;
+import java.time.LocalTime;
 import java.util.List;
 
 public record UpdateTripTemplateRequest(
@@ -16,5 +18,7 @@ public record UpdateTripTemplateRequest(
     @NotBlank @Size(max = 20)  String capacityUnit,
     @NotNull @Min(1) @Max(40)  Integer availableKg,
     @NotNull @Positive @DecimalMax("500.0") Double pricePerKg,
-    List<String> acceptedCategories
+    List<String> acceptedCategories,
+    boolean cashAccepted,
+    @JsonFormat(pattern = "HH:mm") LocalTime arrivalTime
 ) {}
