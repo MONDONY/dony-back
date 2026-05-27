@@ -10,7 +10,9 @@ import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.payments.cash.CashCommissionService;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionRepository;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +40,7 @@ class BidAcceptedEventListenerTest {
     @Mock private UserRepository userRepository;
     @Mock private BidRepository bidRepository;
     @Mock private WalletService walletService;
+    @Mock private WalletTransactionRepository walletTransactionRepository;
     @Mock private CashCommissionService cashCommissionService;
     @Mock private AnnouncementRepository announcementRepository;
 
@@ -48,7 +51,8 @@ class BidAcceptedEventListenerTest {
     @BeforeEach
     void setUp() {
         listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository,
-                bidRepository, walletService, cashCommissionService, announcementRepository);
+                bidRepository, walletService, walletTransactionRepository,
+                cashCommissionService, announcementRepository);
     }
 
     private PaymentEntity paymentFor(UUID bidId, PaymentStatus status, boolean legacy) {
@@ -74,11 +78,21 @@ class BidAcceptedEventListenerTest {
         return t;
     }
 
+    /** Stub bidRepository to return a STRIPE bid so the listener reaches the Stripe path. */
+    private BidEntity stubStripeBid(UUID bidId) {
+        BidEntity bid = new BidEntity();
+        bid.setPaymentMethod(PaymentMethod.STRIPE);
+        bid.setStatus(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        return bid;
+    }
+
     // ── Existing behaviour ────────────────────────────────────────────────────
 
     @Test
     void captures_PI_for_non_legacy_payment_in_escrow() throws StripeException {
         UUID bidId = UUID.randomUUID();
+        stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
         when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
@@ -99,6 +113,7 @@ class BidAcceptedEventListenerTest {
     @Test
     void skips_capture_for_legacy_payment() {
         UUID bidId = UUID.randomUUID();
+        stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, true);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
 
@@ -112,6 +127,7 @@ class BidAcceptedEventListenerTest {
     @Test
     void no_op_when_payment_not_found() {
         UUID bidId = UUID.randomUUID();
+        stubStripeBid(bidId);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
 
         assertThatNoException().isThrownBy(() -> listener.onBidAccepted(eventFor(bidId)));
@@ -121,6 +137,7 @@ class BidAcceptedEventListenerTest {
     @Test
     void no_op_when_status_not_escrow() {
         UUID bidId = UUID.randomUUID();
+        stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.RELEASED, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
 
@@ -133,6 +150,7 @@ class BidAcceptedEventListenerTest {
     @Test
     void capture_failure_is_logged_but_not_thrown() throws StripeException {
         UUID bidId = UUID.randomUUID();
+        stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
         when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);

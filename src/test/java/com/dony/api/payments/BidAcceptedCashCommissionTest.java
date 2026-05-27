@@ -11,6 +11,7 @@ import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.CommissionStatus;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionRepository;
 import com.dony.api.payments.wallet.WalletTransactionType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ class BidAcceptedCashCommissionTest {
     @Mock private UserRepository userRepository;
     @Mock private BidRepository bidRepository;
     @Mock private WalletService walletService;
+    @Mock private WalletTransactionRepository walletTransactionRepository;
     @Mock private CashCommissionService cashCommissionService;
     @Mock private AnnouncementRepository announcementRepository;
 
@@ -47,7 +49,8 @@ class BidAcceptedCashCommissionTest {
     void setUp() {
         listener = new BidAcceptedEventListener(
                 paymentRepository, auditService, userRepository,
-                bidRepository, walletService, cashCommissionService, announcementRepository);
+                bidRepository, walletService, walletTransactionRepository,
+                cashCommissionService, announcementRepository);
     }
 
     private BidAcceptedEvent event(UUID bidId, UUID travelerId) {
@@ -86,6 +89,10 @@ class BidAcceptedCashCommissionTest {
         // Use any() to avoid BigDecimal scale mismatch (10.00 * 10.00 = 100.0000)
         when(cashCommissionService.computeCommission(any(BigDecimal.class)))
                 .thenReturn(new BigDecimal("12.00"));
+        // Idempotence check: commission not yet deducted
+        when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
+                eq(travelerId), eq(bidId), eq(WalletTransactionType.COMMISSION_DEDUCTED)))
+                .thenReturn(false);
 
         listener.onBidAccepted(event(bidId, travelerId));
 
@@ -210,12 +217,34 @@ class BidAcceptedCashCommissionTest {
         UUID travelerId = UUID.randomUUID();
 
         when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
-        // bidForCash == null → CASH block skipped → falls to Stripe path
-        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
 
         listener.onBidAccepted(event(bidId, travelerId));
 
         verify(walletService, never()).debit(any(), any(), any(), any());
+        // Bug 1 fix: bid introuvable = anomalie → early return, pas de fallback Stripe
+        verifyNoInteractions(paymentRepository);
+    }
+
+    @Test
+    void onBidAccepted_cashBid_idempotent_doesNotDebitTwice() {
+        // Bug 2 fix: si walletTransactionRepository retourne true, walletService.debit ne doit pas être appelé
+        UUID bidId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        UUID announcementId = UUID.randomUUID();
+
+        BidEntity bid = cashBidWithWeight(announcementId, new BigDecimal("10.00"));
+        // commissionStatus is null = not yet charged via card
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        // Idempotence check: commission already deducted in a previous event replay
+        when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
+                eq(travelerId), eq(bidId), eq(WalletTransactionType.COMMISSION_DEDUCTED)))
+                .thenReturn(true);
+
+        listener.onBidAccepted(event(bidId, travelerId));
+
+        verify(walletService, never()).debit(any(), any(), any(), any());
+        verifyNoInteractions(paymentRepository);
     }
 
     @Test
@@ -233,6 +262,10 @@ class BidAcceptedCashCommissionTest {
         // Use any() to avoid BigDecimal scale mismatch (1.00 * 5.00 = 5.0000)
         when(cashCommissionService.computeCommission(any(BigDecimal.class)))
                 .thenReturn(new BigDecimal("1.00")); // minimum applied
+        // Idempotence check: commission not yet deducted
+        when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
+                eq(travelerId), eq(bidId), eq(WalletTransactionType.COMMISSION_DEDUCTED)))
+                .thenReturn(false);
 
         listener.onBidAccepted(event(bidId, travelerId));
 

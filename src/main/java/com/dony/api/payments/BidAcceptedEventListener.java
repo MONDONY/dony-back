@@ -14,6 +14,7 @@ import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.CommissionStatus;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionRepository;
 import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -51,6 +52,7 @@ public class BidAcceptedEventListener {
     private final UserRepository userRepository;
     private final BidRepository bidRepository;
     private final WalletService walletService;
+    private final WalletTransactionRepository walletTransactionRepository;
     private final CashCommissionService cashCommissionService;
     private final AnnouncementRepository announcementRepository;
 
@@ -59,6 +61,7 @@ public class BidAcceptedEventListener {
                                     UserRepository userRepository,
                                     BidRepository bidRepository,
                                     WalletService walletService,
+                                    WalletTransactionRepository walletTransactionRepository,
                                     CashCommissionService cashCommissionService,
                                     AnnouncementRepository announcementRepository) {
         this.paymentRepository = paymentRepository;
@@ -66,6 +69,7 @@ public class BidAcceptedEventListener {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.walletService = walletService;
+        this.walletTransactionRepository = walletTransactionRepository;
         this.cashCommissionService = cashCommissionService;
         this.announcementRepository = announcementRepository;
     }
@@ -74,16 +78,28 @@ public class BidAcceptedEventListener {
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onBidAccepted(BidAcceptedEvent event) {
+        // --- Bug 1 fix: bid introuvable = anomalie → log + return immédiat (pas de fallback Stripe) ---
+        BidEntity bid = bidRepository.findById(event.getBidId()).orElse(null);
+        if (bid == null) {
+            log.warn("BidAccepted event for unknown bid {}", event.getBidId());
+            return;
+        }
+
         // --- CASH bid: prélever commission 12% depuis le wallet du voyageur ---
         // Uniquement si la commission n'a pas déjà été prélevée via carte bancaire.
-        BidEntity bidForCash = bidRepository.findById(event.getBidId()).orElse(null);
-        if (bidForCash != null && bidForCash.getPaymentMethod() == PaymentMethod.CASH) {
-            if (bidForCash.getCommissionStatus() != CommissionStatus.CHARGED) {
+        if (bid.getPaymentMethod() == PaymentMethod.CASH) {
+            if (bid.getCommissionStatus() != CommissionStatus.CHARGED) {
+                // --- Bug 2 fix: protection idempotence — vérifier si la commission a déjà été prélevée ---
+                if (walletTransactionRepository.existsByUserIdAndBidIdAndType(
+                        event.getTravelerId(), event.getBidId(), WalletTransactionType.COMMISSION_DEDUCTED)) {
+                    log.info("Commission CASH déjà prélevée pour bid {}, event ignoré", event.getBidId());
+                    return;
+                }
                 AnnouncementEntity announcement = announcementRepository
-                        .findById(bidForCash.getAnnouncementId()).orElse(null);
-                if (announcement != null && bidForCash.getWeightKg() != null
+                        .findById(bid.getAnnouncementId()).orElse(null);
+                if (announcement != null && bid.getWeightKg() != null
                         && announcement.getPricePerKg() != null) {
-                    BigDecimal cashAmount = bidForCash.getWeightKg()
+                    BigDecimal cashAmount = bid.getWeightKg()
                             .multiply(announcement.getPricePerKg());
                     BigDecimal commission = cashCommissionService.computeCommission(cashAmount);
                     walletService.debit(
@@ -148,25 +164,21 @@ public class BidAcceptedEventListener {
                 payment.setStatus(PaymentStatus.CANCELLED);
                 paymentRepository.save(payment);
 
-                bidRepository.findById(event.getBidId()).ifPresent(bid -> {
-                    bid.setStatus(BidStatus.CANCELLED);
-                    bidRepository.save(bid);
-                    auditService.log("BID", bid.getId(), "BID_CANCELLED_TRAVELER_INELIGIBLE",
-                            event.getTravelerId(),
-                            Map.of("reason", "traveler-connect-ineligible",
-                                    "piId", piId));
-                });
+                bid.setStatus(BidStatus.CANCELLED);
+                bidRepository.save(bid);
+                auditService.log("BID", bid.getId(), "BID_CANCELLED_TRAVELER_INELIGIBLE",
+                        event.getTravelerId(),
+                        Map.of("reason", "traveler-connect-ineligible",
+                                "piId", piId));
             } catch (StripeException cancelEx) {
                 // Fix 2: write audit log so ops can reconcile the live PI manually
                 log.error("Could not cancel PI {} for ineligible traveler {} on bid {}",
                         piId, event.getTravelerId(), event.getBidId(), cancelEx);
-                bidRepository.findById(event.getBidId()).ifPresent(bid ->
-                        auditService.log("BID", bid.getId(), "BID_CANCEL_PI_FAILED",
-                                event.getTravelerId(),
-                                Map.of("pi_id", piId,
-                                        "traveler_id", event.getTravelerId().toString(),
-                                        "reason", "traveler_not_eligible_pi_cancel_failed"))
-                );
+                auditService.log("BID", bid.getId(), "BID_CANCEL_PI_FAILED",
+                        event.getTravelerId(),
+                        Map.of("pi_id", piId,
+                                "traveler_id", event.getTravelerId().toString(),
+                                "reason", "traveler_not_eligible_pi_cancel_failed"));
             }
             return;
         }
