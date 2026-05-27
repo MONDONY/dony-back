@@ -1,8 +1,6 @@
 package com.dony.api.addressbook.delivery;
 
 import com.dony.api.addressbook.delivery.dto.*;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.DonyNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,52 +16,44 @@ import java.util.UUID;
 public class DeliveryAddressController {
 
     private final DeliveryAddressService service;
-    private final UserRepository userRepository;
 
-    public DeliveryAddressController(DeliveryAddressService service, UserRepository userRepository) {
+    public DeliveryAddressController(DeliveryAddressService service) {
         this.service = service;
-        this.userRepository = userRepository;
     }
 
     @GetMapping
-    public ResponseEntity<List<DeliveryAddressDto>> list(@AuthenticationPrincipal String firebaseUid) {
-        return ResponseEntity.ok(service.findAll(userId(firebaseUid)));
+    public ResponseEntity<List<DeliveryAddressDto>> list(@AuthenticationPrincipal String uid) {
+        return ResponseEntity.ok(service.findAll(UUID.fromString(uid)));
     }
 
     @PostMapping
     public ResponseEntity<DeliveryAddressDto> create(
-            @AuthenticationPrincipal String firebaseUid,
+            @AuthenticationPrincipal String uid,
             @Valid @RequestBody CreateDeliveryAddressRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(service.create(userId(firebaseUid), request));
+                .body(service.create(UUID.fromString(uid), request));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<DeliveryAddressDto> update(
-            @AuthenticationPrincipal String firebaseUid,
+            @AuthenticationPrincipal String uid,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateDeliveryAddressRequest request) {
-        return ResponseEntity.ok(service.update(userId(firebaseUid), id, request));
+        return ResponseEntity.ok(service.update(UUID.fromString(uid), id, request));
     }
 
     @PatchMapping("/{id}/set-default")
     public ResponseEntity<DeliveryAddressDto> setDefault(
-            @AuthenticationPrincipal String firebaseUid,
+            @AuthenticationPrincipal String uid,
             @PathVariable UUID id) {
-        return ResponseEntity.ok(service.setDefault(userId(firebaseUid), id));
+        return ResponseEntity.ok(service.setDefault(UUID.fromString(uid), id));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
-            @AuthenticationPrincipal String firebaseUid,
+            @AuthenticationPrincipal String uid,
             @PathVariable UUID id) {
-        service.delete(userId(firebaseUid), id);
+        service.delete(UUID.fromString(uid), id);
         return ResponseEntity.noContent().build();
-    }
-
-    private UUID userId(String firebaseUid) {
-        return userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyNotFoundException("Utilisateur introuvable"))
-                .getId();
     }
 }
