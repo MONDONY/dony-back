@@ -252,6 +252,11 @@ public class CashCommissionService {
         }
     }
 
+    @Transactional
+    public AcceptBidResponse chargeCommissionForMobileMoney(BidEntity bid, UUID travelerId) {
+        return chargeCommission(bid, travelerId);
+    }
+
     // --- Cash bid acceptance ---
 
     @Transactional
