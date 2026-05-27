@@ -65,6 +65,12 @@ public class MobileMoneyPaymentService {
 
         PaymentMethod pm = bid.getPaymentMethod();
 
+        if (!registry.isMobileMoneyProvider(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "bid-not-mobile-money", "Not Mobile Money Bid",
+                    "Ce bid n'utilise pas un mode de paiement Mobile Money");
+        }
+
         // Idempotence: return existing PENDING payment if still valid
         Optional<MobileMoneyPaymentEntity> existing =
                 repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId);
@@ -176,8 +182,9 @@ public class MobileMoneyPaymentService {
     /**
      * Returns the most recent Mobile Money payment for a bid, if any.
      * Only the sender or the traveler of the bid is allowed to view the payment status.
+     * If the payment is PENDING and past its expiry, it is automatically marked EXPIRED.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<MobileMoneyPaymentEntity> getStatus(UUID bidId, UUID callerId) {
         BidEntity bid = bidRepository.findById(bidId)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
@@ -195,6 +202,17 @@ public class MobileMoneyPaymentService {
                     "Vous n'avez pas accès à ce paiement");
         }
 
-        return repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId);
+        Optional<MobileMoneyPaymentEntity> opt =
+                repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId);
+        opt.ifPresent(payment -> {
+            if ("PENDING".equals(payment.getStatus())
+                    && payment.getExpiresAt() != null
+                    && payment.getExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
+                payment.setStatus("EXPIRED");
+                repository.save(payment);
+                log.info("MobileMoneyPaymentService: payment {} marked EXPIRED for bidId={}", payment.getId(), bidId);
+            }
+        });
+        return opt;
     }
 }

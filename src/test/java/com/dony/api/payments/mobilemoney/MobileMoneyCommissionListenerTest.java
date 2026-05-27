@@ -42,7 +42,8 @@ class MobileMoneyCommissionListenerTest {
 
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
-        when(commissionService.computeCommission(any())).thenReturn(new BigDecimal("12.00"));
+        when(commissionService.chargeCommissionForMobileMoney(eq(bid), eq(travelerId)))
+                .thenReturn(new BigDecimal("12.00"));
 
         listener.onBidPaidByMobileMoney(new BidPaidByMobileMoneyEvent(bidId, travelerId));
 

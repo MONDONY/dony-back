@@ -49,6 +49,8 @@ class MobileMoneyPaymentServiceTest {
     @BeforeEach
     void setUp() {
         when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
+        when(registry.isMobileMoneyProvider(PaymentMethod.WAVE)).thenReturn(true);
+        when(registry.isMobileMoneyProvider(PaymentMethod.CASH)).thenReturn(false);
     }
 
     @Test
@@ -261,6 +263,41 @@ class MobileMoneyPaymentServiceTest {
 
         assertThat(result.getExternalReference()).isEqualTo("wave_new_ref");
         verify(waveGateway).generatePaymentLink(any());
+    }
+
+    @Test
+    void initiate_nonMobileMoneyBid_throwsUnprocessableEntity() {
+        BidEntity bid = new BidEntity();
+        bid.setPaymentMethod(PaymentMethod.CASH);
+        bid.setSenderId(senderId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        assertThatThrownBy(() -> service.initiate(bidId, senderId))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY));
+    }
+
+    @Test
+    void getStatus_pendingExpiredPayment_marksExpiredAndReturns() {
+        BidEntity bid = waveBid();
+        AnnouncementEntity ann = announcement();
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
+
+        MobileMoneyPaymentEntity payment = new MobileMoneyPaymentEntity();
+        payment.setBidId(bidId);
+        payment.setStatus("PENDING");
+        payment.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
+                .thenReturn(Optional.of(payment));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Optional<MobileMoneyPaymentEntity> result = service.getStatus(bidId, senderId);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getStatus()).isEqualTo("EXPIRED");
+        verify(repository).save(payment);
     }
 
     @Test

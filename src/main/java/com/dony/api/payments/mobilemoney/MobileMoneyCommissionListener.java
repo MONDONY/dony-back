@@ -60,16 +60,14 @@ public class MobileMoneyCommissionListener {
             return;
         }
 
-        BigDecimal commission = commissionService.computeCommission(bid.getDeclaredValueEur());
-
         try {
-            commissionService.chargeCommissionForMobileMoney(bid, event.getTravelerId());
+            BigDecimal commissionCharged = commissionService.chargeCommissionForMobileMoney(bid, event.getTravelerId());
             Map<String, Object> auditPayload = new HashMap<>();
-            auditPayload.put("amount", commission.toPlainString());
+            auditPayload.put("amount", commissionCharged.toPlainString());
             auditService.log("MM_COMMISSION", bid.getId(), "COMMISSION_CHARGED",
                     event.getTravelerId(), auditPayload);
             log.info("MobileMoneyCommissionListener: commission {} charged for bidId={}",
-                    commission, event.getBidId());
+                    commissionCharged, event.getBidId());
         } catch (Exception e) {
             log.error("MobileMoneyCommissionListener: commission charge failed for bidId={}",
                     event.getBidId(), e);
