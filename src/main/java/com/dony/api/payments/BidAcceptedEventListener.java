@@ -92,6 +92,13 @@ public class BidAcceptedEventListener {
                             WalletTransactionType.COMMISSION_DEDUCTED,
                             event.getBidId()
                     );
+                    auditService.log(
+                            "payment",
+                            event.getBidId(),
+                            "CASH_COMMISSION_DEBITED",
+                            event.getTravelerId(),
+                            Map.of("commission", commission.toPlainString(), "bidId", event.getBidId().toString())
+                    );
                     log.info("Wallet commission {} EUR debited for CASH bid {} traveler {}",
                             commission, event.getBidId(), event.getTravelerId());
                 } else {

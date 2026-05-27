@@ -95,6 +95,13 @@ class BidAcceptedCashCommissionTest {
                 eq(WalletTransactionType.COMMISSION_DEDUCTED),
                 eq(bidId)
         );
+        verify(auditService).log(
+                eq("payment"),
+                eq(bidId),
+                eq("CASH_COMMISSION_DEBITED"),
+                eq(travelerId),
+                any()
+        );
         // Must NOT touch PaymentRepository (Stripe path)
         verifyNoInteractions(paymentRepository);
     }
@@ -183,9 +190,9 @@ class BidAcceptedCashCommissionTest {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        // BidEntity with default STRIPE paymentMethod
+        // BidEntity with explicit STRIPE paymentMethod
         BidEntity bid = new BidEntity();
-        // paymentMethod defaults to STRIPE, so no CASH block runs
+        bid.setPaymentMethod(PaymentMethod.STRIPE);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
 
         // No payment found → Stripe path logs warn and returns
