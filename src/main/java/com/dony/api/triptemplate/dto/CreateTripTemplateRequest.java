@@ -1,0 +1,20 @@
+package com.dony.api.triptemplate.dto;
+
+import jakarta.validation.constraints.*;
+import java.util.List;
+
+public record CreateTripTemplateRequest(
+    @NotBlank @Size(max = 60)  String label,
+    @Size(max = 8)             String emoji,
+    @NotBlank @Size(max = 100) String departureCity,
+    Double departureLat,
+    Double departureLng,
+    @NotBlank @Size(max = 100) String arrivalCity,
+    Double arrivalLat,
+    Double arrivalLng,
+    @NotBlank @Size(max = 20)  String transportMode,
+    @NotBlank @Size(max = 20)  String capacityUnit,
+    @NotNull @Min(1) @Max(40)  Integer availableKg,
+    @NotNull @Positive @DecimalMax("500.0") Double pricePerKg,
+    List<String> acceptedCategories
+) {}
