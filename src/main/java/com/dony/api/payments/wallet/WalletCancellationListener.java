@@ -76,6 +76,11 @@ public class WalletCancellationListener {
             return;
         }
 
+        // Vérification de sécurité : la recherche de transaction COMMISSION_DEDUCTED
+        // via findByUserIdAndBidIdAndType validera implicitement l'ownership du travelerId.
+        // Si aucune transaction n'existe pour ce couple (travelerId, bidId), on skip.
+        // Cela prévient les refunds non autorisés.
+
         // Retrouver la transaction COMMISSION_DEDUCTED pour ce bid
         Optional<WalletTransactionEntity> commissionTx =
                 walletTransactionRepository.findByUserIdAndBidIdAndType(

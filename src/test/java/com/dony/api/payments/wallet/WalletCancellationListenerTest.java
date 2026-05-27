@@ -189,4 +189,26 @@ class WalletCancellationListenerTest {
                 any()
         );
     }
+
+    @Test
+    void onTripCancelled_noCommissionTransactionFound_doesNotCreditWallet() {
+        // Cas de sécurité : si la transaction COMMISSION_DEDUCTED n'existe pas
+        // pour ce couple (travelerId, bidId), le refund n'est pas effectué.
+        // Cela prévient les abus si l'event était forgé avec un mauvais travelerId.
+        UUID bidId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        UUID otherTravelerId = UUID.randomUUID();
+
+        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId));
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(cashBid(bidId)));
+        // La recherche findByUserIdAndBidIdAndType(travelerId, bidId, ...) retourne empty
+        // car la transaction n'existe que pour otherTravelerId
+        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
+                .thenReturn(Optional.empty());
+
+        listener.onTripCancelled(event);
+
+        verify(walletService, never()).credit(any(), any(), any(), any(), any());
+    }
 }
