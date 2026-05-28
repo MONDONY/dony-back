@@ -150,4 +150,39 @@ class SubscriptionServiceTest {
         assertThat(list.get(0).ongoingTripsCount()).isEqualTo(2L);
         assertThat(list.get(0).lastAnnouncement().arrivalCity()).isEqualTo("Dakar");
     }
+
+    @Test
+    void getMySubscribers_returnsSubscribersWithDisplayName() {
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(sender));
+        UUID subscriberUserId = UUID.randomUUID();
+        TravelerSubscriptionEntity sub = new TravelerSubscriptionEntity();
+        sub.setSenderId(subscriberUserId);
+        sub.setTravelerId(senderId);
+        when(repo.findAllByTravelerId(senderId)).thenReturn(List.of(sub));
+        UserEntity subscriber = new UserEntity();
+        subscriber.setFirstName("Fatou");
+        subscriber.setLastName("Ndiaye");
+        when(userRepository.findById(subscriberUserId)).thenReturn(Optional.of(subscriber));
+
+        var result = service.getMySubscribers(uid);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).senderId()).isEqualTo(subscriberUserId);
+        assertThat(result.get(0).displayName()).isEqualTo("Fatou N.");
+    }
+
+    @Test
+    void getMySubscribers_fallsBackToGenericName_whenSenderMissing() {
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(sender));
+        UUID subscriberUserId = UUID.randomUUID();
+        TravelerSubscriptionEntity sub = new TravelerSubscriptionEntity();
+        sub.setSenderId(subscriberUserId);
+        sub.setTravelerId(senderId);
+        when(repo.findAllByTravelerId(senderId)).thenReturn(List.of(sub));
+        when(userRepository.findById(subscriberUserId)).thenReturn(Optional.empty());
+
+        var result = service.getMySubscribers(uid);
+
+        assertThat(result.get(0).displayName()).isEqualTo("Expéditeur");
+    }
 }

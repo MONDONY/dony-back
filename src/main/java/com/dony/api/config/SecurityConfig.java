@@ -100,7 +100,9 @@ public class SecurityConfig {
                     "/payments/onboarding/return",
                     "/payments/onboarding/refresh",
                     // Public traveler profile: list active/full announcements without auth
-                    "/travelers/*/announcements"
+                    "/travelers/*/announcements",
+                    // Public shareable traveler profile (minimal, no-auth)
+                    "/public/**"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
