@@ -1,9 +1,6 @@
 package com.dony.api.payments.wallet;
 
 import com.dony.api.cancellation.events.TripCancelledEvent;
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.payments.cash.PaymentMethod;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -24,10 +21,14 @@ import java.util.UUID;
  * (REFUND) dans le wallet du voyageur.
  *
  * Règles :
- * - Seulement les bids avec paymentMethod = CASH
+ * - Seulement les bids avec paymentMethod = CASH (info portée par l'event)
  * - Seulement si une transaction COMMISSION_DEDUCTED existe pour ce bid
  * - Idempotence garantie par la clé "wallet-refund-cancel-{bidId}" passée à WalletService.credit()
  * - @TransactionalEventListener(AFTER_COMMIT) + @Transactional(REQUIRES_NEW) obligatoire
+ *
+ * Architecture : ce listener n'injecte aucun service/repository hors du package payments/.
+ * Le paymentMethod est transmis directement dans TripCancelledEvent.bidPaymentMethods
+ * (populé par CancellationService qui vit dans cancellation/ et a accès légitime à BidRepository).
  */
 @Component
 public class WalletCancellationListener {
@@ -36,14 +37,11 @@ public class WalletCancellationListener {
 
     private final WalletService walletService;
     private final WalletTransactionRepository walletTransactionRepository;
-    private final BidRepository bidRepository;
 
     public WalletCancellationListener(WalletService walletService,
-                                      WalletTransactionRepository walletTransactionRepository,
-                                      BidRepository bidRepository) {
+                                      WalletTransactionRepository walletTransactionRepository) {
         this.walletService = walletService;
         this.walletTransactionRepository = walletTransactionRepository;
-        this.bidRepository = bidRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -59,20 +57,16 @@ public class WalletCancellationListener {
                 event.getAnnouncementId(), travelerId, bidIds.size());
 
         for (UUID bidId : bidIds) {
-            processWalletRefundForBid(bidId, travelerId);
+            processWalletRefundForBid(bidId, travelerId, event);
         }
     }
 
-    private void processWalletRefundForBid(UUID bidId, UUID travelerId) {
-        BidEntity bid = bidRepository.findById(bidId).orElse(null);
-        if (bid == null) {
-            log.warn("WalletCancellationListener: bid {} not found, skipping wallet refund", bidId);
-            return;
-        }
+    private void processWalletRefundForBid(UUID bidId, UUID travelerId, TripCancelledEvent event) {
+        String paymentMethod = event.getBidPaymentMethods().getOrDefault(bidId, "STRIPE");
 
-        if (bid.getPaymentMethod() != PaymentMethod.CASH) {
+        if (!"CASH".equals(paymentMethod)) {
             log.debug("WalletCancellationListener: bid {} paymentMethod={} — not CASH, skipping",
-                    bidId, bid.getPaymentMethod());
+                    bidId, paymentMethod);
             return;
         }
 
@@ -81,7 +75,6 @@ public class WalletCancellationListener {
         // Si aucune transaction n'existe pour ce couple (travelerId, bidId), on skip.
         // Cela prévient les refunds non autorisés.
 
-        // Retrouver la transaction COMMISSION_DEDUCTED pour ce bid
         Optional<WalletTransactionEntity> commissionTx =
                 walletTransactionRepository.findByUserIdAndBidIdAndType(
                         travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED);

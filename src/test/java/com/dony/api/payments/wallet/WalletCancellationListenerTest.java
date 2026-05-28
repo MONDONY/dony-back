@@ -1,9 +1,6 @@
 package com.dony.api.payments.wallet;
 
 import com.dony.api.cancellation.events.TripCancelledEvent;
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.payments.cash.PaymentMethod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,29 +25,14 @@ class WalletCancellationListenerTest {
     @Mock
     private WalletTransactionRepository walletTransactionRepository;
 
-    @Mock
-    private BidRepository bidRepository;
-
     private WalletCancellationListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new WalletCancellationListener(walletService, walletTransactionRepository, bidRepository);
+        listener = new WalletCancellationListener(walletService, walletTransactionRepository);
     }
 
     // --- Helper builders ---
-
-    private BidEntity cashBid(UUID bidId) {
-        BidEntity bid = new BidEntity();
-        bid.setPaymentMethod(PaymentMethod.CASH);
-        return bid;
-    }
-
-    private BidEntity stripeBid(UUID bidId) {
-        BidEntity bid = new BidEntity();
-        bid.setPaymentMethod(PaymentMethod.STRIPE);
-        return bid;
-    }
 
     private WalletTransactionEntity commissionTx(BigDecimal amount) {
         WalletTransactionEntity tx = new WalletTransactionEntity();
@@ -57,6 +40,18 @@ class WalletCancellationListenerTest {
         tx.setAmount(amount.negate());
         tx.setType(WalletTransactionType.COMMISSION_DEDUCTED);
         return tx;
+    }
+
+    private TripCancelledEvent cashEvent(UUID announcementId, UUID travelerId, UUID bidId) {
+        return new TripCancelledEvent(
+                announcementId, travelerId, List.of(), "reason",
+                List.of(bidId), Map.of(bidId, "CASH"));
+    }
+
+    private TripCancelledEvent stripeEvent(UUID announcementId, UUID travelerId, UUID bidId) {
+        return new TripCancelledEvent(
+                announcementId, travelerId, List.of(), "reason",
+                List.of(bidId), Map.of(bidId, "STRIPE"));
     }
 
     // --- Tests ---
@@ -67,9 +62,8 @@ class WalletCancellationListenerTest {
         UUID travelerId = UUID.randomUUID();
         UUID announcementId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(announcementId, travelerId, List.of(), "reason", List.of(bidId));
+        TripCancelledEvent event = cashEvent(announcementId, travelerId, bidId);
 
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(cashBid(bidId)));
         when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
                 .thenReturn(Optional.of(commissionTx(new BigDecimal("12.00"))));
 
@@ -89,9 +83,7 @@ class WalletCancellationListenerTest {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId));
-
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(stripeBid(bidId)));
+        TripCancelledEvent event = stripeEvent(UUID.randomUUID(), travelerId, bidId);
 
         listener.onTripCancelled(event);
 
@@ -104,9 +96,8 @@ class WalletCancellationListenerTest {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId));
+        TripCancelledEvent event = cashEvent(UUID.randomUUID(), travelerId, bidId);
 
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(cashBid(bidId)));
         when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
                 .thenReturn(Optional.empty());
 
@@ -116,13 +107,14 @@ class WalletCancellationListenerTest {
     }
 
     @Test
-    void onTripCancelled_bidNotFound_doesNotCreditWallet() {
+    void onTripCancelled_bidNotInPaymentMethodMap_defaultsToStripe_doesNotCreditWallet() {
+        // Bid présent dans affectedBidIds mais absent de bidPaymentMethods → défaut STRIPE → skip
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId));
-
-        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        TripCancelledEvent event = new TripCancelledEvent(
+                UUID.randomUUID(), travelerId, List.of(), "reason",
+                List.of(bidId), Map.of() /* bidPaymentMethods vide */);
 
         listener.onTripCancelled(event);
 
@@ -134,11 +126,13 @@ class WalletCancellationListenerTest {
     void onTripCancelled_emptyBidList_doesNothing() {
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of());
+        TripCancelledEvent event = new TripCancelledEvent(
+                UUID.randomUUID(), travelerId, List.of(), "reason",
+                List.of(), Map.of());
 
         listener.onTripCancelled(event);
 
-        verify(bidRepository, never()).findById(any());
+        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
         verify(walletService, never()).credit(any(), any(), any(), any(), any());
     }
 
@@ -146,11 +140,13 @@ class WalletCancellationListenerTest {
     void onTripCancelled_nullBidList_doesNothing() {
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", null);
+        TripCancelledEvent event = new TripCancelledEvent(
+                UUID.randomUUID(), travelerId, List.of(), "reason",
+                null, Map.of());
 
         listener.onTripCancelled(event);
 
-        verify(bidRepository, never()).findById(any());
+        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
         verify(walletService, never()).credit(any(), any(), any(), any(), any());
     }
 
@@ -160,10 +156,10 @@ class WalletCancellationListenerTest {
         UUID bidId2 = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId1, bidId2));
-
-        when(bidRepository.findById(bidId1)).thenReturn(Optional.of(cashBid(bidId1)));
-        when(bidRepository.findById(bidId2)).thenReturn(Optional.of(cashBid(bidId2)));
+        TripCancelledEvent event = new TripCancelledEvent(
+                UUID.randomUUID(), travelerId, List.of(), "reason",
+                List.of(bidId1, bidId2),
+                Map.of(bidId1, "CASH", bidId2, "CASH"));
 
         when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId1, WalletTransactionType.COMMISSION_DEDUCTED))
                 .thenReturn(Optional.of(commissionTx(new BigDecimal("8.00"))));
@@ -197,13 +193,10 @@ class WalletCancellationListenerTest {
         // Cela prévient les abus si l'event était forgé avec un mauvais travelerId.
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
-        UUID otherTravelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = new TripCancelledEvent(UUID.randomUUID(), travelerId, List.of(), "reason", List.of(bidId));
+        TripCancelledEvent event = cashEvent(UUID.randomUUID(), travelerId, bidId);
 
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(cashBid(bidId)));
         // La recherche findByUserIdAndBidIdAndType(travelerId, bidId, ...) retourne empty
-        // car la transaction n'existe que pour otherTravelerId
         when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
                 .thenReturn(Optional.empty());
 
