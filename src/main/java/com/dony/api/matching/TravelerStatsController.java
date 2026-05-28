@@ -208,16 +208,7 @@ public class TravelerStatsController {
     @GetMapping("/{travelerId}/announcements")
     public ResponseEntity<List<com.dony.api.matching.dto.TravelerAnnouncementResponse>> travelerAnnouncements(
             @PathVariable UUID travelerId) {
-        var pageable = org.springframework.data.domain.PageRequest.of(0, 50,
-                org.springframework.data.domain.Sort.by("departureDate").ascending());
-        var active = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.ACTIVE, pageable).getContent();
-        var full   = announcementRepository.findByTravelerIdAndStatus(travelerId, AnnouncementStatus.FULL, pageable).getContent();
-        var result = java.util.stream.Stream.concat(active.stream(), full.stream())
-                .map(a -> new com.dony.api.matching.dto.TravelerAnnouncementResponse(
-                        a.getId(), a.getDepartureCity(), a.getArrivalCity(),
-                        a.getDepartureDate(), a.getPricePerKg(), a.getAvailableKg(), a.getStatus().name()))
-                .toList();
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(announcementService.getTravelerAnnouncements(travelerId));
     }
 
     private String requireFirebaseUid() {
