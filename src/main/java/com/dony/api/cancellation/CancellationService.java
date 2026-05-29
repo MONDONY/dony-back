@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -130,10 +131,17 @@ public class CancellationService {
                     traveler.getId(), cancellationCount, request.announcementId()));
         }
 
+        // Build bidPaymentMethods so listeners (e.g. WalletCancellationListener) don't need BidRepository
+        Map<UUID, String> bidPaymentMethods = new HashMap<>();
+        for (BidEntity bid : acceptedBids) {
+            String methodName = bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE";
+            bidPaymentMethods.put(bid.getId(), methodName);
+        }
+
         // Publish event for notifications (Epic 8) and payment refunds (Story 6.7)
         eventPublisher.publishEvent(new TripCancelledEvent(
                 request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
-                affectedBidIds));
+                affectedBidIds, bidPaymentMethods));
 
         // Generate rematch suggestions for each affected bid
         List<RematchSuggestionDto> suggestions = generateRematchSuggestions(
