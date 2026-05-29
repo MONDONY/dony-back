@@ -1,6 +1,7 @@
 package com.dony.api.auth;
 
 import com.dony.api.auth.dto.ProfilePublicResponse;
+import com.dony.api.auth.dto.PublicTravelerProfileResponse;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
@@ -60,6 +61,29 @@ public class ProfilePublicService {
                 List.of(),
                 contactMode,
                 responseDelayHours
+        );
+    }
+
+    /**
+     * Minimal public traveler profile for an anonymous shareable link.
+     * Reuses the same display-name and rating logic but omits contact preferences.
+     */
+    public PublicTravelerProfileResponse getPublicTravelerProfile(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        UserRatingsSummaryResponse ratingSummary = ratingService.getUserRatings(userId, 0, 3);
+
+        return new PublicTravelerProfileResponse(
+                buildDisplayName(user),
+                user.getKycStatus() == KycStatus.VERIFIED,
+                user.isKiloPro(),
+                user.getTotalTrips() + user.getTotalShipments(),
+                ratingSummary.averageRating(),
+                ratingSummary.ratingCount(),
+                buildMemberSince(user),
+                List.of()
         );
     }
 

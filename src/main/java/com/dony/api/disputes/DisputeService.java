@@ -1,9 +1,11 @@
 package com.dony.api.disputes;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.disputes.dto.DisputeResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,6 +23,14 @@ public class DisputeService {
     public DisputeService(DisputeRepository disputeRepository, AuditService auditService) {
         this.disputeRepository = disputeRepository;
         this.auditService = auditService;
+    }
+
+    /** Read-only list of disputes where the given user is the traveler, newest first. */
+    @Transactional(readOnly = true)
+    public List<DisputeResponse> getDisputesForTraveler(UUID travelerId) {
+        return disputeRepository.findByTravelerIdOrderByCreatedAtDesc(travelerId).stream()
+                .map(DisputeResponse::from)
+                .toList();
     }
 
     public DisputeEntity openSenderNoShowDispute(UUID bidId, UUID senderId, UUID travelerId) {

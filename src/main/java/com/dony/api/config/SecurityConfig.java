@@ -103,7 +103,9 @@ public class SecurityConfig {
                     "/travelers/*/announcements",
                     // MM webhooks: no Firebase token (provider-to-server call). Security is
                     // enforced via HMAC signature verification in MobileMoneyPaymentService.
-                    "/webhooks/mobile-money/**"
+                    "/webhooks/mobile-money/**",
+                    // Public shareable traveler profile (minimal, no-auth)
+                    "/public/**"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
