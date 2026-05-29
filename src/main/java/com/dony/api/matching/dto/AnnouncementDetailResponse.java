@@ -30,6 +30,7 @@ public record AnnouncementDetailResponse(
         List<String> refusedTypes,
         List<String> acceptedPaymentMethods,
         com.dony.api.matching.CapacityUnit capacityUnit,
+        boolean cashAccepted,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         com.dony.api.matching.PricingMode pricingMode,
