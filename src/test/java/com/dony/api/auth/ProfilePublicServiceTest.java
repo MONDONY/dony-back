@@ -105,6 +105,37 @@ class ProfilePublicServiceTest {
     }
 
     @Test
+    @DisplayName("getPublicTravelerProfile → profil minimal, sans préférences de contact")
+    void getPublicTravelerProfile_returnsMinimalProfile() {
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(ratingService.getUserRatings(eq(USER_ID), eq(0), eq(3))).thenReturn(stubRatingSummary());
+
+        var response = profilePublicService.getPublicTravelerProfile(USER_ID);
+
+        assertThat(response.displayName()).isEqualTo("Moussa D.");
+        assertThat(response.kycVerified()).isTrue();
+        assertThat(response.completedBidsCount()).isEqualTo(12);
+        assertThat(response.averageRating()).isEqualByComparingTo(new BigDecimal("4.80"));
+        assertThat(response.ratingCount()).isEqualTo(10);
+        assertThat(response.memberSince()).isEqualTo("Membre depuis mars 2025");
+
+        var fields = java.util.Arrays.stream(
+                com.dony.api.auth.dto.PublicTravelerProfileResponse.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName).toList();
+        assertThat(fields).doesNotContain("contactMode", "responseDelayHours", "phoneNumber");
+    }
+
+    @Test
+    @DisplayName("getPublicTravelerProfile → 404 si utilisateur introuvable")
+    void getPublicTravelerProfile_userNotFound_throws404() {
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> profilePublicService.getPublicTravelerProfile(USER_ID))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
     @DisplayName("kycStatus != VERIFIED → kycVerified false")
     void getProfilePublic_kycNotVerified_kycVerifiedFalse() throws Exception {
         setField(user, "kycStatus", KycStatus.PENDING);

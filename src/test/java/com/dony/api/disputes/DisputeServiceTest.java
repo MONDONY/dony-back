@@ -1,6 +1,7 @@
 package com.dony.api.disputes;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.disputes.dto.DisputeResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +81,38 @@ class DisputeServiceTest {
             assertThat(result).isSameAs(existing);
             verify(disputeRepository, never()).save(any());
             verifyNoInteractions(auditService);
+        }
+    }
+
+    @Nested
+    class GetDisputesForTraveler {
+
+        @Test
+        void mapsEntitiesToResponses() {
+            DisputeEntity dispute = new DisputeEntity();
+            dispute.setBidId(BID_ID);
+            dispute.setTravelerId(TRAVELER_ID);
+            dispute.setType("SENDER_NO_SHOW_CONTESTED");
+            dispute.setStatus("OPEN");
+            dispute.setRefundFrozen(true);
+            when(disputeRepository.findByTravelerIdOrderByCreatedAtDesc(TRAVELER_ID))
+                    .thenReturn(List.of(dispute));
+
+            List<DisputeResponse> result = service.getDisputesForTraveler(TRAVELER_ID);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).bidId()).isEqualTo(BID_ID);
+            assertThat(result.get(0).type()).isEqualTo("SENDER_NO_SHOW_CONTESTED");
+            assertThat(result.get(0).status()).isEqualTo("OPEN");
+            assertThat(result.get(0).refundFrozen()).isTrue();
+        }
+
+        @Test
+        void returnsEmptyWhenNoDisputes() {
+            when(disputeRepository.findByTravelerIdOrderByCreatedAtDesc(TRAVELER_ID))
+                    .thenReturn(List.of());
+
+            assertThat(service.getDisputesForTraveler(TRAVELER_ID)).isEmpty();
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.dony.api.subscriptions;
 
+import com.dony.api.subscriptions.dto.SubscriberResponse;
 import com.dony.api.subscriptions.dto.SubscriptionItemResponse;
 import com.dony.api.subscriptions.dto.SubscriptionStatusResponse;
 import org.springframework.http.HttpStatus;
@@ -56,6 +57,12 @@ public class SubscriptionController {
     @PreAuthorize("hasRole('SENDER')")
     public List<SubscriptionItemResponse> mySubscriptions(@AuthenticationPrincipal String firebaseUid) {
         return subscriptionService.getMySubscriptions(firebaseUid);
+    }
+
+    @GetMapping("/me/subscribers")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public List<SubscriberResponse> mySubscribers(@AuthenticationPrincipal String firebaseUid) {
+        return subscriptionService.getMySubscribers(firebaseUid);
     }
 
     @PostMapping("/me/subscriptions/{travelerId}/mark-seen")
