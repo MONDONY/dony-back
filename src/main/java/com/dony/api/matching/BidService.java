@@ -16,6 +16,7 @@ import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
@@ -165,22 +166,38 @@ public class BidService {
                                : hasGrid          ? BidPricingMode.GRID
                                :                    BidPricingMode.KG;
 
-        com.dony.api.payments.cash.PaymentMethod pm;
+        PaymentMethod pm;
         try {
             pm = request.paymentMethod() != null
-                    ? com.dony.api.payments.cash.PaymentMethod.valueOf(request.paymentMethod().toUpperCase())
-                    : com.dony.api.payments.cash.PaymentMethod.STRIPE;
+                    ? PaymentMethod.valueOf(request.paymentMethod().toUpperCase())
+                    : PaymentMethod.STRIPE;
         } catch (IllegalArgumentException e) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "invalid-payment-method", "Invalid Payment Method",
                     "Méthode de paiement inconnue : " + request.paymentMethod());
         }
 
-        if (pm == com.dony.api.payments.cash.PaymentMethod.CASH
+        if (pm == PaymentMethod.CASH
                 && !announcement.getAcceptedPaymentMethods().contains(pm)) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "cash-not-accepted", "Cash Not Accepted",
                     "Cette annonce n'accepte pas le paiement en espèces");
+        }
+
+        if ((pm == PaymentMethod.WAVE
+                || pm == PaymentMethod.ORANGE_MONEY)
+                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "mobile-money-not-accepted", "Mobile Money Not Accepted",
+                    "Cette annonce n'accepte pas le paiement " + pm.name());
+        }
+
+        if ((pm == PaymentMethod.WAVE
+                || pm == PaymentMethod.ORANGE_MONEY)
+                && (request.phoneNumber() == null || request.countryCode() == null)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "mobile-money-phone-required", "Phone Required",
+                    "Le numéro de téléphone et le pays sont requis pour le paiement Mobile Money");
         }
 
         String clientIp = resolveClientIp(httpRequest);
@@ -199,6 +216,12 @@ public class BidService {
         bid.setDisclaimerSignedIp(clientIp);
         bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
+
+        if (pm == PaymentMethod.WAVE
+                || pm == PaymentMethod.ORANGE_MONEY) {
+            bid.setMobileMoneyPhone(request.phoneNumber());
+            bid.setMobileMoneyCountryCode(request.countryCode());
+        }
 
         BidEntity saved = bidRepository.save(bid);
 
@@ -375,9 +398,12 @@ public class BidService {
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
 
-        boolean isCashPending = bid.getPaymentMethod() == com.dony.api.payments.cash.PaymentMethod.CASH
+        boolean isOffPlatformPending =
+                (bid.getPaymentMethod() == PaymentMethod.CASH
+                 || bid.getPaymentMethod() == PaymentMethod.WAVE
+                 || bid.getPaymentMethod() == PaymentMethod.ORANGE_MONEY)
                 && bid.getStatus() == BidStatus.PENDING;
-        if (!isCashPending) {
+        if (!isOffPlatformPending) {
             requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
         }
 

@@ -252,6 +252,15 @@ public class CashCommissionService {
         }
     }
 
+    @Transactional
+    public BigDecimal chargeCommissionForMobileMoney(BidEntity bid, UUID travelerId) {
+        AnnouncementEntity announcement = announcementRepo.findById(bid.getAnnouncementId()).orElseThrow();
+        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
+        BigDecimal commission = computeCommission(cashAmount);
+        chargeCommission(bid, travelerId);
+        return commission;
+    }
+
     // --- Cash bid acceptance ---
 
     @Transactional

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,5 +36,11 @@ public record BidRequest(
 
         String paymentMethod,
 
-        @Valid List<BidGridItemRequest> gridItems  // peut être null ou vide
+        // Mobile Money fields — nullable; required only when paymentMethod is WAVE or ORANGE_MONEY
+        @Pattern(regexp = "^\\+?[1-9]\\d{6,19}$", message = "Numéro de téléphone invalide (format E.164 attendu)")
+        String phoneNumber,
+
+        String countryCode,
+
+        @Valid List<BidGridItemRequest> gridItems  // peut être null ou vide — doit rester en DERNIER
 ) {}

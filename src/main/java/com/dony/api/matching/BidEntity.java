@@ -130,8 +130,14 @@ public class BidEntity extends BaseEntity {
     private boolean shipmentCounted = false;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "payment_method", nullable = false, length = 10)
+    @Column(name = "payment_method", nullable = false, length = 20)
     private PaymentMethod paymentMethod = PaymentMethod.STRIPE;
+
+    @Column(name = "mobile_money_phone", length = 30)
+    private String mobileMoneyPhone;
+
+    @Column(name = "mobile_money_country_code", length = 5)
+    private String mobileMoneyCountryCode;
 
     @Column(name = "commission_payment_intent_id", length = 255)
     private String commissionPaymentIntentId;
@@ -263,4 +269,10 @@ public class BidEntity extends BaseEntity {
 
     public BidPricingMode getPricingMode() { return pricingMode; }
     public void setPricingMode(BidPricingMode pricingMode) { this.pricingMode = pricingMode; }
+
+    public String getMobileMoneyPhone() { return mobileMoneyPhone; }
+    public void setMobileMoneyPhone(String mobileMoneyPhone) { this.mobileMoneyPhone = mobileMoneyPhone; }
+
+    public String getMobileMoneyCountryCode() { return mobileMoneyCountryCode; }
+    public void setMobileMoneyCountryCode(String mobileMoneyCountryCode) { this.mobileMoneyCountryCode = mobileMoneyCountryCode; }
 }

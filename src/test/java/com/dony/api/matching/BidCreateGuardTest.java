@@ -106,7 +106,7 @@ class BidCreateGuardTest {
 
     private BidRequest buildRequest() {
         return new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100), "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null, null);
+                "Aminata Diallo", "+221701234567", true, null, null, null, null);
     }
 
     @BeforeEach
