@@ -58,12 +58,13 @@ services:
   # Stripe CLI — forwarde les webhooks paiements et Connect
   # Events traités par PaymentService : account.updated, payment_intent.amount_capturable_updated,
   # payment_intent.payment_failed, charge.refunded
+  # payment_intent.succeeded : recharge wallet (capture_method=automatic) — crédite le wallet via PaymentStripeWebhookHandler
   stripe-cli-payments:
     image: stripe/stripe-cli:latest
     container_name: dony_stripe_cli_payments
     environment:
       - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
-    command: ["listen", "--events", "account.updated,payment_intent.amount_capturable_updated,payment_intent.payment_failed,charge.refunded", "--forward-connect-to", "http://host.docker.internal:8080/api/v1/payments/webhook", "--forward-to", "http://host.docker.internal:8080/api/v1/payments/webhook"]
+    command: ["listen", "--events", "account.updated,payment_intent.amount_capturable_updated,payment_intent.succeeded,payment_intent.payment_failed,charge.refunded", "--forward-connect-to", "http://host.docker.internal:8080/api/v1/payments/webhook", "--forward-to", "http://host.docker.internal:8080/api/v1/payments/webhook"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

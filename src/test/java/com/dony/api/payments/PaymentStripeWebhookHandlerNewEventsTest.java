@@ -25,7 +25,7 @@ class PaymentStripeWebhookHandlerNewEventsTest {
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     private Event evt(String type) {
