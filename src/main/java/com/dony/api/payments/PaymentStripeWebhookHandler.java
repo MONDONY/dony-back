@@ -5,14 +5,18 @@ import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
 import com.dony.api.payments.wallet.WalletService;
 import com.dony.api.payments.wallet.WalletTransactionType;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.StripeObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,15 +53,18 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
     private final CashCommissionWebhookHandler cashHandler;
     private final ChargebackService chargebackService;
     private final WalletService walletService;
+    private final ObjectMapper objectMapper;
 
     public PaymentStripeWebhookHandler(PaymentService paymentService,
                                         CashCommissionWebhookHandler cashHandler,
                                         ChargebackService chargebackService,
-                                        WalletService walletService) {
+                                        WalletService walletService,
+                                        ObjectMapper objectMapper) {
         this.paymentService = paymentService;
         this.cashHandler = cashHandler;
         this.chargebackService = chargebackService;
         this.walletService = walletService;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -77,8 +84,7 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             case "charge.refunded"                    -> paymentService.handleChargeRefunded(event);
             case "setup_intent.succeeded"             -> cashHandler.handleSetupIntentSucceeded(event);
             case "payment_intent.succeeded" -> {
-                PaymentIntent pi = (PaymentIntent) event.getDataObjectDeserializer()
-                    .getObject().orElse(null);
+                PaymentIntent pi = resolvePaymentIntent(event);
                 if (pi != null
                         && pi.getMetadata() != null
                         && "true".equals(pi.getMetadata().get("wallet_topup"))) {
@@ -111,6 +117,33 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
             case "capability.updated"                 -> paymentService.handleCapabilityUpdated(event);
             case "charge.refund.updated"              -> paymentService.handleRefundUpdated(event);
             case "radar.early_fraud_warning.created"  -> paymentService.handleEarlyFraudWarning(event);
+        }
+    }
+
+    /**
+     * Résout le PaymentIntent d'un event. Si le deserializer est vide — mismatch
+     * de version d'API entre Stripe (serveur/CLI) et le SDK Java — on récupère le
+     * PI via l'API live. Même pattern que {@code PaymentService.handlePaymentEscrowActive}.
+     * Sans ce fallback, une recharge wallet (capture_method=automatic →
+     * payment_intent.succeeded) n'est jamais créditée car {@code getObject()} renvoie
+     * {@code Optional.empty()} et le routage tombe dans la branche bid.
+     */
+    private PaymentIntent resolvePaymentIntent(Event event) {
+        Optional<StripeObject> objOpt = event.getDataObjectDeserializer().getObject();
+        if (objOpt.isPresent()) {
+            return (PaymentIntent) objOpt.get();
+        }
+        try {
+            String rawJson = event.getDataObjectDeserializer().getRawJson();
+            JsonNode node = objectMapper.readTree(rawJson);
+            String piId = node.get("id").asText();
+            log.debug("payment_intent.succeeded: deserializer vide pour event {}, fetch PI {} via API",
+                    event.getId(), piId);
+            return PaymentIntent.retrieve(piId);
+        } catch (Exception e) {
+            log.error("payment_intent.succeeded: impossible de résoudre le PaymentIntent depuis l'event {}: {}",
+                    event.getId(), e.getMessage(), e);
+            return null;
         }
     }
 }

@@ -4,10 +4,12 @@ import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
 import com.dony.api.payments.wallet.WalletService;
 import com.dony.api.payments.wallet.WalletTransactionType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.ApiResource;
+import org.mockito.MockedStatic;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,7 +43,7 @@ class PaymentStripeWebhookHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new ObjectMapper());
     }
 
     private Event buildEvent(String type) {
@@ -150,6 +153,39 @@ class PaymentStripeWebhookHandlerTest {
             eq(WalletTransactionType.TOP_UP),
             eq("pi_test"),
             eq("stripe-pi_test")
+        );
+        verify(cashHandler, never()).handlePaymentIntentSucceeded(any());
+    }
+
+    @Test
+    void handle_paymentIntentSucceeded_walletTopup_deserializerEmpty_fetchesViaApiAndCredits() {
+        // Régression : mismatch de version d'API Stripe/SDK → getObject() vide.
+        // Sans le fallback (getRawJson + PaymentIntent.retrieve), le wallet n'était
+        // jamais crédité car le routage tombait dans la branche bid (cashHandler).
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.empty());
+        when(deserializer.getRawJson()).thenReturn("{\"id\":\"pi_fallback\"}");
+
+        Event event = mock(Event.class);
+        when(event.getType()).thenReturn("payment_intent.succeeded");
+        when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        PaymentIntent fetched = mock(PaymentIntent.class);
+        when(fetched.getId()).thenReturn("pi_fallback");
+        when(fetched.getAmount()).thenReturn(10000L);
+        when(fetched.getMetadata()).thenReturn(Map.of("wallet_topup", "true", "user_id", TEST_USER_ID));
+
+        try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
+            mocked.when(() -> PaymentIntent.retrieve("pi_fallback")).thenReturn(fetched);
+            handler.handle(event);
+        }
+
+        verify(walletService).credit(
+            eq(UUID.fromString(TEST_USER_ID)),
+            eq(new BigDecimal("100.00")),
+            eq(WalletTransactionType.TOP_UP),
+            eq("pi_fallback"),
+            eq("stripe-pi_fallback")
         );
         verify(cashHandler, never()).handlePaymentIntentSucceeded(any());
     }
