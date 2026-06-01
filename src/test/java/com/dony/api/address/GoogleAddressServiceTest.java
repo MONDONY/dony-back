@@ -366,6 +366,93 @@ class GoogleAddressServiceTest {
             });
     }
 
+    @Test
+    void details_extractsStructuredComponents() {
+        Map<String, Object> body = Map.of(
+            "id", "ChIJi...",
+            "formattedAddress", "12 Rue Victor Hugo, 69002 Lyon, France",
+            "location", Map.of("latitude", 45.7484, "longitude", 4.8467),
+            "addressComponents", List.of(
+                Map.of("longText", "12", "shortText", "12", "types", List.of("street_number")),
+                Map.of("longText", "Rue Victor Hugo", "shortText", "Rue Victor Hugo", "types", List.of("route")),
+                Map.of("longText", "Lyon", "shortText", "Lyon", "types", List.of("locality", "political")),
+                Map.of("longText", "69002", "shortText", "69002", "types", List.of("postal_code")),
+                Map.of("longText", "France", "shortText", "FR", "types", List.of("country", "political"))
+            )
+        );
+        when(restTemplate.exchange(contains("/v1/places/ChIJi"),
+                eq(HttpMethod.GET), any(), eq(Map.class)))
+            .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+        PlaceDetailsResponse r = service.details("ChIJi...", "token-abc");
+
+        assertThat(r.street()).isEqualTo("12 Rue Victor Hugo");
+        assertThat(r.city()).isEqualTo("Lyon");
+        assertThat(r.postalCode()).isEqualTo("69002");
+        assertThat(r.country()).isEqualTo("FR");
+    }
+
+    @Test
+    void details_missingComponents_returnsNullParts() {
+        Map<String, Object> body = Map.of(
+            "id", "ChIJx",
+            "formattedAddress", "Dakar, Sénégal",
+            "location", Map.of("latitude", 14.693, "longitude", -17.447),
+            "addressComponents", List.of(
+                Map.of("longText", "Dakar", "shortText", "Dakar", "types", List.of("locality", "political")),
+                Map.of("longText", "Sénégal", "shortText", "SN", "types", List.of("country", "political"))
+            )
+        );
+        when(restTemplate.exchange(contains("/v1/places/ChIJx"),
+                eq(HttpMethod.GET), any(), eq(Map.class)))
+            .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+        PlaceDetailsResponse r = service.details("ChIJx", "tok");
+
+        assertThat(r.city()).isEqualTo("Dakar");
+        assertThat(r.country()).isEqualTo("SN");
+        assertThat(r.street()).isNull();
+        assertThat(r.postalCode()).isNull();
+    }
+
+    @Test
+    void details_noAddressComponents_keepsBackwardCompat() {
+        Map<String, Object> body = Map.of(
+            "id", "ChIJi...",
+            "formattedAddress", "12 Rue Victor Hugo, 69002 Lyon, France",
+            "location", Map.of("latitude", 45.7484, "longitude", 4.8467)
+        );
+        when(restTemplate.exchange(contains("/v1/places/ChIJi"),
+                eq(HttpMethod.GET), any(), eq(Map.class)))
+            .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+        PlaceDetailsResponse r = service.details("ChIJi...", "tok");
+
+        assertThat(r.label()).isEqualTo("12 Rue Victor Hugo, 69002 Lyon, France");
+        assertThat(r.street()).isNull();
+        assertThat(r.city()).isNull();
+        assertThat(r.postalCode()).isNull();
+        assertThat(r.country()).isNull();
+    }
+
+    @Test
+    void details_cityFallbackToPostalTown() {
+        Map<String, Object> body = Map.of(
+            "id", "ChIJp",
+            "formattedAddress", "10 Downing St, London, UK",
+            "location", Map.of("latitude", 51.5, "longitude", -0.12),
+            "addressComponents", List.of(
+                Map.of("longText", "London", "shortText", "London", "types", List.of("postal_town")),
+                Map.of("longText", "United Kingdom", "shortText", "GB", "types", List.of("country"))
+            )
+        );
+        when(restTemplate.exchange(contains("/v1/places/ChIJp"),
+                eq(HttpMethod.GET), any(), eq(Map.class)))
+            .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+        assertThat(service.details("ChIJp", "tok").city()).isEqualTo("London");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @Test

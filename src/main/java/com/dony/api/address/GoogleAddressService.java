@@ -41,7 +41,7 @@ public class GoogleAddressService {
         "https://places.googleapis.com/v1/places:autocomplete";
     private static final String DETAILS_URL_TEMPLATE =
         "https://places.googleapis.com/v1/places/{placeId}";
-    private static final String DETAILS_FIELD_MASK = "id,formattedAddress,location";
+    private static final String DETAILS_FIELD_MASK = "id,formattedAddress,location,addressComponents";
 
     // Geocoding API (legacy URL but distinct API — still the standard for reverse)
     private static final String GEOCODE_URL =
@@ -212,11 +212,57 @@ public class GoogleAddressService {
             throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
                 "google-invalid-response", "Bad Gateway", "Réponse Google incomplète");
         }
+
+        List<Map<String, Object>> components =
+            (List<Map<String, Object>>) result.get("addressComponents");
+        String streetNumber = componentLongText(components, "street_number");
+        String route = componentLongText(components, "route");
+        String street = joinStreet(streetNumber, route);
+        String city = firstNonNull(
+            componentLongText(components, "locality"),
+            componentLongText(components, "postal_town"),
+            componentLongText(components, "administrative_area_level_2"));
+        String postalCode = componentLongText(components, "postal_code");
+        String country = componentShortText(components, "country");
+
         return new PlaceDetailsResponse(
             formattedAddress,
             ((Number) location.get("latitude")).doubleValue(),
-            ((Number) location.get("longitude")).doubleValue()
+            ((Number) location.get("longitude")).doubleValue(),
+            street, city, postalCode, country
         );
+    }
+
+    private static String componentLongText(List<Map<String, Object>> components, String type) {
+        return componentText(components, type, "longText");
+    }
+
+    private static String componentShortText(List<Map<String, Object>> components, String type) {
+        return componentText(components, type, "shortText");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String componentText(List<Map<String, Object>> components, String type, String field) {
+        if (components == null) return null;
+        for (Map<String, Object> c : components) {
+            Object typesObj = c.get("types");
+            if (typesObj instanceof List<?> types && types.contains(type)) {
+                Object v = c.get(field);
+                return v == null ? null : v.toString();
+            }
+        }
+        return null;
+    }
+
+    private static String joinStreet(String number, String route) {
+        if (route == null || route.isBlank()) return number == null || number.isBlank() ? null : number;
+        if (number == null || number.isBlank()) return route;
+        return (number + " " + route).trim();
+    }
+
+    private static String firstNonNull(String... vals) {
+        for (String v : vals) if (v != null && !v.isBlank()) return v;
+        return null;
     }
 
     @SuppressWarnings("unchecked")
@@ -241,7 +287,8 @@ public class GoogleAddressService {
         return new PlaceDetailsResponse(
             (String) result.get("formatted_address"),
             ((Number) location.get("lat")).doubleValue(),
-            ((Number) location.get("lng")).doubleValue()
+            ((Number) location.get("lng")).doubleValue(),
+            null, null, null, null
         );
     }
 

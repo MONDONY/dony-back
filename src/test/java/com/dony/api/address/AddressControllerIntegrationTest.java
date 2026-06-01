@@ -97,7 +97,7 @@ class AddressControllerIntegrationTest {
     @Test
     void details_validRequest_returns200() throws Exception {
         when(googleAddressService.details(anyString(), anyString()))
-            .thenReturn(new PlaceDetailsResponse("12 Rue Hugo, Lyon", 45.748, 4.846));
+            .thenReturn(new PlaceDetailsResponse("12 Rue Hugo, Lyon", 45.748, 4.846, null, null, null, null));
 
         mockMvc.perform(post("/addresses/details")
             .with(authentication(authenticatedAs("uid-2")))
@@ -112,7 +112,7 @@ class AddressControllerIntegrationTest {
     @Test
     void reverse_validRequest_returns200() throws Exception {
         when(googleAddressService.reverse(anyDouble(), anyDouble()))
-            .thenReturn(Optional.of(new PlaceDetailsResponse("Dakar, Sénégal", 14.693, -17.447)));
+            .thenReturn(Optional.of(new PlaceDetailsResponse("Dakar, Sénégal", 14.693, -17.447, null, null, null, null)));
 
         mockMvc.perform(post("/addresses/reverse")
             .with(authentication(authenticatedAs("uid-3")))
