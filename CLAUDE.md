@@ -197,13 +197,13 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             // Load user and check status
             User user = userRepository.findByFirebaseUid(uid);
             if (user.getStatus() == UserStatus.SUSPENDED ||
-                user.getStatus() == UserStatus.BANNED) {
+                    user.getStatus() == UserStatus.BANNED) {
                 throw new ForbiddenException("Account suspended");
             }
 
             // Set authentication in SecurityContext
             Authentication auth = new UsernamePasswordAuthenticationToken(
-                user, null, getAuthorities(user)
+                    user, null, getAuthorities(user)
             );
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
@@ -271,8 +271,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(ResourceNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-            HttpStatus.NOT_FOUND,
-            ex.getMessage()
+                HttpStatus.NOT_FOUND,
+                ex.getMessage()
         );
         problem.setType(URI.create("https://dony.app/errors/not-found"));
         problem.setTitle("Resource Not Found");
@@ -282,8 +282,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ProblemDetail> handleValidation(ValidationException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            ex.getMessage()
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                ex.getMessage()
         );
         problem.setType(URI.create("https://dony.app/errors/validation"));
         problem.setTitle("Validation Error");
@@ -371,7 +371,7 @@ public class TrackingService {
 
         // Publish event
         eventPublisher.publishEvent(new DeliveryConfirmedEvent(
-            bidId, senderId, travelerId, LocalDateTime.now()
+                bidId, senderId, travelerId, LocalDateTime.now()
         ));
     }
 }
@@ -428,7 +428,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER audit_log_immutable
-BEFORE UPDATE OR DELETE ON audit_log
+    BEFORE UPDATE OR DELETE ON audit_log
 FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_modification();
 ```
 
@@ -497,14 +497,14 @@ public class StripeService {
 
     public PaymentIntent createEscrowPayment(UUID bidId, BigDecimal amount, UUID senderId, UUID travelerId) {
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-            .setAmount(amount.multiply(BigDecimal.valueOf(100)).longValue()) // cents
-            .setCurrency("eur")
-            .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)  // OBLIGATOIRE
-            .setApplicationFeeAmount(calculateFee(amount))  // 12% commission
-            .putMetadata("bid_id", bidId.toString())
-            .putMetadata("sender_id", senderId.toString())
-            .putMetadata("traveler_id", travelerId.toString())
-            .build();
+                .setAmount(amount.multiply(BigDecimal.valueOf(100)).longValue()) // cents
+                .setCurrency("eur")
+                .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)  // OBLIGATOIRE
+                .setApplicationFeeAmount(calculateFee(amount))  // 12% commission
+                .putMetadata("bid_id", bidId.toString())
+                .putMetadata("sender_id", senderId.toString())
+                .putMetadata("traveler_id", travelerId.toString())
+                .build();
 
         return PaymentIntent.create(params);
     }
@@ -536,10 +536,10 @@ public class StorageService {
         String key = prefix + "/" + UUID.randomUUID() + "_" + file.getOriginalFilename();
 
         PutObjectRequest request = PutObjectRequest.builder()
-            .bucket(bucketName)
-            .key(key)
-            .contentType(file.getContentType())
-            .build();
+                .bucket(bucketName)
+                .key(key)
+                .contentType(file.getContentType())
+                .build();
 
         s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
 
@@ -548,14 +548,14 @@ public class StorageService {
 
     public String generatePresignedUrl(String key, Duration expiration) {
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-            .bucket(bucketName)
-            .key(key)
-            .build();
+                .bucket(bucketName)
+                .key(key)
+                .build();
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-            .signatureDuration(expiration)
-            .getObjectRequest(getObjectRequest)
-            .build();
+                .signatureDuration(expiration)
+                .getObjectRequest(getObjectRequest)
+                .build();
 
         return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
@@ -649,8 +649,8 @@ public class CacheConfig {
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
         cacheManager.setCaffeine(Caffeine.newBuilder()
-            .maximumSize(1000)
-            .expireAfterWrite(5, TimeUnit.MINUTES));
+                .maximumSize(1000)
+                .expireAfterWrite(5, TimeUnit.MINUTES));
         return cacheManager;
     }
 }
@@ -796,11 +796,11 @@ public class BidControllerIntegrationTest {
         when(firebaseAuth.verifyIdToken(anyString())).thenReturn(mockFirebaseToken());
 
         mockMvc.perform(post("/api/v1/bids")
-            .header("Authorization", "Bearer fake-token")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(objectMapper.writeValueAsString(bidRequest)))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.id").exists());
+                        .header("Authorization", "Bearer fake-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bidRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists());
     }
 
     @Test
