@@ -288,6 +288,7 @@ public class GoogleAddressService {
             (String) result.get("formatted_address"),
             ((Number) location.get("lat")).doubleValue(),
             ((Number) location.get("lng")).doubleValue(),
+            // reverse geocoding: composants structurés non requis (spec §4.2)
             null, null, null, null
         );
     }

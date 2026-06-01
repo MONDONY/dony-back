@@ -267,7 +267,11 @@ class GoogleAddressServiceTest {
 
         assertThatThrownBy(() -> service.details("ChIJi...", "tok"))
             .isInstanceOf(DonyBusinessException.class)
-            .satisfies(ex -> ((DonyBusinessException) ex).getErrorCode().equals("google-invalid-response"));
+            .satisfies(ex -> {
+                DonyBusinessException e = (DonyBusinessException) ex;
+                assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY);
+                assertThat(e.getErrorCode()).isEqualTo("google-invalid-response");
+            });
     }
 
     // ── Reverse (Geocoding API — unchanged, GET) ─────────────────────────────
