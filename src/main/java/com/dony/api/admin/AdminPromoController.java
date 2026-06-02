@@ -8,6 +8,7 @@ import com.dony.api.promo.PromoCodeStatus;
 import com.dony.api.promo.PromoCodeTarget;
 import com.dony.api.promo.dto.CreatePromoRequest;
 import com.dony.api.promo.dto.PromoCodeResponse;
+import com.dony.api.promo.dto.UpdatePromoRequest;
 import com.dony.api.promo.dto.UpdatePromoStatusRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -77,6 +78,23 @@ public class AdminPromoController {
     @GetMapping("/{id}")
     public PromoCodeResponse get(@PathVariable UUID id) {
         return toResponse(findOrThrow(id));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<PromoCodeResponse> update(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdatePromoRequest request) {
+        PromoCodeEntity promo = findOrThrow(id);
+        if (request.rate() != null)           promo.setRate(request.rate());
+        if (request.target() != null)         promo.setTarget(request.target());
+        if (request.validFrom() != null)      promo.setValidFrom(request.validFrom());
+        if (request.validTo() != null)        promo.setValidTo(request.validTo());
+        if (request.maxRedemptions() != null) promo.setMaxRedemptions(request.maxRedemptions());
+        if (request.perUserLimit() != null)   promo.setPerUserLimit(request.perUserLimit());
+        PromoCodeEntity saved = promoCodeRepository.save(promo);
+        auditService.log("PROMO", id, "PROMO_CODE_UPDATED", adminId(),
+                Map.of("fields", request.toString()));
+        return ResponseEntity.ok(toResponse(saved));
     }
 
     @PutMapping("/{id}/status")
