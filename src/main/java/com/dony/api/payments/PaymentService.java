@@ -388,7 +388,7 @@ public class PaymentService {
                 "invalid-amount", "Invalid Amount",
                 "Le montant calculé est invalide (≤ 0)");
         }
-        BigDecimal amount = totalNet.multiply(new BigDecimal("1.12")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal amount = totalNet.multiply(BigDecimal.ONE.add(commissionRate)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal commission = totalNet.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
 

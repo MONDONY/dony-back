@@ -21,6 +21,7 @@ public record AnnouncementResponse(
         BigDecimal availableKg,
         BigDecimal totalKg,
         BigDecimal pricePerKg,
+        BigDecimal pricePerKgDisplay,
         com.dony.api.matching.TransportMode transportMode,
         String status,
         long pendingBidCount,

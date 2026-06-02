@@ -160,6 +160,19 @@ class AnnouncementControllerIntegrationTest {
     }
 
     @Test
+    void createAnnouncement_exposesPricePerKgDisplay_netPlus12Percent() throws Exception {
+        // Cohérence des prix : le DTO expose pricePerKgDisplay = pricePerKg (net) × 1.12,
+        // symétrique de unitPriceDisplay du mode MIXED, pour l'affichage côté expéditeur.
+        seedTraveler("uid-test-traveler");
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBodyWithMode("PLANE")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.pricePerKgDisplay").value(5.60));
+    }
+
+    @Test
     void createAnnouncement_withInvalidTransportMode_returns400() throws Exception {
         seedTraveler("uid-test-traveler");
         mockMvc.perform(post("/announcements")

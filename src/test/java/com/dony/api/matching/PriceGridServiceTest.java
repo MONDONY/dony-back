@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.PriceGridItemRequest;
 import com.dony.api.matching.dto.PriceGridItemResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,11 @@ class PriceGridServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PriceGridService(gridRepo, annGridRepo, auditService);
+        // Taux de commission 12 % (dony.commission.rate) injecté pour displayPrice.
+        service = new PriceGridService(gridRepo, annGridRepo, auditService,
+                new DonyConfigProperties(
+                        new DonyConfigProperties.Commission(new BigDecimal("0.12")),
+                        null, null));
     }
 
     @Test
@@ -54,6 +59,17 @@ class PriceGridServiceTest {
         assertThat(response.unitPriceNet()).isEqualByComparingTo("10.00");
         assertThat(response.unitPriceDisplay()).isEqualByComparingTo("11.20");
         verify(gridRepo).save(any(PriceGridItemEntity.class));
+    }
+
+    @Test
+    void displayPrice_derivesFromConfiguredCommissionRate() {
+        // SOURCE UNIQUE : changer dony.commission.rate change le prix affiché.
+        // À 20 % : 10,00 € net → 12,00 € affiché (et non plus 11,20 € codé en dur).
+        PriceGridService at20 = new PriceGridService(gridRepo, annGridRepo, auditService,
+                new DonyConfigProperties(
+                        new DonyConfigProperties.Commission(new BigDecimal("0.20")),
+                        null, null));
+        assertThat(at20.displayPrice(new BigDecimal("10.00"))).isEqualByComparingTo("12.00");
     }
 
     @Test
@@ -104,12 +120,13 @@ class PriceGridServiceTest {
 
     @Test
     void displayPrice_multiplies_by_1_12_with_half_up_rounding() {
-        assertThat(PriceGridService.displayPrice(new BigDecimal("10.00")))
+        // `service` est configuré à 12 % (cf. setUp).
+        assertThat(service.displayPrice(new BigDecimal("10.00")))
             .isEqualByComparingTo("11.20");
-        assertThat(PriceGridService.displayPrice(new BigDecimal("7.00")))
+        assertThat(service.displayPrice(new BigDecimal("7.00")))
             .isEqualByComparingTo("7.84");
         // 41.00 × 1.12 = 45.92 (used in spec acceptance criteria)
-        assertThat(PriceGridService.displayPrice(new BigDecimal("41.00")))
+        assertThat(service.displayPrice(new BigDecimal("41.00")))
             .isEqualByComparingTo("45.92");
     }
 }

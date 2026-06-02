@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AnnouncementPriceGridItemResponse;
 import com.dony.api.matching.dto.PriceGridItemRequest;
 import com.dony.api.matching.dto.PriceGridItemResponse;
@@ -19,18 +20,20 @@ import java.util.UUID;
 public class PriceGridService {
 
     private static final int MAX_GRID_ITEMS = 20;
-    static final BigDecimal COMMISSION_MULTIPLIER = new BigDecimal("1.12");
 
     private final PriceGridItemRepository gridRepo;
     private final AnnouncementPriceGridItemRepository annGridRepo;
     private final AuditService auditService;
+    private final DonyConfigProperties config;
 
     public PriceGridService(PriceGridItemRepository gridRepo,
                             AnnouncementPriceGridItemRepository annGridRepo,
-                            AuditService auditService) {
+                            AuditService auditService,
+                            DonyConfigProperties config) {
         this.gridRepo = gridRepo;
         this.annGridRepo = annGridRepo;
         this.auditService = auditService;
+        this.config = config;
     }
 
     public List<PriceGridItemResponse> getItems(UUID travelerId) {
@@ -149,7 +152,13 @@ public class PriceGridService {
                 displayPrice(e.getUnitPriceNet()), e.getPosition());
     }
 
-    static BigDecimal displayPrice(BigDecimal netPrice) {
-        return netPrice.multiply(COMMISSION_MULTIPLIER).setScale(2, RoundingMode.HALF_UP);
+    /**
+     * Prix « affiché expéditeur » = net × (1 + commission Dony). Le taux provient de la
+     * config {@code dony.commission.rate} — SOURCE UNIQUE du pourcentage de commission,
+     * ajustable sans toucher au code (même valeur que le montant facturé par PaymentService).
+     */
+    BigDecimal displayPrice(BigDecimal netPrice) {
+        BigDecimal multiplier = BigDecimal.ONE.add(config.commission().rate());
+        return netPrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 }

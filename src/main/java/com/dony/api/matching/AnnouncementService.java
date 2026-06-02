@@ -177,6 +177,15 @@ public class AnnouncementService {
         return proFirst.and(secondary);
     }
 
+    /**
+     * Prix « affiché expéditeur » (net + commission Dony) pour le mode KG, symétrique de
+     * {@code unitPriceDisplay} du mode MIXED. Source unique du multiplicateur :
+     * {@link PriceGridService#displayPrice}. {@code null} si aucun prix au kilo (MIXED pur).
+     */
+    private java.math.BigDecimal pricePerKgDisplay(java.math.BigDecimal net) {
+        return net == null ? null : priceGridService.displayPrice(net);
+    }
+
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
         UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
         boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
@@ -203,6 +212,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(), entity.getTotalKg(), entity.getPricePerKg(),
+                pricePerKgDisplay(entity.getPricePerKg()),
                 entity.getTransportMode(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getDescription(),
@@ -497,6 +507,7 @@ public class AnnouncementService {
                 announcement.getAvailableKg(),
                 announcement.getTotalKg(),
                 announcement.getPricePerKg(),
+                pricePerKgDisplay(announcement.getPricePerKg()),
                 announcement.getTransportMode(),
                 announcement.getStatus().name(),
                 bidsCount,
@@ -621,6 +632,7 @@ public class AnnouncementService {
                 saved.getAvailableKg(),
                 saved.getTotalKg(),
                 saved.getPricePerKg(),
+                pricePerKgDisplay(saved.getPricePerKg()),
                 saved.getTransportMode(),
                 saved.getStatus().name(),
                 bidsCount,
@@ -725,6 +737,7 @@ public class AnnouncementService {
                 entity.getAvailableKg(),
                 entity.getTotalKg(),
                 entity.getPricePerKg(),
+                pricePerKgDisplay(entity.getPricePerKg()),
                 entity.getTransportMode(),
                 entity.getStatus().name(),
                 pendingBidCount,
