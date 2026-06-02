@@ -58,6 +58,8 @@ class BidServiceTest {
     @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
     @Mock private com.dony.api.auth.BlockService blockService;
+    @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
+    @Mock private com.dony.api.promo.PromoService promoService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -138,7 +140,7 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null, null, null, null);
+                "Aminata Diallo", "+221701234567", true, null, null, null, null, null);
     }
 
     @BeforeEach
@@ -247,7 +249,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false, null, null, null, null); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null, null, null, null, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -405,7 +407,7 @@ class BidServiceTest {
             });
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null);
 
             BidResponse result = bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
@@ -429,7 +431,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
@@ -453,7 +455,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
@@ -483,7 +485,7 @@ class BidServiceTest {
 
             BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "WAVE", "+221771234567", "SN", null);
+                    true, "WAVE", "+221771234567", "SN", null, null);
 
             BidResponse result = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest);
 
@@ -509,7 +511,7 @@ class BidServiceTest {
 
             BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "WAVE", "+221771234567", "SN", null);
+                    true, "WAVE", "+221771234567", "SN", null, null);
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -535,7 +537,7 @@ class BidServiceTest {
 
             BidRequest omReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "ORANGE_MONEY", null, "CI", null); // phoneNumber null
+                    true, "ORANGE_MONEY", null, "CI", null, null); // phoneNumber null
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, omReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -583,6 +585,7 @@ class BidServiceTest {
                 "Mamadou Diallo", "+221771234567",
                 true, "STRIPE",
                 null, null,  // phoneNumber, countryCode
+                null,        // promoCode
                 List.of(new BidGridItemRequest(gridItemId, 2))
             );
 
@@ -614,6 +617,7 @@ class BidServiceTest {
                 "Name", "+33600000000",
                 true, "STRIPE",
                 null, null,              // phoneNumber, countryCode
+                null,                    // promoCode
                 List.of()               // gridItems vide
             );
 

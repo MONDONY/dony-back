@@ -42,5 +42,8 @@ public record BidRequest(
 
         String countryCode,
 
+        /** Code promo optionnel (insensible à la casse) — validé et racheté au paiement. */
+        String promoCode,
+
         @Valid List<BidGridItemRequest> gridItems  // peut être null ou vide — doit rester en DERNIER
 ) {}

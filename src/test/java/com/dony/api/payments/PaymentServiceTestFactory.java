@@ -4,6 +4,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.stripe.AdminAlertService;
+import com.dony.api.promo.PromoService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
@@ -61,7 +62,8 @@ class PaymentServiceTestFactory {
                 defaultConnectProperties(),
                 new ObjectMapper(),
                 mock(AdminAlertService.class),
-                stubbedResolver()
+                stubbedResolver(),
+                mock(PromoService.class)
         );
     }
 
@@ -91,7 +93,8 @@ class PaymentServiceTestFactory {
                 defaultConnectProperties(),
                 new ObjectMapper(),
                 adminAlert,
-                stubbedResolver()
+                stubbedResolver(),
+                mock(PromoService.class)
         );
     }
 }

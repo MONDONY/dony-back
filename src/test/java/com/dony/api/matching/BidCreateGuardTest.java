@@ -46,6 +46,8 @@ class BidCreateGuardTest {
     @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
     @Mock private BlockService blockService;
+    @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
+    @Mock private com.dony.api.promo.PromoService promoService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -106,7 +108,7 @@ class BidCreateGuardTest {
 
     private BidRequest buildRequest() {
         return new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100), "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null, null, null, null);
+                "Aminata Diallo", "+221701234567", true, null, null, null, null, null);
     }
 
     @BeforeEach

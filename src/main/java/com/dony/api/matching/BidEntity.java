@@ -158,6 +158,14 @@ public class BidEntity extends BaseEntity {
     @Column(name = "commission_rate")
     private java.math.BigDecimal commissionRate;
 
+    /** Code promo brut entré par l'expéditeur à la création du bid (nullable). */
+    @Column(name = "promo_code", length = 40)
+    private String promoCode;
+
+    /** FK vers promo_codes, figé au moment du paiement (nullable si pas de promo). */
+    @Column(name = "promo_code_id")
+    private java.util.UUID promoCodeId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "pricing_mode", nullable = false, length = 10)
     private BidPricingMode pricingMode = BidPricingMode.KG;
@@ -281,6 +289,12 @@ public class BidEntity extends BaseEntity {
 
     public java.math.BigDecimal getCommissionRate() { return commissionRate; }
     public void setCommissionRate(java.math.BigDecimal commissionRate) { this.commissionRate = commissionRate; }
+
+    public String getPromoCode() { return promoCode; }
+    public void setPromoCode(String promoCode) { this.promoCode = promoCode != null ? promoCode.toUpperCase() : null; }
+
+    public java.util.UUID getPromoCodeId() { return promoCodeId; }
+    public void setPromoCodeId(java.util.UUID promoCodeId) { this.promoCodeId = promoCodeId; }
 
     public BidPricingMode getPricingMode() { return pricingMode; }
     public void setPricingMode(BidPricingMode pricingMode) { this.pricingMode = pricingMode; }

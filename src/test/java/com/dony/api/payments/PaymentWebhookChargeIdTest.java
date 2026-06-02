@@ -40,7 +40,7 @@ class PaymentWebhookChargeIdTest {
                 paymentRepository, auditService, eventPublisher,
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
-                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class), PaymentServiceTestFactory.stubbedResolver());
+                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class), PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.dony.api.promo.PromoService.class));
     }
 
     @Test

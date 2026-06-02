@@ -7,6 +7,7 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.stripe.AdminAlertService;
+import com.dony.api.promo.PromoService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -62,6 +63,7 @@ public class PaymentService {
     private final ObjectMapper objectMapper;
     private final AdminAlertService adminAlert;
     private final CommissionRateResolver commissionRateResolver;
+    private final PromoService promoService;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -72,7 +74,8 @@ public class PaymentService {
                           StripeConnectProperties stripeConnectProperties,
                           ObjectMapper objectMapper,
                           AdminAlertService adminAlert,
-                          CommissionRateResolver commissionRateResolver) {
+                          CommissionRateResolver commissionRateResolver,
+                          PromoService promoService) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -83,6 +86,7 @@ public class PaymentService {
         this.objectMapper = objectMapper;
         this.adminAlert = adminAlert;
         this.commissionRateResolver = commissionRateResolver;
+        this.promoService = promoService;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -388,11 +392,30 @@ public class PaymentService {
                 "invalid-amount", "Invalid Amount",
                 "Le montant calculé est invalide (≤ 0)");
         }
-        // Taux effectif pour ce bid (override voyageur/expéditeur ; min le plus favorable).
-        // Figé en snapshot sur le bid : remboursements/payouts/analytics liront cette valeur.
-        BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        // Taux effectif : promo > overrides > global (SOURCE UNIQUE via CommissionRateResolver).
+        // Si le promo est expiré/épuisé depuis la création du bid → fallback silencieux.
+        BigDecimal rate;
+        boolean promoApplied = false;
+        if (bid.getPromoCode() != null) {
+            try {
+                rate = commissionRateResolver.resolve(traveler.getId(), sender.getId(), bid.getPromoCode());
+                promoApplied = true;
+            } catch (DonyBusinessException e) {
+                log.warn("Promo {} no longer valid for bid {} ({}): falling back to override/global rate",
+                        bid.getPromoCode(), bidId, e.getErrorCode());
+                rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+            }
+        } else {
+            rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        }
         bid.setCommissionRate(rate);
         bidRepository.save(bid);
+        // Rachat du promo (idempotent) — même tx que le bid.save ci-dessus.
+        if (promoApplied) {
+            var redemption = promoService.redeem(bid.getPromoCode(), sender.getId(), bidId, rate);
+            bid.setPromoCodeId(redemption.getPromoCodeId());
+            bidRepository.save(bid);
+        }
         BigDecimal amount = totalNet.multiply(BigDecimal.ONE.add(rate)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal commission = totalNet.multiply(rate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();

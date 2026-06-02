@@ -111,11 +111,23 @@ public class CashCommissionService {
 
     /**
      * Calcule la commission pour un bid (weightKg × pricePerKg) au taux EFFECTIF
-     * (override voyageur/expéditeur via {@link CommissionRateResolver}) et fige ce taux
+     * (promo > overrides > global via {@link CommissionRateResolver}) et fige ce taux
      * en snapshot sur le bid ({@code bids.commission_rate}) — même sémantique que l'escrow.
+     * Si un promoCode est présent mais invalide (expiré, épuisé), fallback silencieux.
      */
     public BigDecimal computeBidCommission(BidEntity bid, AnnouncementEntity announcement) {
-        BigDecimal rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
+        BigDecimal rate;
+        if (bid.getPromoCode() != null) {
+            try {
+                rate = commissionRateResolver.resolve(
+                        announcement.getTravelerId(), bid.getSenderId(), bid.getPromoCode());
+            } catch (com.dony.api.common.DonyBusinessException e) {
+                log.warn("Promo {} invalid for cash bid {} — fallback", bid.getPromoCode(), bid.getId());
+                rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
+            }
+        } else {
+            rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
+        }
         bid.setCommissionRate(rate);
         BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
         return computeCommission(cashAmount, rate);

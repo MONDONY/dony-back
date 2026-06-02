@@ -6,12 +6,16 @@ import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.dto.BidGridItemRequest;
+import com.dony.api.matching.dto.BidQuoteRequest;
+import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.dto.HandoverRequest;
+import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.matching.events.HandoverDefinedEvent;
@@ -49,6 +53,8 @@ public class BidService {
     private final BidGridItemRepository bidGridItemRepository;
     private final AnnouncementPriceGridItemRepository annGridItemRepository;
     private final BlockService blockService;
+    private final CommissionRateResolver commissionRateResolver;
+    private final PromoService promoService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -59,7 +65,9 @@ public class BidService {
                       CancellationRepository cancellationRepository,
                       BidGridItemRepository bidGridItemRepository,
                       AnnouncementPriceGridItemRepository annGridItemRepository,
-                      BlockService blockService) {
+                      BlockService blockService,
+                      CommissionRateResolver commissionRateResolver,
+                      PromoService promoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -70,6 +78,51 @@ public class BidService {
         this.bidGridItemRepository = bidGridItemRepository;
         this.annGridItemRepository = annGridItemRepository;
         this.blockService = blockService;
+        this.commissionRateResolver = commissionRateResolver;
+        this.promoService = promoService;
+    }
+
+    /**
+     * Devis : calcule le total exact (net, commission, total) avec promo éventuel.
+     * Le promo est validé strictement ici (exceptions propagées au contrôleur).
+     */
+    @Transactional(readOnly = true)
+    public BidQuoteResponse quote(String firebaseUid, BidQuoteRequest request) {
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+        AnnouncementEntity ann = announcementRepository.findById(request.announcementId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        if (ann.getPricePerKg() == null || request.weightKg() == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-bid-params", "Invalid Bid Parameters",
+                    "Le poids et le prix au kilo sont requis pour calculer le devis");
+        }
+
+        BigDecimal netEur = ann.getPricePerKg().multiply(request.weightKg())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        // Résolution du taux — promo validé strictement (exceptions propagées en RFC 7807).
+        String promoCode = request.promoCode() != null ? request.promoCode().strip() : null;
+        BigDecimal rate;
+        boolean promoApplied = false;
+        if (promoCode != null && !promoCode.isBlank()) {
+            rate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId(), promoCode);
+            promoApplied = true;
+        } else {
+            rate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId());
+        }
+
+        BigDecimal commissionEur = netEur.multiply(rate).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalEur = netEur.add(commissionEur).setScale(2, java.math.RoundingMode.HALF_UP);
+
+        String promoLabel = null;
+        if (promoApplied) {
+            long pct = rate.multiply(java.math.BigDecimal.valueOf(100)).longValue();
+            promoLabel = "Code " + promoCode.toUpperCase() + " : " + pct + " % de commission";
+        }
+
+        return new BidQuoteResponse(netEur, rate, commissionEur, totalEur, promoApplied, promoLabel);
     }
 
     @Transactional
@@ -221,6 +274,11 @@ public class BidService {
                 || pm == PaymentMethod.ORANGE_MONEY) {
             bid.setMobileMoneyPhone(request.phoneNumber());
             bid.setMobileMoneyCountryCode(request.countryCode());
+        }
+
+        // Code promo stocké brut (validation + rachat au moment du paiement).
+        if (request.promoCode() != null && !request.promoCode().isBlank()) {
+            bid.setPromoCode(request.promoCode().strip());
         }
 
         BidEntity saved = bidRepository.save(bid);

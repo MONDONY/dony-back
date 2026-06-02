@@ -3,6 +3,8 @@ package com.dony.api.matching;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.dto.BidCheckoutRequest;
 import com.dony.api.matching.dto.BidCheckoutResponse;
+import com.dony.api.matching.dto.BidQuoteRequest;
+import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
@@ -166,6 +168,17 @@ public class BidController {
         String firebaseUid = requireFirebaseUid();
         bidService.hideBidForTraveler(bidId, firebaseUid);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Devis : calcule net/commission/total avec promo éventuel ─────────────
+
+    @PostMapping("/bids/quote")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<BidQuoteResponse> quote(
+            @Valid @RequestBody BidQuoteRequest request
+    ) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.quote(firebaseUid, request));
     }
 
     private String requireFirebaseUid() {
