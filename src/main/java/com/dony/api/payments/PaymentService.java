@@ -61,6 +61,7 @@ public class PaymentService {
     private final StripeConnectProperties stripeConnectProperties;
     private final ObjectMapper objectMapper;
     private final AdminAlertService adminAlert;
+    private final CommissionRateResolver commissionRateResolver;
 
     @Value("${dony.commission.rate:0.12}")
     private BigDecimal commissionRate;
@@ -73,7 +74,8 @@ public class PaymentService {
                           ApplicationEventPublisher eventPublisher,
                           StripeConnectProperties stripeConnectProperties,
                           ObjectMapper objectMapper,
-                          AdminAlertService adminAlert) {
+                          AdminAlertService adminAlert,
+                          CommissionRateResolver commissionRateResolver) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -83,6 +85,7 @@ public class PaymentService {
         this.stripeConnectProperties = stripeConnectProperties;
         this.objectMapper = objectMapper;
         this.adminAlert = adminAlert;
+        this.commissionRateResolver = commissionRateResolver;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -388,8 +391,13 @@ public class PaymentService {
                 "invalid-amount", "Invalid Amount",
                 "Le montant calculé est invalide (≤ 0)");
         }
-        BigDecimal amount = totalNet.multiply(BigDecimal.ONE.add(commissionRate)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal commission = totalNet.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
+        // Taux effectif pour ce bid (override voyageur/expéditeur ; min le plus favorable).
+        // Figé en snapshot sur le bid : remboursements/payouts/analytics liront cette valeur.
+        BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        bid.setCommissionRate(rate);
+        bidRepository.save(bid);
+        BigDecimal amount = totalNet.multiply(BigDecimal.ONE.add(rate)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal commission = totalNet.multiply(rate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
 
         try {
@@ -415,7 +423,7 @@ public class PaymentService {
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
                     .putMetadata("commission_eur", commission.toPlainString())
-                    .putMetadata("commission_rate", commissionRate.toPlainString())
+                    .putMetadata("commission_rate", rate.toPlainString())
                     .putMetadata("commission_cents", String.valueOf(commissionCents))
                     .build();
 

@@ -154,6 +154,10 @@ public class BidEntity extends BaseEntity {
     @Column(name = "commission_charged_via", length = 10)
     private CommissionChargedVia commissionChargedVia;
 
+    /** Taux de commission effectif figé à la création du paiement (snapshot). */
+    @Column(name = "commission_rate")
+    private java.math.BigDecimal commissionRate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "pricing_mode", nullable = false, length = 10)
     private BidPricingMode pricingMode = BidPricingMode.KG;
@@ -274,6 +278,9 @@ public class BidEntity extends BaseEntity {
 
     public CommissionChargedVia getCommissionChargedVia() { return commissionChargedVia; }
     public void setCommissionChargedVia(CommissionChargedVia commissionChargedVia) { this.commissionChargedVia = commissionChargedVia; }
+
+    public java.math.BigDecimal getCommissionRate() { return commissionRate; }
+    public void setCommissionRate(java.math.BigDecimal commissionRate) { this.commissionRate = commissionRate; }
 
     public BidPricingMode getPricingMode() { return pricingMode; }
     public void setPricingMode(BidPricingMode pricingMode) { this.pricingMode = pricingMode; }

@@ -1,7 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
-import com.dony.api.config.DonyConfigProperties;
+import com.dony.api.payments.CommissionRateResolver;
 import com.dony.api.matching.dto.AnnouncementPriceGridItemResponse;
 import com.dony.api.matching.dto.PriceGridItemRequest;
 import com.dony.api.matching.dto.PriceGridItemResponse;
@@ -24,16 +24,16 @@ public class PriceGridService {
     private final PriceGridItemRepository gridRepo;
     private final AnnouncementPriceGridItemRepository annGridRepo;
     private final AuditService auditService;
-    private final DonyConfigProperties config;
+    private final CommissionRateResolver commissionRateResolver;
 
     public PriceGridService(PriceGridItemRepository gridRepo,
                             AnnouncementPriceGridItemRepository annGridRepo,
                             AuditService auditService,
-                            DonyConfigProperties config) {
+                            CommissionRateResolver commissionRateResolver) {
         this.gridRepo = gridRepo;
         this.annGridRepo = annGridRepo;
         this.auditService = auditService;
-        this.config = config;
+        this.commissionRateResolver = commissionRateResolver;
     }
 
     public List<PriceGridItemResponse> getItems(UUID travelerId) {
@@ -140,25 +140,25 @@ public class PriceGridService {
         return gridRepo.saveAll(items).stream().map(this::toResponse).toList();
     }
 
-    public List<AnnouncementPriceGridItemResponse> getAnnouncementGridItems(UUID announcementId) {
+    public List<AnnouncementPriceGridItemResponse> getAnnouncementGridItems(UUID announcementId, UUID travelerId) {
         return annGridRepo.findByAnnouncementIdOrderByPositionAsc(announcementId)
                 .stream().map(e -> new AnnouncementPriceGridItemResponse(
-                        e.getId(), e.getLabel(), e.getUnitPriceNet(), displayPrice(e.getUnitPriceNet())
+                        e.getId(), e.getLabel(), e.getUnitPriceNet(), displayPrice(e.getUnitPriceNet(), travelerId)
                 )).toList();
     }
 
     private PriceGridItemResponse toResponse(PriceGridItemEntity e) {
         return new PriceGridItemResponse(e.getId(), e.getLabel(), e.getUnitPriceNet(),
-                displayPrice(e.getUnitPriceNet()), e.getPosition());
+                displayPrice(e.getUnitPriceNet(), e.getTravelerId()), e.getPosition());
     }
 
     /**
-     * Prix « affiché expéditeur » = net × (1 + commission Dony). Le taux provient de la
-     * config {@code dony.commission.rate} — SOURCE UNIQUE du pourcentage de commission,
-     * ajustable sans toucher au code (même valeur que le montant facturé par PaymentService).
+     * Prix « affiché expéditeur » = net × (1 + commission Dony). Le taux est résolu par
+     * {@link CommissionRateResolver} à partir du voyageur (override éventuel) et de la
+     * config {@code dony.commission.rate} — SOURCE UNIQUE du pourcentage de commission.
      */
-    BigDecimal displayPrice(BigDecimal netPrice) {
-        BigDecimal multiplier = BigDecimal.ONE.add(config.commission().rate());
+    BigDecimal displayPrice(BigDecimal netPrice, UUID travelerId) {
+        BigDecimal multiplier = BigDecimal.ONE.add(commissionRateResolver.resolve(travelerId));
         return netPrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 }

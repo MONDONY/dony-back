@@ -85,6 +85,10 @@ public class UserEntity extends BaseEntity {
     @Column(name = "is_pro_account", nullable = false)
     private boolean isProAccount = false;
 
+    /** Override de taux de commission Dony (null = taux global {@code dony.commission.rate}). */
+    @Column(name = "commission_rate_override")
+    private java.math.BigDecimal commissionRateOverride;
+
     @Column(name = "pro_company_name", length = 255)
     private String proCompanyName;
 
@@ -198,6 +202,9 @@ public class UserEntity extends BaseEntity {
 
     public boolean isProAccount() { return isProAccount; }
     public void setProAccount(boolean proAccount) { isProAccount = proAccount; }
+
+    public java.math.BigDecimal getCommissionRateOverride() { return commissionRateOverride; }
+    public void setCommissionRateOverride(java.math.BigDecimal commissionRateOverride) { this.commissionRateOverride = commissionRateOverride; }
 
     public String getProCompanyName() { return proCompanyName; }
     public void setProCompanyName(String proCompanyName) { this.proCompanyName = proCompanyName; }

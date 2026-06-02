@@ -55,7 +55,7 @@ class PaymentServiceRefreshConnectAccountTest {
                 paymentRepository, auditService, eventPublisher,
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
-                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class));
+                org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class), PaymentServiceTestFactory.stubbedResolver());
         ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 

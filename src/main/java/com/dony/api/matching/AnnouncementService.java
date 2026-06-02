@@ -182,8 +182,8 @@ public class AnnouncementService {
      * {@code unitPriceDisplay} du mode MIXED. Source unique du multiplicateur :
      * {@link PriceGridService#displayPrice}. {@code null} si aucun prix au kilo (MIXED pur).
      */
-    private java.math.BigDecimal pricePerKgDisplay(java.math.BigDecimal net) {
-        return net == null ? null : priceGridService.displayPrice(net);
+    private java.math.BigDecimal pricePerKgDisplay(java.math.BigDecimal net, java.util.UUID travelerId) {
+        return net == null ? null : priceGridService.displayPrice(net, travelerId);
     }
 
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
@@ -202,7 +202,7 @@ public class AnnouncementService {
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
                 entity.getPricingMode() == PricingMode.MIXED
-                        ? priceGridService.getAnnouncementGridItems(entity.getId())
+                        ? priceGridService.getAnnouncementGridItems(entity.getId(), entity.getTravelerId())
                         : List.of();
         return new AnnouncementSearchResponse(
                 entity.getId(), entity.getTravelerId(),
@@ -212,7 +212,7 @@ public class AnnouncementService {
                 new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
                 new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
                 entity.getAvailableKg(), entity.getTotalKg(), entity.getPricePerKg(),
-                pricePerKgDisplay(entity.getPricePerKg()),
+                pricePerKgDisplay(entity.getPricePerKg(), entity.getTravelerId()),
                 entity.getTransportMode(),
                 entity.getStatus().name(), bidsCount, profile,
                 entity.getDescription(),
@@ -491,7 +491,7 @@ public class AnnouncementService {
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
                 announcement.getPricingMode() == PricingMode.MIXED
-                        ? priceGridService.getAnnouncementGridItems(announcement.getId())
+                        ? priceGridService.getAnnouncementGridItems(announcement.getId(), announcement.getTravelerId())
                         : List.of();
 
         return new AnnouncementDetailResponse(
@@ -507,7 +507,7 @@ public class AnnouncementService {
                 announcement.getAvailableKg(),
                 announcement.getTotalKg(),
                 announcement.getPricePerKg(),
-                pricePerKgDisplay(announcement.getPricePerKg()),
+                pricePerKgDisplay(announcement.getPricePerKg(), announcement.getTravelerId()),
                 announcement.getTransportMode(),
                 announcement.getStatus().name(),
                 bidsCount,
@@ -616,7 +616,7 @@ public class AnnouncementService {
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> updatedGridItems =
                 saved.getPricingMode() == PricingMode.MIXED
-                        ? priceGridService.getAnnouncementGridItems(saved.getId())
+                        ? priceGridService.getAnnouncementGridItems(saved.getId(), saved.getTravelerId())
                         : List.of();
 
         return new AnnouncementDetailResponse(
@@ -632,7 +632,7 @@ public class AnnouncementService {
                 saved.getAvailableKg(),
                 saved.getTotalKg(),
                 saved.getPricePerKg(),
-                pricePerKgDisplay(saved.getPricePerKg()),
+                pricePerKgDisplay(saved.getPricePerKg(), saved.getTravelerId()),
                 saved.getTransportMode(),
                 saved.getStatus().name(),
                 bidsCount,
@@ -722,7 +722,7 @@ public class AnnouncementService {
                 .contains(com.dony.api.payments.cash.PaymentMethod.CASH);
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
                 entity.getPricingMode() == PricingMode.MIXED
-                        ? priceGridService.getAnnouncementGridItems(entity.getId())
+                        ? priceGridService.getAnnouncementGridItems(entity.getId(), entity.getTravelerId())
                         : List.of();
         return new AnnouncementResponse(
                 entity.getId(),
@@ -737,7 +737,7 @@ public class AnnouncementService {
                 entity.getAvailableKg(),
                 entity.getTotalKg(),
                 entity.getPricePerKg(),
-                pricePerKgDisplay(entity.getPricePerKg()),
+                pricePerKgDisplay(entity.getPricePerKg(), entity.getTravelerId()),
                 entity.getTransportMode(),
                 entity.getStatus().name(),
                 pendingBidCount,

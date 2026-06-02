@@ -9,6 +9,10 @@ import com.dony.api.matching.BidRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.math.BigDecimal;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 class PaymentServiceTestFactory {
@@ -55,8 +59,17 @@ class PaymentServiceTestFactory {
                 mock(ApplicationEventPublisher.class),
                 defaultConnectProperties(),
                 new ObjectMapper(),
-                mock(AdminAlertService.class)
+                mock(AdminAlertService.class),
+                stubbedResolver()
         );
+    }
+
+    /** Résolveur de taux mocké, stubé au taux global 12 % (suffisant pour les tests). */
+    static CommissionRateResolver stubbedResolver() {
+        CommissionRateResolver r = mock(CommissionRateResolver.class);
+        lenient().when(r.resolve(any())).thenReturn(new BigDecimal("0.12"));
+        lenient().when(r.resolve(any(), any())).thenReturn(new BigDecimal("0.12"));
+        return r;
     }
 
     /**
@@ -76,7 +89,8 @@ class PaymentServiceTestFactory {
                 mock(ApplicationEventPublisher.class),
                 defaultConnectProperties(),
                 new ObjectMapper(),
-                adminAlert
+                adminAlert,
+                stubbedResolver()
         );
     }
 }
