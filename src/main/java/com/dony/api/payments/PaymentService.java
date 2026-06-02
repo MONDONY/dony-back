@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.config.StripeConnectProperties;
@@ -34,7 +35,6 @@ import com.stripe.param.PaymentIntentCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -62,9 +62,6 @@ public class PaymentService {
     private final ObjectMapper objectMapper;
     private final AdminAlertService adminAlert;
     private final CommissionRateResolver commissionRateResolver;
-
-    @Value("${dony.commission.rate:0.12}")
-    private BigDecimal commissionRate;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -1101,7 +1098,9 @@ public class PaymentService {
         }
 
         BigDecimal amount = amountEur.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal commission = amount.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP);
+        // Taux effectif (override voyageur/expéditeur ; min le plus favorable) — SOURCE UNIQUE.
+        BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        BigDecimal commission = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
         long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
 
         try {
@@ -1116,6 +1115,7 @@ public class PaymentService {
                     .putMetadata("negotiation_thread_id", threadId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
+                    .putMetadata("commission_rate", rate.toPlainString())
                     .putMetadata("scope", "NEGOTIATION")
                     .build();
 

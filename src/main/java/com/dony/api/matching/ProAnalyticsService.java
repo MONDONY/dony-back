@@ -1,7 +1,6 @@
 package com.dony.api.matching;
 
 import com.dony.api.auth.UserEntity;
-import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.ProAnalyticsResponse;
 import com.dony.api.matching.dto.ProAnalyticsResponse.KpiDto;
 import com.dony.api.matching.dto.ProAnalyticsResponse.TransactionRowDto;
@@ -26,18 +25,15 @@ public class ProAnalyticsService {
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
     private final PaymentRepository paymentRepository;
-    private final DonyConfigProperties config;
 
     public ProAnalyticsService(
             AnnouncementRepository announcementRepository,
             BidRepository bidRepository,
-            PaymentRepository paymentRepository,
-            DonyConfigProperties config
+            PaymentRepository paymentRepository
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
-        this.config = config;
     }
 
     @Transactional(readOnly = true)
@@ -134,7 +130,8 @@ public class ProAnalyticsService {
         for (AnnouncementEntity ann : announcements) {
             long parcelCount = bidRepository.countByAnnouncementIdAndStatus(ann.getId(), BidStatus.COMPLETED);
             BigDecimal gross = orZero(paymentRepository.sumGrossRevenueForAnnouncement(ann.getId(), PaymentStatus.RELEASED));
-            BigDecimal commission = gross.multiply(config.commission().rate()).setScale(2, RoundingMode.HALF_UP);
+            // Commission réellement prélevée (taux effectif figé, overrides inclus) — pas un recalcul au taux global.
+            BigDecimal commission = orZero(paymentRepository.sumCommissionForAnnouncement(ann.getId(), PaymentStatus.RELEASED));
             BigDecimal net = gross.subtract(commission);
             String corridor = ann.getDepartureCity() + " → " + ann.getArrivalCity();
             rows.add(new TransactionRowDto(

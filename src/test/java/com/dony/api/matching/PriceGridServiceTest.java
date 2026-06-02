@@ -3,7 +3,7 @@ package com.dony.api.matching;
 import com.dony.api.common.AuditService;
 import com.dony.api.matching.dto.PriceGridItemRequest;
 import com.dony.api.matching.dto.PriceGridItemResponse;
-import com.dony.api.payments.CommissionRateResolver;
+import com.dony.api.common.CommissionRateResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

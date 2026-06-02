@@ -23,7 +23,6 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -76,7 +75,6 @@ class PaymentServiceOnBehalfOfTest {
                 props,
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class), PaymentServiceTestFactory.stubbedResolver());
-        ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

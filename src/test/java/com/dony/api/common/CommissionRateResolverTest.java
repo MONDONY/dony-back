@@ -1,4 +1,4 @@
-package com.dony.api.payments;
+package com.dony.api.common;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -68,5 +68,12 @@ class CommissionRateResolverTest {
         UUID t = UUID.randomUUID();
         when(userRepository.findById(t)).thenReturn(Optional.of(withOverride(new BigDecimal("0.09"))));
         assertThat(resolver().resolve(t, null)).isEqualByComparingTo("0.09");
+    }
+
+    @Test
+    void global_rate_when_user_not_found() {
+        UUID t = UUID.randomUUID();
+        when(userRepository.findById(t)).thenReturn(Optional.empty());
+        assertThat(resolver().resolve(t)).isEqualByComparingTo("0.12");
     }
 }

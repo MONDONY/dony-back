@@ -83,6 +83,22 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
             @Param("announcementId") UUID announcementId,
             @Param("status") PaymentStatus status);
 
+    /**
+     * Commission Dony réellement prélevée pour une annonce (somme des {@code commissionAmount}).
+     * Reflète le taux effectif figé à la création du paiement (overrides inclus) — à utiliser
+     * pour les analytics plutôt que de recalculer via le taux global courant.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(p.commissionAmount), 0)
+        FROM PaymentEntity p
+        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        WHERE b.announcementId = :announcementId
+          AND p.status = :status
+    """)
+    java.math.BigDecimal sumCommissionForAnnouncement(
+            @Param("announcementId") UUID announcementId,
+            @Param("status") PaymentStatus status);
+
     @Query("""
         SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
         FROM PaymentEntity p

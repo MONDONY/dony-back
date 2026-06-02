@@ -171,6 +171,82 @@ class UserServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("setCommissionRateOverride()")
+    class SetCommissionRateOverrideTests {
+
+        @Test
+        @DisplayName("taux valide → enregistré + audit")
+        void validRate_persistsAndAudits() {
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.setCommissionRateOverride(USER_ID, new java.math.BigDecimal("0.08"));
+
+            assertThat(user.getCommissionRateOverride()).isEqualByComparingTo("0.08");
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(USER_ID),
+                    eq("USER_COMMISSION_RATE_OVERRIDE_SET"), eq(USER_ID), any());
+        }
+
+        @Test
+        @DisplayName("null → retour au taux global (autorisé)")
+        void nullRate_clearsOverride() {
+            user.setCommissionRateOverride(new java.math.BigDecimal("0.08"));
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.setCommissionRateOverride(USER_ID, null);
+
+            assertThat(user.getCommissionRateOverride()).isNull();
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(USER_ID),
+                    eq("USER_COMMISSION_RATE_OVERRIDE_SET"), eq(USER_ID), any());
+        }
+
+        @Test
+        @DisplayName("taux négatif → 422 invalid-commission-rate, pas de save")
+        void negativeRate_throws422() {
+            assertThatThrownBy(() ->
+                    userService.setCommissionRateOverride(USER_ID, new java.math.BigDecimal("-0.01")))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        assertThat(((DonyBusinessException) e).getStatus())
+                                .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(((DonyBusinessException) e).getErrorCode())
+                                .isEqualTo("invalid-commission-rate");
+                    });
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("taux ≥ 1 → 422 invalid-commission-rate, pas de save")
+        void rateAtOrAboveOne_throws422() {
+            assertThatThrownBy(() ->
+                    userService.setCommissionRateOverride(USER_ID, java.math.BigDecimal.ONE))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("invalid-commission-rate"));
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 user-not-found")
+        void unknownUser_throws404() {
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() ->
+                    userService.setCommissionRateOverride(USER_ID, new java.math.BigDecimal("0.10")))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        assertThat(((DonyBusinessException) e).getStatus())
+                                .isEqualTo(HttpStatus.NOT_FOUND);
+                        assertThat(((DonyBusinessException) e).getErrorCode())
+                                .isEqualTo("user-not-found");
+                    });
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private static void setId(Object obj, UUID id) throws Exception {

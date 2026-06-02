@@ -19,10 +19,8 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
-import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,7 +54,6 @@ class PaymentServiceRefreshConnectAccountTest {
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class), PaymentServiceTestFactory.stubbedResolver());
-        ReflectionTestUtils.setField(service, "commissionRate", new BigDecimal("0.12"));
     }
 
     private UserEntity buildUser(String stripeAccountId, boolean onboarded) {

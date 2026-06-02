@@ -1,4 +1,4 @@
-package com.dony.api.payments;
+package com.dony.api.common;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -11,6 +11,11 @@ import java.util.UUID;
 /**
  * SOURCE UNIQUE du taux de commission Dony effectif pour une transaction.
  *
+ * <p>Placé dans {@code common/} car il s'agit de logique partagée : il est consommé
+ * aussi bien par {@code matching} (affichage prix) que par {@code payments}
+ * (prélèvement escrow, cash et mobile money) — pas d'injection cross-package d'un
+ * service métier (règle d'architecture du projet).
+ *
  * <p>Règle (cf. {@code docs/specs/commission-rate-overrides-and-promo.md}) :
  * <ul>
  *   <li>Phase 1 : {@code min( override(voyageur), override(expéditeur), taux global )} —
@@ -18,9 +23,9 @@ import java.util.UUID;
  *   <li>Phase 2 : un code promo valide écrasera ce résultat (priorité 1).</li>
  * </ul>
  *
- * <p>Tous les consommateurs (charge {@code PaymentService}, affichage
- * {@code PriceGridService}, analytics) passent par ce résolveur avec le contexte dont
- * ils disposent (à la navigation, seul le voyageur est connu).
+ * <p>Tous les consommateurs (charge {@code PaymentService} / {@code CashCommissionService},
+ * affichage {@code PriceGridService}, analytics) passent par ce résolveur avec le contexte
+ * dont ils disposent (à la navigation, seul le voyageur est connu).
  */
 @Service
 public class CommissionRateResolver {

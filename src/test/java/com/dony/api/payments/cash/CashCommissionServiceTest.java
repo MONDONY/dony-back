@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -62,6 +63,7 @@ class CashCommissionServiceTest {
     @Mock private com.dony.api.payments.wallet.WalletService walletService;
     @Mock private com.dony.api.payments.wallet.WalletTransactionRepository walletTransactionRepository;
     @Mock private com.dony.api.common.AuditService auditService;
+    @Mock private CommissionRateResolver commissionRateResolver;
 
     private final CommissionProperties props =
             new CommissionProperties(new BigDecimal("0.12"), new BigDecimal("1.00"), 24);
@@ -70,8 +72,10 @@ class CashCommissionServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(commissionRateResolver.resolve(any(), any())).thenReturn(new BigDecimal("0.12"));
+        lenient().when(commissionRateResolver.resolve(any())).thenReturn(new BigDecimal("0.12"));
         service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events,
-                walletService, walletTransactionRepository, auditService);
+                walletService, walletTransactionRepository, auditService, commissionRateResolver);
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -136,6 +140,29 @@ class CashCommissionServiceTest {
             // 12% of 8.34 = 1.0008 → rounded to 1.00, plancher kicks in
             assertThat(service.computeCommission(new BigDecimal("8.34")))
                     .isEqualByComparingTo(new BigDecimal("1.00"));
+        }
+
+        @Test
+        void computeBidCommission_appliesUserOverride_andSnapshotsRateOnBid() {
+            UUID travelerId = UUID.randomUUID();
+            UUID senderId = UUID.randomUUID();
+            // Override 8 % pour ce couple (écrase le stub générique 12 % du setUp).
+            when(commissionRateResolver.resolve(travelerId, senderId)).thenReturn(new BigDecimal("0.08"));
+
+            BidEntity bid = new BidEntity();
+            ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());
+            bid.setSenderId(senderId);
+            bid.setWeightKg(new BigDecimal("10"));
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ReflectionTestUtils.setField(ann, "id", UUID.randomUUID());
+            ann.setTravelerId(travelerId);
+            ann.setPricePerKg(new BigDecimal("20"));
+
+            // cashAmount = 10 × 20 = 200 → 200 × 8 % = 16,00 (au lieu de 24,00 au taux global)
+            BigDecimal commission = service.computeBidCommission(bid, ann);
+
+            assertThat(commission).isEqualByComparingTo("16.00");
+            assertThat(bid.getCommissionRate()).isEqualByComparingTo("0.08");
         }
     }
 

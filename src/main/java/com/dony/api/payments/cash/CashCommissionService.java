@@ -2,6 +2,7 @@ package com.dony.api.payments.cash;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -69,6 +70,7 @@ public class CashCommissionService {
     private final WalletService walletService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final AuditService auditService;
+    private final CommissionRateResolver commissionRateResolver;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
@@ -78,7 +80,8 @@ public class CashCommissionService {
                                  ApplicationEventPublisher events,
                                  WalletService walletService,
                                  WalletTransactionRepository walletTransactionRepository,
-                                 AuditService auditService) {
+                                 AuditService auditService,
+                                 CommissionRateResolver commissionRateResolver) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
@@ -87,6 +90,7 @@ public class CashCommissionService {
         this.walletService = walletService;
         this.walletTransactionRepository = walletTransactionRepository;
         this.auditService = auditService;
+        this.commissionRateResolver = commissionRateResolver;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -94,15 +98,27 @@ public class CashCommissionService {
 
     // --- Commission calculation ---
 
+    /** Commission au taux global (estimation sans contexte voyageur/expéditeur). */
     public BigDecimal computeCommission(BigDecimal declaredValue) {
-        BigDecimal pct = declaredValue.multiply(props.rate()).setScale(2, RoundingMode.HALF_UP);
+        return computeCommission(declaredValue, props.rate());
+    }
+
+    /** Commission à un taux donné, avec plancher {@code minimumAmount}. */
+    public BigDecimal computeCommission(BigDecimal declaredValue, BigDecimal rate) {
+        BigDecimal pct = declaredValue.multiply(rate).setScale(2, RoundingMode.HALF_UP);
         return pct.compareTo(props.minimumAmount()) < 0 ? props.minimumAmount() : pct;
     }
 
-    /** Calcule la commission pour un bid à partir de son annonce (weightKg × pricePerKg). */
+    /**
+     * Calcule la commission pour un bid (weightKg × pricePerKg) au taux EFFECTIF
+     * (override voyageur/expéditeur via {@link CommissionRateResolver}) et fige ce taux
+     * en snapshot sur le bid ({@code bids.commission_rate}) — même sémantique que l'escrow.
+     */
     public BigDecimal computeBidCommission(BidEntity bid, AnnouncementEntity announcement) {
+        BigDecimal rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
+        bid.setCommissionRate(rate);
         BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
-        return computeCommission(cashAmount);
+        return computeCommission(cashAmount, rate);
     }
 
     // --- Card registration ---
@@ -219,8 +235,7 @@ public class CashCommissionService {
         }
 
         AnnouncementEntity announcement = announcementRepo.findById(bid.getAnnouncementId()).orElseThrow();
-        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
-        BigDecimal commission = computeCommission(cashAmount);
+        BigDecimal commission = computeBidCommission(bid, announcement);
         long amountCents = commission.multiply(new BigDecimal(100)).longValueExact();
         String idempotencyKey = "bid_accept_" + bid.getId() + "_v" + bid.getCommissionRetryCount();
 
