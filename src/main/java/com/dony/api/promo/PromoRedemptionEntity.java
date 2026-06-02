@@ -1,8 +1,10 @@
 package com.dony.api.promo;
 
-import com.dony.api.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -10,10 +12,20 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Enregistrement immuable d'une utilisation de code promo.
+ * N'étend pas {@code BaseEntity} — pas de soft delete, {@code redeemedAt} sert
+ * de timestamp de création. La contrainte UNIQUE(promo_code_id, bid_id) garantit
+ * l'idempotence.
+ */
 @Entity
 @Table(name = "promo_redemptions",
        uniqueConstraints = @UniqueConstraint(columnNames = {"promo_code_id", "bid_id"}))
-public class PromoRedemptionEntity extends BaseEntity {
+public class PromoRedemptionEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(name = "promo_code_id", nullable = false)
     private UUID promoCodeId;
@@ -31,6 +43,8 @@ public class PromoRedemptionEntity extends BaseEntity {
     private LocalDateTime redeemedAt;
 
     // ── getters/setters ──────────────────────────────────────────────────────
+
+    public UUID getId() { return id; }
 
     public UUID getPromoCodeId() { return promoCodeId; }
     public void setPromoCodeId(UUID promoCodeId) { this.promoCodeId = promoCodeId; }
