@@ -53,3 +53,17 @@ symétrique de `unitPriceDisplay`, pour une source de vérité unique côté ser
 ## Tests
 - `./mvnw compile` OK. `AnnouncementControllerIntegrationTest` → **9/9** (dont le nouveau).
 - Aucun autre site de construction des DTO (vérifié : 4 mappers, 0 dans les tests).
+
+## Mise à jour — `dony.commission.rate` = source unique ajustable
+Le pourcentage de commission est désormais piloté par **une seule** propriété
+`dony.commission.rate` (dans `application.yml`, surchargée par variable d'env
+`DONY_COMMISSION_RATE`). Avant, le taux était codé en dur à 4 endroits.
+- `PaymentService` facture `totalNet × (1 + rate)` (avant : `× 1.12` en dur).
+- `PriceGridService.displayPrice` dérive le multiplicateur de la config (injection de
+  `DonyConfigProperties`, méthode passée d'`static` à instance) → **`unitPriceDisplay`
+  ET `pricePerKgDisplay` suivent automatiquement** ; `AnnouncementService.pricePerKgDisplay`
+  appelle désormais `priceGridService.displayPrice(...)`.
+- `ProAnalyticsService` utilise `config.commission().rate()` (avant : `× 0.12` en dur).
+Changer la valeur + redéployer suffit : facturation + prix affichés + stats s'alignent.
+Tests : `PriceGridServiceTest` 6/6 (dont `displayPrice_derivesFromConfiguredCommissionRate`
+→ 20 % donne 12,00 €), `PaymentServiceTest` 31/31, `AnnouncementControllerIntegrationTest` 9/9.

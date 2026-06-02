@@ -182,8 +182,8 @@ public class AnnouncementService {
      * {@code unitPriceDisplay} du mode MIXED. Source unique du multiplicateur :
      * {@link PriceGridService#displayPrice}. {@code null} si aucun prix au kilo (MIXED pur).
      */
-    private static java.math.BigDecimal pricePerKgDisplay(java.math.BigDecimal net) {
-        return net == null ? null : PriceGridService.displayPrice(net);
+    private java.math.BigDecimal pricePerKgDisplay(java.math.BigDecimal net) {
+        return net == null ? null : priceGridService.displayPrice(net);
     }
 
     private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
