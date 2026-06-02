@@ -767,9 +767,10 @@ public class AnnouncementService {
         if (requested == null || requested.isEmpty()) {
             return EnumSet.of(PaymentMethod.STRIPE);
         }
-        if (requested.contains(PaymentMethod.CASH) && traveler.getCommissionPaymentMethodId() == null) {
-            throw new CommissionMethodMissingException();
-        }
+        // La vérification de la capacité de paiement de la commission (wallet ou carte)
+        // est reportée à l'acceptation du bid (CashCommissionService.acceptCashBid).
+        // Un voyageur peut offrir le cash dès lors qu'il a un compte Dony,
+        // même sans carte de commission enregistrée (le wallet prend en charge).
         return EnumSet.copyOf(requested);
     }
 }

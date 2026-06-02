@@ -133,15 +133,19 @@ public class CancellationService {
 
         // Build bidPaymentMethods so listeners (e.g. WalletCancellationListener) don't need BidRepository
         Map<UUID, String> bidPaymentMethods = new HashMap<>();
+        Map<UUID, String> bidCommissionChargedVia = new HashMap<>();
         for (BidEntity bid : acceptedBids) {
             String methodName = bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE";
             bidPaymentMethods.put(bid.getId(), methodName);
+            if (bid.getCommissionChargedVia() != null) {
+                bidCommissionChargedVia.put(bid.getId(), bid.getCommissionChargedVia().name());
+            }
         }
 
         // Publish event for notifications (Epic 8) and payment refunds (Story 6.7)
         eventPublisher.publishEvent(new TripCancelledEvent(
                 request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
-                affectedBidIds, bidPaymentMethods));
+                affectedBidIds, bidPaymentMethods, bidCommissionChargedVia));
 
         // Generate rematch suggestions for each affected bid
         List<RematchSuggestionDto> suggestions = generateRematchSuggestions(

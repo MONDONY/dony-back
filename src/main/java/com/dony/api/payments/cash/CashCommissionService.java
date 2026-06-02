@@ -10,7 +10,9 @@ import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidAcceptedEvent;
+import com.dony.api.common.AuditService;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
+import com.dony.api.payments.cash.dto.AcceptanceStatusDto;
 import com.dony.api.payments.cash.dto.CommissionMethodResponse;
 import com.dony.api.payments.cash.dto.ConfirmAcceptanceResponse;
 import com.dony.api.payments.cash.dto.SetupCommissionMethodResponse;
@@ -18,6 +20,10 @@ import com.dony.api.payments.cash.event.CommissionMethodDetachedEvent;
 import com.dony.api.payments.cash.exception.CommissionChargeFailedException;
 import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
 import com.dony.api.payments.cash.exception.InvalidPaymentMethodForAnnouncementException;
+import com.dony.api.payments.wallet.InsufficientWalletBalanceException;
+import com.dony.api.payments.wallet.WalletService;
+import com.dony.api.payments.wallet.WalletTransactionRepository;
+import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.exception.CardException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
@@ -44,6 +50,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -58,18 +66,27 @@ public class CashCommissionService {
     private final BidRepository bidRepo;
     private final AnnouncementRepository announcementRepo;
     private final ApplicationEventPublisher events;
+    private final WalletService walletService;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final AuditService auditService;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
                                  UserRepository userRepo,
                                  BidRepository bidRepo,
                                  AnnouncementRepository announcementRepo,
-                                 ApplicationEventPublisher events) {
+                                 ApplicationEventPublisher events,
+                                 WalletService walletService,
+                                 WalletTransactionRepository walletTransactionRepository,
+                                 AuditService auditService) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
         this.announcementRepo = announcementRepo;
         this.events = events;
+        this.walletService = walletService;
+        this.walletTransactionRepository = walletTransactionRepository;
+        this.auditService = auditService;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -80,6 +97,12 @@ public class CashCommissionService {
     public BigDecimal computeCommission(BigDecimal declaredValue) {
         BigDecimal pct = declaredValue.multiply(props.rate()).setScale(2, RoundingMode.HALF_UP);
         return pct.compareTo(props.minimumAmount()) < 0 ? props.minimumAmount() : pct;
+    }
+
+    /** Calcule la commission pour un bid à partir de son annonce (weightKg × pricePerKg). */
+    public BigDecimal computeBidCommission(BidEntity bid, AnnouncementEntity announcement) {
+        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
+        return computeCommission(cashAmount);
     }
 
     // --- Card registration ---
@@ -221,6 +244,7 @@ public class CashCommissionService {
             return switch (pi.getStatus()) {
                 case "succeeded" -> {
                     bid.setCommissionStatus(CommissionStatus.CHARGED);
+                    bid.setCommissionChargedVia(CommissionChargedVia.CARD);
                     bidRepo.save(bid);
                     yield AcceptBidResponse.accepted();
                 }
@@ -252,19 +276,83 @@ public class CashCommissionService {
         }
     }
 
+    /**
+     * Prélève la commission depuis le wallet du voyageur.
+     * Garde idempotente : vérifie qu'aucune transaction COMMISSION_DEDUCTED n'existe déjà
+     * pour ce bid (WalletService.debit n'est pas idempotent en lui-même).
+     * Pose commissionStatus=CHARGED et commissionChargedVia=WALLET.
+     */
     @Transactional
-    public BigDecimal chargeCommissionForMobileMoney(BidEntity bid, UUID travelerId) {
+    public void chargeCommissionFromWallet(BidEntity bid, UUID travelerId, BigDecimal commission) {
+        if (walletTransactionRepository.existsByUserIdAndBidIdAndType(
+                travelerId, bid.getId(), WalletTransactionType.COMMISSION_DEDUCTED)) {
+            log.info("Commission wallet déjà prélevée pour bid {}, idempotent skip", bid.getId());
+            return;
+        }
+        walletService.debit(travelerId, commission, WalletTransactionType.COMMISSION_DEDUCTED, bid.getId());
+        bid.setCommissionStatus(CommissionStatus.CHARGED);
+        bid.setCommissionChargedVia(CommissionChargedVia.WALLET);
+        bidRepo.save(bid);
+        auditService.log("payment", bid.getId(), "COMMISSION_CHARGED_WALLET",
+                travelerId, Map.of("commission", commission.toPlainString()));
+    }
+
+    /**
+     * Prélève la commission automatiquement : wallet en priorité, carte en fallback.
+     * Utilisé par les flux asynchrones (mobile money) où il n'y a pas d'interaction utilisateur.
+     * Si ni wallet ni carte ne sont disponibles ou si la carte nécessite 3DS (impossible en async),
+     * pose commissionStatus=FAILED et logue un audit (créance à recouvrer).
+     */
+    @Transactional
+    public void chargeCommissionAuto(BidEntity bid, UUID travelerId) {
         AnnouncementEntity announcement = announcementRepo.findById(bid.getAnnouncementId()).orElseThrow();
-        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
-        BigDecimal commission = computeCommission(cashAmount);
-        chargeCommission(bid, travelerId);
-        return commission;
+        BigDecimal commission = computeBidCommission(bid, announcement);
+
+        // 1) Wallet prioritaire
+        BigDecimal balance = walletService.getBalance(travelerId);
+        if (balance.compareTo(commission) >= 0) {
+            try {
+                chargeCommissionFromWallet(bid, travelerId, commission);
+                return;
+            } catch (InsufficientWalletBalanceException e) {
+                // Race TOCTOU : solde a chuté entre getBalance et debit → fallback carte
+                log.warn("Race TOCTOU wallet pour bid {} — fallback carte", bid.getId());
+            }
+        }
+
+        // 2) Fallback carte automatique
+        UserEntity traveler = userRepo.findById(travelerId).orElseThrow();
+        if (traveler.getCommissionPaymentMethodId() != null) {
+            try {
+                AcceptBidResponse r = chargeCommission(bid, travelerId);
+                if (r.status() == AcceptanceStatusDto.ACCEPTED) {
+                    bid.setCommissionChargedVia(CommissionChargedVia.CARD);
+                    bidRepo.save(bid);
+                    return;
+                }
+                // REQUIRES_3DS impossible en async → créance
+                log.warn("Commission carte bid {} : statut={} en async → créance commission",
+                        bid.getId(), r.status());
+            } catch (RuntimeException e) {
+                // Erreur Stripe transitoire (panne API, timeout, rate limit) — créance.
+                // On NE laisse PAS l'exception remonter pour ne pas rollback la tx REQUIRES_NEW
+                // du listener MM (qui a déjà commité le paiement principal).
+                log.error("Commission carte async échouée pour bid {} : {}", bid.getId(), e.getMessage());
+            }
+        }
+
+        // 3) Ni wallet ni carte disponible/valide → créance
+        bid.setCommissionStatus(CommissionStatus.FAILED);
+        bidRepo.save(bid);
+        auditService.log("payment", bid.getId(), "COMMISSION_AUTO_FAILED", travelerId,
+                Map.of("reason", "no-wallet-no-card"));
+        log.error("Commission auto impossible pour bid {} travelerId {} — ni wallet ni carte", bid.getId(), travelerId);
     }
 
     // --- Cash bid acceptance ---
 
     @Transactional
-    public AcceptBidResponse acceptCashBid(UUID bidId, UUID travelerId) {
+    public AcceptBidResponse acceptCashBid(UUID bidId, UUID travelerId, CommissionSource commissionSource) {
         BidEntity bid = bidRepo.findByIdForUpdate(bidId)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "bid-not-found", "Bid Not Found", "Demande introuvable"));
@@ -294,8 +382,31 @@ public class CashCommissionService {
                     "Capacité insuffisante pour accepter cette demande");
         }
 
+        BigDecimal commission = computeBidCommission(bid, announcement);
+
+        if (commissionSource == CommissionSource.WALLET_FIRST) {
+            BigDecimal balance = walletService.getBalance(travelerId);
+            if (balance.compareTo(commission) >= 0) {
+                try {
+                    chargeCommissionFromWallet(bid, travelerId, commission);
+                    finalizeBidAcceptance(bid, announcement, travelerId);
+                    return AcceptBidResponse.accepted();
+                } catch (InsufficientWalletBalanceException e) {
+                    // Race TOCTOU : solde a chuté entre getBalance et debit
+                    balance = e.getAvailableBalance();
+                }
+            }
+            // Solde insuffisant → informer le voyageur
+            UserEntity traveler = userRepo.findById(travelerId).orElseThrow();
+            boolean hasCard = traveler.getCommissionPaymentMethodId() != null;
+            return AcceptBidResponse.insufficientWallet(balance, commission, hasCard);
+        }
+
+        // commissionSource == CARD → comportement carte existant
         AcceptBidResponse response = chargeCommission(bid, travelerId);
-        if (response.status() == com.dony.api.payments.cash.dto.AcceptanceStatusDto.ACCEPTED) {
+        if (response.status() == AcceptanceStatusDto.ACCEPTED) {
+            bid.setCommissionChargedVia(CommissionChargedVia.CARD);
+            bidRepo.save(bid);
             finalizeBidAcceptance(bid, announcement, travelerId);
         }
         return response;
@@ -309,6 +420,10 @@ public class CashCommissionService {
             return ConfirmAcceptanceResponse.ok();
         }
         if (bid.getCommissionStatus() == CommissionStatus.CHARGED) {
+            // Pose CARD si absent (idempotent — un bid CHARGED via PI a toujours une carte)
+            if (bid.getCommissionChargedVia() == null && bid.getCommissionPaymentIntentId() != null) {
+                bid.setCommissionChargedVia(CommissionChargedVia.CARD);
+            }
             AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
             finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
             return ConfirmAcceptanceResponse.ok();
@@ -320,6 +435,7 @@ public class CashCommissionService {
             PaymentIntent pi = PaymentIntent.retrieve(bid.getCommissionPaymentIntentId());
             if ("succeeded".equals(pi.getStatus())) {
                 bid.setCommissionStatus(CommissionStatus.CHARGED);
+                bid.setCommissionChargedVia(CommissionChargedVia.CARD);
                 AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
                 finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
                 return ConfirmAcceptanceResponse.ok();
@@ -330,6 +446,35 @@ public class CashCommissionService {
         } catch (StripeException e) {
             return ConfirmAcceptanceResponse.fail("Erreur Stripe : " + e.getMessage());
         }
+    }
+
+    /**
+     * Rembourse la commission en créditant le wallet du voyageur.
+     * Utilisé quand commissionChargedVia=WALLET et qu'un remboursement est dû.
+     * Clé d'idempotence intentionnellement distincte selon le déclencheur :
+     * les appelants passent la clé appropriée (noshow vs trip-cancel).
+     */
+    @Transactional
+    public void refundCommissionToWallet(BidEntity bid, UUID travelerId, String idempotencyKey) {
+        if (bid.getCommissionStatus() == CommissionStatus.REFUNDED) return;
+        if (bid.getCommissionStatus() != CommissionStatus.CHARGED) {
+            log.warn("refundCommissionToWallet called on bid {} with status {}", bid.getId(), bid.getCommissionStatus());
+            return;
+        }
+        Optional<com.dony.api.payments.wallet.WalletTransactionEntity> commissionTx =
+                walletTransactionRepository.findByUserIdAndBidIdAndType(
+                        travelerId, bid.getId(), WalletTransactionType.COMMISSION_DEDUCTED);
+        if (commissionTx.isEmpty()) {
+            log.warn("refundCommissionToWallet: aucune tx COMMISSION_DEDUCTED pour bid {} traveler {}", bid.getId(), travelerId);
+            return;
+        }
+        BigDecimal refundAmount = commissionTx.get().getAmount().abs();
+        walletService.credit(travelerId, refundAmount, com.dony.api.payments.wallet.WalletTransactionType.REFUND,
+                "refund-" + bid.getId(), idempotencyKey);
+        bid.setCommissionStatus(CommissionStatus.REFUNDED);
+        bidRepo.save(bid);
+        auditService.log("payment", bid.getId(), "COMMISSION_REFUNDED_TO_WALLET",
+                travelerId, Map.of("amount", refundAmount.toPlainString(), "idempotencyKey", idempotencyKey));
     }
 
     @Transactional

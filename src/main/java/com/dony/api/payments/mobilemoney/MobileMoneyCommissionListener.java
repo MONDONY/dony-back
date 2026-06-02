@@ -1,8 +1,5 @@
 package com.dony.api.payments.mobilemoney;
 
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.cash.CashCommissionService;
@@ -15,10 +12,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
-
+/**
+ * Prélève la commission Dony (12 %) après confirmation du paiement Mobile Money.
+ *
+ * Logique : wallet prioritaire → carte en fallback automatique (chargeCommissionAuto).
+ * Si ni wallet ni carte → commission FAILED (créance), le trajet n'est PAS annulé
+ * (le paiement du principal a déjà eu lieu).
+ */
 @Component
 public class MobileMoneyCommissionListener {
 
@@ -26,17 +26,11 @@ public class MobileMoneyCommissionListener {
 
     private final CashCommissionService commissionService;
     private final BidRepository bidRepository;
-    private final UserRepository userRepository;
-    private final AuditService auditService;
 
     public MobileMoneyCommissionListener(CashCommissionService commissionService,
-                                          BidRepository bidRepository,
-                                          UserRepository userRepository,
-                                          AuditService auditService) {
+                                          BidRepository bidRepository) {
         this.commissionService = commissionService;
         this.bidRepository     = bidRepository;
-        this.userRepository    = userRepository;
-        this.auditService      = auditService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -48,29 +42,11 @@ public class MobileMoneyCommissionListener {
             return;
         }
 
-        UserEntity traveler = userRepository.findById(event.getTravelerId()).orElse(null);
-        if (traveler == null) {
-            log.warn("MobileMoneyCommissionListener: traveler {} not found", event.getTravelerId());
-            return;
-        }
+        // chargeCommissionAuto : wallet-first, fallback carte automatique, échec = créance.
+        // Le trajet n'est pas annulé en cas d'échec (paiement principal déjà effectué).
+        commissionService.chargeCommissionAuto(bid, event.getTravelerId());
 
-        if (traveler.getCommissionPaymentMethodId() == null) {
-            log.warn("MobileMoneyCommissionListener: traveler {} has no commission card — skipping",
-                    event.getTravelerId());
-            return;
-        }
-
-        try {
-            BigDecimal commissionCharged = commissionService.chargeCommissionForMobileMoney(bid, event.getTravelerId());
-            Map<String, Object> auditPayload = new HashMap<>();
-            auditPayload.put("amount", commissionCharged.toPlainString());
-            auditService.log("MM_COMMISSION", bid.getId(), "COMMISSION_CHARGED",
-                    event.getTravelerId(), auditPayload);
-            log.info("MobileMoneyCommissionListener: commission {} charged for bidId={}",
-                    commissionCharged, event.getBidId());
-        } catch (Exception e) {
-            log.error("MobileMoneyCommissionListener: commission charge failed for bidId={}",
-                    event.getBidId(), e);
-        }
+        log.info("MobileMoneyCommissionListener: commission traitée pour bidId={} travelerId={}",
+                event.getBidId(), event.getTravelerId());
     }
 }

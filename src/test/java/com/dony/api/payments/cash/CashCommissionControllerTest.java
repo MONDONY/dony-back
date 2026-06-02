@@ -148,7 +148,7 @@ class CashCommissionControllerTest {
 
     @Test
     void acceptCashBid_accepted_returns200() throws Exception {
-        when(cashCommissionService.acceptCashBid(any(), any()))
+        when(cashCommissionService.acceptCashBid(any(), any(), any()))
                 .thenReturn(AcceptBidResponse.accepted());
 
         mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
@@ -158,7 +158,7 @@ class CashCommissionControllerTest {
 
     @Test
     void acceptCashBid_requires3ds_returns202() throws Exception {
-        when(cashCommissionService.acceptCashBid(any(), any()))
+        when(cashCommissionService.acceptCashBid(any(), any(), any()))
                 .thenReturn(AcceptBidResponse.requires3ds("pi_secret", "pi_id"));
 
         mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
@@ -168,12 +168,53 @@ class CashCommissionControllerTest {
 
     @Test
     void acceptCashBid_failed_returns422() throws Exception {
-        when(cashCommissionService.acceptCashBid(any(), any()))
+        when(cashCommissionService.acceptCashBid(any(), any(), any()))
                 .thenReturn(AcceptBidResponse.failed("card_declined"));
 
         mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
                 .with(authentication(asTraveler())))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void acceptCashBid_insufficientWallet_returns409WithDetails() throws Exception {
+        when(cashCommissionService.acceptCashBid(any(), any(), any()))
+                .thenReturn(AcceptBidResponse.insufficientWallet(
+                        new java.math.BigDecimal("3.00"), new java.math.BigDecimal("12.00"), true));
+
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
+                .with(authentication(asTraveler())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.availableBalance").value(3.00))
+                .andExpect(jsonPath("$.requiredCommission").value(12.00))
+                .andExpect(jsonPath("$.hasCard").value(true));
+    }
+
+    @Test
+    void acceptCashBid_userNotFoundForFirebaseUid_returns401() throws Exception {
+        // uid authentifié mais aucun UserEntity correspondant → resolveUserId lève 401.
+        var auth = new UsernamePasswordAuthenticationToken(
+                "uid-unknown", null,
+                List.of(new SimpleGrantedAuthority("ROLE_TRAVELER")));
+
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
+                .with(authentication(auth)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void acceptCashBid_commissionSourceCard_isPassedToService() throws Exception {
+        when(cashCommissionService.acceptCashBid(any(), any(),
+                org.mockito.ArgumentMatchers.eq(CommissionSource.CARD)))
+                .thenReturn(AcceptBidResponse.accepted());
+
+        mockMvc.perform(post("/bids/{bidId}/accept-with-commission", BID_ID)
+                .param("commissionSource", "CARD")
+                .with(authentication(asTraveler())))
+                .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(cashCommissionService).acceptCashBid(any(), any(),
+                org.mockito.ArgumentMatchers.eq(CommissionSource.CARD));
     }
 
     // ── POST /bids/{bidId}/confirm-acceptance ────────────────────────────────────

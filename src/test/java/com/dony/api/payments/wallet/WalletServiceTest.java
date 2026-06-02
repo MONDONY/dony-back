@@ -125,4 +125,47 @@ class WalletServiceTest {
         assertThat(thrown).isInstanceOf(InsufficientWalletBalanceException.class);
         verify(walletAccountRepository, never()).save(any());
     }
+
+    @Test
+    void getBalance_returnsExistingWalletBalance() {
+        UUID userId = UUID.randomUUID();
+        WalletAccountEntity wallet = new WalletAccountEntity();
+        wallet.setUserId(userId);
+        wallet.setBalance(new BigDecimal("33.50"));
+        when(walletAccountRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+
+        assertThat(walletService.getBalance(userId)).isEqualByComparingTo(new BigDecimal("33.50"));
+    }
+
+    @Test
+    void getTransactions_returnsHistoryContent() {
+        UUID userId = UUID.randomUUID();
+        WalletTransactionEntity tx = new WalletTransactionEntity();
+        tx.setUserId(userId);
+        tx.setType(WalletTransactionType.REFUND);
+        tx.setAmount(new BigDecimal("5.00"));
+        when(walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(eq(userId), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(tx)));
+
+        var history = walletService.getTransactions(userId, 0);
+
+        assertThat(history).containsExactly(tx);
+    }
+
+    @Test
+    void debit_createsWalletWhenMissing_thenThrowsInsufficient() {
+        // Couvre le orElseGet de debit() : aucun wallet → création (solde 0) → solde insuffisant.
+        UUID userId = UUID.randomUUID();
+        when(walletAccountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.empty());
+        when(walletAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Throwable thrown = catchThrowable(() ->
+            walletService.debit(userId, new BigDecimal("12.00"),
+                    WalletTransactionType.COMMISSION_DEDUCTED, UUID.randomUUID())
+        );
+
+        assertThat(thrown).isInstanceOf(InsufficientWalletBalanceException.class);
+        // Le wallet nouvellement créé a bien été persisté (orElseGet) avant le contrôle de solde.
+        verify(walletAccountRepository).save(any());
+    }
 }

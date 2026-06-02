@@ -78,6 +78,7 @@ public class WalletService {
             userId, Map.of("amount", amount.toString(), "paymentRef", String.valueOf(paymentRef)));
     }
 
+    @Transactional(noRollbackFor = InsufficientWalletBalanceException.class)
     public void debit(UUID userId, BigDecimal amount, WalletTransactionType type, UUID bidId) {
         WalletAccountEntity wallet = walletAccountRepository.findByUserIdForUpdate(userId)
             .orElseGet(() -> {

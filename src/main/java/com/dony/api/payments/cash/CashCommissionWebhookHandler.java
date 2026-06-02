@@ -75,6 +75,7 @@ public class CashCommissionWebhookHandler {
             bidRepo.findById(UUID.fromString(bidIdStr)).ifPresent(bid -> {
                 if (bid.getCommissionStatus() == CommissionStatus.CHARGED) return;
                 bid.setCommissionStatus(CommissionStatus.CHARGED);
+                bid.setCommissionChargedVia(com.dony.api.payments.cash.CommissionChargedVia.CARD);
                 bid.setCommissionPaymentIntentId(pi.getId());
                 bidRepo.save(bid);
                 log.info("Commission CHARGED via webhook for bid {}", bidIdStr);
