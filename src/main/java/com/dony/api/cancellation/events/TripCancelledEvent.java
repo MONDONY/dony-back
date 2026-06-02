@@ -16,25 +16,40 @@ public class TripCancelledEvent {
      * Key = bidId, value = PaymentMethod name ("CASH", "STRIPE", …).
      */
     private final Map<UUID, String> bidPaymentMethods;
+    /**
+     * Canal de prélèvement de la commission par bid ("WALLET" ou "CARD", null si inconnu).
+     * Permet aux listeners de remboursement de router vers wallet.credit() ou Stripe Refund.
+     */
+    private final Map<UUID, String> bidCommissionChargedVia;
 
-    /** Full constructor (used by CancellationService). */
+    /** Full constructor. */
     public TripCancelledEvent(UUID announcementId, UUID travelerId,
                                List<UUID> affectedSenderIds, String reason,
                                List<UUID> affectedBidIds,
-                               Map<UUID, String> bidPaymentMethods) {
+                               Map<UUID, String> bidPaymentMethods,
+                               Map<UUID, String> bidCommissionChargedVia) {
         this.announcementId = announcementId;
         this.travelerId = travelerId;
         this.affectedSenderIds = affectedSenderIds;
         this.reason = reason;
         this.affectedBidIds = affectedBidIds;
         this.bidPaymentMethods = bidPaymentMethods != null ? bidPaymentMethods : Map.of();
+        this.bidCommissionChargedVia = bidCommissionChargedVia != null ? bidCommissionChargedVia : Map.of();
     }
 
-    /** Backward-compatible constructor — bidPaymentMethods defaults to empty map. */
+    /** Backward-compatible constructor — bidCommissionChargedVia defaults to empty map. */
+    public TripCancelledEvent(UUID announcementId, UUID travelerId,
+                               List<UUID> affectedSenderIds, String reason,
+                               List<UUID> affectedBidIds,
+                               Map<UUID, String> bidPaymentMethods) {
+        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, bidPaymentMethods, Map.of());
+    }
+
+    /** Backward-compatible constructor — both maps default to empty. */
     public TripCancelledEvent(UUID announcementId, UUID travelerId,
                                List<UUID> affectedSenderIds, String reason,
                                List<UUID> affectedBidIds) {
-        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, Map.of());
+        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, Map.of(), Map.of());
     }
 
     public UUID getAnnouncementId() { return announcementId; }
@@ -43,4 +58,5 @@ public class TripCancelledEvent {
     public String getReason() { return reason; }
     public List<UUID> getAffectedBidIds() { return affectedBidIds; }
     public Map<UUID, String> getBidPaymentMethods() { return bidPaymentMethods; }
+    public Map<UUID, String> getBidCommissionChargedVia() { return bidCommissionChargedVia; }
 }

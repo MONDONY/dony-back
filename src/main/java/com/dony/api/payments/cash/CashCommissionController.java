@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -63,12 +64,15 @@ public class CashCommissionController {
     }
 
     @PostMapping("/bids/{bidId}/accept-with-commission")
-    public ResponseEntity<AcceptBidResponse> acceptCashBid(@PathVariable UUID bidId) {
+    public ResponseEntity<AcceptBidResponse> acceptCashBid(
+            @PathVariable UUID bidId,
+            @RequestParam(defaultValue = "WALLET_FIRST") CommissionSource commissionSource) {
         UUID userId = resolveUserId();
-        AcceptBidResponse resp = cashCommissionService.acceptCashBid(bidId, userId);
+        AcceptBidResponse resp = cashCommissionService.acceptCashBid(bidId, userId, commissionSource);
         return switch (resp.status()) {
             case ACCEPTED -> ResponseEntity.ok(resp);
             case REQUIRES_3DS -> ResponseEntity.accepted().body(resp);
+            case INSUFFICIENT_WALLET -> ResponseEntity.status(HttpStatus.CONFLICT).body(resp);
             case FAILED -> ResponseEntity.unprocessableEntity().body(resp);
         };
     }

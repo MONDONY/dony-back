@@ -4,18 +4,10 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.payments.cash.CashCommissionService;
-import com.dony.api.payments.cash.CommissionStatus;
-import com.dony.api.payments.cash.PaymentMethod;
-import com.dony.api.payments.wallet.WalletService;
-import com.dony.api.payments.wallet.WalletTransactionRepository;
-import com.dony.api.payments.wallet.WalletTransactionType;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.slf4j.Logger;
@@ -27,15 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
 /**
  * Sur acceptation d'un bid par le voyageur :
- * - Pour les bids CASH dont la commission n'est pas encore prélevée → prélève 12% depuis
- *   le wallet du voyageur (alternative wallet à la carte bancaire).
+ * - Pour les bids CASH : la commission est désormais prélevée de façon synchrone dans
+ *   CashCommissionService.acceptCashBid (wallet-first puis carte en fallback).
+ *   Ce listener n'intervient plus pour les bids CASH.
  * - Pour les paiements non-legacy (separate charges and transfers) → re-vérifie l'éligibilité
  *   du voyageur puis capture le PaymentIntent sur le compte plateforme. L'argent reste là
  *   jusqu'à confirmation de livraison (où DeliveryEventListener fera Transfer.create).
@@ -51,84 +43,34 @@ public class BidAcceptedEventListener {
     private final AuditService auditService;
     private final UserRepository userRepository;
     private final BidRepository bidRepository;
-    private final WalletService walletService;
-    private final WalletTransactionRepository walletTransactionRepository;
-    private final CashCommissionService cashCommissionService;
-    private final AnnouncementRepository announcementRepository;
 
     public BidAcceptedEventListener(PaymentRepository paymentRepository,
                                     AuditService auditService,
                                     UserRepository userRepository,
-                                    BidRepository bidRepository,
-                                    WalletService walletService,
-                                    WalletTransactionRepository walletTransactionRepository,
-                                    CashCommissionService cashCommissionService,
-                                    AnnouncementRepository announcementRepository) {
+                                    BidRepository bidRepository) {
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
-        this.walletService = walletService;
-        this.walletTransactionRepository = walletTransactionRepository;
-        this.cashCommissionService = cashCommissionService;
-        this.announcementRepository = announcementRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onBidAccepted(BidAcceptedEvent event) {
-        // --- Bug 1 fix: bid introuvable = anomalie → log + return immédiat (pas de fallback Stripe) ---
         BidEntity bid = bidRepository.findById(event.getBidId()).orElse(null);
         if (bid == null) {
             log.warn("BidAccepted event for unknown bid {}", event.getBidId());
             return;
         }
 
-        // --- CASH bid: prélever commission 12% depuis le wallet du voyageur ---
-        // Uniquement si la commission n'a pas déjà été prélevée via carte bancaire.
-        if (bid.getPaymentMethod() == PaymentMethod.CASH) {
-            if (bid.getCommissionStatus() != CommissionStatus.CHARGED) {
-                // --- Bug 2 fix: protection idempotence — vérifier si la commission a déjà été prélevée ---
-                if (walletTransactionRepository.existsByUserIdAndBidIdAndType(
-                        event.getTravelerId(), event.getBidId(), WalletTransactionType.COMMISSION_DEDUCTED)) {
-                    log.info("Commission CASH déjà prélevée pour bid {}, event ignoré", event.getBidId());
-                    return;
-                }
-                AnnouncementEntity announcement = announcementRepository
-                        .findById(bid.getAnnouncementId()).orElse(null);
-                if (announcement != null && bid.getWeightKg() != null
-                        && announcement.getPricePerKg() != null) {
-                    BigDecimal cashAmount = bid.getWeightKg()
-                            .multiply(announcement.getPricePerKg());
-                    BigDecimal commission = cashCommissionService.computeCommission(cashAmount);
-                    walletService.debit(
-                            event.getTravelerId(),
-                            commission,
-                            WalletTransactionType.COMMISSION_DEDUCTED,
-                            event.getBidId()
-                    );
-                    auditService.log(
-                            "payment",
-                            event.getBidId(),
-                            "CASH_COMMISSION_DEBITED",
-                            event.getTravelerId(),
-                            Map.of("commission", commission.toPlainString(), "bidId", event.getBidId().toString())
-                    );
-                    log.info("Wallet commission {} EUR debited for CASH bid {} traveler {}",
-                            commission, event.getBidId(), event.getTravelerId());
-                } else {
-                    log.warn("CASH bid {} — could not compute commission: announcement or weight/price missing",
-                            event.getBidId());
-                }
-            } else {
-                log.info("CASH bid {} — commission already charged via card, skipping wallet debit",
-                        event.getBidId());
-            }
-            return; // Pas de PaymentIntent Stripe pour les bids CASH
+        // CASH bids : commission traitée en synchrone dans CashCommissionService.acceptCashBid.
+        // Ce listener ne fait rien pour éviter tout risque de double prélèvement.
+        if (bid.getPaymentMethod() == com.dony.api.payments.cash.PaymentMethod.CASH) {
+            return;
         }
-        // --- STRIPE bid: capture PaymentIntent ---
 
+        // --- STRIPE bid: capture PaymentIntent ---
         Optional<PaymentEntity> opt = paymentRepository.findByBidId(event.getBidId());
         if (opt.isEmpty()) {
             log.warn("BidAccepted but no payment found for bid {}", event.getBidId());
@@ -148,7 +90,6 @@ public class BidAcceptedEventListener {
             return;
         }
 
-        // Re-verify traveler eligibility before capture (status may have changed since PI creation)
         UserEntity traveler = userRepository.findById(event.getTravelerId()).orElse(null);
         if (traveler == null || traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
             log.warn("Bid {} cancelled: traveler {} lost Connect eligibility before capture",
@@ -160,7 +101,6 @@ public class BidAcceptedEventListener {
                 log.info("PaymentIntent {} cancelled due to traveler ineligibility (bid {})",
                         piId, event.getBidId());
 
-                // Fix 1: update PaymentEntity so it no longer stays in ESCROW
                 payment.setStatus(PaymentStatus.CANCELLED);
                 paymentRepository.save(payment);
 
@@ -171,7 +111,6 @@ public class BidAcceptedEventListener {
                         Map.of("reason", "traveler-connect-ineligible",
                                 "piId", piId));
             } catch (StripeException cancelEx) {
-                // Fix 2: write audit log so ops can reconcile the live PI manually
                 log.error("Could not cancel PI {} for ineligible traveler {} on bid {}",
                         piId, event.getTravelerId(), event.getBidId(), cancelEx);
                 auditService.log("BID", bid.getId(), "BID_CANCEL_PI_FAILED",
@@ -184,7 +123,6 @@ public class BidAcceptedEventListener {
         }
 
         try {
-            // Atomic capture-once guard: prevents double-capture on duplicate events
             int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now());
             if (updated == 0) {
                 log.info("Payment {} already captured or not in ESCROW — skipping", payment.getId());
@@ -193,8 +131,6 @@ public class BidAcceptedEventListener {
 
             PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
             pi.capture();
-            // Note: payment.status reste ESCROW. Sa sémantique est désormais
-            // "captured on platform, awaiting delivery" pour les non-legacy.
 
             auditService.log("PAYMENT", payment.getId(), "PAYMENT_CAPTURED_ON_PLATFORM",
                     payment.getBidId(),
@@ -208,7 +144,6 @@ public class BidAcceptedEventListener {
             log.error("Capture failed for bid {} (PI={}): {}",
                     event.getBidId(), payment.getStripePaymentIntentId(),
                     e.getMessage(), e);
-            // Sentry will catch ; admin J+48 scheduler can recover
         }
     }
 }

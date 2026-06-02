@@ -4,15 +4,11 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
-import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.PaymentMethod;
-import com.dony.api.payments.wallet.WalletService;
-import com.dony.api.payments.wallet.WalletTransactionRepository;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,20 +35,13 @@ class BidAcceptedEventListenerTest {
     @Mock private AuditService auditService;
     @Mock private UserRepository userRepository;
     @Mock private BidRepository bidRepository;
-    @Mock private WalletService walletService;
-    @Mock private WalletTransactionRepository walletTransactionRepository;
-    @Mock private CashCommissionService cashCommissionService;
-    @Mock private AnnouncementRepository announcementRepository;
-
     private BidAcceptedEventListener listener;
 
     private final UUID travelerId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository,
-                bidRepository, walletService, walletTransactionRepository,
-                cashCommissionService, announcementRepository);
+        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository);
     }
 
     private PaymentEntity paymentFor(UUID bidId, PaymentStatus status, boolean legacy) {

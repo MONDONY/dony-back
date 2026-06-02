@@ -267,12 +267,21 @@ class AnnouncementServiceTest {
         }
 
         @Test
-        @DisplayName("CASH sans carte commission → CommissionMethodMissingException")
-        void create_cashWithoutCommissionMethod_throws() {
+        @DisplayName("CASH sans carte commission → autorisé (vérification reportée à l'acceptation du bid)")
+        void create_cashWithoutCommissionMethod_isAllowed() {
+            // Règle métier : la carte de commission n'est plus requise à la création d'annonce.
+            // La capacité de paiement (wallet ou carte) est vérifiée à l'acceptation du bid.
             UserEntity traveler = buildTraveler();
             traveler.setKycStatus(com.dony.api.auth.KycStatus.VERIFIED);
             traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
 
             AnnouncementRequest req = new AnnouncementRequest(
                     "Paris", "Dakar", LocalDate.now().plusDays(10),
@@ -284,8 +293,9 @@ class AnnouncementServiceTest {
                     null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null
             );
 
-            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
-                    .isInstanceOf(com.dony.api.payments.cash.exception.CommissionMethodMissingException.class);
+            // Ne doit PAS lever CommissionMethodMissingException
+            org.assertj.core.api.Assertions.assertThatNoException()
+                    .isThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req));
         }
 
         @Test

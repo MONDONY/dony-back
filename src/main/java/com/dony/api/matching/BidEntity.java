@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.CommissionChargedVia;
 import com.dony.api.payments.cash.CommissionStatus;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.matching.BidPricingMode;
@@ -150,6 +151,10 @@ public class BidEntity extends BaseEntity {
     private int commissionRetryCount = 0;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "commission_charged_via", length = 10)
+    private CommissionChargedVia commissionChargedVia;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "pricing_mode", nullable = false, length = 10)
     private BidPricingMode pricingMode = BidPricingMode.KG;
 
@@ -266,6 +271,9 @@ public class BidEntity extends BaseEntity {
 
     public int getCommissionRetryCount() { return commissionRetryCount; }
     public void setCommissionRetryCount(int commissionRetryCount) { this.commissionRetryCount = commissionRetryCount; }
+
+    public CommissionChargedVia getCommissionChargedVia() { return commissionChargedVia; }
+    public void setCommissionChargedVia(CommissionChargedVia commissionChargedVia) { this.commissionChargedVia = commissionChargedVia; }
 
     public BidPricingMode getPricingMode() { return pricingMode; }
     public void setPricingMode(BidPricingMode pricingMode) { this.pricingMode = pricingMode; }

@@ -1,13 +1,18 @@
 package com.dony.api.payments.wallet;
 
 import com.dony.api.cancellation.events.TripCancelledEvent;
+import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.cash.CashCommissionService;
+import com.dony.api.payments.cash.CommissionChargedVia;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,36 +21,50 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+/**
+ * Le listener ne décide plus du crédit wallet lui-même : il filtre les bids
+ * (CASH + commissionChargedVia WALLET/null) et délègue à
+ * {@link CashCommissionService#refundCommissionToWallet} qui porte la garde
+ * commissionStatus==CHARGED, la transition →REFUNDED et l'idempotence.
+ * Ces tests vérifient donc le routage + la délégation, pas la mécanique du refund.
+ */
 @ExtendWith(MockitoExtension.class)
 class WalletCancellationListenerTest {
 
     @Mock
-    private WalletService walletService;
+    private CashCommissionService cashCommissionService;
 
     @Mock
-    private WalletTransactionRepository walletTransactionRepository;
+    private BidRepository bidRepository;
 
     private WalletCancellationListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new WalletCancellationListener(walletService, walletTransactionRepository);
+        listener = new WalletCancellationListener(cashCommissionService, bidRepository);
     }
 
     // --- Helper builders ---
 
-    private WalletTransactionEntity commissionTx(BigDecimal amount) {
-        WalletTransactionEntity tx = new WalletTransactionEntity();
-        // Le débit est stocké en négatif dans WalletService.debit()
-        tx.setAmount(amount.negate());
-        tx.setType(WalletTransactionType.COMMISSION_DEDUCTED);
-        return tx;
+    private BidEntity bidWithId(UUID bidId) {
+        BidEntity bid = new BidEntity();
+        ReflectionTestUtils.setField(bid, "id", bidId);
+        return bid;
     }
 
+    /** CASH bid, commissionChargedVia non précisé (map vide → null → traité comme WALLET). */
     private TripCancelledEvent cashEvent(UUID announcementId, UUID travelerId, UUID bidId) {
         return new TripCancelledEvent(
                 announcementId, travelerId, List.of(), "reason",
                 List.of(bidId), Map.of(bidId, "CASH"));
+    }
+
+    /** CASH bid avec commissionChargedVia explicite. */
+    private TripCancelledEvent cashEventVia(UUID announcementId, UUID travelerId, UUID bidId, CommissionChargedVia via) {
+        return new TripCancelledEvent(
+                announcementId, travelerId, List.of(), "reason",
+                List.of(bidId), Map.of(bidId, "CASH"),
+                Map.of(bidId, via.name()));
     }
 
     private TripCancelledEvent stripeEvent(UUID announcementId, UUID travelerId, UUID bidId) {
@@ -57,58 +76,59 @@ class WalletCancellationListenerTest {
     // --- Tests ---
 
     @Test
-    void onTripCancelled_cashBidWithCommission_creditsWallet() {
+    void onTripCancelled_cashBidViaWallet_delegatesWithNoShowDistinctKey() {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
         UUID announcementId = UUID.randomUUID();
+        BidEntity bid = bidWithId(bidId);
 
-        TripCancelledEvent event = cashEvent(announcementId, travelerId, bidId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
 
-        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
-                .thenReturn(Optional.of(commissionTx(new BigDecimal("12.00"))));
-
+        TripCancelledEvent event = cashEventVia(announcementId, travelerId, bidId, CommissionChargedVia.WALLET);
         listener.onTripCancelled(event);
 
-        verify(walletService).credit(
-                eq(travelerId),
-                eq(new BigDecimal("12.00")),
-                eq(WalletTransactionType.REFUND),
-                eq("cancel-" + bidId),
-                eq("wallet-refund-cancel-" + bidId)
-        );
+        verify(cashCommissionService).refundCommissionToWallet(bid, travelerId, "wallet-refund-cancel-" + bidId);
     }
 
     @Test
-    void onTripCancelled_stripeBid_doesNotCreditWallet() {
+    void onTripCancelled_cashBidViaNull_isTreatedAsWalletAndDelegates() {
+        // commissionChargedVia absent de la map → null → le filtre laisse passer (rétro-compat).
+        UUID bidId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        BidEntity bid = bidWithId(bidId);
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        listener.onTripCancelled(cashEvent(UUID.randomUUID(), travelerId, bidId));
+
+        verify(cashCommissionService).refundCommissionToWallet(bid, travelerId, "wallet-refund-cancel-" + bidId);
+    }
+
+    @Test
+    void onTripCancelled_cashBidViaCard_isSkipped() {
+        // via=CARD → c'est CardCommissionTripCancelRefundListener qui rembourse, pas celui-ci.
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = stripeEvent(UUID.randomUUID(), travelerId, bidId);
+        listener.onTripCancelled(cashEventVia(UUID.randomUUID(), travelerId, bidId, CommissionChargedVia.CARD));
 
-        listener.onTripCancelled(event);
-
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
-        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
+        verify(bidRepository, never()).findById(any());
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
     }
 
     @Test
-    void onTripCancelled_cashBidWithoutCommissionInWallet_doesNotCreditWallet() {
+    void onTripCancelled_stripeBid_isSkipped() {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
-        TripCancelledEvent event = cashEvent(UUID.randomUUID(), travelerId, bidId);
+        listener.onTripCancelled(stripeEvent(UUID.randomUUID(), travelerId, bidId));
 
-        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
-                .thenReturn(Optional.empty());
-
-        listener.onTripCancelled(event);
-
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
+        verify(bidRepository, never()).findById(any());
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
     }
 
     @Test
-    void onTripCancelled_bidNotInPaymentMethodMap_defaultsToStripe_doesNotCreditWallet() {
-        // Bid présent dans affectedBidIds mais absent de bidPaymentMethods → défaut STRIPE → skip
+    void onTripCancelled_bidNotInPaymentMethodMap_defaultsToStripe_isSkipped() {
         UUID bidId = UUID.randomUUID();
         UUID travelerId = UUID.randomUUID();
 
@@ -118,8 +138,20 @@ class WalletCancellationListenerTest {
 
         listener.onTripCancelled(event);
 
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
-        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
+        verify(bidRepository, never()).findById(any());
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
+    }
+
+    @Test
+    void onTripCancelled_cashBidNotFoundInRepo_doesNotDelegate() {
+        UUID bidId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+        listener.onTripCancelled(cashEvent(UUID.randomUUID(), travelerId, bidId));
+
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
     }
 
     @Test
@@ -132,8 +164,8 @@ class WalletCancellationListenerTest {
 
         listener.onTripCancelled(event);
 
-        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
+        verify(bidRepository, never()).findById(any());
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
     }
 
     @Test
@@ -146,62 +178,37 @@ class WalletCancellationListenerTest {
 
         listener.onTripCancelled(event);
 
-        verify(walletTransactionRepository, never()).findByUserIdAndBidIdAndType(any(), any(), any());
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
+        verify(bidRepository, never()).findById(any());
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), any(), any());
     }
 
     @Test
-    void onTripCancelled_multipleBids_processesEachIndependently() {
-        UUID bidId1 = UUID.randomUUID();
-        UUID bidId2 = UUID.randomUUID();
+    void onTripCancelled_multipleBids_routesEachByPaymentMethodAndVia() {
+        UUID walletBid = UUID.randomUUID();   // CASH + WALLET → délégué
+        UUID cardBid = UUID.randomUUID();     // CASH + CARD   → skip
+        UUID stripeBid = UUID.randomUUID();   // STRIPE        → skip
         UUID travelerId = UUID.randomUUID();
+        BidEntity walletBidEntity = bidWithId(walletBid);
+
+        when(bidRepository.findById(walletBid)).thenReturn(Optional.of(walletBidEntity));
+
+        Map<UUID, String> methods = new HashMap<>();
+        methods.put(walletBid, "CASH");
+        methods.put(cardBid, "CASH");
+        methods.put(stripeBid, "STRIPE");
+        Map<UUID, String> vias = new HashMap<>();
+        vias.put(walletBid, CommissionChargedVia.WALLET.name());
+        vias.put(cardBid, CommissionChargedVia.CARD.name());
 
         TripCancelledEvent event = new TripCancelledEvent(
                 UUID.randomUUID(), travelerId, List.of(), "reason",
-                List.of(bidId1, bidId2),
-                Map.of(bidId1, "CASH", bidId2, "CASH"));
-
-        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId1, WalletTransactionType.COMMISSION_DEDUCTED))
-                .thenReturn(Optional.of(commissionTx(new BigDecimal("8.00"))));
-        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId2, WalletTransactionType.COMMISSION_DEDUCTED))
-                .thenReturn(Optional.empty()); // bid2 n'a pas de commission wallet
+                List.of(walletBid, cardBid, stripeBid), methods, vias);
 
         listener.onTripCancelled(event);
 
-        // bid1 remboursé
-        verify(walletService).credit(
-                eq(travelerId),
-                eq(new BigDecimal("8.00")),
-                eq(WalletTransactionType.REFUND),
-                eq("cancel-" + bidId1),
-                eq("wallet-refund-cancel-" + bidId1)
-        );
-        // bid2 non remboursé (pas de commission wallet)
-        verify(walletService, never()).credit(
-                eq(travelerId),
-                any(),
-                any(),
-                eq("cancel-" + bidId2),
-                any()
-        );
-    }
-
-    @Test
-    void onTripCancelled_noCommissionTransactionFound_doesNotCreditWallet() {
-        // Cas de sécurité : si la transaction COMMISSION_DEDUCTED n'existe pas
-        // pour ce couple (travelerId, bidId), le refund n'est pas effectué.
-        // Cela prévient les abus si l'event était forgé avec un mauvais travelerId.
-        UUID bidId = UUID.randomUUID();
-        UUID travelerId = UUID.randomUUID();
-
-        TripCancelledEvent event = cashEvent(UUID.randomUUID(), travelerId, bidId);
-
-        // La recherche findByUserIdAndBidIdAndType(travelerId, bidId, ...) retourne empty
-        when(walletTransactionRepository.findByUserIdAndBidIdAndType(travelerId, bidId, WalletTransactionType.COMMISSION_DEDUCTED))
-                .thenReturn(Optional.empty());
-
-        listener.onTripCancelled(event);
-
-        verify(walletService, never()).credit(any(), any(), any(), any(), any());
+        verify(cashCommissionService).refundCommissionToWallet(walletBidEntity, travelerId, "wallet-refund-cancel-" + walletBid);
+        verify(cashCommissionService, never()).refundCommissionToWallet(any(), eq(travelerId), eq("wallet-refund-cancel-" + cardBid));
+        verify(bidRepository, never()).findById(cardBid);
+        verify(bidRepository, never()).findById(stripeBid);
     }
 }
