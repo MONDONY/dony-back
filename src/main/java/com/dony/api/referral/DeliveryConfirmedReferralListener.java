@@ -3,9 +3,11 @@ package com.dony.api.referral;
 import com.dony.api.common.AuditService;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.referral.events.ReferralRewardGrantedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,17 +37,20 @@ public class DeliveryConfirmedReferralListener {
     private final BidRepository bidRepository;
     private final AuditService auditService;
     private final ReferralConfig config;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DeliveryConfirmedReferralListener(ReferralInvitationRepository referralInvitationRepository,
                                               UserCreditRepository userCreditRepository,
                                               BidRepository bidRepository,
                                               AuditService auditService,
-                                              ReferralConfig config) {
+                                              ReferralConfig config,
+                                              ApplicationEventPublisher eventPublisher) {
         this.referralInvitationRepository = referralInvitationRepository;
         this.userCreditRepository = userCreditRepository;
         this.bidRepository = bidRepository;
         this.auditService = auditService;
         this.config = config;
+        this.eventPublisher = eventPublisher;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -118,5 +123,10 @@ public class DeliveryConfirmedReferralListener {
 
         log.info("Referral reward granted: referrer={} referee={} amountCents={}",
                 inv.getReferrerUserId(), senderId, config.getRewardAmountCents());
+
+        // Credit the referrer's spendable wallet via an event (cross-package = events only).
+        // Published inside this REQUIRES_NEW transaction → the wallet listener fires AFTER_COMMIT.
+        eventPublisher.publishEvent(new ReferralRewardGrantedEvent(
+                inv.getReferrerUserId(), config.getRewardAmountCents(), inv.getId()));
     }
 }

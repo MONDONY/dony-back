@@ -3,6 +3,7 @@ package com.dony.api.referral;
 import com.dony.api.common.AuditService;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.referral.events.ReferralRewardGrantedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
 import java.util.Optional;
@@ -28,6 +30,7 @@ class DeliveryConfirmedReferralListenerTest {
     @Mock private UserCreditRepository userCreditRepository;
     @Mock private BidRepository bidRepository;
     @Mock private AuditService auditService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private ReferralConfig config;
     private DeliveryConfirmedReferralListener listener;
@@ -45,7 +48,7 @@ class DeliveryConfirmedReferralListenerTest {
         config.setCodeRegenerationCooldownDays(30);
         listener = new DeliveryConfirmedReferralListener(
                 referralInvitationRepository, userCreditRepository,
-                bidRepository, auditService, config);
+                bidRepository, auditService, config, eventPublisher);
     }
 
     private static void setId(Object entity, UUID id) {
@@ -90,7 +93,7 @@ class DeliveryConfirmedReferralListenerTest {
 
         listener.onDeliveryConfirmed(event());
 
-        verifyNoInteractions(bidRepository, userCreditRepository);
+        verifyNoInteractions(bidRepository, userCreditRepository, eventPublisher);
         verify(referralInvitationRepository, never()).save(any());
     }
 
@@ -126,6 +129,15 @@ class DeliveryConfirmedReferralListenerTest {
         assertThat(credit.getAmountCents()).isEqualTo(500);
         assertThat(credit.getSource()).isEqualTo("REFERRAL_REWARD");
         assertThat(credit.getReferenceId()).isEqualTo(INV_ID);
+
+        // A wallet-credit event must be published for the referrer
+        ArgumentCaptor<ReferralRewardGrantedEvent> evCaptor =
+                ArgumentCaptor.forClass(ReferralRewardGrantedEvent.class);
+        verify(eventPublisher).publishEvent(evCaptor.capture());
+        ReferralRewardGrantedEvent ev = evCaptor.getValue();
+        assertThat(ev.referrerUserId()).isEqualTo(REFERRER_ID);
+        assertThat(ev.amountCents()).isEqualTo(500);
+        assertThat(ev.invitationId()).isEqualTo(INV_ID);
     }
 
     // ── 3. secondDelivery_doesNotReward ───────────────────────────────────────
@@ -142,6 +154,8 @@ class DeliveryConfirmedReferralListenerTest {
 
         verify(referralInvitationRepository, never()).save(any());
         verifyNoInteractions(userCreditRepository);
+        // No wallet credit event when no reward is granted
+        verifyNoInteractions(eventPublisher);
     }
 
     // ── 4. rewardCreatesUserCredit ────────────────────────────────────────────
@@ -177,7 +191,7 @@ class DeliveryConfirmedReferralListenerTest {
         listener.onDeliveryConfirmed(event());
 
         verify(referralInvitationRepository, never()).save(any());
-        verifyNoInteractions(userCreditRepository);
+        verifyNoInteractions(userCreditRepository, eventPublisher);
     }
 
     // ── 6. exceptionInCredit_propagates ──────────────────────────────────────
