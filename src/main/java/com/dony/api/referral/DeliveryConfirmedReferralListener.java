@@ -51,6 +51,17 @@ public class DeliveryConfirmedReferralListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onDeliveryConfirmed(DeliveryConfirmedEvent event) {
+        try {
+            doReward(event);
+        } catch (Exception ex) {
+            // REQUIRES_NEW rolls back silently; log explicitly so ops can investigate
+            log.error("Referral reward failed for bid={} sender={}: {}",
+                    event.getBidId(), event.getSenderId(), ex.getMessage(), ex);
+            throw ex;
+        }
+    }
+
+    private void doReward(DeliveryConfirmedEvent event) {
         UUID senderId = event.getSenderId();
 
         Optional<ReferralInvitationEntity> invOpt =
@@ -61,14 +72,24 @@ public class DeliveryConfirmedReferralListener {
             return;
         }
 
-        // Only reward on the first completed delivery
         long completedCount = bidRepository.countByStatusAndSenderId(BidStatus.COMPLETED, senderId);
-        if (completedCount != 1) {
+
+        if (completedCount == 0) {
+            // Should not happen — bid was just committed as COMPLETED. Log a warning so
+            // this edge case is visible in monitoring rather than silently skipped.
+            log.warn("Referral reward: completed-bid count is 0 for sender {} bid {} — " +
+                     "possible Hibernate timing issue; skipping to avoid duplicate reward on retry",
+                    senderId, event.getBidId());
+            return;
+        }
+
+        if (completedCount > 1) {
             log.debug("Sender {} has {} completed bids — not the first, skipping referral reward",
                     senderId, completedCount);
             return;
         }
 
+        // completedCount == 1 → this IS the first completed delivery
         ReferralInvitationEntity inv = invOpt.get();
         inv.setStatus("REWARDED");
         inv.setRewardedAt(LocalDateTime.now(ZoneOffset.UTC));

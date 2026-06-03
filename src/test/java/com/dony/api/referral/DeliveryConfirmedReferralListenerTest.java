@@ -162,4 +162,38 @@ class DeliveryConfirmedReferralListenerTest {
         verify(userCreditRepository).save(cap.capture());
         assertThat(cap.getValue().getReferenceId()).isEqualTo(INV_ID);
     }
+
+    // ── 5. zeroBidCount_doesNotReward ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("zeroBidCount_doesNotReward — count=0 edge case skips reward (no NPE, no double)")
+    void zeroBidCount_doesNotReward() {
+        ReferralInvitationEntity inv = buildSignedUpInvitation();
+        when(referralInvitationRepository.findByRefereeUserIdAndStatus(SENDER_ID, "SIGNED_UP"))
+                .thenReturn(Optional.of(inv));
+        // count=0 should never happen in production but must be handled gracefully
+        when(bidRepository.countByStatusAndSenderId(BidStatus.COMPLETED, SENDER_ID)).thenReturn(0L);
+
+        listener.onDeliveryConfirmed(event());
+
+        verify(referralInvitationRepository, never()).save(any());
+        verifyNoInteractions(userCreditRepository);
+    }
+
+    // ── 6. exceptionInCredit_propagates ──────────────────────────────────────
+
+    @Test
+    @DisplayName("exceptionInCredit_propagates — credit save failure is visible (not swallowed)")
+    void exceptionInCredit_propagates() {
+        ReferralInvitationEntity inv = buildSignedUpInvitation();
+        when(referralInvitationRepository.findByRefereeUserIdAndStatus(SENDER_ID, "SIGNED_UP"))
+                .thenReturn(Optional.of(inv));
+        when(bidRepository.countByStatusAndSenderId(BidStatus.COMPLETED, SENDER_ID)).thenReturn(1L);
+        when(referralInvitationRepository.save(any())).thenReturn(inv);
+        when(userCreditRepository.save(any())).thenThrow(new RuntimeException("DB constraint violation"));
+
+        assertThatThrownBy(() -> listener.onDeliveryConfirmed(event()))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("DB constraint violation");
+    }
 }
