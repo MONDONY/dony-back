@@ -99,10 +99,14 @@ public class ReferralService {
         long rewarded = referralInvitationRepository.countByReferrerUserIdAndStatus(user.getId(), "REWARDED");
         int totalEarnedCents = userCreditRepository.sumAmountCentsByUserId(user.getId());
 
+        boolean hasBeenReferred =
+                referralInvitationRepository.findByRefereeUserIdAndStatus(user.getId(), "SIGNED_UP").isPresent() ||
+                referralInvitationRepository.findByRefereeUserIdAndStatus(user.getId(), "REWARDED").isPresent();
+
         return new MyReferralResponse(
                 code, shareUrl,
                 (int) totalInvited, (int) signedUp, (int) rewarded,
-                totalEarnedCents
+                totalEarnedCents, hasBeenReferred
         );
     }
 

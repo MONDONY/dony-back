@@ -147,6 +147,8 @@ class ReferralServiceTest {
         when(referralInvitationRepository.countByReferrerUserIdAndStatus(USER_ID, "SIGNED_UP")).thenReturn(2L);
         when(referralInvitationRepository.countByReferrerUserIdAndStatus(USER_ID, "REWARDED")).thenReturn(1L);
         when(userCreditRepository.sumAmountCentsByUserId(USER_ID)).thenReturn(500);
+        when(referralInvitationRepository.findByRefereeUserIdAndStatus(USER_ID, "SIGNED_UP")).thenReturn(Optional.empty());
+        when(referralInvitationRepository.findByRefereeUserIdAndStatus(USER_ID, "REWARDED")).thenReturn(Optional.empty());
 
         MyReferralResponse response = referralService.getMyReferral(FIREBASE_UID);
 
@@ -156,6 +158,28 @@ class ReferralServiceTest {
         assertThat(response.signedUp()).isEqualTo(2);
         assertThat(response.rewarded()).isEqualTo(1);
         assertThat(response.totalEarnedCents()).isEqualTo(500);
+        assertThat(response.hasBeenReferred()).isFalse();
+    }
+
+    @Test
+    @DisplayName("getMyReferral_hasBeenReferred_true — hasBeenReferred is true when user has SIGNED_UP invitation as referee")
+    void getMyReferral_hasBeenReferred_true() {
+        UserEntity user = userWithName(USER_ID, FIREBASE_UID, "Ali", "Diallo");
+        ReferralCodeEntity code = codeEntity(USER_ID, "ALID1234");
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+        when(referralCodeRepository.findByUserId(USER_ID)).thenReturn(Optional.of(code));
+        when(referralInvitationRepository.countByReferrerUserId(USER_ID)).thenReturn(0L);
+        when(referralInvitationRepository.countByReferrerUserIdAndStatus(USER_ID, "SIGNED_UP")).thenReturn(0L);
+        when(referralInvitationRepository.countByReferrerUserIdAndStatus(USER_ID, "REWARDED")).thenReturn(0L);
+        when(userCreditRepository.sumAmountCentsByUserId(USER_ID)).thenReturn(0);
+        ReferralInvitationEntity invitation = new ReferralInvitationEntity();
+        when(referralInvitationRepository.findByRefereeUserIdAndStatus(USER_ID, "SIGNED_UP"))
+                .thenReturn(Optional.of(invitation));
+        // REWARDED not stubbed: short-circuit OR means it is never called when SIGNED_UP is present
+
+        MyReferralResponse response = referralService.getMyReferral(FIREBASE_UID);
+
+        assertThat(response.hasBeenReferred()).isTrue();
     }
 
     // ── 4. redeemCode_success ─────────────────────────────────────────────────

@@ -9,5 +9,6 @@ public record MyReferralResponse(
         int totalInvited,
         int signedUp,
         int rewarded,
-        int totalEarnedCents
+        int totalEarnedCents,
+        boolean hasBeenReferred
 ) {}
