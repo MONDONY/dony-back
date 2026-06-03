@@ -131,6 +131,18 @@ public class UserEntity extends BaseEntity {
     @Column(name = "deletion_requested_at")
     private Instant deletionRequestedAt;
 
+    @Column(name = "analytics_consent")
+    private Boolean analyticsConsent; // null = jamais répondu
+
+    @Column(name = "analytics_consent_at")
+    private Instant analyticsConsentAt;
+
+    @Column(name = "analytics_consent_version", length = 32)
+    private String analyticsConsentVersion;
+
+    @Column(name = "analytics_consent_source", length = 32)
+    private String analyticsConsentSource;
+
     @Column(name = "stripe_customer_id", length = 255)
     private String stripeCustomerId;
 
@@ -244,6 +256,18 @@ public class UserEntity extends BaseEntity {
 
     public Instant getDeletionRequestedAt() { return deletionRequestedAt; }
     public void setDeletionRequestedAt(Instant deletionRequestedAt) { this.deletionRequestedAt = deletionRequestedAt; }
+
+    public Boolean getAnalyticsConsent() { return analyticsConsent; }
+    public void setAnalyticsConsent(Boolean analyticsConsent) { this.analyticsConsent = analyticsConsent; }
+
+    public Instant getAnalyticsConsentAt() { return analyticsConsentAt; }
+    public void setAnalyticsConsentAt(Instant analyticsConsentAt) { this.analyticsConsentAt = analyticsConsentAt; }
+
+    public String getAnalyticsConsentVersion() { return analyticsConsentVersion; }
+    public void setAnalyticsConsentVersion(String analyticsConsentVersion) { this.analyticsConsentVersion = analyticsConsentVersion; }
+
+    public String getAnalyticsConsentSource() { return analyticsConsentSource; }
+    public void setAnalyticsConsentSource(String analyticsConsentSource) { this.analyticsConsentSource = analyticsConsentSource; }
 
     public String getStripeCustomerId() { return stripeCustomerId; }
     public void setStripeCustomerId(String stripeCustomerId) { this.stripeCustomerId = stripeCustomerId; }
