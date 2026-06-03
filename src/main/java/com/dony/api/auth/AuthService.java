@@ -211,6 +211,47 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    @Transactional(readOnly = true)
+    public com.dony.api.auth.dto.AnalyticsConsentResponse getAnalyticsConsent(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        Instant consentAt = user.getAnalyticsConsentAt();
+        return new com.dony.api.auth.dto.AnalyticsConsentResponse(
+                user.getAnalyticsConsent(),
+                consentAt == null ? null : consentAt.toString(),
+                user.getAnalyticsConsentVersion());
+    }
+
+    @Transactional
+    public void updateAnalyticsConsent(String firebaseUid, boolean granted,
+                                       String policyVersion, String source) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"
+                ));
+        user.setAnalyticsConsent(granted);
+        user.setAnalyticsConsentAt(Instant.now());
+        user.setAnalyticsConsentVersion(policyVersion);
+        user.setAnalyticsConsentSource(source);
+        userRepository.save(user);
+
+        // PII interdite dans le payload : uniquement granted / policyVersion / source.
+        // HashMap (et non Map.of) car policyVersion et source peuvent être null.
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("granted", granted);
+        payload.put("policyVersion", policyVersion == null ? "" : policyVersion);
+        payload.put("source", source == null ? "" : source);
+        auditService.log("USER", user.getId(), "ANALYTICS_CONSENT_UPDATED", user.getId(), payload);
+    }
+
     /**
      * Retourne l'UUID de l'utilisateur courant à partir du FirebaseUID dans le SecurityContext.
      */

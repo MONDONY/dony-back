@@ -333,6 +333,127 @@ class AuthServiceTest {
         }
     }
 
+    // ─── analytics consent ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getAnalyticsConsent()")
+    class GetAnalyticsConsentTests {
+
+        @Test
+        @DisplayName("utilisateur a répondu → granted/consentAt/version retournés")
+        void getAnalyticsConsent_answered_returnsValues() {
+            UserEntity user = buildUser();
+            java.time.Instant at = java.time.Instant.parse("2026-06-03T04:55:08.960Z");
+            user.setAnalyticsConsent(true);
+            user.setAnalyticsConsentAt(at);
+            user.setAnalyticsConsentVersion("1.0");
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            com.dony.api.auth.dto.AnalyticsConsentResponse resp =
+                    authService.getAnalyticsConsent(FIREBASE_UID);
+
+            assertThat(resp.granted()).isTrue();
+            assertThat(resp.consentAt()).isEqualTo("2026-06-03T04:55:08.960Z");
+            assertThat(resp.policyVersion()).isEqualTo("1.0");
+        }
+
+        @Test
+        @DisplayName("utilisateur n'a jamais répondu → tout null")
+        void getAnalyticsConsent_neverAnswered_returnsNulls() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            com.dony.api.auth.dto.AnalyticsConsentResponse resp =
+                    authService.getAnalyticsConsent(FIREBASE_UID);
+
+            assertThat(resp.granted()).isNull();
+            assertThat(resp.consentAt()).isNull();
+            assertThat(resp.policyVersion()).isNull();
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
+        void getAnalyticsConsent_unknownUser_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.getAnalyticsConsent(FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+                        assertThat(ex.getErrorCode()).isEqualTo("user-not-found");
+                    });
+        }
+    }
+
+    @Nested
+    @DisplayName("updateAnalyticsConsent()")
+    class UpdateAnalyticsConsentTests {
+
+        @Test
+        @DisplayName("met à jour les colonnes + écrit une entrée audit_log avec payload non-null")
+        void updateAnalyticsConsent_setsColumns_andLogsAudit() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            authService.updateAnalyticsConsent(FIREBASE_UID, true, "1.0", "manual");
+
+            assertThat(user.getAnalyticsConsent()).isTrue();
+            assertThat(user.getAnalyticsConsentAt()).isNotNull();
+            assertThat(user.getAnalyticsConsentVersion()).isEqualTo("1.0");
+            assertThat(user.getAnalyticsConsentSource()).isEqualTo("manual");
+            verify(userRepository).save(user);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.Map<String, Object>> payloadCaptor =
+                    ArgumentCaptor.forClass(java.util.Map.class);
+            verify(auditService).log(eq("USER"), eq(user.getId()),
+                    eq("ANALYTICS_CONSENT_UPDATED"), eq(user.getId()), payloadCaptor.capture());
+            java.util.Map<String, Object> payload = payloadCaptor.getValue();
+            assertThat(payload).isNotNull();
+            assertThat(payload.get("granted")).isEqualTo(true);
+            assertThat(payload.get("policyVersion")).isEqualTo("1.0");
+            assertThat(payload.get("source")).isEqualTo("manual");
+        }
+
+        @Test
+        @DisplayName("policyVersion et source null → payload audit utilise des valeurs non-null")
+        void updateAnalyticsConsent_nullOptionals_payloadNonNull() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            authService.updateAnalyticsConsent(FIREBASE_UID, false, null, null);
+
+            assertThat(user.getAnalyticsConsent()).isFalse();
+            assertThat(user.getAnalyticsConsentVersion()).isNull();
+            assertThat(user.getAnalyticsConsentSource()).isNull();
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.Map<String, Object>> payloadCaptor =
+                    ArgumentCaptor.forClass(java.util.Map.class);
+            verify(auditService).log(eq("USER"), eq(user.getId()),
+                    eq("ANALYTICS_CONSENT_UPDATED"), eq(user.getId()), payloadCaptor.capture());
+            java.util.Map<String, Object> payload = payloadCaptor.getValue();
+            assertThat(payload.get("granted")).isEqualTo(false);
+            assertThat(payload.get("policyVersion")).isNotNull();
+            assertThat(payload.get("source")).isNotNull();
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND, aucun audit")
+        void updateAnalyticsConsent_unknownUser_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.updateAnalyticsConsent(FIREBASE_UID, true, "1.0", "manual"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+            verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+    }
+
     // ─── deleteAccount ─────────────────────────────────────────────────────────
     // Full GDPR logic tested in UserServiceTest; AuthService delegates to UserService.
 

@@ -73,6 +73,19 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/me/analytics-consent")
+    public ResponseEntity<com.dony.api.auth.dto.AnalyticsConsentResponse> getAnalyticsConsent() {
+        return ResponseEntity.ok(authService.getAnalyticsConsent(requireFirebaseUid()));
+    }
+
+    @PutMapping("/me/analytics-consent")
+    public ResponseEntity<Void> updateAnalyticsConsent(
+            @Valid @RequestBody com.dony.api.auth.dto.AnalyticsConsentRequest request) {
+        authService.updateAnalyticsConsent(requireFirebaseUid(),
+                request.granted(), request.policyVersion(), request.source());
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteAccount() {
         String firebaseUid = requireFirebaseUid();
