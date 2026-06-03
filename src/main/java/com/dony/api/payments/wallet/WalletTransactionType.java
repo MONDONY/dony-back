@@ -4,5 +4,6 @@ public enum WalletTransactionType {
     TOP_UP,
     BID_PAYMENT,
     COMMISSION_DEDUCTED,
-    REFUND
+    REFUND,
+    REFERRAL_REWARD
 }

@@ -182,8 +182,9 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     /**
      * Counts completed deliveries for a given sender.
      * Used by {@code DeliveryConfirmedReferralListener} to detect the first delivery.
+     * Explicit deleted_at filter because custom @Query bypasses @Where in some Hibernate 6 versions.
      */
-    @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.senderId = :senderId AND b.status = :status")
+    @Query("SELECT COUNT(b) FROM BidEntity b WHERE b.senderId = :senderId AND b.status = :status AND b.deletedAt IS NULL")
     long countByStatusAndSenderId(@Param("status") BidStatus status, @Param("senderId") UUID senderId);
 
     /**
