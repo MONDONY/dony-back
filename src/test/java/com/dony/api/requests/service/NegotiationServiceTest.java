@@ -1095,6 +1095,42 @@ class NegotiationServiceTest {
     }
 
     @Nested
+    @DisplayName("finalizeAfterPayment() — details completeness check")
+    class FinalizeAfterPaymentTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("détails incomplets (recipientName null) → 422 details-incomplete")
+        void finalize_requiresCompleteDetails() {
+            request.setRecipientName(null); // détails incomplets intentionnellement
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("details-incomplete");
+        }
+    }
+
+    @Nested
     @DisplayName("toResponse() — Modèle B champs calculés")
     class ToResponseModelBTests {
 
