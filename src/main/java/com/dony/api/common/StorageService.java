@@ -33,7 +33,7 @@ public class StorageService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(StorageService.class);
 
     private static final Set<String> ALLOWED_PREFIXES = Set.of(
-            "tracking/", "users/", "messaging/", "kyc/", "package_requests/");
+            "tracking/", "users/", "messaging/", "kyc/", "package_requests/", "requests/");
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp");
@@ -51,13 +51,16 @@ public class StorageService {
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final ImageProcessingService imageProcessingService;
 
     @Value("${aws.s3.bucket}")
     private String bucket;
 
-    public StorageService(S3Client s3Client, S3Presigner s3Presigner) {
+    public StorageService(S3Client s3Client, S3Presigner s3Presigner,
+                          ImageProcessingService imageProcessingService) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
+        this.imageProcessingService = imageProcessingService;
     }
 
     /**
@@ -93,6 +96,60 @@ public class StorageService {
         }
 
         return key;
+    }
+
+    /** Keys returned after uploading a request photo (main + thumbnail). */
+    public record UploadedRequestPhoto(String mainKey, String thumbnailKey) {}
+
+    /**
+     * Upload a sender's request photo with automatic resize + thumbnail.
+     * <ul>
+     *   <li>Main image: resized so long-edge ≤ 1280 px, JPEG 80 %, stored under
+     *       {@code requests/{senderId}/{ts}_request.jpg}</li>
+     *   <li>Thumbnail: 400×400 center-crop, JPEG 80 %, stored under
+     *       {@code requests/{senderId}/{ts}_request_thumb.jpg}</li>
+     * </ul>
+     * EXIF metadata is stripped as a side-effect of re-encoding.
+     *
+     * @param senderId    UUID of the sender who owns the photo
+     * @param bytes       raw bytes of the original upload
+     * @param contentType MIME type of the original file
+     * @return {@link UploadedRequestPhoto} containing both S3 keys
+     */
+    public UploadedRequestPhoto uploadRequestPhoto(UUID senderId, byte[] bytes, String contentType) {
+        ImageProcessingService.ProcessedImage processed = imageProcessingService.process(bytes, contentType);
+
+        long ts = Instant.now().toEpochMilli();
+        String mainKey  = "requests/" + senderId + "/" + ts + "_request.jpg";
+        String thumbKey = "requests/" + senderId + "/" + ts + "_request_thumb.jpg";
+
+        putBytes(mainKey,  processed.main(),      "image/jpeg");
+        putBytes(thumbKey, processed.thumbnail(), "image/jpeg");
+
+        return new UploadedRequestPhoto(mainKey, thumbKey);
+    }
+
+    // -----------------------------------------------------------------------
+    // Private S3 helpers
+    // -----------------------------------------------------------------------
+
+    private void putBytes(String key, byte[] data, String contentType) {
+        PutObjectRequest req = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .contentLength((long) data.length)
+                .build();
+
+        long t0 = System.currentTimeMillis();
+        try {
+            s3Client.putObject(req, RequestBody.fromBytes(data));
+            log.info("putBytes OK key={} bucket={} ({} ms)", key, bucket, System.currentTimeMillis() - t0);
+        } catch (Exception ex) {
+            log.error("putBytes FAILED key={} bucket={} ({} ms): {}", key, bucket,
+                    System.currentTimeMillis() - t0, ex.toString(), ex);
+            throw ex;
+        }
     }
 
     /**

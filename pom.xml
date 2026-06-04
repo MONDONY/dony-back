@@ -133,6 +133,13 @@
 			<version>${aws-sdk.version}</version>
 		</dependency>
 
+		<!-- Thumbnailator — image resizing + thumbnail generation -->
+		<dependency>
+			<groupId>net.coobird</groupId>
+			<artifactId>thumbnailator</artifactId>
+			<version>0.4.20</version>
+		</dependency>
+
 		<!-- ZXing — QR code generation -->
 		<dependency>
 			<groupId>com.google.zxing</groupId>

@@ -23,12 +23,13 @@ class StorageServiceDeleteByPrefixTest {
 
     @Mock private S3Client s3Client;
     @Mock private S3Presigner s3Presigner;
+    @Mock private ImageProcessingService imageProcessingService;
 
     private StorageService storageService;
 
     @BeforeEach
     void setUp() throws Exception {
-        storageService = new StorageService(s3Client, s3Presigner);
+        storageService = new StorageService(s3Client, s3Presigner, imageProcessingService);
         var field = StorageService.class.getDeclaredField("bucket");
         field.setAccessible(true);
         field.set(storageService, "test-bucket");
