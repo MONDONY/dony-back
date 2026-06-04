@@ -57,6 +57,12 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
     """)
     long countCreatedBy(@Param("travelerId") UUID travelerId, @Param("since") LocalDateTime since);
 
+    @Query("SELECT t FROM NegotiationThreadEntity t WHERE t.status = 'AWAITING_TRIP' AND t.lastActivityAt < :cutoff")
+    List<NegotiationThreadEntity> findAwaitingTripExpired(@Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT t FROM NegotiationThreadEntity t WHERE t.status = 'AWAITING_PAYMENT' AND t.lastActivityAt < :cutoff")
+    List<NegotiationThreadEntity> findAwaitingPaymentExpired(@Param("cutoff") LocalDateTime cutoff);
+
     /**
      * All threads where the user is participant — either traveler directly,
      * or sender via the linked package_request.

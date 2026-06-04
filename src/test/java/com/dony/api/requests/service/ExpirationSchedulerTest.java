@@ -65,25 +65,53 @@ class ExpirationSchedulerTest {
             isNull(), anyMap());
     }
 
+    private NegotiationThreadEntity thread(NegotiationThreadStatus status) {
+        NegotiationThreadEntity t = new NegotiationThreadEntity();
+        t.setPackageRequestId(UUID.randomUUID());
+        t.setTravelerId(UUID.randomUUID());
+        t.setStatus(status);
+        setId(t, UUID.randomUUID());
+        return t;
+    }
+
     @Test
     @DisplayName("threads inactifs → EXPIRED + event + audit")
     void expireThreads_marksAndPublishes() {
         when(config.threadInactivityHours()).thenReturn(48);
+        when(config.awaitingTripHours()).thenReturn(24);
+        when(config.awaitingPaymentHours()).thenReturn(24);
 
-        NegotiationThreadEntity thread = new NegotiationThreadEntity();
-        thread.setPackageRequestId(UUID.randomUUID());
-        thread.setTravelerId(UUID.randomUUID());
-        thread.setStatus(NegotiationThreadStatus.OPEN);
-        setId(thread, UUID.randomUUID());
+        NegotiationThreadEntity openThread = thread(NegotiationThreadStatus.OPEN);
 
-        when(threadRepo.findInactive(any(LocalDateTime.class))).thenReturn(List.of(thread));
+        when(threadRepo.findInactive(any(LocalDateTime.class))).thenReturn(List.of(openThread));
+        when(threadRepo.findAwaitingTripExpired(any(LocalDateTime.class))).thenReturn(List.of());
+        when(threadRepo.findAwaitingPaymentExpired(any(LocalDateTime.class))).thenReturn(List.of());
 
         scheduler.expireThreads();
 
-        assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
-        verify(threadRepo).save(thread);
+        assertThat(openThread.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
+        verify(threadRepo).save(openThread);
         verify(eventPublisher).publishEvent(any(NegotiationExpiredEvent.class));
         verify(auditService).log(eq("NEGOTIATION_THREAD"), any(UUID.class), eq("EXPIRED"),
             isNull(), anyMap());
+    }
+
+    @Test
+    @DisplayName("AWAITING_TRIP et AWAITING_PAYMENT dépassés → EXPIRED + events + audits")
+    void expireThreads_marksAwaitingTripAndPaymentExpired() {
+        when(config.threadInactivityHours()).thenReturn(72);
+        when(config.awaitingTripHours()).thenReturn(24);
+        when(config.awaitingPaymentHours()).thenReturn(24);
+        when(threadRepo.findInactive(any())).thenReturn(List.of());
+        NegotiationThreadEntity t1 = thread(NegotiationThreadStatus.AWAITING_TRIP);
+        NegotiationThreadEntity t2 = thread(NegotiationThreadStatus.AWAITING_PAYMENT);
+        when(threadRepo.findAwaitingTripExpired(any())).thenReturn(List.of(t1));
+        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of(t2));
+
+        scheduler.expireThreads();
+
+        assertThat(t1.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
+        assertThat(t2.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
+        verify(eventPublisher, times(2)).publishEvent(any(NegotiationExpiredEvent.class));
     }
 }

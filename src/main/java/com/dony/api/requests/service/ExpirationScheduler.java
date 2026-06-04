@@ -71,20 +71,35 @@ public class ExpirationScheduler {
     }
 
     /**
-     * Marks OPEN NegotiationThreads with no activity since threadInactivityHours as EXPIRED,
-     * saves them, publishes a NegotiationExpiredEvent, and creates an audit entry.
+     * Marks negotiation threads as EXPIRED based on three rules:
+     * 1. OPEN threads with no activity since threadInactivityHours.
+     * 2. AWAITING_TRIP threads that have exceeded their awaitingTripHours deadline.
+     * 3. AWAITING_PAYMENT threads that have exceeded their awaitingPaymentHours deadline.
      */
     void expireThreads() {
-        LocalDateTime cutoff = LocalDateTime.now(ZoneOffset.UTC)
-            .minusHours(config.threadInactivityHours());
-        List<NegotiationThreadEntity> inactive = threadRepo.findInactive(cutoff);
-        for (NegotiationThreadEntity thread : inactive) {
-            thread.setStatus(NegotiationThreadStatus.EXPIRED);
-            threadRepo.save(thread);
-            eventPublisher.publishEvent(new NegotiationExpiredEvent(
-                thread.getId(), thread.getPackageRequestId(), null, thread.getTravelerId()));
-            auditService.log("NEGOTIATION_THREAD", thread.getId(), "EXPIRED", null,
-                Map.of("source", "SYSTEM"));
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        // 1) OPEN inactif
+        for (NegotiationThreadEntity t : threadRepo.findInactive(now.minusHours(config.threadInactivityHours()))) {
+            expire(t, "INACTIVE_OPEN");
         }
+        // 2) AWAITING_TRIP dépassé
+        for (NegotiationThreadEntity t : threadRepo.findAwaitingTripExpired(now.minusHours(config.awaitingTripHours()))) {
+            expire(t, "AWAITING_TRIP_TIMEOUT");
+        }
+        // 3) AWAITING_PAYMENT dépassé
+        for (NegotiationThreadEntity t : threadRepo.findAwaitingPaymentExpired(now.minusHours(config.awaitingPaymentHours()))) {
+            expire(t, "AWAITING_PAYMENT_TIMEOUT");
+        }
+    }
+
+    private void expire(NegotiationThreadEntity t, String reason) {
+        t.setStatus(NegotiationThreadStatus.EXPIRED);
+        t.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(t);
+        eventPublisher.publishEvent(new NegotiationExpiredEvent(
+            t.getId(), t.getPackageRequestId(), null, t.getTravelerId()));
+        auditService.log("NEGOTIATION_THREAD", t.getId(), "EXPIRED", null,
+            Map.of("source", "SYSTEM", "reason", reason));
     }
 }
