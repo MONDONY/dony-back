@@ -1,6 +1,7 @@
 package com.dony.api.requests.entity;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -48,6 +49,10 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "payment_intent_id", length = 255)
     private String paymentIntentId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", length = 20)
+    private PaymentMethod paymentMethod;  // null until trip-linking
+
     // === NO-ARG CONSTRUCTOR (required by JPA) ===
 
     public NegotiationThreadEntity() { /* JPA */ }
@@ -74,6 +79,8 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public String getPaymentIntentId() { return paymentIntentId; }
 
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+
     // === SETTERS ===
 
     public void setPackageRequestId(UUID packageRequestId) { this.packageRequestId = packageRequestId; }
@@ -95,4 +102,6 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setLastActivityAt(LocalDateTime lastActivityAt) { this.lastActivityAt = lastActivityAt; }
 
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
+
+    public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
 }
