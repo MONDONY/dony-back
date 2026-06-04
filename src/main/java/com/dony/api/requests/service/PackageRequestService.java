@@ -214,7 +214,14 @@ public class PackageRequestService {
         if (!entity.getSenderId().equals(callerUid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        if (entity.getStatus() != PackageRequestStatus.ACCEPTED) {
+        // Les détails peuvent être renseignés dès qu'un trajet est lié (thread
+        // AWAITING_PAYMENT — juste avant le paiement, conformément au flux de
+        // négociation) OU après acceptation complète (flux post-paiement « Mes envois »).
+        boolean readyForDetails = entity.getStatus() == PackageRequestStatus.ACCEPTED
+            || threadRepository.findByPackageRequestId(requestId).stream()
+                .anyMatch(t -> t.getStatus()
+                    == com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_PAYMENT);
+        if (!readyForDetails) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-yet-accepted");
         }
 

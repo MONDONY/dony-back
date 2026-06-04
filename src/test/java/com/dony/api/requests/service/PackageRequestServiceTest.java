@@ -334,6 +334,33 @@ class PackageRequestServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not-yet-accepted");
         }
+
+        @Test @DisplayName("thread AWAITING_PAYMENT (avant paiement) → succès même si request pas ACCEPTED")
+        void completeDetails_awaitingPaymentThread_persists() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.NEGOTIATING); // pas encore ACCEPTED
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(repository.save(any(PackageRequestEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            when(threadRepository.findByPackageRequestId(reqId))
+                .thenReturn(List.of(thread));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "Awa", "+221770000000", "Abobo"
+            );
+
+            service.completeDetails(SENDER_ID, reqId, req, "203.0.113.9");
+
+            assertThat(entity.getRecipientName()).isEqualTo("Awa");
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221770000000");
+            assertThat(entity.getRecipientCity()).isEqualTo("Abobo");
+        }
     }
 
     @Nested @DisplayName("searchNearMe() — geo proximity filter")
