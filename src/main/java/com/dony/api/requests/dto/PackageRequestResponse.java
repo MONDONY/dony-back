@@ -23,5 +23,7 @@ public record PackageRequestResponse(
     LocalDateTime createdAt,
     // Modèle B : champs négociation
     boolean negotiable,
-    Set<PaymentMethod> acceptedPaymentMethods
+    Set<PaymentMethod> acceptedPaymentMethods,
+    /** Prix brut (commission incluse) affiché à l'expéditeur — null si pas de budget. */
+    BigDecimal grossPriceEur
 ) {}

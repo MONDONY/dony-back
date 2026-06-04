@@ -13,6 +13,6 @@ public record PriceBreakdown(BigDecimal net, BigDecimal commission, BigDecimal g
         return new PriceBreakdown(n, commission, gross);
     }
 
-    public long grossCents()      { return gross.multiply(BigDecimal.valueOf(100)).longValueExact(); }
-    public long commissionCents() { return commission.multiply(BigDecimal.valueOf(100)).longValueExact(); }
+    public long grossCents()      { return gross.multiply(BigDecimal.valueOf(100)).setScale(0, java.math.RoundingMode.HALF_UP).longValueExact(); }
+    public long commissionCents() { return commission.multiply(BigDecimal.valueOf(100)).setScale(0, java.math.RoundingMode.HALF_UP).longValueExact(); }
 }

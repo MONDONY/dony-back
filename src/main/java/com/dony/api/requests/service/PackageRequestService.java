@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dony.api.payments.PriceBreakdown;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -311,6 +312,9 @@ public class PackageRequestService {
     // ─── Mappers ─────────────────────────────────────────────────────────────────
 
     PackageRequestResponse toResponse(PackageRequestEntity e) {
+        BigDecimal grossPriceEur = e.getTargetPriceEur() != null
+            ? PriceBreakdown.fromNet(e.getTargetPriceEur(), commissionProperties.rate()).gross()
+            : null;
         return new PackageRequestResponse(
             e.getId(), e.getSenderId(),
             e.getDepartureCity(), e.getArrivalCity(),
@@ -321,7 +325,8 @@ public class PackageRequestService {
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             e.getStatus(), e.getCreatedAt(),
             e.isNegotiable(),
-            e.getAcceptedPaymentMethods()
+            e.getAcceptedPaymentMethods(),
+            grossPriceEur
         );
     }
 

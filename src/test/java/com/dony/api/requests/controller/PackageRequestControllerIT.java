@@ -98,7 +98,8 @@ class PackageRequestControllerIT {
             "10e", "Plateau",
             PackageRequestStatus.OPEN, LocalDateTime.now(),
             true,
-            java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
+            java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE),
+            new BigDecimal("28.00")
         );
     }
 
@@ -349,7 +350,8 @@ class PackageRequestControllerIT {
             true,
             java.util.EnumSet.of(
                 com.dony.api.payments.cash.PaymentMethod.STRIPE,
-                com.dony.api.payments.cash.PaymentMethod.CASH)
+                com.dony.api.payments.cash.PaymentMethod.CASH),
+            new BigDecimal("28.00")
         );
         when(service.create(eq(SENDER_UUID), any())).thenReturn(responseWithMethods);
 
