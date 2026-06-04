@@ -1445,7 +1445,15 @@ class NegotiationServiceTest {
             assertThat(result).isNotNull();
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
             assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
-            verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.PackageRequestAcceptedEvent.class));
+
+            org.mockito.ArgumentCaptor<PackageRequestAcceptedEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(PackageRequestAcceptedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            PackageRequestAcceptedEvent published = captor.getValue();
+            assertThat(published.recipientName()).isEqualTo("Mamadou Diallo");
+            assertThat(published.recipientPhone()).isEqualTo("+221771234567");
+            assertThat(published.declaredValueEur()).isEqualByComparingTo(new BigDecimal("150"));
+            assertThat(published.disclaimerSignedAt()).isEqualTo(request.getDisclaimerSignedAt());
         }
 
         @Test

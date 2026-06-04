@@ -52,7 +52,9 @@ class RequestEventsListenerTest {
         var event = new PackageRequestAcceptedEvent(
             UUID.randomUUID(), UUID.randomUUID(),
             senderId, travelerId, new BigDecimal("30"), null,
-            new BigDecimal("5"), "test colis", "vetements", "pi_test_123"
+            new BigDecimal("5"), "test colis", "vetements", "pi_test_123",
+            "Fatou Diop", "+221771234567", new BigDecimal("120"),
+            java.time.LocalDateTime.now(), "1.2.3.4"
         );
 
         listener.onPackageRequestAccepted(event);

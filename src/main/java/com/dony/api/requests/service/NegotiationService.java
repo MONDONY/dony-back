@@ -590,7 +590,12 @@ public class NegotiationService {
             request.getWeightKg(),
             request.getDescription(),
             request.getContentCategory(),
-            paymentIntentId
+            paymentIntentId,
+            request.getRecipientName(),
+            request.getRecipientPhone(),
+            request.getDeclaredValueEur(),
+            request.getDisclaimerSignedAt(),
+            request.getDisclaimerSignedIp()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

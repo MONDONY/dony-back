@@ -56,12 +56,19 @@ public class ThreadAcceptedBidListener {
         bid.setAnnouncementId(e.travelerAnnouncementId());
         bid.setSenderId(e.senderId());
         bid.setWeightKg(e.weightKg());
-        // declaredValueEur stays null until the sender completes details.
         bid.setDescription(e.description() != null ? e.description() : e.contentCategory());
         bid.setContentCategory(e.contentCategory());
         bid.setStatus(BidStatus.ACCEPTED);
         bid.setPaymentIntentId(e.paymentIntentId());
         bid.setLinkedNegotiationThreadId(e.threadId());
+        // Recipient details + disclaimer are completed by the sender before payment,
+        // so they are carried on the event and set here at bid creation. If absent
+        // (edited afterwards), onPackageRequestDetailsCompleted re-applies them.
+        bid.setRecipientName(e.recipientName());
+        bid.setRecipientPhone(e.recipientPhone());
+        bid.setDeclaredValueEur(e.declaredValueEur());
+        bid.setDisclaimerSignedAt(e.disclaimerSignedAt());
+        bid.setDisclaimerSignedIp(e.disclaimerSignedIp());
         // Tracking artefacts generated at acceptance, mirroring BidService.acceptBid
         // so the marketplace-issued bid exposes the same QR + tracking number as a
         // classic bid (sender's "Mes envois" screen relies on these to render the
