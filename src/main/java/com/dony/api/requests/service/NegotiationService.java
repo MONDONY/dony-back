@@ -741,8 +741,9 @@ public class NegotiationService {
             );
         }
 
-        PriceBreakdown breakdown = PriceBreakdown.fromNet(
-            t.getCurrentPriceEur(), commissionProperties.rate());
+        BigDecimal gross = t.getCurrentPriceEur() != null
+            ? PriceBreakdown.fromNet(t.getCurrentPriceEur(), commissionProperties.rate()).gross()
+            : null;
 
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
@@ -756,7 +757,7 @@ public class NegotiationService {
             senderName,
             isMyTurn, canAccept, canCounter, roundsRemaining,
             linkedTrip,
-            breakdown.gross(),
+            gross,
             t.getPaymentMethod()
         );
     }

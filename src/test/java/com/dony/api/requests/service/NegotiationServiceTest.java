@@ -974,6 +974,34 @@ class NegotiationServiceTest {
         }
 
         @Test
+        @DisplayName("currentPriceEur null → grossPriceEur null (pas de NPE)")
+        void toResponse_nullCurrentPrice_returnsNullGross() {
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(null); // prix non encore fixé
+            thread.setRoundsCount((short) 0);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            // Ne doit pas lancer de NullPointerException
+            NegotiationThreadResponse response = service.toResponse(
+                thread, List.of(), null, traveler, request, TRAVELER_ID, "Expéditeur", null);
+
+            assertThat(response.grossPriceEur()).isNull();
+            assertThat(response.currentPriceEur()).isNull();
+        }
+
+        @Test
         @DisplayName("paymentMethod exposé depuis l'entité thread")
         void toResponse_exposesPaymentMethod() {
             NegotiationThreadEntity thread = new NegotiationThreadEntity();
