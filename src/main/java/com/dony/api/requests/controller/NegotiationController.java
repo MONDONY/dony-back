@@ -80,7 +80,7 @@ public class NegotiationController {
             @PathVariable UUID id,
             @RequestBody @Valid NegotiationSubmitTripRequest req
     ) {
-        return service.submitTrip(requireUserId(), id, req.travelerAnnouncementId());
+        return service.submitTrip(requireUserId(), id, req);
     }
 
     /**

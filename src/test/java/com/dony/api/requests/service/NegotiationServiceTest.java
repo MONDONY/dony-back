@@ -1,10 +1,12 @@
 package com.dony.api.requests.service;
 
 import com.dony.api.auth.KycStatus;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.payments.cash.CommissionProperties;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.NegotiationStartRequest;
 import com.dony.api.requests.dto.NegotiationThreadResponse;
@@ -56,6 +58,7 @@ class NegotiationServiceTest {
     void setup() {
         traveler = new UserEntity();
         traveler.setKycStatus(KycStatus.VERIFIED);
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
         // Set id via reflection (BaseEntity has no public setId)
         try {
             var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
@@ -207,6 +210,30 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.start(TRAVELER_ID, validStartReq()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("max-open-reached");
+        }
+
+        @Test
+        @DisplayName("voyageur ne peut pas offrir le mode accepté par la demande → 422 payment-method/not-offerable")
+        void start_rejectsWhenTravelerCannotOfferAnyAcceptedMethod() {
+            // Request only accepts STRIPE
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            // Traveler is NOT onboarded on Stripe (default stripeAccountStatus = NOT_CREATED)
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+
+            when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
+            when(config.threadsPerMinuteRateLimit()).thenReturn(1);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(any(), any()))
+                .thenReturn(Optional.empty());
+            when(threadRepo.countByTravelerIdAndStatus(any(), any())).thenReturn(0L);
+            when(threadRepo.countCreatedBy(any(), any())).thenReturn(0L);
+
+            var req = new NegotiationStartRequest(REQUEST_ID, new BigDecimal("30"),
+                LocalDate.now().plusDays(5), new BigDecimal("10"), null, "x");
+            assertThatThrownBy(() -> service.start(TRAVELER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("payment-method/not-offerable");
         }
     }
 
@@ -799,6 +826,7 @@ class NegotiationServiceTest {
             request.setDateToleranceDays((short) 2);
             request.setWeightKg(new BigDecimal("5"));
             request.setTransportMode(com.dony.api.matching.TransportMode.PLANE);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.CASH));
 
             thread = new NegotiationThreadEntity();
             thread.setPackageRequestId(REQUEST_ID);
@@ -823,7 +851,8 @@ class NegotiationServiceTest {
                 new com.dony.api.matching.dto.AddressDto("DSS Diass", 14.6708, -17.0734),
                 "Bagage en soute",
                 java.util.List.of("vetements", "documents"),
-                java.util.List.of("liquides")
+                java.util.List.of("liquides"),
+                com.dony.api.payments.cash.PaymentMethod.CASH
             );
         }
 
@@ -930,6 +959,53 @@ class NegotiationServiceTest {
                 buildRequest(LocalDate.now().plusDays(10))))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("thread/not-found");
+        }
+    }
+
+    @Nested
+    @DisplayName("submitTrip() — payment method validation")
+    class SubmitTripPaymentMethodTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupThread() {
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setDesiredDate(LocalDate.now().plusDays(10));
+            request.setDateToleranceDays((short) 2);
+            request.setWeightKg(new BigDecimal("5"));
+            // Request only accepts STRIPE
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("80"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("voyageur choisit CASH mais la demande n'accepte que STRIPE → 422 payment-method/not-accepted-by-request")
+        void submitTrip_rejectsWhenPaymentMethodNotAcceptedByRequest() {
+            UUID annId = UUID.randomUUID();
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            // Traveler tries CASH, but request only accepts STRIPE
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.CASH);
+
+            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("payment-method/not-accepted-by-request");
         }
     }
 

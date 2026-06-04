@@ -1,11 +1,13 @@
 package com.dony.api.requests.service;
 
 import com.dony.api.auth.KycStatus;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.payments.PriceBreakdown;
 import com.dony.api.payments.cash.CommissionProperties;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -109,6 +111,13 @@ public class NegotiationService {
         long recent = threadRepo.countCreatedBy(travelerId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         if (recent >= config.threadsPerMinuteRateLimit()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "negotiation/rate-limit");
+        }
+
+        boolean canOfferAny = request.getAcceptedPaymentMethods().stream()
+            .anyMatch(m -> travelerCanOffer(traveler, m));
+        if (!canOfferAny) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-offerable");
         }
 
         NegotiationThreadEntity thread = new NegotiationThreadEntity();
@@ -329,7 +338,10 @@ public class NegotiationService {
      * Thread moves to AWAITING_PAYMENT. Sender is notified to checkout.
      */
     @Transactional
-    public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, UUID travelerAnnouncementId) {
+    public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, NegotiationSubmitTripRequest req) {
+        UUID travelerAnnouncementId = req.travelerAnnouncementId();
+        PaymentMethod paymentMethod = req.paymentMethod();
+
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         if (!callerId.equals(thread.getTravelerId())) {
@@ -340,6 +352,11 @@ public class NegotiationService {
         }
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!request.getAcceptedPaymentMethods().contains(paymentMethod)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-accepted-by-request");
+        }
 
         // Validate the announcement belongs to caller and matches corridor + date window
         com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(travelerAnnouncementId)
@@ -364,6 +381,7 @@ public class NegotiationService {
 
         thread.setTravelerAnnouncementId(travelerAnnouncementId);
         thread.setTravelerTravelDate(annDate);
+        thread.setPaymentMethod(paymentMethod);
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -374,7 +392,8 @@ public class NegotiationService {
             thread.getCurrentPriceEur(), travelerAnnouncementId
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_LINKED", callerId,
-            Map.of("announcementId", travelerAnnouncementId.toString()));
+            Map.of("announcementId", travelerAnnouncementId.toString(),
+                   "paymentMethod", paymentMethod.name()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
@@ -415,6 +434,11 @@ public class NegotiationService {
 
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!request.getAcceptedPaymentMethods().contains(req.paymentMethod())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-accepted-by-request");
+        }
 
         // Validate the chosen date falls within the sender's tolerance window.
         java.time.LocalDate from = request.getDesiredDate().minusDays(request.getDateToleranceDays());
@@ -465,6 +489,7 @@ public class NegotiationService {
         // Link the dedicated trip to the thread and transition to AWAITING_PAYMENT.
         thread.setTravelerAnnouncementId(savedAnn.getId());
         thread.setTravelerTravelDate(savedAnn.getDepartureDate());
+        thread.setPaymentMethod(req.paymentMethod());
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -476,7 +501,8 @@ public class NegotiationService {
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "DEDICATED_TRIP_CREATED", callerId,
             Map.of("announcementId", savedAnn.getId().toString(),
-                   "linkedPackageRequestId", request.getId().toString()));
+                   "linkedPackageRequestId", request.getId().toString(),
+                   "paymentMethod", req.paymentMethod().name()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
@@ -802,5 +828,20 @@ public class NegotiationService {
         if (city == null) return "";
         int comma = city.indexOf(',');
         return (comma >= 0 ? city.substring(0, comma) : city).strip().toLowerCase();
+    }
+
+    /**
+     * Returns {@code true} if the traveler is technically capable of offering
+     * the given payment method.
+     * <ul>
+     *   <li>STRIPE requires a fully onboarded Stripe Connect account.</li>
+     *   <li>CASH / WAVE / ORANGE_MONEY are always available.</li>
+     * </ul>
+     */
+    private boolean travelerCanOffer(UserEntity t, PaymentMethod m) {
+        return switch (m) {
+            case STRIPE -> t.getStripeAccountStatus() == StripeAccountStatus.ONBOARDING_COMPLETE;
+            case CASH, WAVE, ORANGE_MONEY -> true;
+        };
     }
 }
