@@ -1328,37 +1328,20 @@ class CashCommissionServiceTest {
         void walletSufficient_chargesViaWalletReturnsTrue() {
             when(negotiationThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
             when(walletService.getBalance(travelerId)).thenReturn(new BigDecimal("50.00"));
-            when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
-                    eq(travelerId), eq(threadId),
-                    eq(com.dony.api.payments.wallet.WalletTransactionType.COMMISSION_DEDUCTED)))
-                    .thenReturn(false);
 
             boolean charged = service.chargeNegotiationCommission(travelerId, senderId, threadId, thread.getCurrentPriceEur());
 
             assertThat(charged).isTrue();
             assertThat(thread.getCommissionStatus()).isEqualTo("CHARGED");
             assertThat(thread.getCommissionChargedVia()).isEqualTo("WALLET");
+            // Débit SANS bid : réf = threadId dans payment_ref + idempotency_key (pas la FK bid_id).
+            // La déduplication wallet est déléguée à WalletService via l'idempotencyKey.
             verify(walletService).debit(eq(travelerId), eq(new BigDecimal("12.00")),
-                    eq(com.dony.api.payments.wallet.WalletTransactionType.COMMISSION_DEDUCTED), eq(threadId));
+                    eq(com.dony.api.payments.wallet.WalletTransactionType.COMMISSION_DEDUCTED),
+                    eq(threadId.toString()), eq("nego_commission_wallet_" + threadId));
             verify(negotiationThreadRepository).save(thread);
             verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(threadId), eq("CASH_COMMISSION_CHARGED"),
                     eq(travelerId), any());
-        }
-
-        @Test
-        void walletSufficient_idempotentSkipWhenAlreadyDeducted() {
-            // tx COMMISSION_DEDUCTED déjà présente pour ce thread → pas de re-débit, mais CHARGED posé.
-            when(negotiationThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
-            when(walletService.getBalance(travelerId)).thenReturn(new BigDecimal("50.00"));
-            when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
-                    eq(travelerId), eq(threadId), any())).thenReturn(true);
-
-            boolean charged = service.chargeNegotiationCommission(travelerId, senderId, threadId, thread.getCurrentPriceEur());
-
-            assertThat(charged).isTrue();
-            assertThat(thread.getCommissionStatus()).isEqualTo("CHARGED");
-            assertThat(thread.getCommissionChargedVia()).isEqualTo("WALLET");
-            verify(walletService, never()).debit(any(), any(), any(), any());
         }
 
         @Test
@@ -1460,12 +1443,11 @@ class CashCommissionServiceTest {
         void walletToctouRace_fallsBackToCard() throws StripeException {
             when(negotiationThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
             when(walletService.getBalance(travelerId)).thenReturn(new BigDecimal("50.00"));
-            when(walletTransactionRepository.existsByUserIdAndBidIdAndType(
-                    eq(travelerId), eq(threadId), any())).thenReturn(false);
             when(userRepo.findById(travelerId)).thenReturn(Optional.of(traveler));
             doThrow(new com.dony.api.payments.wallet.InsufficientWalletBalanceException(
                     BigDecimal.ZERO, new BigDecimal("12.00")))
-                    .when(walletService).debit(eq(travelerId), any(), any(), eq(threadId));
+                    .when(walletService).debit(eq(travelerId), any(), any(),
+                            eq(threadId.toString()), any());
 
             PaymentIntent mockPi = new PaymentIntent();
             mockPi.setId("pi_fallback");

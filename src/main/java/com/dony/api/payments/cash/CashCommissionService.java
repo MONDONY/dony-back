@@ -419,15 +419,14 @@ public class CashCommissionService {
             return true; // rien à prélever
         }
 
-        // 1) Wallet prioritaire
+        // 1) Wallet prioritaire — débit SANS bid (réf = threadId dans payment_ref/
+        // idempotency_key). On ne passe PAS le threadId dans la colonne FK bid_id.
         BigDecimal balance = walletService.getBalance(travelerId);
         if (balance.compareTo(commission) >= 0) {
             try {
-                if (!walletTransactionRepository.existsByUserIdAndBidIdAndType(
-                        travelerId, threadId, WalletTransactionType.COMMISSION_DEDUCTED)) {
-                    walletService.debit(travelerId, commission,
-                            WalletTransactionType.COMMISSION_DEDUCTED, threadId);
-                }
+                walletService.debit(travelerId, commission,
+                        WalletTransactionType.COMMISSION_DEDUCTED,
+                        threadId.toString(), "nego_commission_wallet_" + threadId);
                 thread.setCommissionStatus(NEGO_COMMISSION_CHARGED);
                 thread.setCommissionChargedVia(NEGO_COMMISSION_VIA_WALLET);
                 negotiationThreadRepository.save(thread);
