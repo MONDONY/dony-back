@@ -114,4 +114,22 @@ class ExpirationSchedulerTest {
         assertThat(t2.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
         verify(eventPublisher, times(2)).publishEvent(any(NegotiationExpiredEvent.class));
     }
+
+    @Test
+    @DisplayName("runExpiration() appelle expireRequests() et expireThreads() en une transaction")
+    void runExpiration_delegatesToBothMethods() {
+        when(config.threadInactivityHours()).thenReturn(72);
+        when(config.awaitingTripHours()).thenReturn(24);
+        when(config.awaitingPaymentHours()).thenReturn(24);
+        when(requestRepo.findExpired(any())).thenReturn(List.of());
+        when(threadRepo.findInactive(any())).thenReturn(List.of());
+        when(threadRepo.findAwaitingTripExpired(any())).thenReturn(List.of());
+        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of());
+
+        scheduler.runExpiration();
+
+        // Both repos were queried → both sub-methods ran
+        verify(requestRepo).findExpired(any());
+        verify(threadRepo).findInactive(any());
+    }
 }

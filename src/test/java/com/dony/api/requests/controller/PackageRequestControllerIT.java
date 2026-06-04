@@ -46,6 +46,7 @@ class PackageRequestControllerIT {
     @MockBean private PackageRequestService service;
     @MockBean private PriceEstimationService estimationService;
     @MockBean private UserRepository userRepository;
+    @MockBean private com.dony.api.requests.service.NegotiationService negotiationService;
 
     private static final UUID SENDER_UUID = UUID.randomUUID();
     private static final UUID TRAVELER_UUID = UUID.randomUUID();
@@ -201,5 +202,177 @@ class PackageRequestControllerIT {
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.confidence").value("HIGH"));
+    }
+
+    @Test
+    void get_byId_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.getById(eq(SENDER_UUID), eq(id))).thenReturn(fakeResponse(id));
+
+        mockMvc.perform(get("/package-requests/" + id)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void get_listThreads_returnsList() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(negotiationService.listForRequest(eq(SENDER_UUID), eq(id))).thenReturn(java.util.List.of());
+
+        mockMvc.perform(get("/package-requests/" + id + "/threads")
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void post_completeDetails_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.completeDetails(eq(SENDER_UUID), eq(id), any(), any()))
+            .thenReturn(fakeResponse(id));
+
+        var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
+            "10 rue de la Paix, Paris",
+            new java.math.BigDecimal("48.86"),
+            new java.math.BigDecimal("2.33"),
+            "Plateau, Dakar",
+            new java.math.BigDecimal("14.69"),
+            new java.math.BigDecimal("-17.44"),
+            "Mamadou Diallo",
+            "+221771234567",
+            new java.math.BigDecimal("150"),
+            true
+        );
+
+        mockMvc.perform(post("/package-requests/" + id + "/complete-details")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void post_completeDetails_withXForwardedFor_passesClientIp() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.completeDetails(eq(SENDER_UUID), eq(id), any(), any()))
+            .thenReturn(fakeResponse(id));
+
+        var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
+            "10 rue de la Paix, Paris",
+            new java.math.BigDecimal("48.86"),
+            new java.math.BigDecimal("2.33"),
+            "Plateau, Dakar",
+            new java.math.BigDecimal("14.69"),
+            new java.math.BigDecimal("-17.44"),
+            "Mamadou Diallo",
+            "+221771234567",
+            new java.math.BigDecimal("150"),
+            true
+        );
+
+        mockMvc.perform(post("/package-requests/" + id + "/complete-details")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .header("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void get_search_withLocationParams_returnsPage() throws Exception {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.searchNearMe(any(), any(), any(), any(), anyDouble()))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(), pageable, 0));
+
+        mockMvc.perform(get("/package-requests")
+                .param("departure", "Paris")
+                .param("arrival", "Dakar")
+                .param("lat", "48.85")
+                .param("lng", "2.35")
+                .param("radiusKm", "30.0")
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isOk());
+    }
+
+    // ─── Task 13 — nouveaux cas IT ──────────────────────────────────────────────
+
+    /**
+     * Cas 1 : demande non négociable sans budget → 422 avec code "target-price-required-firm"
+     * Rule: PackageRequestService.createAndReturnEntity checks !negotiable && totalBudgetEur == null
+     */
+    @Test
+    void post_create_firmWithoutBudget_returns422_withExpectedCode() throws Exception {
+        PackageRequestCreateRequest req = new PackageRequestCreateRequest(
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), "vetements",
+            "Cadeau", null,  // pas de budget
+            null,            // photoUrl
+            "10e", "Plateau",
+            false,  // non négociable — budget requis
+            java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
+        );
+
+        when(service.create(eq(SENDER_UUID), any()))
+            .thenThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/target-price-required-firm"));
+
+        mockMvc.perform(post("/package-requests")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(content().contentType("application/problem+json"))
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("request/target-price-required-firm")));
+    }
+
+    /**
+     * Cas 2 : création avec acceptedPaymentMethods non vide → 201 et la valeur est persistée.
+     * On vérifie que le champ acceptedPaymentMethods est renvoyé dans la réponse.
+     */
+    @Test
+    void post_create_withPaymentMethods_returns201_andMethodsPersisted() throws Exception {
+        UUID newId = UUID.randomUUID();
+        // Response avec STRIPE + CASH
+        PackageRequestResponse responseWithMethods = new PackageRequestResponse(
+            newId, SENDER_UUID,
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
+            "Cadeau", new BigDecimal("25"), null,
+            "10e", "Plateau",
+            PackageRequestStatus.OPEN, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(
+                com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                com.dony.api.payments.cash.PaymentMethod.CASH)
+        );
+        when(service.create(eq(SENDER_UUID), any())).thenReturn(responseWithMethods);
+
+        PackageRequestCreateRequest req = new PackageRequestCreateRequest(
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), "vetements",
+            "Cadeau", new BigDecimal("28.00"), null,
+            "10e", "Plateau",
+            true,
+            java.util.EnumSet.of(
+                com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                com.dony.api.payments.cash.PaymentMethod.CASH)
+        );
+
+        mockMvc.perform(post("/package-requests")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(newId.toString()))
+            .andExpect(jsonPath("$.acceptedPaymentMethods").isArray())
+            .andExpect(jsonPath("$.acceptedPaymentMethods",
+                org.hamcrest.Matchers.hasItems("STRIPE", "CASH")));
     }
 }

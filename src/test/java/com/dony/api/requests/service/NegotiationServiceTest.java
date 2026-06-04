@@ -1225,4 +1225,244 @@ class NegotiationServiceTest {
             assertThat(response.paymentMethod()).isEqualTo(com.dony.api.payments.cash.PaymentMethod.WAVE);
         }
     }
+
+    // ─── Task 13 — tests supplémentaires pour couvrir listMine, listForRequest,
+    //              finalizeAfterPayment happy-path, et NegotiationPaymentAuthorizedEvent ─────────
+
+    @Nested
+    @DisplayName("listMine() — threads du participant")
+    class ListMineTests {
+
+        @Test
+        @DisplayName("listMine() retourne les threads de l'utilisateur avec toResponse mappé")
+        void listMine_returnsThreadsForUser() {
+            UUID threadId = UUID.randomUUID();
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            when(threadRepo.findByParticipant(TRAVELER_ID)).thenReturn(List.of(thread));
+            when(announcementRepo.findAllById(any())).thenReturn(List.of());
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler)); // reuse as sender
+
+            List<com.dony.api.requests.dto.NegotiationThreadResponse> result = service.listMine(TRAVELER_ID);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).currentPriceEur()).isEqualByComparingTo("30");
+        }
+
+        @Test
+        @DisplayName("listMine() ignore les threads avec request ou traveler soft-deleted (retourne vide)")
+        void listMine_skipsOrphanedThreads() {
+            UUID threadId = UUID.randomUUID();
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("25"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findByParticipant(TRAVELER_ID)).thenReturn(List.of(thread));
+            when(announcementRepo.findAllById(any())).thenReturn(List.of());
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.empty()); // orphaned
+
+            List<com.dony.api.requests.dto.NegotiationThreadResponse> result = service.listMine(TRAVELER_ID);
+
+            assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("listForRequest() — threads d'une demande")
+    class ListForRequestTests {
+
+        @Test
+        @DisplayName("listForRequest() retourne les threads quand le caller est le sender")
+        void listForRequest_returnThreadsForSender() {
+            UUID threadId = UUID.randomUUID();
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("28"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Lyon");
+            request.setArrivalCity("Abidjan");
+            request.setWeightKg(new BigDecimal("3"));
+
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of(thread));
+            when(announcementRepo.findAllById(any())).thenReturn(List.of());
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+
+            List<com.dony.api.requests.dto.NegotiationThreadResponse> result =
+                service.listForRequest(SENDER_ID, REQUEST_ID);
+
+            assertThat(result).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("listForRequest() throws 403 si le caller n'est pas le sender")
+        void listForRequest_throwsForbiddenForNonSender() {
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.listForRequest(TRAVELER_ID, REQUEST_ID))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("forbidden");
+        }
+
+        @Test
+        @DisplayName("listForRequest() throws 404 si la request n'existe pas")
+        void listForRequest_throwsNotFoundForMissingRequest() {
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.listForRequest(SENDER_ID, REQUEST_ID))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("not-found");
+        }
+    }
+
+    @Nested
+    @DisplayName("finalizeAfterPayment() — chemin nominal")
+    class FinalizeAfterPaymentHappyPathTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            // Complet request details
+            request.setRecipientName("Mamadou Diallo");
+            request.setRecipientPhone("+221771234567");
+            request.setPickupAddressLabel("10 rue de la Paix, Paris");
+            request.setDeliveryAddressLabel("Plateau, Dakar");
+            request.setDeclaredValueEur(new BigDecimal("150"));
+            request.setDisclaimerSignedAt(java.time.LocalDateTime.now());
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+        }
+
+        @Test
+        @DisplayName("finalize avec détails complets → thread ACCEPTED, request ACCEPTED, event publié")
+        void finalize_completeDetails_acceptsThread() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of()); // no competing
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            // thread.getTravelerAnnouncementId() is null → announcementRepo not called
+
+            com.dony.api.requests.dto.NegotiationThreadResponse result =
+                service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_123");
+
+            assertThat(result).isNotNull();
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
+            verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("finalize auto-rejette les threads concurrents OPEN/AWAITING_TRIP/AWAITING_PAYMENT")
+        void finalize_autoRejectsCompetingThreads() {
+            NegotiationThreadEntity competing = new NegotiationThreadEntity();
+            competing.setPackageRequestId(REQUEST_ID);
+            competing.setTravelerId(UUID.randomUUID());
+            competing.setStatus(NegotiationThreadStatus.OPEN);
+            competing.setCurrentPriceEur(new BigDecimal("40"));
+            competing.setRoundsCount((short) 1);
+            competing.setLastActivityAt(java.time.LocalDateTime.now());
+            UUID competingId = UUID.randomUUID();
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(competing, competingId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of(thread, competing));
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            // thread.getTravelerAnnouncementId() is null → announcementRepo not called
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_456");
+
+            assertThat(competing.getStatus()).isEqualTo(NegotiationThreadStatus.AUTO_REJECTED);
+        }
+
+        @Test
+        @DisplayName("finalize throws 409 si le thread n'est pas en AWAITING_PAYMENT")
+        void finalize_wrongStatus_throws409() {
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("not-awaiting-payment");
+        }
+
+        @Test
+        @DisplayName("finalize throws 403 si le caller n'est pas le sender")
+        void finalize_nonSender_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(TRAVELER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+    }
 }

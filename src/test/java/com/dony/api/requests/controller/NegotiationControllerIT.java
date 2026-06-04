@@ -43,6 +43,7 @@ class NegotiationControllerIT {
 
     @MockBean private NegotiationService service;
     @MockBean private UserRepository userRepository;
+    @MockBean private com.dony.api.payments.PaymentService paymentService;
 
     private static final UUID SENDER_UUID = UUID.randomUUID();
     private static final UUID TRAVELER_UUID = UUID.randomUUID();
@@ -250,6 +251,196 @@ class NegotiationControllerIT {
         mockMvc.perform(post("/negotiations/{id}/refuse-trip", UUID.randomUUID())
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void post_start_unauthenticated_returns401() throws Exception {
+        var req = new NegotiationStartRequest(
+            UUID.randomUUID(), new BigDecimal("30"),
+            LocalDate.now().plusDays(5), new BigDecimal("10"),
+            null, null
+        );
+
+        mockMvc.perform(post("/negotiations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void get_findMine_returnsThreadList() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.listMine(eq(SENDER_UUID)))
+            .thenReturn(List.of(fakeThread(threadId, NegotiationThreadStatus.OPEN, null)));
+
+        mockMvc.perform(get("/negotiations/me")
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(threadId.toString()));
+    }
+
+    @Test
+    void post_checkout_returns200_andDelegatesFinalize() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("pi_test")))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.ACCEPTED, "pi_test"));
+
+        var req = new java.util.HashMap<String, String>();
+        req.put("paymentIntentId", "pi_test");
+
+        mockMvc.perform(post("/negotiations/{id}/checkout", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACCEPTED"));
+    }
+
+    @Test
+    void post_refuseTrip_asSender_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.refuseTrip(eq(SENDER_UUID), eq(threadId), any()))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.AWAITING_TRIP, null));
+
+        var req = new java.util.HashMap<String, String>();
+        req.put("reason", "Ce voyageur ne convient pas");
+
+        mockMvc.perform(post("/negotiations/{id}/refuse-trip", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("AWAITING_TRIP"));
+    }
+
+    @Test
+    void post_submitTrip_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.submitTrip(eq(TRAVELER_UUID), eq(threadId), any()))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.AWAITING_PAYMENT, null));
+
+        var req = new NegotiationSubmitTripRequest(UUID.randomUUID(),
+            com.dony.api.payments.cash.PaymentMethod.STRIPE);
+
+        mockMvc.perform(post("/negotiations/{id}/submit-trip", threadId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("AWAITING_PAYMENT"));
+    }
+
+    @Test
+    void post_initiatePayment_withAwaitingPaymentThread_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        NegotiationThreadResponse awaitingPaymentThread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new java.math.BigDecimal("10"),
+            NegotiationThreadStatus.AWAITING_PAYMENT, new java.math.BigDecimal("30"), 1,
+            LocalDateTime.now(), LocalDateTime.now(),
+            java.util.List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new java.math.BigDecimal("5"),
+            "Chaka D.",
+            false, false, false, 4, null,
+            new java.math.BigDecimal("33.60"), null
+        );
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
+        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any()))
+            .thenReturn(new com.dony.api.payments.dto.PaymentResponse(
+                UUID.randomUUID(), null, "pi_test_secret",
+                new java.math.BigDecimal("33.60"), new java.math.BigDecimal("3.60"),
+                "PENDING", "pi_test_id"));
+
+        mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void post_initiatePayment_withWrongStatus_returns409() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        // Thread is OPEN, not AWAITING_PAYMENT
+        when(service.getById(eq(SENDER_UUID), eq(threadId)))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.OPEN, null));
+
+        mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isConflict());
+    }
+
+    @Test
+    void post_createDedicatedTrip_returns200() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.createDedicatedTrip(eq(TRAVELER_UUID), eq(threadId), any()))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.AWAITING_PAYMENT, null));
+
+        var pickup = new com.dony.api.matching.dto.AddressDto("10 rue de la Paix, Paris", 48.86, 2.33);
+        var delivery = new com.dony.api.matching.dto.AddressDto("Plateau, Dakar", 14.69, -17.44);
+        var req = new NegotiationCreateDedicatedTripRequest(
+            LocalDate.now().plusDays(7), null, null,
+            pickup, delivery, null, null, null,
+            com.dony.api.payments.cash.PaymentMethod.STRIPE
+        );
+
+        mockMvc.perform(post("/negotiations/{id}/create-dedicated-trip", threadId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("AWAITING_PAYMENT"));
+    }
+
+    @Test
+    void get_listForRequest_returns200_viaNegotiationEndpoint() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.listMine(eq(TRAVELER_UUID)))
+            .thenReturn(java.util.List.of(fakeThread(threadId, NegotiationThreadStatus.OPEN, null)));
+
+        mockMvc.perform(get("/negotiations/me")
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(threadId.toString()));
+    }
+
+    // ─── Task 13 — nouveaux cas IT ──────────────────────────────────────────────
+
+    /**
+     * Cas 3 : contre-offre sur une demande à prix ferme → 409 avec code "counter-not-allowed-firm-price"
+     */
+    @Test
+    void counter_onFirmPriceRequest_returns409_withExpectedCode() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.counter(eq(SENDER_UUID), eq(threadId), any()))
+            .thenThrow(new ResponseStatusException(CONFLICT, "negotiation/counter-not-allowed-firm-price"));
+
+        var req = new NegotiationCounterRequest(new BigDecimal("25"), null);
+
+        mockMvc.perform(post("/negotiations/" + threadId + "/counter")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentType("application/problem+json"))
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("negotiation/counter-not-allowed-firm-price")));
+    }
+
+    /**
+     * Cas 4 : le thread contient grossPriceEur non null quand currentPriceEur est défini.
+     */
+    @Test
+    void thread_response_grossPriceEur_isNotNull_whenCurrentPriceSet() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        // fakeThread sets currentPriceEur=30 and grossPriceEur=33.60 (30 * 1.12)
+        when(service.getById(eq(TRAVELER_UUID), eq(threadId)))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.OPEN, null));
+
+        mockMvc.perform(get("/negotiations/{id}", threadId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.currentPriceEur").value(30))
+            .andExpect(jsonPath("$.grossPriceEur").isNotEmpty())
+            .andExpect(jsonPath("$.grossPriceEur").value(33.60));
     }
 
     @Test
