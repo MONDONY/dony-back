@@ -1121,12 +1121,50 @@ class NegotiationServiceTest {
         @DisplayName("détails incomplets (recipientName null) → 422 details-incomplete")
         void finalize_requiresCompleteDetails() {
             request.setRecipientName(null); // détails incomplets intentionnellement
+            request.setRecipientPhone("+221771234567");
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("details-incomplete");
+        }
+
+        @Test
+        @DisplayName("détails incomplets (recipientPhone null) → 422 details-incomplete")
+        void finalize_requiresRecipientPhone() {
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone(null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("details-incomplete");
+        }
+
+        @Test
+        @DisplayName("name + phone seuls (sans adresse/declaredValue) → finalize OK")
+        void finalize_onlyNameAndPhone_succeeds() {
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            // address, declaredValue, disclaimer left null on purpose
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_789");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
         }
     }
 

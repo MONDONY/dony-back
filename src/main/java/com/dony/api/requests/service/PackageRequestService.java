@@ -130,6 +130,9 @@ public class PackageRequestService {
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
         entity.setStatus(PackageRequestStatus.OPEN);
+        // The customs disclaimer is auto-accepted at publication; the sender
+        // approves it implicitly when creating (publishing) the request.
+        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         PackageRequestEntity saved = repository.save(entity);
 
@@ -214,27 +217,25 @@ public class PackageRequestService {
         if (entity.getStatus() != PackageRequestStatus.ACCEPTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-yet-accepted");
         }
-        if (!req.disclaimerSigned()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/disclaimer-not-signed");
-        }
 
-        entity.setPickupAddressLabel(req.pickupAddressLabel());
-        entity.setPickupLat(req.pickupLat());
-        entity.setPickupLng(req.pickupLng());
-        entity.setDeliveryAddressLabel(req.deliveryAddressLabel());
-        entity.setDeliveryLat(req.deliveryLat());
-        entity.setDeliveryLng(req.deliveryLng());
         entity.setRecipientName(req.recipientName());
         entity.setRecipientPhone(req.recipientPhone());
-        entity.setDeclaredValueEur(req.declaredValueEur());
-        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
-        entity.setDisclaimerSignedIp(clientIp);
+        entity.setRecipientCity(req.recipientCity());
+        // The disclaimer is normally signed at creation; set it defensively here
+        // for legacy requests created before this behaviour existed.
+        if (entity.getDisclaimerSignedAt() == null) {
+            entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+            entity.setDisclaimerSignedIp(clientIp);
+        }
 
         PackageRequestEntity saved = repository.save(entity);
 
-        auditService.log("PACKAGE_REQUEST", requestId, "DETAILS_COMPLETED", callerUid,
-            Map.of("recipient", req.recipientName(),
-                   "declaredValue", req.declaredValueEur().toString()));
+        Map<String, Object> auditPayload = new java.util.HashMap<>();
+        auditPayload.put("recipient", req.recipientName());
+        if (req.recipientCity() != null) {
+            auditPayload.put("city", req.recipientCity());
+        }
+        auditService.log("PACKAGE_REQUEST", requestId, "DETAILS_COMPLETED", callerUid, auditPayload);
 
         // Propagate to the marketplace-issued bid (if any) via the matching/
         // listener so "Mes envois" stays in sync with the package_request data.
@@ -249,7 +250,7 @@ public class PackageRequestService {
                     callerUid,
                     req.recipientName(),
                     req.recipientPhone(),
-                    req.declaredValueEur(),
+                    saved.getDeclaredValueEur(),
                     saved.getDisclaimerSignedAt(),
                     saved.getDisclaimerSignedIp()
                 )));

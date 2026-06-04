@@ -556,9 +556,7 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
         }
 
-        if (request.getRecipientName() == null || request.getRecipientPhone() == null
-                || request.getPickupAddressLabel() == null || request.getDeliveryAddressLabel() == null
-                || request.getDeclaredValueEur() == null || request.getDisclaimerSignedAt() == null) {
+        if (request.getRecipientName() == null || request.getRecipientPhone() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "request/details-incomplete");
         }

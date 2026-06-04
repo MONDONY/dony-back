@@ -266,7 +266,7 @@ class PackageRequestServiceTest {
 
     @Nested @DisplayName("completeDetails() — post-acceptation")
     class CompleteDetailsTests {
-        @Test @DisplayName("status ACCEPTED → renseigne adresses + recipient + disclaimer")
+        @Test @DisplayName("status ACCEPTED → renseigne recipient (name + phone + city)")
         void completeDetails_accepted_persists() {
             UUID reqId = UUID.randomUUID();
             PackageRequestEntity entity = new PackageRequestEntity();
@@ -277,18 +277,44 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "12 rue de Paris", new BigDecimal("48.85"), new BigDecimal("2.35"),
-                "5 rue de Dakar", new BigDecimal("14.69"), new BigDecimal("-17.44"),
-                "Marie", "+221771234567", new BigDecimal("100"), true
+                "Marie", "+221771234567", "Dakar"
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
 
-            assertThat(entity.getPickupAddressLabel()).isEqualTo("12 rue de Paris");
             assertThat(entity.getRecipientName()).isEqualTo("Marie");
-            assertThat(entity.getDeclaredValueEur()).isEqualByComparingTo(new BigDecimal("100"));
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
+            assertThat(entity.getRecipientCity()).isEqualTo("Dakar");
+            // The entity had no disclaimerSignedAt (bare entity), so the defensive
+            // branch signs it now using the client IP.
             assertThat(entity.getDisclaimerSignedAt()).isNotNull();
             assertThat(entity.getDisclaimerSignedIp()).isEqualTo("203.0.113.5");
+        }
+
+        @Test @DisplayName("status ACCEPTED + city null → succès, disclaimer déjà signé conservé")
+        void completeDetails_accepted_nullCity_persists() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.ACCEPTED);
+            var signedAt = java.time.LocalDateTime.now().minusDays(1);
+            entity.setDisclaimerSignedAt(signedAt); // signed at creation
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "Fatou Diop", "+221771234567", null
+            );
+
+            service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
+
+            assertThat(entity.getRecipientName()).isEqualTo("Fatou Diop");
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
+            assertThat(entity.getRecipientCity()).isNull();
+            // disclaimer was already signed at creation → not overwritten, no IP set
+            assertThat(entity.getDisclaimerSignedAt()).isEqualTo(signedAt);
+            assertThat(entity.getDisclaimerSignedIp()).isNull();
         }
 
         @Test @DisplayName("status OPEN → 409 not-yet-accepted")
@@ -301,9 +327,7 @@ class PackageRequestServiceTest {
             when(repository.findById(reqId)).thenReturn(Optional.of(entity));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "X", new BigDecimal("1"), new BigDecimal("1"),
-                "Y", new BigDecimal("1"), new BigDecimal("1"),
-                "Z", "+221771234567", new BigDecimal("100"), true
+                "Z", "+221771234567", "Dakar"
             );
 
             assertThatThrownBy(() -> service.completeDetails(SENDER_ID, reqId, req, "1.2.3.4"))

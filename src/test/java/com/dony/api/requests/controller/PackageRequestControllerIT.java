@@ -233,16 +233,29 @@ class PackageRequestControllerIT {
             .thenReturn(fakeResponse(id));
 
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
-            "10 rue de la Paix, Paris",
-            new java.math.BigDecimal("48.86"),
-            new java.math.BigDecimal("2.33"),
-            "Plateau, Dakar",
-            new java.math.BigDecimal("14.69"),
-            new java.math.BigDecimal("-17.44"),
             "Mamadou Diallo",
             "+221771234567",
-            new java.math.BigDecimal("150"),
-            true
+            "Dakar"
+        );
+
+        mockMvc.perform(post("/package-requests/" + id + "/complete-details")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void post_completeDetails_withoutCity_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.completeDetails(eq(SENDER_UUID), eq(id), any(), any()))
+            .thenReturn(fakeResponse(id));
+
+        var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
+            "Fatou Diop",
+            "+221771234567",
+            null
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -260,16 +273,9 @@ class PackageRequestControllerIT {
             .thenReturn(fakeResponse(id));
 
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
-            "10 rue de la Paix, Paris",
-            new java.math.BigDecimal("48.86"),
-            new java.math.BigDecimal("2.33"),
-            "Plateau, Dakar",
-            new java.math.BigDecimal("14.69"),
-            new java.math.BigDecimal("-17.44"),
             "Mamadou Diallo",
             "+221771234567",
-            new java.math.BigDecimal("150"),
-            true
+            "Dakar"
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
