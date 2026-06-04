@@ -15,7 +15,7 @@ public record PackageRequestSearchResponse(
     BigDecimal weightKg, ParcelSize parcelSize,
     TransportMode transportMode,
     String contentCategory,
-    BigDecimal targetPriceEur, String photoUrl,
+    BigDecimal targetPriceEur, boolean negotiable, String photoUrl,
     String pickupNeighborhood, String deliveryNeighborhood,
     SenderPublicProfile sender
 ) {

@@ -359,7 +359,7 @@ public class PackageRequestService {
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
             e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
             e.getContentCategory(),
-            e.getTargetPriceEur(), e.getPhotoUrl(),
+            e.getTargetPriceEur(), e.isNegotiable(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             senderProfile
         );

@@ -453,6 +453,27 @@ class PackageRequestServiceTest {
             assertThat(sp.totalRatings()).isEqualTo(7);
             assertThat(sp.averageRating()).isEqualTo(4.30);
             assertThat(sp.kycVerified()).isTrue();
+            // negotiable is propagated from the entity (default true)
+            assertThat(result.getContent().get(0).negotiable()).isTrue();
+        }
+
+        @Test @DisplayName("negotiable=false (demande à prix ferme) est propagé dans le SearchResponse")
+        void search_propagatesFirmPriceNegotiableFalse() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setNegotiable(false);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20)
+            );
+
+            assertThat(result.getContent().get(0).negotiable()).isFalse();
         }
     }
 

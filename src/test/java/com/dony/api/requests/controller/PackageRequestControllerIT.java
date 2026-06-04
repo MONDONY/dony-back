@@ -156,7 +156,7 @@ class PackageRequestControllerIT {
             new BigDecimal("5"), ParcelSize.SMALL,
             com.dony.api.matching.TransportMode.PLANE,
             "vetements",
-            new BigDecimal("25"), null, "10e", "Plateau",
+            new BigDecimal("25"), true, null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true)
         );
@@ -168,7 +168,34 @@ class PackageRequestControllerIT {
                 .param("arrival", "Dakar")
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.content[0].departureCity").value("Paris"));
+            .andExpect(jsonPath("$.content[0].departureCity").value("Paris"))
+            .andExpect(jsonPath("$.content[0].negotiable").value(true));
+    }
+
+    @Test
+    void get_search_firmRequest_exposesNegotiableFalse() throws Exception {
+        var searchResp = new PackageRequestSearchResponse(
+            UUID.randomUUID(), "Paris", "Dakar",
+            new BigDecimal("48.85"), new BigDecimal("2.35"),
+            new BigDecimal("14.69"), new BigDecimal("-17.44"),
+            LocalDate.now().plusDays(5), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
+            new BigDecimal("25"), false, null, "10e", "Plateau",
+            new PackageRequestSearchResponse.SenderPublicProfile(
+                UUID.randomUUID(), "Sender", 4.5, 12, true)
+        );
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
+
+        mockMvc.perform(get("/package-requests")
+                .param("departure", "Paris")
+                .param("arrival", "Dakar")
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].negotiable").exists())
+            .andExpect(jsonPath("$.content[0].negotiable").value(false));
     }
 
     @Test
