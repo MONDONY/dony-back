@@ -7,6 +7,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.requests.CashGatePort;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.NegotiationStartRequest;
 import com.dony.api.requests.dto.NegotiationThreadResponse;
@@ -44,6 +45,7 @@ class NegotiationServiceTest {
     @Mock private AuditService auditService;
     @Mock private RequestsConfig config;
     @Mock private CommissionProperties commissionProperties;
+    @Mock private CashGatePort cashGatePort;
 
     @InjectMocks private NegotiationService service;
 
@@ -862,6 +864,8 @@ class NegotiationServiceTest {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
             UUID newAnnId = UUID.randomUUID();
             when(announcementRepo.save(any())).thenAnswer(inv -> {
                 com.dony.api.matching.AnnouncementEntity a = inv.getArgument(0);
@@ -960,6 +964,23 @@ class NegotiationServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("thread/not-found");
         }
+
+        @Test
+        @DisplayName("voyageur choisit CASH avec fonds insuffisants → 422 traveler-insufficient-funds-cash")
+        void createDedicatedTrip_rejectsCashWhenInsufficientFunds() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+
+            // buildRequest uses CASH as payment method
+            assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID,
+                buildRequest(request.getDesiredDate())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("traveler-insufficient-funds-cash");
+
+            verifyNoInteractions(announcementRepo);
+        }
     }
 
     @Nested
@@ -1006,6 +1027,32 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("payment-method/not-accepted-by-request");
+        }
+
+        @Test
+        @DisplayName("voyageur choisit CASH avec fonds insuffisants → 422 traveler-insufficient-funds-cash")
+        void submitTrip_rejectsCashWhenInsufficientFunds() {
+            // Request accepts CASH
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            UUID annId = UUID.randomUUID();
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(commissionProperties.rate()).thenReturn(new java.math.BigDecimal("0.12"));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.CASH);
+
+            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("traveler-insufficient-funds-cash");
         }
     }
 

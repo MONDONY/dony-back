@@ -8,6 +8,7 @@ import com.dony.api.common.AuditService;
 import com.dony.api.payments.PriceBreakdown;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.requests.CashGatePort;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -44,6 +45,7 @@ public class NegotiationService {
     private final AuditService auditService;
     private final RequestsConfig config;
     private final CommissionProperties commissionProperties;
+    private final CashGatePort cashGatePort;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -53,7 +55,8 @@ public class NegotiationService {
                                ApplicationEventPublisher eventPublisher,
                                AuditService auditService,
                                RequestsConfig config,
-                               CommissionProperties commissionProperties) {
+                               CommissionProperties commissionProperties,
+                               CashGatePort cashGatePort) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -63,6 +66,7 @@ public class NegotiationService {
         this.auditService = auditService;
         this.config = config;
         this.commissionProperties = commissionProperties;
+        this.cashGatePort = cashGatePort;
     }
 
     @Transactional
@@ -379,6 +383,14 @@ public class NegotiationService {
                 "announcement/date-mismatch");
         }
 
+        if (paymentMethod == PaymentMethod.CASH) {
+            BigDecimal commission = PriceBreakdown.fromNet(thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
+            if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/traveler-insufficient-funds-cash");
+            }
+        }
+
         thread.setTravelerAnnouncementId(travelerAnnouncementId);
         thread.setTravelerTravelDate(annDate);
         thread.setPaymentMethod(paymentMethod);
@@ -446,6 +458,14 @@ public class NegotiationService {
         if (req.departureDate().isBefore(from) || req.departureDate().isAfter(to)) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "announcement/date-mismatch");
+        }
+
+        if (req.paymentMethod() == PaymentMethod.CASH) {
+            BigDecimal commission = PriceBreakdown.fromNet(thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
+            if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/traveler-insufficient-funds-cash");
+            }
         }
 
         UserEntity traveler = userRepository.findById(callerId)
