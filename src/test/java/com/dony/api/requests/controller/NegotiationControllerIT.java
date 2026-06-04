@@ -80,7 +80,9 @@ class NegotiationControllerIT {
             false,  // canAccept
             false,  // canCounter
             4,      // roundsRemaining
-            null    // linkedTrip
+            null,   // linkedTrip
+            new BigDecimal("33.60"), // grossPriceEur (30 * 1.12)
+            null    // paymentMethod
         );
     }
 
@@ -183,7 +185,9 @@ class NegotiationControllerIT {
             true,   // canAccept
             false,  // canCounter
             3,      // roundsRemaining
-            null    // linkedTrip
+            null,   // linkedTrip
+            new BigDecimal("33.60"), // grossPriceEur
+            null    // paymentMethod
         );
         when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
 
@@ -264,7 +268,9 @@ class NegotiationControllerIT {
             "Paris", "Dakar", new BigDecimal("5.0"),
             "Amadou S.",
             false, false, false, 3,
-            trip
+            trip,
+            new BigDecimal("50.40"), // grossPriceEur (45 * 1.12)
+            null // paymentMethod
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(withTrip);
 

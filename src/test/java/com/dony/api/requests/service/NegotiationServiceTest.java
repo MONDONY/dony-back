@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.NegotiationStartRequest;
 import com.dony.api.requests.dto.NegotiationThreadResponse;
@@ -40,6 +41,7 @@ class NegotiationServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AuditService auditService;
     @Mock private RequestsConfig config;
+    @Mock private CommissionProperties commissionProperties;
 
     @InjectMocks private NegotiationService service;
 
@@ -73,6 +75,10 @@ class NegotiationServiceTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+
+        // Default commission rate used whenever toResponse() is called.
+        // Lenient to avoid UnnecessaryStubbingException in error-path tests that never reach toResponse().
+        lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
     }
 
     @Nested
@@ -84,6 +90,7 @@ class NegotiationServiceTest {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
@@ -923,6 +930,74 @@ class NegotiationServiceTest {
                 buildRequest(LocalDate.now().plusDays(10))))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("thread/not-found");
+        }
+    }
+
+    @Nested
+    @DisplayName("toResponse() — Modèle B champs calculés")
+    class ToResponseModelBTests {
+
+        @Test
+        @DisplayName("grossPriceEur exposé = net * (1 + rate) — modèle B")
+        void toResponse_exposesGrossPrice_modelB() {
+            // Préparer un thread OPEN avec currentPriceEur (net) = 35
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            // commission rate = 0.12 (already stubbed in @BeforeEach)
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            // Appeler toResponse directement
+            NegotiationThreadResponse response = service.toResponse(
+                thread, List.of(), null, traveler, request, TRAVELER_ID, "Expéditeur", null);
+
+            // Asserter: grossPriceEur ≈ 39.20 (35 * 1.12)
+            assertThat(response.grossPriceEur())
+                .isNotNull()
+                .isEqualByComparingTo("39.20");
+
+            // paymentMethod is null (not set on entity)
+            assertThat(response.paymentMethod()).isNull();
+        }
+
+        @Test
+        @DisplayName("paymentMethod exposé depuis l'entité thread")
+        void toResponse_exposesPaymentMethod() {
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("40"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.WAVE);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            NegotiationThreadResponse response = service.toResponse(
+                thread, List.of(), null, traveler, request, TRAVELER_ID, "Expéditeur", null);
+
+            assertThat(response.paymentMethod()).isEqualTo(com.dony.api.payments.cash.PaymentMethod.WAVE);
         }
     }
 }

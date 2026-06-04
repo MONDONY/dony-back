@@ -4,6 +4,8 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.payments.PriceBreakdown;
+import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -39,6 +41,7 @@ public class NegotiationService {
     private final ApplicationEventPublisher eventPublisher;
     private final AuditService auditService;
     private final RequestsConfig config;
+    private final CommissionProperties commissionProperties;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -47,7 +50,8 @@ public class NegotiationService {
                                com.dony.api.matching.AnnouncementRepository announcementRepo,
                                ApplicationEventPublisher eventPublisher,
                                AuditService auditService,
-                               RequestsConfig config) {
+                               RequestsConfig config,
+                               CommissionProperties commissionProperties) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -56,6 +60,7 @@ public class NegotiationService {
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
         this.config = config;
+        this.commissionProperties = commissionProperties;
     }
 
     @Transactional
@@ -736,6 +741,9 @@ public class NegotiationService {
             );
         }
 
+        PriceBreakdown breakdown = PriceBreakdown.fromNet(
+            t.getCurrentPriceEur(), commissionProperties.rate());
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -747,7 +755,9 @@ public class NegotiationService {
             request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg(),
             senderName,
             isMyTurn, canAccept, canCounter, roundsRemaining,
-            linkedTrip
+            linkedTrip,
+            breakdown.gross(),
+            t.getPaymentMethod()
         );
     }
 

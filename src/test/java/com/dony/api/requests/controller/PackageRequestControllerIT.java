@@ -95,7 +95,9 @@ class PackageRequestControllerIT {
             "vetements",
             "Cadeau", new BigDecimal("25"), null,
             "10e", "Plateau",
-            PackageRequestStatus.OPEN, LocalDateTime.now()
+            PackageRequestStatus.OPEN, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
     }
 
