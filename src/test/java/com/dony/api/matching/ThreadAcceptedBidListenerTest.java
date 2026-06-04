@@ -40,6 +40,10 @@ class ThreadAcceptedBidListenerTest {
     private static final LocalDateTime DISCLAIMER_AT = LocalDateTime.now();
 
     private PackageRequestAcceptedEvent buildEvent() {
+        return buildEvent(com.dony.api.payments.cash.PaymentMethod.STRIPE);
+    }
+
+    private PackageRequestAcceptedEvent buildEvent(com.dony.api.payments.cash.PaymentMethod paymentMethod) {
         return new PackageRequestAcceptedEvent(
                 THREAD_ID, PACKAGE_REQUEST_ID,
                 SENDER_ID, TRAVELER_ID,
@@ -49,7 +53,8 @@ class ThreadAcceptedBidListenerTest {
                 "Vêtements", "CLOTHING", "pi_test",
                 "Fatou Diop", "+221771234567",
                 BigDecimal.valueOf(120),
-                DISCLAIMER_AT, "1.2.3.4");
+                DISCLAIMER_AT, "1.2.3.4",
+                paymentMethod);
     }
 
     @Nested
@@ -106,7 +111,8 @@ class ThreadAcceptedBidListenerTest {
                     "desc", "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
-                    DISCLAIMER_AT, "1.2.3.4");
+                    DISCLAIMER_AT, "1.2.3.4",
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE);
 
             listener.onPackageRequestAccepted(event);
 
@@ -125,13 +131,43 @@ class ThreadAcceptedBidListenerTest {
                     null, "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
-                    DISCLAIMER_AT, "1.2.3.4");
+                    DISCLAIMER_AT, "1.2.3.4",
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE);
 
             listener.onPackageRequestAccepted(event);
 
             ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
             verify(bidRepository).save(captor.capture());
             assertThat(captor.getValue().getDescription()).isEqualTo("CLOTHING");
+        }
+
+        @Test
+        @DisplayName("event CASH → bid avec paymentMethod CASH et commission déjà CHARGED")
+        void cashEventMarksBidCashAndCommissionCharged() {
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.dony.api.payments.cash.PaymentMethod.CASH));
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            BidEntity saved = captor.getValue();
+            assertThat(saved.getPaymentMethod())
+                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
+            assertThat(saved.getCommissionStatus())
+                    .isEqualTo(com.dony.api.payments.cash.CommissionStatus.CHARGED);
+        }
+
+        @Test
+        @DisplayName("event STRIPE → bid avec paymentMethod STRIPE, commission non touchée")
+        void stripeEventMarksBidStripe() {
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.dony.api.payments.cash.PaymentMethod.STRIPE));
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            BidEntity saved = captor.getValue();
+            assertThat(saved.getPaymentMethod())
+                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.STRIPE);
+            assertThat(saved.getCommissionStatus()).isNull();
         }
     }
 

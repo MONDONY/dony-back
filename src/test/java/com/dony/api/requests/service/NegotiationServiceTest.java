@@ -1193,7 +1193,11 @@ class NegotiationServiceTest {
             assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
             verify(cashGatePort).chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID),
                 eq(thread.getCurrentPriceEur()));
-            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+            org.mockito.ArgumentCaptor<PackageRequestAcceptedEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(PackageRequestAcceptedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().paymentMethod())
+                .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
         }
 
         @Test

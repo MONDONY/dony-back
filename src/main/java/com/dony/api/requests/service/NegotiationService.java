@@ -608,7 +608,8 @@ public class NegotiationService {
             request.getRecipientPhone(),
             request.getDeclaredValueEur(),
             request.getDisclaimerSignedAt(),
-            request.getDisclaimerSignedIp()
+            request.getDisclaimerSignedIp(),
+            thread.getPaymentMethod()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

@@ -76,6 +76,17 @@ public class ThreadAcceptedBidListener {
         bid.setQrToken(UUID.randomUUID().toString());
         bid.setTrackingNumber(BidService.generateTrackingNumber());
         bid.setTrackingToken(UUID.randomUUID().toString());
+        // Carry the negotiation thread's payment method onto the materialised bid so
+        // the app shows the correct payment UI (a CASH bid must NOT prompt the sender
+        // for a Stripe payment).
+        if (e.paymentMethod() != null) {
+            bid.setPaymentMethod(e.paymentMethod());
+        }
+        if (e.paymentMethod() == com.dony.api.payments.cash.PaymentMethod.CASH) {
+            // Commission for cash negotiations is charged on the thread at finalize;
+            // mark the bid so the classic cash flow never re-charges and the UI shows "réglée".
+            bid.setCommissionStatus(com.dony.api.payments.cash.CommissionStatus.CHARGED);
+        }
 
         BidEntity saved = bidRepository.save(bid);
 
