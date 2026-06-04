@@ -1166,6 +1166,54 @@ class NegotiationServiceTest {
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
             assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
         }
+
+        @Test
+        @DisplayName("thread CASH — commission prélevée (port=true) → finalize OK + ACCEPTED")
+        void finalize_cashThread_commissionCharged_succeeds() {
+            thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
+                .thenReturn(true);
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_cash");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
+            verify(cashGatePort).chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID),
+                eq(thread.getCurrentPriceEur()));
+            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("thread CASH — commission échoue (port=false) → 422 et thread reste AWAITING_PAYMENT")
+        void finalize_cashThread_commissionFails_throws422AndNotFinalized() {
+            thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
+                .thenReturn(false);
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("negotiation/commission-charge-failed");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
     }
 
     @Nested

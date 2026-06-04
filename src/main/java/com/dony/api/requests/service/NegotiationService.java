@@ -561,6 +561,19 @@ public class NegotiationService {
                 "request/details-incomplete");
         }
 
+        // CASH threads : prélever la commission Dony au voyageur (wallet puis carte) AVANT
+        // de finaliser. En échec → 422 et la tx @Transactional rollback : le thread reste
+        // AWAITING_PAYMENT (non finalisé). STRIPE : pas de prélèvement ici (application_fee
+        // déjà géré par PaymentService.createNegotiationEscrow).
+        if (thread.getPaymentMethod() == PaymentMethod.CASH) {
+            boolean charged = cashGatePort.chargeNegotiationCashCommission(
+                thread.getTravelerId(), request.getSenderId(), thread.getId(), thread.getCurrentPriceEur());
+            if (!charged) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "negotiation/commission-charge-failed");
+            }
+        }
+
         thread.setPaymentIntentId(paymentIntentId);
         thread.setStatus(NegotiationThreadStatus.ACCEPTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
