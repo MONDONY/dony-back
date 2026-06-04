@@ -1,7 +1,10 @@
 package com.dony.api.requests.entity;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.payments.cash.PaymentMethodSetConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -10,6 +13,8 @@ import org.hibernate.annotations.SQLRestriction;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -64,6 +69,13 @@ public class PackageRequestEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PackageRequestStatus status;
+
+    @Column(name = "negotiable", nullable = false)
+    private boolean negotiable = true;
+
+    @Convert(converter = PaymentMethodSetConverter.class)
+    @Column(name = "accepted_payment_methods", nullable = false)
+    private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
 
     // Post-acceptation fields (nullable until accepted)
     @Column(name = "pickup_address_label", length = 255)
@@ -135,6 +147,10 @@ public class PackageRequestEntity extends BaseEntity {
 
     public PackageRequestStatus getStatus() { return status; }
 
+    public boolean isNegotiable() { return negotiable; }
+
+    public Set<PaymentMethod> getAcceptedPaymentMethods() { return acceptedPaymentMethods; }
+
     public String getPickupAddressLabel() { return pickupAddressLabel; }
 
     public BigDecimal getPickupLat() { return pickupLat; }
@@ -188,6 +204,10 @@ public class PackageRequestEntity extends BaseEntity {
     public void setDeliveryNeighborhood(String deliveryNeighborhood) { this.deliveryNeighborhood = deliveryNeighborhood; }
 
     public void setStatus(PackageRequestStatus status) { this.status = status; }
+
+    public void setNegotiable(boolean negotiable) { this.negotiable = negotiable; }
+
+    public void setAcceptedPaymentMethods(Set<PaymentMethod> acceptedPaymentMethods) { this.acceptedPaymentMethods = acceptedPaymentMethods; }
 
     public void setPickupAddressLabel(String pickupAddressLabel) { this.pickupAddressLabel = pickupAddressLabel; }
 
