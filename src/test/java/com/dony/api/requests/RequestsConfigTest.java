@@ -24,10 +24,12 @@ class RequestsConfigTest {
         assertThat(requestsConfig.autoExpireCheckCron()).isEqualTo("-");
 
         // Other fields fall back to application.yml defaults
+        assertThat(requestsConfig.awaitingTripHours()).isEqualTo(24);
+        assertThat(requestsConfig.awaitingPaymentHours()).isEqualTo(24);
         assertThat(requestsConfig.dateToleranceDefaultDays()).isEqualTo(2);
         assertThat(requestsConfig.dateToleranceMaxDays()).isEqualTo(7);
         assertThat(requestsConfig.weightKgMin()).isEqualByComparingTo(new BigDecimal("0.5"));
-        assertThat(requestsConfig.weightKgMax()).isEqualByComparingTo(new BigDecimal("30"));
+        assertThat(requestsConfig.weightKgMax()).isEqualByComparingTo(new BigDecimal("32"));
         assertThat(requestsConfig.declaredValueMaxEur()).isEqualByComparingTo(new BigDecimal("500"));
         assertThat(requestsConfig.bodyMaxChars()).isEqualTo(280);
         assertThat(requestsConfig.maxOpenRequestsPerSender()).isEqualTo(10);
