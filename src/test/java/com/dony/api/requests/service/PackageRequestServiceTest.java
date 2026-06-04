@@ -4,6 +4,8 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.TransportMode;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest;
 import com.dony.api.requests.dto.PackageRequestCreateRequest;
@@ -21,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +42,7 @@ class PackageRequestServiceTest {
     @Mock private RequestsConfig config;
     @Mock private NegotiationThreadRepository threadRepository;
     @Mock private com.dony.api.city.CityRepository cityRepository;
+    @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -69,6 +73,8 @@ class PackageRequestServiceTest {
         sender = new UserEntity();
         setId(sender, SENDER_ID);
         sender.setKycStatus(KycStatus.VERIFIED);
+        // Default commission rate = 12% — lenient because only create-related tests use it
+        lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
     }
 
     // ========== Task 12: create() tests ==========
@@ -114,10 +120,9 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Paris",
                 LocalDate.now().plusDays(7), 2,
-                new BigDecimal("5"), ParcelSize.SMALL,
-                com.dony.api.matching.TransportMode.PLANE,
-                "vetements",
-                null, null, null, null, null
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE)
             );
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
@@ -142,15 +147,56 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(95), 2,
-                new BigDecimal("5"), ParcelSize.SMALL,
-                com.dony.api.matching.TransportMode.PLANE,
-                "vetements",
-                null, null, null, null, null
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE)
             );
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("date-too-far");
+        }
+    }
+
+    // ========== Task 5: createAndReturnEntity() — derived size, forced PLANE, gross→net, negotiable ==========
+
+    @Nested @DisplayName("createAndReturnEntity() — avion forcé, taille dérivée, gross→net, négociable")
+    class CreateAndReturnEntityTests {
+
+        @Test @DisplayName("23kg → LARGE, transport=PLANE, net=gross/1.12, negotiable propagé")
+        void create_derivesSize_forcesAvion_storesNetFromGross() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("23"), "Médicaments", "desc",
+                new BigDecimal("39.20"), null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
+
+            assertThat(saved.getParcelSize()).isEqualTo(ParcelSize.LARGE);   // 23 kg → LARGE
+            assertThat(saved.getTransportMode()).isEqualTo(TransportMode.PLANE);
+            assertThat(saved.getTargetPriceEur()).isEqualByComparingTo("35.00"); // 39.20 / 1.12
+            assertThat(saved.isNegotiable()).isTrue();
+        }
+
+        @Test @DisplayName("budget null + non négociable → 422 target-price-required-firm")
+        void create_firmPrice_requiresBudget() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("6"), "Médicaments", null,
+                null /* pas de budget */, null, null, null,
+                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required-firm");
         }
     }
 
@@ -398,11 +444,10 @@ class PackageRequestServiceTest {
         return new PackageRequestCreateRequest(
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL,
-            com.dony.api.matching.TransportMode.PLANE,
-            "vetements",
-            "Cadeau pour ma mère", new BigDecimal("25"), null,
-            "10e arr", "Plateau"
+            new BigDecimal("5"), "vetements",
+            "Cadeau pour ma mère", new BigDecimal("28.00"), null,
+            "10e arr", "Plateau",
+            true, EnumSet.of(PaymentMethod.STRIPE)
         );
     }
 }

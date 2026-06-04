@@ -78,11 +78,10 @@ class PackageRequestControllerIT {
         return new PackageRequestCreateRequest(
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL,
-            com.dony.api.matching.TransportMode.PLANE,
-            "vetements",
-            "Cadeau", new BigDecimal("25"), null,
-            "10e", "Plateau"
+            new BigDecimal("5"), "vetements",
+            "Cadeau", new BigDecimal("28.00"), null,
+            "10e", "Plateau",
+            true, java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
     }
 
