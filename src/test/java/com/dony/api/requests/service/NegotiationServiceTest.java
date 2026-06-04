@@ -934,6 +934,44 @@ class NegotiationServiceTest {
     }
 
     @Nested
+    @DisplayName("Firm-price (negotiable=false)")
+    class FirmPriceTests {
+
+        @Test
+        @DisplayName("start() avec prix ferme et prix proposé ≠ targetPrice → 422 firm-price")
+        void start_firmRequest_priceMustEqualTarget() {
+            request.setNegotiable(false);
+            request.setTargetPriceEur(new BigDecimal("35"));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var bad = new NegotiationStartRequest(REQUEST_ID, new BigDecimal("30"),
+                LocalDate.now().plusDays(5), new BigDecimal("10"), null, "x");
+            assertThatThrownBy(() -> service.start(TRAVELER_ID, bad))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("firm-price");
+        }
+
+        @Test
+        @DisplayName("counter() sur request avec prix ferme → 409 counter-not-allowed-firm-price")
+        void counter_firmRequest_forbidden() {
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setRoundsCount((short) 1);
+            request.setNegotiable(false);
+            when(threadRepo.findById(any())).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.counter(SENDER_ID, UUID.randomUUID(),
+                    new com.dony.api.requests.dto.NegotiationCounterRequest(new BigDecimal("33"), "non")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("counter-not-allowed-firm-price");
+        }
+    }
+
+    @Nested
     @DisplayName("toResponse() — Modèle B champs calculés")
     class ToResponseModelBTests {
 

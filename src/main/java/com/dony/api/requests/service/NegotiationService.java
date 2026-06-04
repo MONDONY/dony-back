@@ -89,6 +89,14 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-finalized");
         }
 
+        if (!request.isNegotiable()) {
+            if (request.getTargetPriceEur() == null
+                || req.proposedPriceEur().compareTo(request.getTargetPriceEur()) != 0) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "negotiation/firm-price-must-match");
+            }
+        }
+
         if (threadRepo.findActiveByPackageRequestIdAndTravelerId(req.packageRequestId(), travelerId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/duplicate-thread");
         }
@@ -152,6 +160,11 @@ public class NegotiationService {
 
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!request.isNegotiable()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "negotiation/counter-not-allowed-firm-price");
+        }
 
         UUID senderId = request.getSenderId();
         UUID travelerId = thread.getTravelerId();
@@ -721,7 +734,8 @@ public class NegotiationService {
             boolean lastIsTarifaire = last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.PROPOSAL
                 || last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.COUNTER;
             canAccept = isMyTurn && lastIsTarifaire;
-            canCounter = isMyTurn && t.getRoundsCount() < config.maxNegotiationRounds();
+            canCounter = isMyTurn && t.getRoundsCount() < config.maxNegotiationRounds()
+                         && request.isNegotiable();
         }
         int roundsRemaining = Math.max(0, config.maxNegotiationRounds() - t.getRoundsCount().intValue());
 
