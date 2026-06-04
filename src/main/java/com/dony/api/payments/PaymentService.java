@@ -1120,20 +1120,20 @@ public class PaymentService {
             throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
-        BigDecimal amount = amountEur.setScale(2, RoundingMode.HALF_UP);
         // Taux effectif (override voyageur/expéditeur ; min le plus favorable) — SOURCE UNIQUE.
         BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
-        BigDecimal commission = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
+        // Modèle B : amountEur = NET voyageur. L'expéditeur paie gross = net*(1+rate).
+        PriceBreakdown b = PriceBreakdown.fromNet(amountEur, rate);
 
         try {
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                    .setAmount(amountCents)
+                    .setAmount(b.grossCents())                        // gross, pas net
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     .setOnBehalfOf(traveler.getStripeAccountId())
+                    .setApplicationFeeAmount(b.commissionCents())     // commission dony
                     .setStatementDescriptorSuffix("DONY")
                     .putMetadata("negotiation_thread_id", threadId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
@@ -1147,15 +1147,15 @@ public class PaymentService {
             PaymentEntity payment = new PaymentEntity();
             payment.setNegotiationThreadId(threadId);
             payment.setStripePaymentIntentId(pi.getId());
-            payment.setAmount(amount);
-            payment.setCommissionAmount(commission);
+            payment.setAmount(b.gross());          // total payé par l'expéditeur (gross)
+            payment.setCommissionAmount(b.commission());
             payment.setStatus(PaymentStatus.PENDING);
             paymentRepository.save(payment);
 
             auditService.log("PAYMENT", payment.getId(), "NEGOTIATION_ESCROW_CREATED",
                     sender.getId(),
                     java.util.Map.of("threadId", threadId.toString(),
-                            "amount", amount.toString(),
+                            "amount", b.gross().toString(),
                             "stripePaymentIntentId", pi.getId()));
 
             log.info("PaymentIntent {} created for negotiation thread {} (sender={})",

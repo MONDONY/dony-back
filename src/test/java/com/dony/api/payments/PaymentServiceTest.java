@@ -667,6 +667,105 @@ class PaymentServiceTest {
         }
     }
 
+    // ── createNegotiationEscrow (Model B) ─────────────────────────────────────
+
+    @Test
+    void createNegotiationEscrow_modelB_grossAmountAndApplicationFee() throws Exception {
+        UUID threadId = UUID.randomUUID();
+
+        // sender and traveler
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // net = 35 €, rate = 0.12 → gross = 39.20 €, commission = 4.20 €
+        BigDecimal netAmount = new BigDecimal("35.00");
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+
+            // ensureCardPaymentsCapability calls Account.retrieve
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            // PaymentIntent.create — capture the params
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_negotiation_123");
+            when(mockPi.getClientSecret()).thenReturn("pi_negotiation_123_secret");
+
+            java.util.concurrent.atomic.AtomicReference<PaymentIntentCreateParams> capturedParams =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class)))
+                    .thenAnswer(inv -> {
+                        capturedParams.set(inv.getArgument(0));
+                        return mockPi;
+                    });
+
+            PaymentResponse resp = service.createNegotiationEscrow(threadId, senderId, travelerId, netAmount);
+
+            // Verify PaymentIntent params: gross = 3920 centimes, fee = 420 centimes
+            PaymentIntentCreateParams params = capturedParams.get();
+            assertThat(params).isNotNull();
+            assertThat(params.getAmount()).isEqualTo(3920L);               // gross cents
+            assertThat(params.getApplicationFeeAmount()).isEqualTo(420L);  // commission cents
+
+            // Verify payment entity stored amounts
+            // response carries the saved payment's amount/commissionAmount
+            assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("39.20"));     // gross
+            assertThat(resp.getCommissionAmount()).isEqualByComparingTo(new BigDecimal("4.20")); // commission
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_travelerNotOnboarded_throwsTravelerNotEligible() {
+        UUID threadId = UUID.randomUUID();
+
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+
+        Throwable thrown = catchThrowable(() ->
+                service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00")));
+        assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+    }
+
+    @Test
+    void createNegotiationEscrow_alreadyInEscrow_throwsConflict() {
+        UUID threadId = UUID.randomUUID();
+
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        PaymentEntity existing = new PaymentEntity();
+        setId(existing, UUID.randomUUID());
+        existing.setNegotiationThreadId(threadId);
+        existing.setStripePaymentIntentId("pi_old");
+        existing.setAmount(new BigDecimal("39.20"));
+        existing.setCommissionAmount(new BigDecimal("4.20"));
+        existing.setStatus(PaymentStatus.ESCROW);
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(existing));
+
+        assertDonyError(() ->
+                service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00")),
+                "payment-already-completed");
+    }
+
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────
 
     private Event buildEventWith(String type, Object stripeObj) {
