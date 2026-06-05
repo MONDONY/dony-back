@@ -105,7 +105,7 @@ public class NegotiationController {
             @PathVariable UUID id,
             @RequestBody @Valid NegotiationCheckoutRequest req
     ) {
-        return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId());
+        return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId(), req.paymentMethod());
     }
 
     /**
@@ -139,6 +139,21 @@ public class NegotiationController {
         }
         return paymentService.createNegotiationEscrow(
             id, senderId, thread.travelerId(), thread.currentPriceEur());
+    }
+
+    /**
+     * Traveler opens the remaining (surplus) capacity of a DEDICATED trip to the
+     * public, once the negotiating sender has paid (thread ACCEPTED). The path
+     * param is the dedicated announcement id, not a thread id.
+     */
+    @PostMapping("/trip/{announcementId}/open-surplus")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<Void> openSurplus(
+            @PathVariable UUID announcementId,
+            @RequestBody @Valid OpenSurplusRequest req
+    ) {
+        service.openSurplus(requireUserId(), announcementId, req.surplusKg(), req.pricePerKg());
+        return ResponseEntity.noContent().build();
     }
 
     // ─── Auth helper ─────────────────────────────────────────────────────────────

@@ -423,6 +423,30 @@ class AnnouncementServiceTest {
             assertThat(result.getContent()).hasSize(1);
             assertThat(result.getContent().get(0).departureCity()).isEqualTo("Paris");
         }
+
+        @Test
+        @DisplayName("réponse expose reservedKg / surplusEligible / surplusPublished")
+        void getMyAnnouncements_exposesSurplusFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setReservedKg(BigDecimal.valueOf(5));
+            a.setSurplusEligible(true);
+            a.setSurplusPublished(true);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+            when(announcementRepository.findByTravelerIdFiltered(
+                    eq(USER_ID), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), any()))
+                    .thenReturn(new PageImpl<>(List.of(a)));
+
+            Page<AnnouncementResponse> result = announcementService.getMyAnnouncements(
+                    FIREBASE_UID, null, null, null, null, null, null, null, PageRequest.of(0, 10));
+
+            AnnouncementResponse r = result.getContent().get(0);
+            assertThat(r.reservedKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
+            assertThat(r.surplusEligible()).isTrue();
+            assertThat(r.surplusPublished()).isTrue();
+        }
     }
 
     // ─── getAnnouncementDetail ─────────────────────────────────────────────────
@@ -444,6 +468,25 @@ class AnnouncementServiceTest {
 
             assertThat(result.departureCity()).isEqualTo("Paris");
             assertThat(result.bidsCount()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("détail expose reservedKg / surplusEligible / surplusPublished")
+        void getDetail_exposesSurplusFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            a.setReservedKg(BigDecimal.valueOf(5));
+            a.setSurplusEligible(true);
+            a.setSurplusPublished(true);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.reservedKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
+            assertThat(result.surplusEligible()).isTrue();
+            assertThat(result.surplusPublished()).isTrue();
         }
 
         @Test

@@ -1133,7 +1133,12 @@ public class PaymentService {
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     .setOnBehalfOf(traveler.getStripeAccountId())
-                    .setApplicationFeeAmount(b.commissionCents())     // commission dony
+                    // Modèle "separate charges and transfers" (cohérent avec createEscrow) :
+                    // PAS d'application_fee_amount ni de transfer_data ici. Le gross reste sur
+                    // le solde plateforme ; à la livraison, DeliveryEventListener crée un
+                    // Transfer(net = gross - commission) vers le voyageur, la commission restant
+                    // acquise à dony. NB : Stripe rejette application_fee_amount sans
+                    // transfer_data[destination] (destination/direct charge requis).
                     .setStatementDescriptorSuffix("DONY")
                     .putMetadata("negotiation_thread_id", threadId.toString())
                     .putMetadata("sender_id", sender.getId().toString())

@@ -384,11 +384,7 @@ public class NegotiationService {
         }
 
         if (paymentMethod == PaymentMethod.CASH) {
-            BigDecimal commission = PriceBreakdown.fromNet(thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
-            if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "payment-method/traveler-insufficient-funds-cash");
-            }
+            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
         }
 
         thread.setTravelerAnnouncementId(travelerAnnouncementId);
@@ -415,6 +411,29 @@ public class NegotiationService {
             .map(this::buildDisplayName)
             .orElse("Expéditeur");
         return toResponse(thread, allMsgs, null, submitTraveler, request, callerId, senderName, ann);
+    }
+
+    /**
+     * Gate cash au moment de lier un trajet. Wallet d'abord par défaut ; si le
+     * wallet est insuffisant ET que le voyageur consent à un prélèvement carte
+     * ({@code useCard}), on autorise la liaison à condition qu'une carte de
+     * commission soit enregistrée. Le prélèvement réel a lieu plus tard, au
+     * finalize (wallet d'abord puis carte).
+     */
+    private void requireCashCommissionSource(UUID callerId, NegotiationThreadEntity thread, boolean useCard) {
+        if (useCard) {
+            if (!cashGatePort.hasCommissionCard(callerId)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/no-commission-card");
+            }
+            return;
+        }
+        BigDecimal commission = PriceBreakdown.fromNet(
+            thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
+        if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/traveler-insufficient-funds-cash");
+        }
     }
 
     /**
@@ -461,11 +480,7 @@ public class NegotiationService {
         }
 
         if (req.paymentMethod() == PaymentMethod.CASH) {
-            BigDecimal commission = PriceBreakdown.fromNet(thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
-            if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "payment-method/traveler-insufficient-funds-cash");
-            }
+            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
         }
 
         UserEntity traveler = userRepository.findById(callerId)
@@ -488,6 +503,9 @@ public class NegotiationService {
         ann.setDeliveryLng(BigDecimal.valueOf(req.deliveryAddress().lng()));
         ann.setAvailableKg(request.getWeightKg());
         ann.setTotalKg(request.getWeightKg());
+        // The negotiated weight is locked (reserved) for the sender. Surplus capacity
+        // stays at zero until the traveler opens it after payment (see openSurplus).
+        ann.setReservedKg(request.getWeightKg());
         // Price-per-kg is derived from the agreed total. The trip is private, so
         // this value is never displayed — but it must be > 0 to satisfy the
         // pricePerKg >= 0.01 validation on the entity column.
@@ -545,6 +563,17 @@ public class NegotiationService {
      */
     @Transactional
     public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId, String paymentIntentId) {
+        return finalizeAfterPayment(callerId, threadId, paymentIntentId, null);
+    }
+
+    /**
+     * Variante avec mode de paiement finalisé par l'expéditeur (parmi ceux
+     * acceptés par la demande). {@code chosenMethod == null} → on garde le mode
+     * déjà porté par le thread (choix du voyageur à la liaison du trajet).
+     */
+    @Transactional
+    public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId,
+                                                          String paymentIntentId, PaymentMethod chosenMethod) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
@@ -554,6 +583,17 @@ public class NegotiationService {
         }
         if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
+        }
+
+        // Mode de paiement finalisé par l'expéditeur : validé contre les méthodes
+        // acceptées par la demande, puis appliqué AVANT la décision cash/stripe
+        // ci-dessous (sinon la commission cash serait prélevée à tort, ou pas).
+        if (chosenMethod != null && chosenMethod != thread.getPaymentMethod()) {
+            if (!request.getAcceptedPaymentMethods().contains(chosenMethod)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/not-accepted");
+            }
+            thread.setPaymentMethod(chosenMethod);
         }
 
         if (request.getRecipientName() == null || request.getRecipientPhone() == null) {
@@ -578,6 +618,17 @@ public class NegotiationService {
         thread.setStatus(NegotiationThreadStatus.ACCEPTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+
+        // Trajet dédié → le voyageur peut désormais ouvrir sa capacité restante au public.
+        UUID annId = thread.getTravelerAnnouncementId();
+        if (annId != null) {
+            announcementRepo.findById(annId).ifPresent(ann -> {
+                if (ann.getLinkedPackageRequestId() != null) {
+                    ann.setSurplusEligible(true);
+                    announcementRepo.save(ann);
+                }
+            });
+        }
 
         request.setStatus(PackageRequestStatus.ACCEPTED);
         requestRepo.save(request);
@@ -628,6 +679,61 @@ public class NegotiationService {
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
         return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request, callerId, senderName, linkedAnn);
+    }
+
+    /**
+     * Traveler opens the remaining (surplus) capacity of a DEDICATED trip to the
+     * public, AFTER the negotiating sender has paid (thread status ACCEPTED).
+     *
+     * <p>Capacity model: the reserved part stays locked. We reuse the public
+     * {@code availableKg}/{@code pricePerKg} columns for the surplus so the
+     * existing search / card / bid flow works unchanged:
+     * <ul>
+     *   <li>{@code availableKg = surplusKg}</li>
+     *   <li>{@code totalKg = reservedKg + surplusKg}</li>
+     *   <li>{@code pricePerKg = surplusPricePerKg}</li>
+     *   <li>{@code surplusPublished = true} (irreversible)</li>
+     * </ul>
+     *
+     * <p>Lives here (requests/) — not in matching/ — because it needs both the
+     * announcement and the negotiation thread; matching/ must never read the
+     * thread. Both repos are already injected, so no new cross-package coupling.
+     */
+    @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "announcements-search", allEntries = true)
+    public void openSurplus(UUID callerId, UUID announcementId,
+                            BigDecimal surplusKg, BigDecimal pricePerKg) {
+        com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(announcementId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "announcement/not-found"));
+        if (!callerId.equals(ann.getTravelerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-traveler");
+        }
+        if (ann.getLinkedPackageRequestId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/not-dedicated");
+        }
+        if (ann.isSurplusPublished()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "surplus/already-open");
+        }
+        if (surplusKg == null || surplusKg.compareTo(BigDecimal.ONE) < 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/invalid-kg");
+        }
+        if (pricePerKg == null || pricePerKg.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/invalid-price");
+        }
+        NegotiationThreadEntity thread = threadRepo.findByTravelerAnnouncementId(announcementId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "surplus/negotiation-not-accepted"));
+        if (thread.getStatus() != NegotiationThreadStatus.ACCEPTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "surplus/negotiation-not-accepted");
+        }
+
+        ann.setAvailableKg(surplusKg);
+        ann.setTotalKg(ann.getReservedKg().add(surplusKg));
+        ann.setPricePerKg(pricePerKg);
+        ann.setSurplusPublished(true);
+        announcementRepo.save(ann);
+
+        auditService.log("ANNOUNCEMENT", announcementId, "SURPLUS_OPENED", callerId,
+            Map.of("surplusKg", surplusKg.toPlainString(), "pricePerKg", pricePerKg.toPlainString()));
     }
 
     @Transactional

@@ -35,5 +35,8 @@ public record AnnouncementResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         com.dony.api.matching.PricingMode pricingMode,
-        List<AnnouncementPriceGridItemResponse> priceGridItems
+        List<AnnouncementPriceGridItemResponse> priceGridItems,
+        BigDecimal reservedKg,
+        boolean surplusEligible,
+        boolean surplusPublished
 ) {}

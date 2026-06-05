@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -282,7 +283,8 @@ class NegotiationControllerIT {
     @Test
     void post_checkout_returns200_andDelegatesFinalize() throws Exception {
         UUID threadId = UUID.randomUUID();
-        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("pi_test")))
+        // No paymentMethod in the body → controller delegates with a null method.
+        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("pi_test"), isNull()))
             .thenReturn(fakeThread(threadId, NegotiationThreadStatus.ACCEPTED, "pi_test"));
 
         var req = new java.util.HashMap<String, String>();
@@ -294,6 +296,27 @@ class NegotiationControllerIT {
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACCEPTED"));
+    }
+
+    @Test
+    void post_checkout_withPaymentMethod_delegatesChosenMethod() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("CASH"),
+                eq(com.dony.api.payments.cash.PaymentMethod.CASH)))
+            .thenReturn(fakeThread(threadId, NegotiationThreadStatus.ACCEPTED, "CASH"));
+
+        var req = new java.util.HashMap<String, String>();
+        req.put("paymentIntentId", "CASH");
+        req.put("paymentMethod", "CASH");
+
+        mockMvc.perform(post("/negotiations/{id}/checkout", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACCEPTED"));
+        verify(service).finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("CASH"),
+            eq(com.dony.api.payments.cash.PaymentMethod.CASH));
     }
 
     @Test
@@ -471,5 +494,65 @@ class NegotiationControllerIT {
             .andExpect(jsonPath("$.linkedTrip.departureCity").value("Paris"))
             .andExpect(jsonPath("$.linkedTrip.arrivalCity").value("Dakar"))
             .andExpect(jsonPath("$.linkedTrip.availableKg").value(8));
+    }
+
+    // ─── open-surplus ────────────────────────────────────────────────────────────
+
+    @Test
+    void post_openSurplus_asTraveler_returns204_andDelegates() throws Exception {
+        UUID announcementId = UUID.randomUUID();
+        var req = new OpenSurplusRequest(new BigDecimal("8"), new BigDecimal("7"));
+
+        mockMvc.perform(post("/negotiations/trip/{announcementId}/open-surplus", announcementId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isNoContent());
+
+        verify(service).openSurplus(eq(TRAVELER_UUID), eq(announcementId),
+            eq(new BigDecimal("8")), eq(new BigDecimal("7")));
+    }
+
+    @Test
+    void post_openSurplus_missingSurplusKg_returns422() throws Exception {
+        UUID announcementId = UUID.randomUUID();
+        // pricePerKg only — surplusKg null → Bean Validation rejects
+        var body = new java.util.HashMap<String, Object>();
+        body.put("pricePerKg", 7);
+
+        mockMvc.perform(post("/negotiations/trip/{announcementId}/open-surplus", announcementId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)))
+            .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void post_openSurplus_asSender_returns403() throws Exception {
+        UUID announcementId = UUID.randomUUID();
+        var req = new OpenSurplusRequest(new BigDecimal("8"), new BigDecimal("7"));
+
+        mockMvc.perform(post("/negotiations/trip/{announcementId}/open-surplus", announcementId)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void post_openSurplus_serviceConflict_returnsProblemDetail() throws Exception {
+        UUID announcementId = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new ResponseStatusException(CONFLICT, "surplus/already-open"))
+            .when(service).openSurplus(eq(TRAVELER_UUID), eq(announcementId), any(), any());
+
+        var req = new OpenSurplusRequest(new BigDecimal("8"), new BigDecimal("7"));
+
+        mockMvc.perform(post("/negotiations/trip/{announcementId}/open-surplus", announcementId)
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentType("application/problem+json"))
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("surplus/already-open")));
     }
 }

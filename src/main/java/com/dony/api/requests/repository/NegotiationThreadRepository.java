@@ -42,6 +42,13 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
 
     List<NegotiationThreadEntity> findByPackageRequestId(UUID packageRequestId);
 
+    /**
+     * The single thread that created a given dedicated trip (1:1 — one thread
+     * creates exactly one dedicated announcement). Used by {@code openSurplus}
+     * to re-check the negotiation reached ACCEPTED before opening surplus.
+     */
+    Optional<NegotiationThreadEntity> findByTravelerAnnouncementId(UUID travelerAnnouncementId);
+
     long countByTravelerIdAndStatus(UUID travelerId, NegotiationThreadStatus status);
 
     @Query("""

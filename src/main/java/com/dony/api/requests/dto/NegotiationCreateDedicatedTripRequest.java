@@ -46,5 +46,18 @@ public record NegotiationCreateDedicatedTripRequest(
         List<String> refusedTypes,
 
         @NotNull(message = "Le mode de paiement est obligatoire")
-        PaymentMethod paymentMethod
-) {}
+        PaymentMethod paymentMethod,
+
+        // CASH uniquement : si true, le voyageur consent à payer la commission sur
+        // sa carte quand son wallet est insuffisant. Absent du JSON → false.
+        boolean useCardForCommission
+) {
+    public NegotiationCreateDedicatedTripRequest(
+            LocalDate departureDate, LocalTime departureTime, LocalTime arrivalTime,
+            AddressDto pickupAddress, AddressDto deliveryAddress, String description,
+            List<String> acceptedContentTypes, List<String> refusedTypes,
+            PaymentMethod paymentMethod) {
+        this(departureDate, departureTime, arrivalTime, pickupAddress, deliveryAddress,
+             description, acceptedContentTypes, refusedTypes, paymentMethod, false);
+    }
+}

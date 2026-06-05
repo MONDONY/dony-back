@@ -895,6 +895,10 @@ class NegotiationServiceTest {
             assertThat(savedAnn.getTotalKg()).isEqualByComparingTo("5");
             assertThat(savedAnn.getTransportMode()).isEqualTo(com.dony.api.matching.TransportMode.PLANE);
             assertThat(savedAnn.getLinkedPackageRequestId()).isEqualTo(REQUEST_ID);
+            // Surplus capacity: reservedKg = request weight, surplus locked at creation
+            assertThat(savedAnn.getReservedKg()).isEqualByComparingTo("5");
+            assertThat(savedAnn.isSurplusEligible()).isFalse();
+            assertThat(savedAnn.isSurplusPublished()).isFalse();
             // Price-per-kg derived from agreed total (80 / 5 = 16)
             assertThat(savedAnn.getPricePerKg()).isEqualByComparingTo("16.00");
             assertThat(savedAnn.getStatus()).isEqualTo(com.dony.api.matching.AnnouncementStatus.ACTIVE);
@@ -1053,6 +1057,61 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("traveler-insufficient-funds-cash");
+        }
+
+        @Test
+        @DisplayName("CASH + consentement carte + carte enregistrée → liaison OK même wallet vide (wallet non consulté)")
+        void submitTrip_cashWithCardConsent_linksEvenIfWalletShort() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            UUID annId = UUID.randomUUID();
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(true);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(
+                annId, PaymentMethod.CASH, true);
+            var resp = service.submitTrip(TRAVELER_ID, THREAD_ID, req);
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            // Chemin carte : le solde wallet n'est pas consulté.
+            verify(cashGatePort, org.mockito.Mockito.never()).hasSufficientFunds(any(), any());
+        }
+
+        @Test
+        @DisplayName("CASH + consentement carte mais aucune carte enregistrée → 422 no-commission-card")
+        void submitTrip_cashWithCardConsentButNoCard_throws422() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            UUID annId = UUID.randomUUID();
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(false);
+
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(
+                annId, PaymentMethod.CASH, true);
+
+            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("no-commission-card");
         }
     }
 
@@ -1217,6 +1276,225 @@ class NegotiationServiceTest {
 
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
             verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("trajet dédié finalisé → l'annonce liée devient surplusEligible")
+        void finalize_dedicatedTrip_marksAnnouncementSurplusEligible() {
+            UUID annId = UUID.randomUUID();
+            thread.setTravelerAnnouncementId(annId);
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            com.dony.api.matching.AnnouncementEntity dedicatedAnn = new com.dony.api.matching.AnnouncementEntity();
+            dedicatedAnn.setLinkedPackageRequestId(REQUEST_ID); // dédié
+            dedicatedAnn.setReservedKg(new BigDecimal("5"));
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(dedicatedAnn));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_dedicated");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(dedicatedAnn.isSurplusEligible()).isTrue();
+            verify(announcementRepo).save(dedicatedAnn);
+        }
+
+        @Test
+        @DisplayName("trajet existant (non dédié) finalisé → l'annonce n'est PAS marquée éligible")
+        void finalize_nonDedicatedTrip_doesNotMarkSurplusEligible() {
+            UUID annId = UUID.randomUUID();
+            thread.setTravelerAnnouncementId(annId);
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            com.dony.api.matching.AnnouncementEntity publicAnn = new com.dony.api.matching.AnnouncementEntity();
+            publicAnn.setLinkedPackageRequestId(null); // trajet public/existant
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(publicAnn));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_public");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(publicAnn.isSurplusEligible()).isFalse();
+            // not a dedicated trip → no surplus-eligibility save on the announcement
+            verify(announcementRepo, never()).save(publicAnn);
+        }
+    }
+
+    @Nested
+    @DisplayName("openSurplus()")
+    class OpenSurplusTests {
+
+        private final UUID ANN_ID = UUID.randomUUID();
+        private com.dony.api.matching.AnnouncementEntity ann;
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupAnnAndThread() {
+            ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setLinkedPackageRequestId(REQUEST_ID); // dédié
+            ann.setReservedKg(new BigDecimal("5"));
+            ann.setAvailableKg(new BigDecimal("5"));
+            ann.setTotalKg(new BigDecimal("5"));
+            ann.setPricePerKg(new BigDecimal("16.00"));
+            ann.setSurplusEligible(true);
+            ann.setSurplusPublished(false);
+
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+            thread.setCurrentPriceEur(new BigDecimal("80"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+        }
+
+        @Test
+        @DisplayName("succès → availableKg=surplus, totalKg=reserved+surplus, pricePerKg=surplusPrice, surplusPublished")
+        void openSurplus_success() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            when(threadRepo.findByTravelerAnnouncementId(ANN_ID)).thenReturn(Optional.of(thread));
+            when(announcementRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.openSurplus(TRAVELER_ID, ANN_ID, new BigDecimal("8"), new BigDecimal("7"));
+
+            assertThat(ann.getAvailableKg()).isEqualByComparingTo("8");
+            assertThat(ann.getTotalKg()).isEqualByComparingTo("13"); // reserved 5 + surplus 8
+            assertThat(ann.getPricePerKg()).isEqualByComparingTo("7");
+            assertThat(ann.isSurplusPublished()).isTrue();
+            verify(announcementRepo).save(ann);
+            verify(auditService).log(eq("ANNOUNCEMENT"), eq(ANN_ID), eq("SURPLUS_OPENED"), eq(TRAVELER_ID), anyMap());
+        }
+
+        @Test
+        @DisplayName("annonce introuvable → 404")
+        void openSurplus_notFound_throws404() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("announcement/not-found");
+        }
+
+        @Test
+        @DisplayName("caller ≠ voyageur → 403 negotiation/not-traveler")
+        void openSurplus_notTraveler_throws403() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(UUID.randomUUID(), ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("negotiation/not-traveler");
+            verify(announcementRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("trajet non dédié (linkedPackageRequestId null) → 422 surplus/not-dedicated")
+        void openSurplus_notDedicated_throws422() {
+            ann.setLinkedPackageRequestId(null);
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/not-dedicated");
+        }
+
+        @Test
+        @DisplayName("déjà publié → 409 surplus/already-open")
+        void openSurplus_alreadyOpen_throws409() {
+            ann.setSurplusPublished(true);
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/already-open");
+        }
+
+        @Test
+        @DisplayName("surplusKg < 1 → 422 surplus/invalid-kg")
+        void openSurplus_invalidKg_throws422() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("0.5"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/invalid-kg");
+        }
+
+        @Test
+        @DisplayName("surplusKg null → 422 surplus/invalid-kg")
+        void openSurplus_nullKg_throws422() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                null, new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/invalid-kg");
+        }
+
+        @Test
+        @DisplayName("pricePerKg <= 0 → 422 surplus/invalid-price")
+        void openSurplus_invalidPrice_throws422() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), BigDecimal.ZERO))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/invalid-price");
+        }
+
+        @Test
+        @DisplayName("pricePerKg null → 422 surplus/invalid-price")
+        void openSurplus_nullPrice_throws422() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/invalid-price");
+        }
+
+        @Test
+        @DisplayName("aucun thread pour le trajet → 409 surplus/negotiation-not-accepted")
+        void openSurplus_noThread_throws409() {
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            when(threadRepo.findByTravelerAnnouncementId(ANN_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/negotiation-not-accepted");
+            verify(announcementRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("thread non ACCEPTED → 409 surplus/negotiation-not-accepted")
+        void openSurplus_threadNotAccepted_throws409() {
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            when(announcementRepo.findById(ANN_ID)).thenReturn(Optional.of(ann));
+            when(threadRepo.findByTravelerAnnouncementId(ANN_ID)).thenReturn(Optional.of(thread));
+            assertThatThrownBy(() -> service.openSurplus(TRAVELER_ID, ANN_ID,
+                new BigDecimal("8"), new BigDecimal("7")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("surplus/negotiation-not-accepted");
+            verify(announcementRepo, never()).save(any());
         }
     }
 
@@ -1561,6 +1839,43 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.finalizeAfterPayment(TRAVELER_ID, THREAD_ID, "pi_x"))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
                 .hasMessageContaining("not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("finalize avec un mode de paiement non autorisé par la demande → 422")
+        void finalize_chosenMethodNotAccepted_throws422() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() ->
+                    service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x", PaymentMethod.CASH))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("payment-method/not-accepted");
+        }
+
+        @Test
+        @DisplayName("finalize applique le mode choisi par l'expéditeur (override du thread, bascule cash→stripe)")
+        void finalize_chosenMethodOverridesThreadMethod() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            thread.setPaymentMethod(PaymentMethod.CASH);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_override", PaymentMethod.STRIPE);
+
+            // Le mode du thread est remplacé par celui choisi par l'expéditeur ;
+            // la branche cash (commission) n'est donc PAS déclenchée.
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+            org.mockito.Mockito.verifyNoInteractions(cashGatePort);
         }
     }
 }

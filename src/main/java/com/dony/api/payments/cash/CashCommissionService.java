@@ -503,6 +503,18 @@ public class CashCommissionService {
         return false;
     }
 
+    /**
+     * True if the traveler has a commission payment card registered. Used by the
+     * negotiation trip-linking gate to let a wallet-short traveler consent to a
+     * card charge (collected at finalize, wallet-first then card).
+     */
+    @Transactional(readOnly = true)
+    public boolean hasCommissionCard(UUID travelerId) {
+        return userRepo.findById(travelerId)
+                .map(u -> u.getCommissionPaymentMethodId() != null)
+                .orElse(false);
+    }
+
     // --- Cash bid acceptance ---
 
     @Transactional

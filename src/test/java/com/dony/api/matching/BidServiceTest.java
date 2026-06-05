@@ -295,6 +295,58 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("bid sur trajet dédié sans surplus ouvert → 409 surplus-not-open")
+        void createBid_dedicatedTripSurplusNotOpen_throwsConflict() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setLinkedPackageRequestId(UUID.randomUUID()); // trajet dédié
+            announcement.setSurplusPublished(false);                   // surplus non ouvert
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("surplus-not-open");
+                    });
+            verify(bidRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("bid sur trajet dédié avec surplus ouvert + poids ≤ capacité → bid créé")
+        void createBid_dedicatedTripSurplusOpen_createsBid() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setLinkedPackageRequestId(UUID.randomUUID()); // trajet dédié
+            announcement.setSurplusPublished(true);                    // surplus ouvert
+            announcement.setReservedKg(BigDecimal.valueOf(5));
+            announcement.setAvailableKg(BigDecimal.valueOf(8));         // surplus = 8 kg
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidResponse result = bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(8), BigDecimal.valueOf(100)),
+                    httpRequest);
+
+            assertThat(result).isNotNull();
+            assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(8));
+            verify(bidRepository).save(any(BidEntity.class));
+        }
+
+        @Test
         @DisplayName("annonce non ACTIVE → 409 CONFLICT")
         void createBid_announcementNotActive_throwsConflict() {
             UserEntity sender = buildSender();

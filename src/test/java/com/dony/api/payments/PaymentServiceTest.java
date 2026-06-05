@@ -670,7 +670,7 @@ class PaymentServiceTest {
     // ── createNegotiationEscrow (Model B) ─────────────────────────────────────
 
     @Test
-    void createNegotiationEscrow_modelB_grossAmountAndApplicationFee() throws Exception {
+    void createNegotiationEscrow_modelB_grossAmount_separateChargesNoApplicationFee() throws Exception {
         UUID threadId = UUID.randomUUID();
 
         // sender and traveler
@@ -712,14 +712,19 @@ class PaymentServiceTest {
 
             PaymentResponse resp = service.createNegotiationEscrow(threadId, senderId, travelerId, netAmount);
 
-            // Verify PaymentIntent params: gross = 3920 centimes, fee = 420 centimes
+            // Modèle "separate charges and transfers" : on encaisse le gross sur la
+            // plateforme, SANS application_fee_amount ni transfer_data (Stripe rejette
+            // application_fee_amount sans transfer_data). La commission est versée
+            // implicitement via le Transfer(net) à la livraison (DeliveryEventListener).
             PaymentIntentCreateParams params = capturedParams.get();
             assertThat(params).isNotNull();
             assertThat(params.getAmount()).isEqualTo(3920L);               // gross cents
-            assertThat(params.getApplicationFeeAmount()).isEqualTo(420L);  // commission cents
+            assertThat(params.getApplicationFeeAmount()).isNull();         // PAS de fee ici
+            assertThat(params.getTransferData()).isNull();                 // pas de destination charge
+            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler"); // merchant of record
 
-            // Verify payment entity stored amounts
-            // response carries the saved payment's amount/commissionAmount
+            // L'entité paiement enregistre toujours gross + commission : la commission
+            // sert au calcul du Transfer(net = gross - commission) à la livraison.
             assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("39.20"));     // gross
             assertThat(resp.getCommissionAmount()).isEqualByComparingTo(new BigDecimal("4.20")); // commission
         }
