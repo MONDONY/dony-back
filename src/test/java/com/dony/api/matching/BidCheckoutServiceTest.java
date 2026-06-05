@@ -154,6 +154,28 @@ class BidCheckoutServiceTest {
     }
 
     @Test
+    void rejects_checkout_for_reserved_sender_on_own_dedicated_trip() {
+        // The negotiating sender already holds the reserved capacity on this dedicated
+        // trip. Even once the surplus is published, they must not be able to checkout a
+        // second parcel on the same trip (would be two shipments for one sender).
+        announcement.setLinkedPackageRequestId(UUID.randomUUID());
+        announcement.setSurplusPublished(true);
+        announcement.setReservedSenderId(sender.getId());      // this sender is the reserved one
+        announcement.setReservedKg(new BigDecimal("5.00"));
+        announcement.setAvailableKg(new BigDecimal("8.00"));   // surplus = 8 kg, req weight = 2 kg
+
+        assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
+            .isInstanceOf(DonyBusinessException.class)
+            .satisfies(e -> {
+                DonyBusinessException ex = (DonyBusinessException) e;
+                assertThat(ex.getStatus()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+                assertThat(ex.getErrorCode()).isEqualTo("reserved-sender-cannot-bid");
+            });
+        verify(bidRepository, never()).save(any());
+        verify(paymentService, never()).createEscrow(any(), anyString());
+    }
+
+    @Test
     void rejects_weight_exceeding_capacity() {
         announcement.setAvailableKg(new BigDecimal("1.00"));
         announcement.setTotalKg(new BigDecimal("1.00"));

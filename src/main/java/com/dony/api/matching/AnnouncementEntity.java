@@ -135,6 +135,15 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "surplus_published", nullable = false)
     private boolean surplusPublished = false;
 
+    /**
+     * Sender « réservé » d'un trajet dédié : l'expéditeur de la négociation pour
+     * qui ce trajet a été créé. NULL pour les trajets non dédiés. Sert à empêcher
+     * ce sender de re-bidder sur le surplus de son propre trajet (il a déjà son
+     * colis réservé dessus).
+     */
+    @Column(name = "reserved_sender_id")
+    private UUID reservedSenderId;
+
     @Convert(converter = PaymentMethodSetConverter.class)
     @Column(name = "accepted_payment_methods", nullable = false)
     private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
@@ -180,6 +189,24 @@ public class AnnouncementEntity extends BaseEntity {
      */
     public boolean isClosedToThirdPartyBids() {
         return linkedPackageRequestId != null && !surplusPublished;
+    }
+
+    public UUID getReservedSenderId() { return reservedSenderId; }
+    public void setReservedSenderId(UUID reservedSenderId) { this.reservedSenderId = reservedSenderId; }
+
+    /**
+     * True if {@code senderId} is the negotiating sender for whom this dedicated
+     * trip was created. That sender already holds the reserved capacity (their
+     * negotiated parcel), so they must NOT be able to place an additional bid on
+     * the same trip's surplus — they would end up with two shipments on one trip.
+     * <p>
+     * Checked in every public bid-creation entry point ({@code BidService.createBid},
+     * {@code BidCheckoutService.checkout}). Deterministic: it does not depend on the
+     * negotiation bid having been materialised, so it holds even if that bid is
+     * missing or delayed. Read-only, no extra dependencies.
+     */
+    public boolean isReservedSender(UUID senderId) {
+        return reservedSenderId != null && reservedSenderId.equals(senderId);
     }
 
     public UUID getTravelerId() { return travelerId; }

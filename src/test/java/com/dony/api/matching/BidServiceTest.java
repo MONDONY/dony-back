@@ -347,6 +347,32 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("bid du sender réservé sur son propre trajet dédié (surplus ouvert) → 409 reserved-sender-cannot-bid")
+        void createBid_reservedSender_throwsConflict() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setLinkedPackageRequestId(UUID.randomUUID()); // trajet dédié
+            announcement.setSurplusPublished(true);                    // surplus ouvert
+            announcement.setReservedSenderId(SENDER_ID);               // ce sender est le réservé
+            announcement.setReservedKg(BigDecimal.valueOf(5));
+            announcement.setAvailableKg(BigDecimal.valueOf(8));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(2), BigDecimal.valueOf(100)),
+                    httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("reserved-sender-cannot-bid");
+                    });
+            verify(bidRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("annonce non ACTIVE → 409 CONFLICT")
         void createBid_announcementNotActive_throwsConflict() {
             UserEntity sender = buildSender();

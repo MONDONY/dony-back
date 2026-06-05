@@ -92,6 +92,14 @@ public class BidCheckoutService {
                 "La capacité supplémentaire de ce trajet n'est pas ouverte aux autres expéditeurs");
         }
 
+        // Le sender réservé a déjà son colis sur ce trajet dédié : il ne peut pas
+        // ouvrir un escrow sur le surplus de son propre trajet (deux colis sinon).
+        if (announcement.isReservedSender(sender.getId())) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                "reserved-sender-cannot-bid", "Reserved Sender Cannot Bid",
+                "Vous avez déjà un colis réservé sur ce trajet");
+        }
+
         if (announcement.getTravelerId().equals(sender.getId())) {
             throw new DonyBusinessException(HttpStatus.CONFLICT,
                 "cannot-bid-own-announcement", "Cannot Bid Own Announcement",

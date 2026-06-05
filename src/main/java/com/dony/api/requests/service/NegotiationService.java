@@ -521,6 +521,8 @@ public class NegotiationService {
         ann.setAcceptedContentTypes(req.acceptedContentTypes() != null ? req.acceptedContentTypes() : new ArrayList<>());
         ann.setRefusedTypes(req.refusedTypes() != null ? req.refusedTypes() : new ArrayList<>());
         ann.setLinkedPackageRequestId(request.getId());
+        // Sender réservé : il ne pourra pas re-bidder sur le surplus de ce trajet.
+        ann.setReservedSenderId(request.getSenderId());
 
         com.dony.api.matching.AnnouncementEntity savedAnn = announcementRepo.save(ann);
 

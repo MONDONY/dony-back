@@ -161,6 +161,15 @@ public class BidService {
                     "La capacité supplémentaire de ce trajet n'est pas ouverte aux autres expéditeurs");
         }
 
+        // Le sender réservé (celui pour qui le trajet dédié a été créé) a déjà son
+        // colis dessus : il ne peut pas bidder sur le surplus de son propre trajet,
+        // même une fois le surplus publié (sinon deux colis du même sender sur un trajet).
+        if (announcement.isReservedSender(sender.getId())) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "reserved-sender-cannot-bid", "Reserved Sender Cannot Bid",
+                    "Vous avez déjà un colis réservé sur ce trajet");
+        }
+
         if (announcement.getTravelerId().equals(sender.getId())) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",

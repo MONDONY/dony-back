@@ -899,6 +899,8 @@ class NegotiationServiceTest {
             assertThat(savedAnn.getReservedKg()).isEqualByComparingTo("5");
             assertThat(savedAnn.isSurplusEligible()).isFalse();
             assertThat(savedAnn.isSurplusPublished()).isFalse();
+            // Sender réservé mémorisé → il ne pourra pas re-bidder sur le surplus.
+            assertThat(savedAnn.getReservedSenderId()).isEqualTo(SENDER_ID);
             // Price-per-kg derived from agreed total (80 / 5 = 16)
             assertThat(savedAnn.getPricePerKg()).isEqualByComparingTo("16.00");
             assertThat(savedAnn.getStatus()).isEqualTo(com.dony.api.matching.AnnouncementStatus.ACTIVE);
