@@ -156,8 +156,16 @@ public class PackageRequestService {
         boolean isOwner = entity.getSenderId().equals(callerUid);
         boolean isThreadParticipant = threadRepository
             .existsByPackageRequestIdAndTravelerId(requestId, callerUid);
+        // Les demandes publiquement listées en recherche (OPEN / NEGOTIATING)
+        // sont consultables par n'importe quel voyageur : il doit pouvoir voir
+        // le détail pour décider de faire une offre. Le DTO ne contient aucune
+        // PII (aucune info destinataire) et les threads/messages restent privés
+        // (endpoint dédié). Dès que la demande est ACCEPTED/terminée, l'accès
+        // est de nouveau restreint au propriétaire et aux participants d'un thread.
+        boolean isPubliclyListed = entity.getStatus() == PackageRequestStatus.OPEN
+            || entity.getStatus() == PackageRequestStatus.NEGOTIATING;
 
-        if (!isOwner && !isThreadParticipant) {
+        if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
         return toResponse(entity);

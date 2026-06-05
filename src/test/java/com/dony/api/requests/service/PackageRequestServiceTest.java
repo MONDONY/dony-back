@@ -215,12 +215,34 @@ class PackageRequestServiceTest {
             assertThat(resp.id()).isEqualTo(entity.getId());
         }
 
-        @Test @DisplayName("autre sender, pas de thread → 403")
-        void getById_otherCallerNoThread_throws403() {
+        @Test @DisplayName("non-participant, demande OPEN → OK (consultable publiquement)")
+        void getById_nonParticipant_openRequest_returnsResponse() {
             UUID OTHER = UUID.randomUUID();
-            PackageRequestEntity entity = new PackageRequestEntity();
-            setId(entity, UUID.randomUUID());
-            entity.setSenderId(SENDER_ID);
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(false);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("non-participant, demande NEGOTIATING → OK (consultable publiquement)")
+        void getById_nonParticipant_negotiatingRequest_returnsResponse() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(false);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("non-participant, demande ACCEPTED (non listée) → 403")
+        void getById_nonParticipant_acceptedRequest_throws403() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
             when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
             when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
                 .thenReturn(false);
@@ -228,6 +250,18 @@ class PackageRequestServiceTest {
             assertThatThrownBy(() -> service.getById(OTHER, entity.getId()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("forbidden");
+        }
+
+        @Test @DisplayName("participant d'un thread, demande ACCEPTED → OK")
+        void getById_threadParticipant_acceptedRequest_returnsResponse() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(true);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
         }
     }
 
