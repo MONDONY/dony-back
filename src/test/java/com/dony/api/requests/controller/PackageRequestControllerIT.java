@@ -158,7 +158,8 @@ class PackageRequestControllerIT {
             "vetements",
             new BigDecimal("25"), true, null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
-                UUID.randomUUID(), "Sender", 4.5, 12, true)
+                UUID.randomUUID(), "Sender", 4.5, 12, true),
+            java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
@@ -169,7 +170,8 @@ class PackageRequestControllerIT {
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].departureCity").value("Paris"))
-            .andExpect(jsonPath("$.content[0].negotiable").value(true));
+            .andExpect(jsonPath("$.content[0].negotiable").value(true))
+            .andExpect(jsonPath("$.content[0].acceptedPaymentMethods[0]").value("STRIPE"));
     }
 
     @Test
@@ -184,7 +186,8 @@ class PackageRequestControllerIT {
             "vetements",
             new BigDecimal("25"), false, null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
-                UUID.randomUUID(), "Sender", 4.5, 12, true)
+                UUID.randomUUID(), "Sender", 4.5, 12, true),
+            java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));

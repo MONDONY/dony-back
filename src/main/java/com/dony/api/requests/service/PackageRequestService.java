@@ -369,7 +369,8 @@ public class PackageRequestService {
             e.getContentCategory(),
             e.getTargetPriceEur(), e.isNegotiable(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            senderProfile
+            senderProfile,
+            e.getAcceptedPaymentMethods()
         );
     }
 

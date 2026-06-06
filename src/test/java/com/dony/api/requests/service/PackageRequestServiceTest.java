@@ -509,6 +509,30 @@ class PackageRequestServiceTest {
 
             assertThat(result.getContent().get(0).negotiable()).isFalse();
         }
+
+        @Test @DisplayName("acceptedPaymentMethods est propagé dans le SearchResponse")
+        void search_propagatesAcceptedPaymentMethods() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setAcceptedPaymentMethods(java.util.Set.of(
+                com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                com.dony.api.payments.cash.PaymentMethod.CASH));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20)
+            );
+
+            assertThat(result.getContent().get(0).acceptedPaymentMethods())
+                .containsExactlyInAnyOrder(
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                    com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
     }
 
     @Nested @DisplayName("findMine() — own requests pagination")
