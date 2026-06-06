@@ -2,6 +2,7 @@ package com.dony.api.payments;
 
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.BidEntity;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
@@ -34,11 +35,14 @@ public class TripCancelledEventListener {
 
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
+    private final com.dony.api.matching.BidRepository bidRepository;
 
     public TripCancelledEventListener(PaymentRepository paymentRepository,
-                                      AuditService auditService) {
+                                      AuditService auditService,
+                                      com.dony.api.matching.BidRepository bidRepository) {
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
+        this.bidRepository = bidRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -61,6 +65,16 @@ public class TripCancelledEventListener {
     private void processRefundForBid(UUID bidId) {
         Optional<PaymentEntity> paymentOpt = paymentRepository.findByBidId(bidId);
 
+        // Negotiation / dedicated-trip escrow is keyed on the negotiation thread (bid_id NULL).
+        // Fall back to the thread payment so the sender of a cancelled negotiation trip is
+        // refunded too; otherwise findByBidId returns empty and the refund is silently skipped.
+        if (paymentOpt.isEmpty()) {
+            paymentOpt = bidRepository.findById(bidId)
+                    .map(BidEntity::getLinkedNegotiationThreadId)
+                    .filter(java.util.Objects::nonNull)
+                    .flatMap(paymentRepository::findByNegotiationThreadId);
+        }
+
         if (paymentOpt.isEmpty()) {
             log.debug("No payment found for bid {} — skipping refund", bidId);
             return;
@@ -79,7 +93,7 @@ public class TripCancelledEventListener {
                     payment.setStatus(PaymentStatus.REFUNDED);
                     paymentRepository.save(payment);
                     auditService.log("PAYMENT", payment.getId(), "PAYMENT_CANCELLED_TRIP_CANCELLED",
-                            payment.getBidId(),
+                            bidId,
                             Map.of("bidId", bidId.toString(),
                                     "piId", payment.getStripePaymentIntentId(),
                                     "reason", "trip_cancelled_before_authorization"));
@@ -93,7 +107,7 @@ public class TripCancelledEventListener {
                     payment.setStatus(PaymentStatus.REFUNDED);
                     paymentRepository.save(payment);
                     auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED",
-                            payment.getBidId(),
+                            bidId,
                             Map.of("bidId", bidId.toString(),
                                     "piId", payment.getStripePaymentIntentId(),
                                     "amount", payment.getAmount().toPlainString(),

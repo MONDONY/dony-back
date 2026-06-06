@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,9 +97,16 @@ public class AnnouncementCompletionListener {
             return;
         }
 
-        boolean stillHasAcceptedBids = bidRepository.existsByAnnouncementIdAndStatus(
-                announcementId, BidStatus.ACCEPTED);
-        if (stillHasAcceptedBids) {
+        // A trip is done only when NO bid is still in flight. "In flight" =
+        // ACCEPTED (paid, awaiting handover), HANDED_OVER or IN_TRANSIT. Checking
+        // ACCEPTED alone wrongly completed a trip whose other parcels were still
+        // HANDED_OVER/IN_TRANSIT — the trip then vanished from "À venir"/"En cours"
+        // into "Historique" with a delivery still ongoing. Mirrors the in-flight
+        // set used by AnnouncementService.applyInProgressTransition.
+        boolean stillHasInFlightBids = bidRepository.existsByAnnouncementIdAndStatusIn(
+                announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT));
+        if (stillHasInFlightBids) {
             return;
         }
 

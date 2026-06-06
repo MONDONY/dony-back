@@ -892,7 +892,9 @@ class NegotiationServiceTest {
             // Locked fields derived server-side
             assertThat(savedAnn.getDepartureCity()).isEqualTo("Paris");
             assertThat(savedAnn.getArrivalCity()).isEqualTo("Dakar");
-            assertThat(savedAnn.getAvailableKg()).isEqualByComparingTo("5");
+            // Avant ouverture du surplus : aucune capacité dispo pour des tiers,
+            // tout est réservé au sender → availableKg = 0 (carte « 5/5 réservés »).
+            assertThat(savedAnn.getAvailableKg()).isEqualByComparingTo("0");
             assertThat(savedAnn.getTotalKg()).isEqualByComparingTo("5");
             assertThat(savedAnn.getTransportMode()).isEqualTo(com.dony.api.matching.TransportMode.PLANE);
             assertThat(savedAnn.getLinkedPackageRequestId()).isEqualTo(REQUEST_ID);
@@ -1048,6 +1050,7 @@ class NegotiationServiceTest {
             ann.setDepartureCity("Paris");
             ann.setArrivalCity("Dakar");
             ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5")); // request weight is 5 → linkable
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
@@ -1073,6 +1076,7 @@ class NegotiationServiceTest {
             ann.setDepartureCity("Paris");
             ann.setArrivalCity("Dakar");
             ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5")); // request weight is 5 → linkable
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
@@ -1103,6 +1107,7 @@ class NegotiationServiceTest {
             ann.setDepartureCity("Paris");
             ann.setArrivalCity("Dakar");
             ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5")); // request weight is 5 → linkable
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
@@ -1115,6 +1120,53 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("no-commission-card");
+        }
+
+        @Test
+        @DisplayName("annonce non ACTIVE (ex. COMPLETED) → 422 announcement/not-active")
+        void submitTrip_rejectsWhenAnnouncementNotActive() {
+            UUID annId = UUID.randomUUID();
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5"));
+            // Trip already finished: linking it would leave it stuck out of "À venir".
+            ann.setStatus(com.dony.api.matching.AnnouncementStatus.COMPLETED);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE);
+
+            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("announcement/not-active");
+        }
+
+        @Test
+        @DisplayName("annonce ACTIVE mais capacité insuffisante → 422 announcement/insufficient-capacity")
+        void submitTrip_rejectsWhenInsufficientCapacity() {
+            UUID annId = UUID.randomUUID();
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(TRAVELER_ID);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+            ann.setStatus(com.dony.api.matching.AnnouncementStatus.ACTIVE);
+            ann.setAvailableKg(new BigDecimal("2")); // request weight is 5 → too small
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE);
+
+            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("announcement/insufficient-capacity");
         }
     }
 
@@ -1282,6 +1334,43 @@ class NegotiationServiceTest {
         }
 
         @Test
+        @DisplayName("idempotent : thread déjà ACCEPTED avec le même PaymentIntent → succès sans 409 ni event ré-publié")
+        void finalize_alreadyAcceptedSamePaymentIntent_isIdempotent() {
+            // Race du double finalize (/checkout synchrone + webhook Stripe) : le premier a
+            // déjà accepté ce thread avec CE PaymentIntent. Le second ne doit PAS lever 409 ni
+            // re-publier l'event (sinon bid/QR/tracking en double) → retour idempotent ACCEPTED.
+            thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+            thread.setPaymentIntentId("pi_already");
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            var resp = service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_already");
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+            verify(threadRepo, never()).save(any()); // pas de re-finalize
+        }
+
+        @Test
+        @DisplayName("vrai conflit : thread REJECTED → 409 not-awaiting-payment (pas idempotent)")
+        void finalize_rejectedThread_throws409() {
+            thread.setStatus(NegotiationThreadStatus.REJECTED);
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-awaiting-payment");
+        }
+
+        @Test
         @DisplayName("trajet dédié finalisé → l'annonce liée devient surplusEligible")
         void finalize_dedicatedTrip_marksAnnouncementSurplusEligible() {
             UUID annId = UUID.randomUUID();
@@ -1343,6 +1432,85 @@ class NegotiationServiceTest {
             assertThat(publicAnn.isSurplusEligible()).isFalse();
             // not a dedicated trip → no surplus-eligibility save on the announcement
             verify(announcementRepo, never()).save(publicAnn);
+        }
+    }
+
+    @Nested
+    @DisplayName("checkout() — idempotence vs finalize webhook concurrent")
+    class CheckoutIdempotencyTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        @BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            request.setRecipientName("Fatou Diop");
+            request.setRecipientPhone("+221771234567");
+        }
+
+        @Test
+        @DisplayName("webhook gagne la course du @Version (optimistic lock) → succès ACCEPTED, pas de 409")
+        void checkout_optimisticLockLoser_returnsAcceptedSuccess() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(escrowPort.verifyNegotiationEscrow(eq(THREAD_ID), any())).thenReturn(true);
+            // Le webhook concurrent a déjà commité → notre save perd la course du @Version.
+            when(threadRepo.save(any())).thenThrow(
+                new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                    NegotiationThreadEntity.class, THREAD_ID));
+            // Relecture (getById) : finalizeInternal a déjà passé le thread à ACCEPTED en
+            // mémoire avant le save qui échoue — comme le webhook gagnant l'a fait en base.
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            var resp = service.checkout(SENDER_ID, THREAD_ID, "pi_real", null);
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+        }
+
+        @Test
+        @DisplayName("thread déjà ACCEPTED (webhook a finalisé avant la lecture) → succès idempotent")
+        void checkout_threadAlreadyAccepted_returnsSuccess() {
+            thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            var resp = service.checkout(SENDER_ID, THREAD_ID, "pi_real", null);
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            // pas de re-finalize → aucun event ré-publié (pas de bid/QR/tracking en double)
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("vrai conflit (thread REJECTED, pas une course) → 409 propagé au caller")
+        void checkout_genuineConflict_rethrows() {
+            thread.setStatus(NegotiationThreadStatus.REJECTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> service.checkout(SENDER_ID, THREAD_ID, "pi_real", null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-awaiting-payment");
         }
     }
 

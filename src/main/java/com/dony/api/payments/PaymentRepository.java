@@ -46,6 +46,15 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     @Query("UPDATE PaymentEntity p SET p.capturedAt = :now WHERE p.id = :id AND p.capturedAt IS NULL AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
     int markCapturedIfEscrow(@Param("id") UUID id, @Param("now") Instant now);
 
+    /**
+     * Atomic status transition ESCROW → REFUNDED.
+     * Returns 1 if the row was updated, 0 if it was already in a non-ESCROW state.
+     * Guards the admin manual refund against a double-refund race.
+     */
+    @Modifying
+    @Query("UPDATE PaymentEntity p SET p.status = 'REFUNDED' WHERE p.id = :id AND p.status = 'ESCROW'")
+    int markRefundedIfEscrow(@Param("id") UUID id);
+
     /** Story 9.8 — RGPD: check if the user has any active escrow payments (as sender or traveler). */
     @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM PaymentEntity p " +
            "WHERE p.bidId IN " +

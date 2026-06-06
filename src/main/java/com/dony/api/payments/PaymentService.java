@@ -783,6 +783,17 @@ public class PaymentService {
         }
 
         return paymentRepository.findByBidId(bidId)
+                // Negotiation-flow shipments (dedicated / linked trips paid via Stripe)
+                // store the escrow payment against the negotiation thread, with a NULL
+                // bid_id — the bid is materialised AFTER payment (ThreadAcceptedBidListener).
+                // Fall back to the thread payment so the sender's shipment screen shows it
+                // as paid (escrow badge) instead of the stale "Payer mon envoi" button.
+                .or(() -> {
+                    UUID threadId = bid.getLinkedNegotiationThreadId();
+                    return threadId != null
+                            ? paymentRepository.findByNegotiationThreadId(threadId)
+                            : Optional.empty();
+                })
                 .map(payment -> toPaymentResponse(payment, null));
     }
 

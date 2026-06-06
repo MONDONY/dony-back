@@ -73,6 +73,22 @@ public class NegotiationService {
         this.escrowPort = escrowPort;
     }
 
+    /**
+     * Self-reference resolved to the Spring proxy so {@link #checkout} can call
+     * the {@code @Transactional} {@link #finalizeAfterPayment} <em>through</em>
+     * the proxy: the commit-time {@link org.springframework.orm.ObjectOptimisticLockingFailureException}
+     * (raised when the concurrent webhook finalize wins the {@code version} race)
+     * then propagates back to {@code checkout}'s catch instead of bubbling raw to
+     * the controller. Lazily injected to avoid a self-referential bean cycle at
+     * startup; defaults to {@code this} so unit tests (no Spring context) work.
+     */
+    private NegotiationService self = this;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSelf(@org.springframework.context.annotation.Lazy NegotiationService self) {
+        this.self = self;
+    }
+
     @Transactional
     public NegotiationThreadResponse start(UUID travelerId, NegotiationStartRequest req) {
         UserEntity traveler = userRepository.findById(travelerId)
@@ -372,6 +388,18 @@ public class NegotiationService {
         if (!ann.getTravelerId().equals(callerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "announcement/not-yours");
         }
+        // Only an ACTIVE trip with enough remaining capacity can carry this parcel.
+        // A terminal/in-progress trip (COMPLETED/CANCELLED/IN_PROGRESS) would stay
+        // out of the traveler's "À venir" list after linking, and a full trip would
+        // overbook. Reject both here — the traveler should create a dedicated trip.
+        if (ann.getStatus() != com.dony.api.matching.AnnouncementStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/not-active");
+        }
+        if (ann.getAvailableKg().compareTo(request.getWeightKg()) < 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/insufficient-capacity");
+        }
         // Normalize city names before comparison: "Paris, France" and "Paris" both
         // reduce to "paris". Legacy announcements were stored with country suffix.
         if (!cityKey(ann.getDepartureCity()).equals(cityKey(request.getDepartureCity()))
@@ -505,7 +533,12 @@ public class NegotiationService {
         ann.setDeliveryAddressLabel(req.deliveryAddress().label());
         ann.setDeliveryLat(BigDecimal.valueOf(req.deliveryAddress().lat()));
         ann.setDeliveryLng(BigDecimal.valueOf(req.deliveryAddress().lng()));
-        ann.setAvailableKg(request.getWeightKg());
+        // Before the surplus is opened, NO capacity is available to third parties:
+        // the whole weight is reserved for the sender. availableKg must therefore be
+        // 0 (not the total weight), so the trip card shows it as fully reserved
+        // (booked = totalKg - availableKg = reservedKg) and so it stays consistent
+        // with openSurplus(), which later sets availableKg = surplusKg.
+        ann.setAvailableKg(java.math.BigDecimal.ZERO);
         ann.setTotalKg(request.getWeightKg());
         // The negotiated weight is locked (reserved) for the sender. Surplus capacity
         // stays at zero until the traveler opens it after payment (see openSurplus).
@@ -590,6 +623,58 @@ public class NegotiationService {
         return finalizeInternal(callerId, threadId, paymentIntentId, chosenMethod, true);
     }
 
+    /**
+     * Synchronous {@code POST /checkout} entry point — <strong>idempotent</strong>
+     * against the concurrent Stripe webhook finalize
+     * ({@link NegotiationPaymentListener}).
+     *
+     * <p>When the sender pays, Stripe fires {@code amount_capturable_updated}
+     * (→ webhook finalize) <em>and</em> the app calls this {@code /checkout} at
+     * nearly the same instant. Both finalize the SAME thread. The {@code @Version}
+     * guard on {@link com.dony.api.requests.entity.NegotiationThreadEntity} makes
+     * the loser's commit fail with an
+     * {@link org.springframework.orm.ObjectOptimisticLockingFailureException}; a
+     * read that lands just after the webhook flipped the status instead hits the
+     * {@code thread/not-awaiting-payment} 409. In both cases the payment actually
+     * <em>succeeded</em> — surfacing a 409 to the sender ("La ressource a été
+     * modifiée simultanément") is wrong. We resolve the race: if the thread is now
+     * {@code ACCEPTED}, return it as success.
+     *
+     * <p>The webhook path swallows the same loss silently (logs only); this is the
+     * user-facing twin. Calls {@link #finalizeAfterPayment} via {@code self} (the
+     * Spring proxy) so the transaction commits inside this method and the
+     * commit-time optimistic-lock exception is catchable here.
+     */
+    public NegotiationThreadResponse checkout(UUID callerId, UUID threadId,
+                                              String paymentIntentId, PaymentMethod chosenMethod) {
+        try {
+            return self.finalizeAfterPayment(callerId, threadId, paymentIntentId, chosenMethod);
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException race) {
+            // Concurrent webhook finalize won the version race.
+            return resolveConcurrentCheckout(callerId, threadId, race);
+        } catch (ResponseStatusException ex) {
+            // Webhook may have flipped the status before we even read it.
+            if (ex.getStatusCode() == HttpStatus.CONFLICT) {
+                return resolveConcurrentCheckout(callerId, threadId, ex);
+            }
+            throw ex;
+        }
+    }
+
+    /**
+     * Returns the finalized thread when a concurrent webhook already accepted it
+     * (idempotent success), otherwise rethrows the original conflict — the thread
+     * is in a genuinely unexpected state and the caller must hear about it.
+     */
+    private NegotiationThreadResponse resolveConcurrentCheckout(UUID callerId, UUID threadId,
+                                                                RuntimeException original) {
+        NegotiationThreadResponse current = self.getById(callerId, threadId);
+        if (current.status() == NegotiationThreadStatus.ACCEPTED) {
+            return current;
+        }
+        throw original;
+    }
+
     private NegotiationThreadResponse finalizeInternal(UUID callerId, UUID threadId,
                                                        String paymentIntentId, PaymentMethod chosenMethod,
                                                        boolean verifyEscrow) {
@@ -599,6 +684,17 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
         if (!callerId.equals(request.getSenderId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+        // Idempotent: the synchronous /checkout and the Stripe webhook both finalize the same
+        // payment. The first already accepted this thread with THIS exact PaymentIntent — return
+        // the finalized state instead of a 409. Re-finalizing would re-publish
+        // PackageRequestAcceptedEvent (duplicate bid/QR/tracking) and, on the webhook path,
+        // surfaces a "409 + UnexpectedRollbackException". A genuine bad state (REJECTED, or a
+        // different PaymentIntent) still falls through to the 409 below.
+        if (thread.getStatus() == NegotiationThreadStatus.ACCEPTED
+                && paymentIntentId != null
+                && paymentIntentId.equals(thread.getPaymentIntentId())) {
+            return buildFinalizedResponse(thread, request, callerId, paymentIntentId);
         }
         if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
@@ -706,7 +802,18 @@ public class NegotiationService {
         auditService.log("PACKAGE_REQUEST", request.getId(), "ACCEPTED", callerId,
             Map.of("threadId", thread.getId().toString()));
 
-        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+        return buildFinalizedResponse(thread, request, callerId, paymentIntentId);
+    }
+
+    /**
+     * Builds the {@link NegotiationThreadResponse} for a finalized (ACCEPTED) thread.
+     * Shared by the nominal finalize path and the idempotent early-return so both produce
+     * the exact same response shape.
+     */
+    private NegotiationThreadResponse buildFinalizedResponse(NegotiationThreadEntity thread,
+                                                             PackageRequestEntity request,
+                                                             UUID callerId, String paymentIntentId) {
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(thread.getId())
             .stream().map(this::toMessageResponse).toList();
         UserEntity finalTraveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
