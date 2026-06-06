@@ -46,6 +46,11 @@ aws:
 stripe:
   secret-key: sk_test_dummy
   webhook-secret: whsec_dummy
+  webhook:
+    # Known secret so e2e steps can forge a valid Stripe-Signature header and
+    # exercise the webhook idempotence guard (StripeWebhookIngestService.ingest).
+    payments-secret: whsec_test_payments
+    kyc-secret: whsec_test_kyc
 
 app:
   encryption:

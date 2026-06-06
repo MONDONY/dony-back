@@ -60,3 +60,17 @@ Fonctionnalité: Gestion des paiements en escrow
     Quand j'envoie un webhook Stripe avec une signature invalide
     Alors la réponse HTTP est 400
     Et le code d'erreur de la réponse est "invalid-webhook-signature"
+
+  @critical @idempotence
+  Scénario: Rejeu d'un webhook Stripe d'escrow — ingéré une seule fois
+    # Stripe rejoue ses webhooks avec le MÊME event id. La garde d'idempotence
+    # (StripeWebhookIngestService : insert-first puis dédoublonnage par event id)
+    # doit ignorer le doublon sans erreur — sinon risque de double traitement
+    # (double activation d'escrow, double capture…).
+    Etant donné aucun utilisateur n'est authentifié
+    Quand le webhook Stripe de type "payment_intent.amount_capturable_updated" et d'identifiant "evt_e2e_escrow_replay" est reçu
+    Alors la réponse HTTP est 200
+    Et l'évènement Stripe "evt_e2e_escrow_replay" a été ingéré
+    Quand le webhook Stripe de type "payment_intent.amount_capturable_updated" et d'identifiant "evt_e2e_escrow_replay" est reçu
+    Alors la réponse HTTP est 200
+    Et l'inbox Stripe contient 1 évènement

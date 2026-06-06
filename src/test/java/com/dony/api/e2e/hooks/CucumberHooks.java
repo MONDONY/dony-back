@@ -52,6 +52,7 @@ public class CucumberHooks {
                     bids,
                     announcements,
                     audit_log,
+                    stripe_event_inbox,
                     kyc_schema.kyc_verifications,
                     user_roles,
                     users
