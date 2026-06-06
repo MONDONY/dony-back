@@ -77,7 +77,7 @@ class CashCommissionServiceTest {
         lenient().when(commissionRateResolver.resolve(any())).thenReturn(new BigDecimal("0.12"));
         service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events,
                 walletService, walletTransactionRepository, auditService, commissionRateResolver,
-                negotiationThreadRepository);
+                negotiationThreadRepository, new StripeCashGatewayImpl());
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 

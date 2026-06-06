@@ -1,4 +1,8 @@
 spring:
+  main:
+    # Lets E2EMockConfig override infrastructure beans (e.g. placesRestTemplate)
+    # with stubbed versions so external-API code (Google Places) is exercised in E2E.
+    allow-bean-definition-overriding: true
   datasource:
     url: jdbc:postgresql://localhost/placeholder   # overridden by @DynamicPropertySource (Testcontainers)
     username: placeholder
@@ -46,9 +50,23 @@ stripe:
 app:
   encryption:
     key: dony-e2e-encryption-key-not-for-production-use-32-bytes
+  places:
+    api-key: test-places-key
+    allowed-countries: SN,CI,ML,CM
+    rate-limit-per-minute: 100000
+    daily-quota-autocomplete: 100000
+    daily-quota-details: 100000
+    daily-quota-reverse: 100000
+    block-when-quota-exceeded: false
 
 dony:
+  # E2E tests run with header-based auth and no real KYC/Stripe onboarding, so the
+  # enforcement gates must be off (same as application-test.yml) — otherwise every
+  # announcement/bid creation is blocked with 422. NEVER false in prod.
+  kyc:
+    enforce: false
   stripe:
+    enforce: false
     return-url: https://dony.app/payments/onboarding/return
     refresh-url: https://dony.app/payments/onboarding/refresh
   commission:

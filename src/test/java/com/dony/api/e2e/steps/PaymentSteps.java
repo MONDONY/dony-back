@@ -21,6 +21,26 @@ public class PaymentSteps extends AbstractSteps {
                 .post("/payments"));
     }
 
+    @Quand("je consulte le statut de mon compte Stripe Connect")
+    public void whenGetConnectStatus() {
+        store(asCurrentUser().get("/payments/connect/account"));
+    }
+
+    @Quand("je crée mon compte Stripe Connect")
+    public void whenCreateConnectAccount() {
+        store(asCurrentUser().post("/payments/connect/account"));
+    }
+
+    @Quand("je génère mon lien d'onboarding Stripe")
+    public void whenCreateOnboardingLink() {
+        store(asCurrentUser().post("/payments/connect/onboarding-link"));
+    }
+
+    @Quand("je rafraîchis mon compte Stripe Connect")
+    public void whenRefreshConnect() {
+        store(asCurrentUser().post("/payments/connect/refresh"));
+    }
+
     @Quand("j'envoie un webhook Stripe avec une signature invalide")
     public void whenWebhookBadSignature() {
         store(asPublic()

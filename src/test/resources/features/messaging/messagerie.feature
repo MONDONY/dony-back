@@ -13,6 +13,7 @@ Fonctionnalité: Messagerie entre expéditeur et voyageur
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-msg-1"
     Et l'offre "offre-msg-1" est sauvegardée
     Etant donné l'utilisateur "traveler-msg-001" est authentifié en tant que VOYAGEUR
+    Et le paiement de l'offre "offre-msg-1" est validé
     Et j'accepte l'offre "offre-msg-1"
     Etant donné l'utilisateur "sender-msg-001" est authentifié en tant qu'EXPÉDITEUR
     Quand j'attends que la conversation soit créée
@@ -29,6 +30,7 @@ Fonctionnalité: Messagerie entre expéditeur et voyageur
     Et je dépose une offre de 3.0 kg à 30.0 € sur l'annonce "annonce-msg-2"
     Et l'offre "offre-msg-2" est sauvegardée
     Etant donné l'utilisateur "traveler-msg-002" est authentifié en tant que VOYAGEUR
+    Et le paiement de l'offre "offre-msg-2" est validé
     Et j'accepte l'offre "offre-msg-2"
     Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "intruder-msg-001" et le téléphone "+33677100005"
     Quand j'attends que la conversation soit créée
@@ -43,6 +45,7 @@ Fonctionnalité: Messagerie entre expéditeur et voyageur
     Et je dépose une offre de 4.0 kg à 40.0 € sur l'annonce "annonce-msg-3"
     Et l'offre "offre-msg-3" est sauvegardée
     Etant donné l'utilisateur "traveler-msg-003" est authentifié en tant que VOYAGEUR
+    Et le paiement de l'offre "offre-msg-3" est validé
     Et j'accepte l'offre "offre-msg-3"
     Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "intruder-msg-002" et le téléphone "+33677100008"
     Quand j'attends que la conversation soit créée

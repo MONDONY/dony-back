@@ -60,6 +60,16 @@ public class TrackingSteps extends AbstractSteps {
         store(asCurrentUser().get("/tracking/{id}/events", ctx.getId(bidAlias)));
     }
 
+    @Quand("je consulte le QR code de l'offre {string}")
+    public void whenGetQrCode(String bidAlias) {
+        store(asCurrentUser().get("/tracking/{id}/qr-code", ctx.getId(bidAlias)));
+    }
+
+    @Quand("l'expéditeur régénère le code de confirmation de l'offre {string}")
+    public void whenRefreshCode(String bidAlias) {
+        store(asCurrentUser().post("/tracking/{id}/refresh-code", ctx.getId(bidAlias)));
+    }
+
     @Quand("je tente de scanner un événement ARRIVEE sur l'offre {string}")
     public void whenScanArrival(String bidAlias) {
         Map<String, Object> body = new HashMap<>();

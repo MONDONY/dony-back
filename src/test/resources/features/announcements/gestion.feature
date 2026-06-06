@@ -12,7 +12,7 @@ Fonctionnalité: Gestion des annonces de voyage
     Et il existe une annonce de "Paris" à "Abidjan" avec 10 kg disponibles à 6.0 €/kg sauvegardée sous "ma-annonce-2"
     Quand je consulte mes annonces
     Alors la réponse HTTP est 200
-    Et la réponse contient au moins 2 annonce(s)
+    Et la réponse contient au moins 2 annonces
 
   @happy-path
   Scénario: Consultation du détail d'une annonce

@@ -79,6 +79,7 @@ public class CashCommissionService {
     private final AuditService auditService;
     private final CommissionRateResolver commissionRateResolver;
     private final com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
+    private final StripeCashGateway stripeCashGateway;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
@@ -90,7 +91,8 @@ public class CashCommissionService {
                                  WalletTransactionRepository walletTransactionRepository,
                                  AuditService auditService,
                                  CommissionRateResolver commissionRateResolver,
-                                 com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository) {
+                                 com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository,
+                                 StripeCashGateway stripeCashGateway) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
@@ -101,6 +103,7 @@ public class CashCommissionService {
         this.auditService = auditService;
         this.commissionRateResolver = commissionRateResolver;
         this.negotiationThreadRepository = negotiationThreadRepository;
+        this.stripeCashGateway = stripeCashGateway;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -151,7 +154,7 @@ public class CashCommissionService {
         try {
             String paymentMethodId;
             if (paymentMethodOrSetupIntentId.startsWith("seti_")) {
-                SetupIntent si = SetupIntent.retrieve(paymentMethodOrSetupIntentId);
+                SetupIntent si = stripeCashGateway.retrieveSetupIntent(paymentMethodOrSetupIntentId);
                 paymentMethodId = si.getPaymentMethod();
                 if (paymentMethodId == null) {
                     throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -161,7 +164,7 @@ public class CashCommissionService {
             } else {
                 paymentMethodId = paymentMethodOrSetupIntentId;
             }
-            PaymentMethod pm = PaymentMethod.retrieve(paymentMethodId);
+            PaymentMethod pm = stripeCashGateway.retrievePaymentMethod(paymentMethodId);
             if (pm.getCard() == null) {
                 throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "invalid-payment-method", "Invalid Payment Method",
@@ -188,7 +191,7 @@ public class CashCommissionService {
                     .setUsage(SetupIntentCreateParams.Usage.OFF_SESSION)
                     .addPaymentMethodType("card")
                     .build();
-            SetupIntent intent = SetupIntent.create(params);
+            SetupIntent intent = stripeCashGateway.createSetupIntent(params);
             return new SetupCommissionMethodResponse(intent.getClientSecret());
         } catch (StripeException e) {
             throw new RuntimeException("Failed to create SetupIntent", e);
@@ -227,7 +230,7 @@ public class CashCommissionService {
 
         String pmId = user.getCommissionPaymentMethodId();
         try {
-            PaymentMethod pm = PaymentMethod.retrieve(pmId);
+            PaymentMethod pm = stripeCashGateway.retrievePaymentMethod(pmId);
             pm.detach();
         } catch (StripeException e) {
             log.warn("Stripe detach failed for PM {}, cleaning up DB anyway: {}", pmId, e.getMessage());
@@ -274,7 +277,7 @@ public class CashCommissionService {
                     .putMetadata("commission_purpose", "cash_bid")
                     .build();
             RequestOptions opts = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
-            PaymentIntent pi = PaymentIntent.create(params, opts);
+            PaymentIntent pi = stripeCashGateway.createPaymentIntent(params, opts);
 
             bid.setCommissionPaymentIntentId(pi.getId());
 
@@ -457,7 +460,7 @@ public class CashCommissionService {
                         .putMetadata("commission_purpose", "cash_negotiation")
                         .build();
                 RequestOptions opts = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
-                PaymentIntent pi = PaymentIntent.create(params, opts);
+                PaymentIntent pi = stripeCashGateway.createPaymentIntent(params, opts);
 
                 if ("succeeded".equals(pi.getStatus())) {
                     thread.setCommissionStatus(NEGO_COMMISSION_CHARGED);
@@ -598,7 +601,7 @@ public class CashCommissionService {
             return ConfirmAcceptanceResponse.fail("Aucun PaymentIntent à confirmer.");
         }
         try {
-            PaymentIntent pi = PaymentIntent.retrieve(bid.getCommissionPaymentIntentId());
+            PaymentIntent pi = stripeCashGateway.retrievePaymentIntent(bid.getCommissionPaymentIntentId());
             if ("succeeded".equals(pi.getStatus())) {
                 bid.setCommissionStatus(CommissionStatus.CHARGED);
                 bid.setCommissionChargedVia(CommissionChargedVia.CARD);
@@ -657,7 +660,7 @@ public class CashCommissionService {
             RequestOptions opts = RequestOptions.builder()
                     .setIdempotencyKey("bid_refund_" + bid.getId())
                     .build();
-            Refund.create(params, opts);
+            stripeCashGateway.createRefund(params, opts);
             bid.setCommissionStatus(CommissionStatus.REFUNDED);
             bidRepo.save(bid);
         } catch (StripeException e) {
@@ -700,7 +703,7 @@ public class CashCommissionService {
     private void ensureStripeCustomer(UserEntity user) {
         if (user.getStripeCustomerId() != null) return;
         try {
-            Customer c = Customer.create(CustomerCreateParams.builder()
+            Customer c = stripeCashGateway.createCustomer(CustomerCreateParams.builder()
                     .setEmail(user.getEmail())
                     .putMetadata("dony_user_id", user.getId().toString())
                     .build());

@@ -14,18 +14,26 @@ Fonctionnalité: Inscription des utilisateurs
     Et la réponse contient le rôle "SENDER"
 
   @happy-path @critical
-  Scénario: Inscription réussie en tant que voyageur
+  Scénario: Inscription puis activation du rôle voyageur
     Etant donné un token Firebase pour l'uid "new-traveler-001"
     Quand je m'inscris avec le téléphone "+33611000002" et le rôle "TRAVELER"
     Alors la réponse HTTP est 201
     Et la réponse contient un identifiant utilisateur
+    Et la réponse contient le rôle "SENDER"
+    Et mon KYC est vérifié et mon compte Stripe est complet
+    Quand j'active mon rôle voyageur
+    Alors la réponse HTTP est 200
     Et la réponse contient le rôle "TRAVELER"
 
   @happy-path
-  Scénario: Inscription avec les deux rôles expéditeur et voyageur
+  Scénario: Inscription expéditeur puis activation voyageur — cumul des deux rôles
     Etant donné un token Firebase pour l'uid "new-both-001"
-    Quand je m'inscris avec le téléphone "+33611000003" et les rôles "SENDER" et "TRAVELER"
+    Quand je m'inscris avec le téléphone "+33611000003" et le rôle "SENDER"
     Alors la réponse HTTP est 201
+    Et la réponse contient le rôle "SENDER"
+    Et mon KYC est vérifié et mon compte Stripe est complet
+    Quand j'active mon rôle voyageur
+    Alors la réponse HTTP est 200
     Et la réponse contient le rôle "SENDER"
     Et la réponse contient le rôle "TRAVELER"
 
@@ -37,11 +45,11 @@ Fonctionnalité: Inscription des utilisateurs
     Alors la réponse HTTP est 201
 
   @error-case
-  Scénario: Tentative d'inscription avec le rôle ADMIN — refusée
+  Scénario: Le rôle demandé à l'inscription est ignoré — aucune auto-attribution privilégiée
     Etant donné un token Firebase pour l'uid "would-be-admin-001"
     Quand je m'inscris avec le téléphone "+33611000005" et le rôle "ADMIN"
-    Alors la réponse HTTP est 403
-    Et le code d'erreur de la réponse est "forbidden-role"
+    Alors la réponse HTTP est 201
+    Et la réponse contient le rôle "SENDER"
 
   @error-case
   Scénario: Inscription avec un numéro de téléphone déjà utilisé

@@ -218,6 +218,15 @@
 			<artifactId>junit-platform-suite-engine</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Programmatic JUnit Platform launcher: lets CucumberE2ETest run the
+		     Cucumber engine and assert on its summary, so failing scenarios FAIL
+		     the Maven build (Surefire does not report tests nested under the
+		     JUnit Platform Suite engine). -->
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-launcher</artifactId>
+			<scope>test</scope>
+		</dependency>
 
 		<!-- ─── Testcontainers ───────────────────────────────────────────────── -->
 		<dependency>

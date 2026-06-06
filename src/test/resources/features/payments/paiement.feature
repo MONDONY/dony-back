@@ -25,6 +25,35 @@ Fonctionnalité: Gestion des paiements en escrow
     Quand je tente de créer un paiement pour l'offre "offre-pay-2"
     Alors la réponse HTTP est 422
 
+  @happy-path @critical
+  Scénario: Création d'un paiement séquestre pour une offre payable
+    Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-pay-003" et le téléphone "+33699000005"
+    Et le compte Stripe du voyageur "traveler-pay-003" est opérationnel
+    Et il existe une annonce de "Paris" à "Dakar" avec 20 kg disponibles à 5.0 €/kg sauvegardée sous "annonce-pay-3"
+    Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "sender-pay-003" et le téléphone "+33699000006"
+    Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-pay-3"
+    Et l'offre "offre-pay-3" est sauvegardée
+    Quand je tente de créer un paiement pour l'offre "offre-pay-3"
+    Alors la réponse HTTP est 200
+    Et la réponse contient le champ "clientSecret"
+    Quand je demande le statut de paiement de l'offre "offre-pay-3"
+    Alors la réponse HTTP est 200
+
+  @happy-path
+  Scénario: Onboarding Stripe Connect — création, lien et rafraîchissement
+    Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "connect-001" et le téléphone "+33699000007"
+    Etant donné l'utilisateur "connect-001" est authentifié en tant que VOYAGEUR
+    Quand je consulte le statut de mon compte Stripe Connect
+    Alors la réponse HTTP est 200
+    Quand je crée mon compte Stripe Connect
+    Alors la réponse HTTP est 200
+    Et la réponse contient le champ "stripeAccountId"
+    Quand je génère mon lien d'onboarding Stripe
+    Alors la réponse HTTP est 200
+    Et la réponse contient le champ "url"
+    Quand je rafraîchis mon compte Stripe Connect
+    Alors la réponse HTTP est 200
+
   @error-case
   Scénario: Webhook Stripe avec signature invalide
     Etant donné aucun utilisateur n'est authentifié

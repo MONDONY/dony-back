@@ -5,6 +5,8 @@ import io.cucumber.java.fr.Etantdonné;
 import io.cucumber.java.fr.Quand;
 import io.restassured.response.Response;
 import org.assertj.core.api.Assertions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -14,7 +16,22 @@ import java.util.UUID;
 
 public class BidSteps extends AbstractSteps {
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     // ── Given ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Simulates a completed sender payment by moving the bid to PAYMENT_ESCROWED.
+     * In production this happens via Stripe checkout/escrow; E2E has no real Stripe,
+     * and acceptBid() requires PAYMENT_ESCROWED — so this is the test bridge between
+     * bid creation and traveler acceptance.
+     */
+    @Etantdonné("le paiement de l'offre {string} est validé")
+    public void givenBidPaymentEscrowed(String bidAlias) {
+        jdbcTemplate.update("UPDATE bids SET status = 'PAYMENT_ESCROWED' WHERE id = ?",
+                ctx.getId(bidAlias));
+    }
 
     @Etantdonné("il existe une offre acceptée sur l'annonce {string} sauvegardée sous {string}")
     public void givenAcceptedBid(String announcementAlias, String bidAlias) {

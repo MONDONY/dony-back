@@ -59,6 +59,47 @@ public class AnnouncementSteps extends AbstractSteps {
         store(asCurrentUser().get("/announcements/my"));
     }
 
+    @Quand("je consulte mes corridors")
+    public void whenGetMyCorridors() {
+        store(asCurrentUser().get("/announcements/my/corridors"));
+    }
+
+    @Quand("je recherche les annonces avec un prix maximum de {decimal} euros par kg")
+    public void whenSearchByMaxPrice(Double maxPrice) {
+        store(asCurrentUser().queryParam("maxPricePerKg", maxPrice).get("/announcements"));
+    }
+
+    @Quand("je recherche les annonces avec au moins {int} kg disponibles")
+    public void whenSearchByMinKg(int minKg) {
+        store(asCurrentUser().queryParam("minAvailableKg", minKg).get("/announcements"));
+    }
+
+    @Quand("je recherche les annonces triées par prix croissant")
+    public void whenSearchSortedByPrice() {
+        store(asCurrentUser()
+                .queryParam("sortBy", "price")
+                .queryParam("sortDir", "asc")
+                .get("/announcements"));
+    }
+
+    @Quand("je recherche les annonces en mode de transport {string}")
+    public void whenSearchByTransportMode(String mode) {
+        store(asCurrentUser().queryParam("transportMode", mode).get("/announcements"));
+    }
+
+    @Quand("je recherche les annonces des voyageurs vérifiés KYC")
+    public void whenSearchKycVerifiedOnly() {
+        store(asCurrentUser().queryParam("kycVerifiedOnly", true).get("/announcements"));
+    }
+
+    @Quand("je recherche les annonces entre les dates {string} et {string}")
+    public void whenSearchByDateRange(String from, String to) {
+        store(asCurrentUser()
+                .queryParam("departureDateFrom", from)
+                .queryParam("departureDateTo", to)
+                .get("/announcements"));
+    }
+
     @Quand("je consulte le détail de l'annonce {string}")
     public void whenGetAnnouncementDetail(String alias) {
         store(asCurrentUser().get("/announcements/{id}", ctx.getId(alias)));
