@@ -111,6 +111,71 @@ class BidCheckoutServiceTest {
     }
 
     @Test
+    void rejects_checkout_on_dedicated_trip_with_surplus_not_open() {
+        // Dedicated trip (linked to a negotiation) whose surplus has NOT been opened:
+        // a third-party sender must not be able to drive an escrow against the reserved
+        // capacity. The trip is ACTIVE with availableKg == reserved weight, so only this
+        // guard stops the checkout.
+        announcement.setLinkedPackageRequestId(UUID.randomUUID());
+        announcement.setSurplusPublished(false);
+
+        assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
+            .isInstanceOf(DonyBusinessException.class)
+            .satisfies(e -> {
+                DonyBusinessException ex = (DonyBusinessException) e;
+                assertThat(ex.getStatus()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+                assertThat(ex.getErrorCode()).isEqualTo("surplus-not-open");
+            });
+        verify(bidRepository, never()).save(any());
+        verify(paymentService, never()).createEscrow(any(), anyString());
+    }
+
+    @Test
+    void allows_checkout_on_dedicated_trip_once_surplus_published() {
+        // Surplus opened by the traveler + weight ≤ availableKg → the guard lets the
+        // checkout proceed and an escrow is created.
+        announcement.setLinkedPackageRequestId(UUID.randomUUID());
+        announcement.setSurplusPublished(true);
+        announcement.setReservedKg(new BigDecimal("5.00"));
+        announcement.setAvailableKg(new BigDecimal("8.00")); // surplus = 8 kg, req weight = 2 kg
+
+        when(bidRepository.save(any())).thenAnswer(inv -> {
+            BidEntity b = inv.getArgument(0);
+            if (b.getId() == null) ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
+            return b;
+        });
+        when(paymentService.createEscrow(any(CreatePaymentRequest.class), eq("uid-sender")))
+            .thenReturn(stubPaymentResponse());
+
+        BidCheckoutResponse resp = service.checkout("uid-sender", req, httpRequest);
+
+        assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
+        verify(paymentService).createEscrow(any(CreatePaymentRequest.class), eq("uid-sender"));
+    }
+
+    @Test
+    void rejects_checkout_for_reserved_sender_on_own_dedicated_trip() {
+        // The negotiating sender already holds the reserved capacity on this dedicated
+        // trip. Even once the surplus is published, they must not be able to checkout a
+        // second parcel on the same trip (would be two shipments for one sender).
+        announcement.setLinkedPackageRequestId(UUID.randomUUID());
+        announcement.setSurplusPublished(true);
+        announcement.setReservedSenderId(sender.getId());      // this sender is the reserved one
+        announcement.setReservedKg(new BigDecimal("5.00"));
+        announcement.setAvailableKg(new BigDecimal("8.00"));   // surplus = 8 kg, req weight = 2 kg
+
+        assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
+            .isInstanceOf(DonyBusinessException.class)
+            .satisfies(e -> {
+                DonyBusinessException ex = (DonyBusinessException) e;
+                assertThat(ex.getStatus()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+                assertThat(ex.getErrorCode()).isEqualTo("reserved-sender-cannot-bid");
+            });
+        verify(bidRepository, never()).save(any());
+        verify(paymentService, never()).createEscrow(any(), anyString());
+    }
+
+    @Test
     void rejects_weight_exceeding_capacity() {
         announcement.setAvailableKg(new BigDecimal("1.00"));
         announcement.setTotalKg(new BigDecimal("1.00"));

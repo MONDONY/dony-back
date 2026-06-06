@@ -106,4 +106,50 @@ public class WalletService {
         auditService.log("wallet", wallet.getId(), "WALLET_" + type.name(),
             userId, Map.of("amount", amount.toString(), "bidId", String.valueOf(bidId)));
     }
+
+    /**
+     * Variante de débit pour les contextes SANS bid (ex. commission d'une
+     * négociation) : la référence est stockée dans {@code payment_ref} +
+     * {@code idempotency_key}, et non dans la colonne FK {@code bid_id}
+     * (qui pointe vers {@code bids}). Idempotent via {@code idempotencyKey}.
+     */
+    @Transactional(noRollbackFor = InsufficientWalletBalanceException.class)
+    public void debit(UUID userId, BigDecimal amount, WalletTransactionType type,
+                      String paymentRef, String idempotencyKey) {
+        if (idempotencyKey != null) {
+            Optional<WalletTransactionEntity> existing =
+                walletTransactionRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                log.info("Idempotent debit ignored for key={}", idempotencyKey);
+                return;
+            }
+        }
+
+        WalletAccountEntity wallet = walletAccountRepository.findByUserIdForUpdate(userId)
+            .orElseGet(() -> {
+                WalletAccountEntity w = new WalletAccountEntity();
+                w.setUserId(userId);
+                return walletAccountRepository.save(w);
+            });
+
+        if (wallet.getBalance().compareTo(amount) < 0) {
+            throw new InsufficientWalletBalanceException(wallet.getBalance(), amount);
+        }
+
+        BigDecimal newBalance = wallet.getBalance().subtract(amount);
+        wallet.setBalance(newBalance);
+        walletAccountRepository.save(wallet);
+
+        WalletTransactionEntity tx = new WalletTransactionEntity();
+        tx.setUserId(userId);
+        tx.setType(type);
+        tx.setAmount(amount.negate());
+        tx.setBalanceAfter(newBalance);
+        tx.setPaymentRef(paymentRef);
+        tx.setIdempotencyKey(idempotencyKey);
+        walletTransactionRepository.save(tx);
+
+        auditService.log("wallet", wallet.getId(), "WALLET_" + type.name(),
+            userId, Map.of("amount", amount.toString(), "paymentRef", String.valueOf(paymentRef)));
+    }
 }

@@ -4,6 +4,8 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.TransportMode;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest;
 import com.dony.api.requests.dto.PackageRequestCreateRequest;
@@ -21,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +42,7 @@ class PackageRequestServiceTest {
     @Mock private RequestsConfig config;
     @Mock private NegotiationThreadRepository threadRepository;
     @Mock private com.dony.api.city.CityRepository cityRepository;
+    @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -69,6 +73,8 @@ class PackageRequestServiceTest {
         sender = new UserEntity();
         setId(sender, SENDER_ID);
         sender.setKycStatus(KycStatus.VERIFIED);
+        // Default commission rate = 12% — lenient because only create-related tests use it
+        lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
     }
 
     // ========== Task 12: create() tests ==========
@@ -114,10 +120,9 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Paris",
                 LocalDate.now().plusDays(7), 2,
-                new BigDecimal("5"), ParcelSize.SMALL,
-                com.dony.api.matching.TransportMode.PLANE,
-                "vetements",
-                null, null, null, null, null
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE)
             );
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
@@ -142,15 +147,56 @@ class PackageRequestServiceTest {
             PackageRequestCreateRequest req = new PackageRequestCreateRequest(
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(95), 2,
-                new BigDecimal("5"), ParcelSize.SMALL,
-                com.dony.api.matching.TransportMode.PLANE,
-                "vetements",
-                null, null, null, null, null
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE)
             );
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("date-too-far");
+        }
+    }
+
+    // ========== Task 5: createAndReturnEntity() — derived size, forced PLANE, gross→net, negotiable ==========
+
+    @Nested @DisplayName("createAndReturnEntity() — avion forcé, taille dérivée, gross→net, négociable")
+    class CreateAndReturnEntityTests {
+
+        @Test @DisplayName("23kg → LARGE, transport=PLANE, net=gross/1.12, negotiable propagé")
+        void create_derivesSize_forcesAvion_storesNetFromGross() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("23"), "Médicaments", "desc",
+                new BigDecimal("39.20"), null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
+
+            assertThat(saved.getParcelSize()).isEqualTo(ParcelSize.LARGE);   // 23 kg → LARGE
+            assertThat(saved.getTransportMode()).isEqualTo(TransportMode.PLANE);
+            assertThat(saved.getTargetPriceEur()).isEqualByComparingTo("35.00"); // 39.20 / 1.12
+            assertThat(saved.isNegotiable()).isTrue();
+        }
+
+        @Test @DisplayName("budget null + non négociable → 422 target-price-required-firm")
+        void create_firmPrice_requiresBudget() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("6"), "Médicaments", null,
+                null /* pas de budget */, null, null, null,
+                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required-firm");
         }
     }
 
@@ -169,12 +215,34 @@ class PackageRequestServiceTest {
             assertThat(resp.id()).isEqualTo(entity.getId());
         }
 
-        @Test @DisplayName("autre sender, pas de thread → 403")
-        void getById_otherCallerNoThread_throws403() {
+        @Test @DisplayName("non-participant, demande OPEN → OK (consultable publiquement)")
+        void getById_nonParticipant_openRequest_returnsResponse() {
             UUID OTHER = UUID.randomUUID();
-            PackageRequestEntity entity = new PackageRequestEntity();
-            setId(entity, UUID.randomUUID());
-            entity.setSenderId(SENDER_ID);
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(false);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("non-participant, demande NEGOTIATING → OK (consultable publiquement)")
+        void getById_nonParticipant_negotiatingRequest_returnsResponse() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(false);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("non-participant, demande ACCEPTED (non listée) → 403")
+        void getById_nonParticipant_acceptedRequest_throws403() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
             when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
             when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
                 .thenReturn(false);
@@ -182,6 +250,117 @@ class PackageRequestServiceTest {
             assertThatThrownBy(() -> service.getById(OTHER, entity.getId()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("forbidden");
+        }
+
+        @Test @DisplayName("participant d'un thread, demande ACCEPTED → OK")
+        void getById_threadParticipant_acceptedRequest_returnsResponse() {
+            UUID OTHER = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(entity.getId(), OTHER))
+                .thenReturn(true);
+
+            var resp = service.getById(OTHER, entity.getId());
+            assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+    }
+
+    @Nested @DisplayName("update() — édition tant qu'aucun accord")
+    class UpdateTests {
+
+        @Test @DisplayName("OPEN → met à jour les champs, reste OPEN, audit UPDATED")
+        void update_open_updatesAndStaysOpen() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.findByPackageRequestId(entity.getId())).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
+                new BigDecimal("8"), "electronique", "desc",
+                new BigDecimal("56.00"), null, "7e", "ACI 2000",
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            var resp = service.update(SENDER_ID, entity.getId(), req);
+
+            assertThat(entity.getDepartureCity()).isEqualTo("Lyon");
+            assertThat(entity.getArrivalCity()).isEqualTo("Bamako");
+            assertThat(entity.getWeightKg()).isEqualByComparingTo("8");
+            assertThat(entity.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            // net = 56 / 1.12 = 50.00
+            assertThat(entity.getTargetPriceEur()).isEqualByComparingTo("50.00");
+            assertThat(resp.id()).isEqualTo(entity.getId());
+            verify(repository).save(entity);
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(entity.getId()),
+                eq("UPDATED"), eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("NEGOTIATING → rejette les offres OPEN et repasse OPEN")
+        void update_negotiating_rejectsOpenThreads() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(thread));
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.update(SENDER_ID, entity.getId(), validRequest());
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AUTO_REJECTED);
+            assertThat(entity.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            verify(threadRepository).save(thread);
+        }
+
+        @Test @DisplayName("ACCEPTED → 409 not-editable")
+        void update_accepted_throws409() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), validRequest()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-editable");
+        }
+
+        @Test @DisplayName("autre que le propriétaire → 403")
+        void update_notOwner_throws403() {
+            UUID other = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            assertThatThrownBy(() -> service.update(other, entity.getId(), validRequest()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("forbidden");
+        }
+
+        @Test @DisplayName("prix ferme sans budget → 422")
+        void update_firmWithoutBudget_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, null, null, null, null,
+                false, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required-firm");
+        }
+
+        @Test @DisplayName("corridor invalide (mêmes villes) → 422")
+        void update_sameCorridor_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Paris", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid-corridor");
         }
     }
 
@@ -220,7 +399,7 @@ class PackageRequestServiceTest {
 
     @Nested @DisplayName("completeDetails() — post-acceptation")
     class CompleteDetailsTests {
-        @Test @DisplayName("status ACCEPTED → renseigne adresses + recipient + disclaimer")
+        @Test @DisplayName("status ACCEPTED → renseigne recipient (name + phone + city)")
         void completeDetails_accepted_persists() {
             UUID reqId = UUID.randomUUID();
             PackageRequestEntity entity = new PackageRequestEntity();
@@ -231,18 +410,44 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "12 rue de Paris", new BigDecimal("48.85"), new BigDecimal("2.35"),
-                "5 rue de Dakar", new BigDecimal("14.69"), new BigDecimal("-17.44"),
-                "Marie", "+221771234567", new BigDecimal("100"), true
+                "Marie", "+221771234567", "Dakar"
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
 
-            assertThat(entity.getPickupAddressLabel()).isEqualTo("12 rue de Paris");
             assertThat(entity.getRecipientName()).isEqualTo("Marie");
-            assertThat(entity.getDeclaredValueEur()).isEqualByComparingTo(new BigDecimal("100"));
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
+            assertThat(entity.getRecipientCity()).isEqualTo("Dakar");
+            // The entity had no disclaimerSignedAt (bare entity), so the defensive
+            // branch signs it now using the client IP.
             assertThat(entity.getDisclaimerSignedAt()).isNotNull();
             assertThat(entity.getDisclaimerSignedIp()).isEqualTo("203.0.113.5");
+        }
+
+        @Test @DisplayName("status ACCEPTED + city null → succès, disclaimer déjà signé conservé")
+        void completeDetails_accepted_nullCity_persists() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.ACCEPTED);
+            var signedAt = java.time.LocalDateTime.now().minusDays(1);
+            entity.setDisclaimerSignedAt(signedAt); // signed at creation
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "Fatou Diop", "+221771234567", null
+            );
+
+            service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
+
+            assertThat(entity.getRecipientName()).isEqualTo("Fatou Diop");
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
+            assertThat(entity.getRecipientCity()).isNull();
+            // disclaimer was already signed at creation → not overwritten, no IP set
+            assertThat(entity.getDisclaimerSignedAt()).isEqualTo(signedAt);
+            assertThat(entity.getDisclaimerSignedIp()).isNull();
         }
 
         @Test @DisplayName("status OPEN → 409 not-yet-accepted")
@@ -255,14 +460,39 @@ class PackageRequestServiceTest {
             when(repository.findById(reqId)).thenReturn(Optional.of(entity));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "X", new BigDecimal("1"), new BigDecimal("1"),
-                "Y", new BigDecimal("1"), new BigDecimal("1"),
-                "Z", "+221771234567", new BigDecimal("100"), true
+                "Z", "+221771234567", "Dakar"
             );
 
             assertThatThrownBy(() -> service.completeDetails(SENDER_ID, reqId, req, "1.2.3.4"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not-yet-accepted");
+        }
+
+        @Test @DisplayName("thread AWAITING_PAYMENT (avant paiement) → succès même si request pas ACCEPTED")
+        void completeDetails_awaitingPaymentThread_persists() {
+            UUID reqId = UUID.randomUUID();
+            PackageRequestEntity entity = new PackageRequestEntity();
+            setId(entity, reqId);
+            entity.setSenderId(SENDER_ID);
+            entity.setStatus(PackageRequestStatus.NEGOTIATING); // pas encore ACCEPTED
+            when(repository.findById(reqId)).thenReturn(Optional.of(entity));
+            when(repository.save(any(PackageRequestEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            when(threadRepository.findByPackageRequestId(reqId))
+                .thenReturn(List.of(thread));
+
+            var req = new PackageRequestCompleteDetailsRequest(
+                "Awa", "+221770000000", "Abobo"
+            );
+
+            service.completeDetails(SENDER_ID, reqId, req, "203.0.113.9");
+
+            assertThat(entity.getRecipientName()).isEqualTo("Awa");
+            assertThat(entity.getRecipientPhone()).isEqualTo("+221770000000");
+            assertThat(entity.getRecipientCity()).isEqualTo("Abobo");
         }
     }
 
@@ -356,6 +586,51 @@ class PackageRequestServiceTest {
             assertThat(sp.totalRatings()).isEqualTo(7);
             assertThat(sp.averageRating()).isEqualTo(4.30);
             assertThat(sp.kycVerified()).isTrue();
+            // negotiable is propagated from the entity (default true)
+            assertThat(result.getContent().get(0).negotiable()).isTrue();
+        }
+
+        @Test @DisplayName("negotiable=false (demande à prix ferme) est propagé dans le SearchResponse")
+        void search_propagatesFirmPriceNegotiableFalse() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setNegotiable(false);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20)
+            );
+
+            assertThat(result.getContent().get(0).negotiable()).isFalse();
+        }
+
+        @Test @DisplayName("acceptedPaymentMethods est propagé dans le SearchResponse")
+        void search_propagatesAcceptedPaymentMethods() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setAcceptedPaymentMethods(java.util.Set.of(
+                com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                com.dony.api.payments.cash.PaymentMethod.CASH));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20)
+            );
+
+            assertThat(result.getContent().get(0).acceptedPaymentMethods())
+                .containsExactlyInAnyOrder(
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE,
+                    com.dony.api.payments.cash.PaymentMethod.CASH);
         }
     }
 
@@ -398,11 +673,10 @@ class PackageRequestServiceTest {
         return new PackageRequestCreateRequest(
             "Paris", "Dakar",
             LocalDate.now().plusDays(7), 2,
-            new BigDecimal("5"), ParcelSize.SMALL,
-            com.dony.api.matching.TransportMode.PLANE,
-            "vetements",
-            "Cadeau pour ma mère", new BigDecimal("25"), null,
-            "10e arr", "Plateau"
+            new BigDecimal("5"), "vetements",
+            "Cadeau pour ma mère", new BigDecimal("28.00"), null,
+            "10e arr", "Plateau",
+            true, EnumSet.of(PaymentMethod.STRIPE)
         );
     }
 }

@@ -1,6 +1,7 @@
 package com.dony.api.requests.entity;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,6 +37,17 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(nullable = false, length = 20)
     private NegotiationThreadStatus status;
 
+    /**
+     * Optimistic-lock guard. Serializes the AWAITING_PAYMENT → ACCEPTED finalize:
+     * the synchronous {@code /checkout} and the Stripe webhook can finalize the same
+     * thread concurrently. With this version column the loser's commit fails (version
+     * mismatch → mapped to 409) instead of re-running the finalize body and
+     * double-publishing {@code PackageRequestAcceptedEvent} (duplicate bid/QR/tracking).
+     */
+    @jakarta.persistence.Version
+    @Column(name = "version")
+    private Long version = 0L;
+
     @Column(name = "current_price_eur", nullable = false, precision = 10, scale = 2)
     private BigDecimal currentPriceEur;
 
@@ -47,6 +59,23 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     @Column(name = "payment_intent_id", length = 255)
     private String paymentIntentId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", length = 20)
+    private PaymentMethod paymentMethod;  // null until trip-linking
+
+    // Dony commission charge tracking for CASH negotiated threads.
+    // Stored as String (not the payments/cash enums) to avoid coupling the
+    // requests/ entity to the payments/ package — values mirror
+    // CommissionStatus ("CHARGED"/"FAILED") and CommissionChargedVia ("WALLET"/"CARD").
+    @Column(name = "commission_status", length = 20)
+    private String commissionStatus;
+
+    @Column(name = "commission_payment_intent_id", length = 255)
+    private String commissionPaymentIntentId;
+
+    @Column(name = "commission_charged_via", length = 20)
+    private String commissionChargedVia;
 
     // === NO-ARG CONSTRUCTOR (required by JPA) ===
 
@@ -74,6 +103,14 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public String getPaymentIntentId() { return paymentIntentId; }
 
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+
+    public String getCommissionStatus() { return commissionStatus; }
+
+    public String getCommissionPaymentIntentId() { return commissionPaymentIntentId; }
+
+    public String getCommissionChargedVia() { return commissionChargedVia; }
+
     // === SETTERS ===
 
     public void setPackageRequestId(UUID packageRequestId) { this.packageRequestId = packageRequestId; }
@@ -95,4 +132,12 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setLastActivityAt(LocalDateTime lastActivityAt) { this.lastActivityAt = lastActivityAt; }
 
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
+
+    public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public void setCommissionStatus(String commissionStatus) { this.commissionStatus = commissionStatus; }
+
+    public void setCommissionPaymentIntentId(String commissionPaymentIntentId) { this.commissionPaymentIntentId = commissionPaymentIntentId; }
+
+    public void setCommissionChargedVia(String commissionChargedVia) { this.commissionChargedVia = commissionChargedVia; }
 }

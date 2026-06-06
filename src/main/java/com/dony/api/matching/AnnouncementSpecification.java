@@ -136,6 +136,21 @@ public class AnnouncementSpecification {
     }
 
     /**
+     * Public search visibility: regular public trips PLUS dedicated trips that
+     * have opened their surplus capacity to the public (surplusPublished &&
+     * availableKg > 0). Dedicated trips without an open surplus stay hidden.
+     */
+    public static Specification<AnnouncementEntity> publicOrOpenSurplus() {
+        return (root, query, cb) -> cb.or(
+            cb.isNull(root.get("linkedPackageRequestId")),
+            cb.and(
+                cb.isTrue(root.get("surplusPublished")),
+                cb.greaterThan(root.get("availableKg"), BigDecimal.ZERO)
+            )
+        );
+    }
+
+    /**
      * Excludes announcements whose traveler is in a block relation (either direction)
      * with the viewer (the searching user). Confidentialité v2.
      * Uses two subqueries on user_blocks to avoid cross-package service injection.

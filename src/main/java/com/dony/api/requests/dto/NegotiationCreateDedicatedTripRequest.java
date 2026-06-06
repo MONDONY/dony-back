@@ -1,6 +1,7 @@
 package com.dony.api.requests.dto;
 
 import com.dony.api.matching.dto.AddressDto;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.FutureOrPresent;
@@ -42,5 +43,21 @@ public record NegotiationCreateDedicatedTripRequest(
 
         List<String> acceptedContentTypes,
 
-        List<String> refusedTypes
-) {}
+        List<String> refusedTypes,
+
+        @NotNull(message = "Le mode de paiement est obligatoire")
+        PaymentMethod paymentMethod,
+
+        // CASH uniquement : si true, le voyageur consent à payer la commission sur
+        // sa carte quand son wallet est insuffisant. Absent du JSON → false.
+        boolean useCardForCommission
+) {
+    public NegotiationCreateDedicatedTripRequest(
+            LocalDate departureDate, LocalTime departureTime, LocalTime arrivalTime,
+            AddressDto pickupAddress, AddressDto deliveryAddress, String description,
+            List<String> acceptedContentTypes, List<String> refusedTypes,
+            PaymentMethod paymentMethod) {
+        this(departureDate, departureTime, arrivalTime, pickupAddress, deliveryAddress,
+             description, acceptedContentTypes, refusedTypes, paymentMethod, false);
+    }
+}

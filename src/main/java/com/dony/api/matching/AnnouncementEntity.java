@@ -120,6 +120,30 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "linked_package_request_id")
     private UUID linkedPackageRequestId;
 
+    /**
+     * Surplus capacity (capacité excédentaire) — only meaningful for dedicated trips.
+     * reservedKg: part réservée à la négociation (immuable), 0 pour les trajets normaux.
+     * surplusEligible: la négociation est payée → le voyageur peut ouvrir le surplus.
+     * surplusPublished: le surplus est ouvert et visible dans la recherche publique.
+     */
+    @Column(name = "reserved_kg", nullable = false, precision = 5, scale = 2)
+    private BigDecimal reservedKg = BigDecimal.ZERO;
+
+    @Column(name = "surplus_eligible", nullable = false)
+    private boolean surplusEligible = false;
+
+    @Column(name = "surplus_published", nullable = false)
+    private boolean surplusPublished = false;
+
+    /**
+     * Sender « réservé » d'un trajet dédié : l'expéditeur de la négociation pour
+     * qui ce trajet a été créé. NULL pour les trajets non dédiés. Sert à empêcher
+     * ce sender de re-bidder sur le surplus de son propre trajet (il a déjà son
+     * colis réservé dessus).
+     */
+    @Column(name = "reserved_sender_id")
+    private UUID reservedSenderId;
+
     @Convert(converter = PaymentMethodSetConverter.class)
     @Column(name = "accepted_payment_methods", nullable = false)
     private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
@@ -143,6 +167,47 @@ public class AnnouncementEntity extends BaseEntity {
 
     public UUID getLinkedPackageRequestId() { return linkedPackageRequestId; }
     public void setLinkedPackageRequestId(UUID linkedPackageRequestId) { this.linkedPackageRequestId = linkedPackageRequestId; }
+
+    public BigDecimal getReservedKg() { return reservedKg; }
+    public void setReservedKg(BigDecimal reservedKg) { this.reservedKg = reservedKg; }
+    public boolean isSurplusEligible() { return surplusEligible; }
+    public void setSurplusEligible(boolean surplusEligible) { this.surplusEligible = surplusEligible; }
+    public boolean isSurplusPublished() { return surplusPublished; }
+    public void setSurplusPublished(boolean surplusPublished) { this.surplusPublished = surplusPublished; }
+
+    /**
+     * A dedicated trip (linkedPackageRequestId != null) is tied to a private
+     * negotiation: its capacity is reserved for the negotiating sender. Until the
+     * traveler explicitly opens the surplus capacity (surplusPublished == true,
+     * after the negotiating sender has paid), NO third-party sender may bid on it.
+     * <p>
+     * This guard MUST be checked in every public bid-creation entry point
+     * (cash bids via {@code BidService.createBid}, Stripe checkout via
+     * {@code BidCheckoutService.checkout}) so a third party cannot drive an escrow
+     * against the reserved capacity of a private negotiation. Centralised here so a
+     * future entry point cannot drift from the rule. Read-only, no extra dependencies.
+     */
+    public boolean isClosedToThirdPartyBids() {
+        return linkedPackageRequestId != null && !surplusPublished;
+    }
+
+    public UUID getReservedSenderId() { return reservedSenderId; }
+    public void setReservedSenderId(UUID reservedSenderId) { this.reservedSenderId = reservedSenderId; }
+
+    /**
+     * True if {@code senderId} is the negotiating sender for whom this dedicated
+     * trip was created. That sender already holds the reserved capacity (their
+     * negotiated parcel), so they must NOT be able to place an additional bid on
+     * the same trip's surplus — they would end up with two shipments on one trip.
+     * <p>
+     * Checked in every public bid-creation entry point ({@code BidService.createBid},
+     * {@code BidCheckoutService.checkout}). Deterministic: it does not depend on the
+     * negotiation bid having been materialised, so it holds even if that bid is
+     * missing or delayed. Read-only, no extra dependencies.
+     */
+    public boolean isReservedSender(UUID senderId) {
+        return reservedSenderId != null && reservedSenderId.equals(senderId);
+    }
 
     public UUID getTravelerId() { return travelerId; }
     public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }

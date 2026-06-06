@@ -1,9 +1,15 @@
 package com.dony.api.requests.service;
 
 import com.dony.api.auth.KycStatus;
+import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.payments.PriceBreakdown;
+import com.dony.api.payments.cash.CommissionProperties;
+import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.requests.CashGatePort;
+import com.dony.api.requests.NegotiationEscrowPort;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -39,6 +45,9 @@ public class NegotiationService {
     private final ApplicationEventPublisher eventPublisher;
     private final AuditService auditService;
     private final RequestsConfig config;
+    private final CommissionProperties commissionProperties;
+    private final CashGatePort cashGatePort;
+    private final NegotiationEscrowPort escrowPort;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -47,7 +56,10 @@ public class NegotiationService {
                                com.dony.api.matching.AnnouncementRepository announcementRepo,
                                ApplicationEventPublisher eventPublisher,
                                AuditService auditService,
-                               RequestsConfig config) {
+                               RequestsConfig config,
+                               CommissionProperties commissionProperties,
+                               CashGatePort cashGatePort,
+                               NegotiationEscrowPort escrowPort) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -56,6 +68,25 @@ public class NegotiationService {
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
         this.config = config;
+        this.commissionProperties = commissionProperties;
+        this.cashGatePort = cashGatePort;
+        this.escrowPort = escrowPort;
+    }
+
+    /**
+     * Self-reference resolved to the Spring proxy so {@link #checkout} can call
+     * the {@code @Transactional} {@link #finalizeAfterPayment} <em>through</em>
+     * the proxy: the commit-time {@link org.springframework.orm.ObjectOptimisticLockingFailureException}
+     * (raised when the concurrent webhook finalize wins the {@code version} race)
+     * then propagates back to {@code checkout}'s catch instead of bubbling raw to
+     * the controller. Lazily injected to avoid a self-referential bean cycle at
+     * startup; defaults to {@code this} so unit tests (no Spring context) work.
+     */
+    private NegotiationService self = this;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSelf(@org.springframework.context.annotation.Lazy NegotiationService self) {
+        this.self = self;
     }
 
     @Transactional
@@ -84,6 +115,14 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-finalized");
         }
 
+        if (!request.isNegotiable()) {
+            if (request.getTargetPriceEur() == null
+                || req.proposedPriceEur().compareTo(request.getTargetPriceEur()) != 0) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "negotiation/firm-price-must-match");
+            }
+        }
+
         if (threadRepo.findActiveByPackageRequestIdAndTravelerId(req.packageRequestId(), travelerId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/duplicate-thread");
         }
@@ -96,6 +135,13 @@ public class NegotiationService {
         long recent = threadRepo.countCreatedBy(travelerId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         if (recent >= config.threadsPerMinuteRateLimit()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "negotiation/rate-limit");
+        }
+
+        boolean canOfferAny = request.getAcceptedPaymentMethods().stream()
+            .anyMatch(m -> travelerCanOffer(traveler, m));
+        if (!canOfferAny) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-offerable");
         }
 
         NegotiationThreadEntity thread = new NegotiationThreadEntity();
@@ -147,6 +193,11 @@ public class NegotiationService {
 
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!request.isNegotiable()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "negotiation/counter-not-allowed-firm-price");
+        }
 
         UUID senderId = request.getSenderId();
         UUID travelerId = thread.getTravelerId();
@@ -311,7 +362,10 @@ public class NegotiationService {
      * Thread moves to AWAITING_PAYMENT. Sender is notified to checkout.
      */
     @Transactional
-    public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, UUID travelerAnnouncementId) {
+    public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, NegotiationSubmitTripRequest req) {
+        UUID travelerAnnouncementId = req.travelerAnnouncementId();
+        PaymentMethod paymentMethod = req.paymentMethod();
+
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         if (!callerId.equals(thread.getTravelerId())) {
@@ -323,11 +377,28 @@ public class NegotiationService {
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
+        if (!request.getAcceptedPaymentMethods().contains(paymentMethod)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-accepted-by-request");
+        }
+
         // Validate the announcement belongs to caller and matches corridor + date window
         com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(travelerAnnouncementId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "announcement/not-found"));
         if (!ann.getTravelerId().equals(callerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "announcement/not-yours");
+        }
+        // Only an ACTIVE trip with enough remaining capacity can carry this parcel.
+        // A terminal/in-progress trip (COMPLETED/CANCELLED/IN_PROGRESS) would stay
+        // out of the traveler's "À venir" list after linking, and a full trip would
+        // overbook. Reject both here — the traveler should create a dedicated trip.
+        if (ann.getStatus() != com.dony.api.matching.AnnouncementStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/not-active");
+        }
+        if (ann.getAvailableKg().compareTo(request.getWeightKg()) < 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "announcement/insufficient-capacity");
         }
         // Normalize city names before comparison: "Paris, France" and "Paris" both
         // reduce to "paris". Legacy announcements were stored with country suffix.
@@ -344,8 +415,13 @@ public class NegotiationService {
                 "announcement/date-mismatch");
         }
 
+        if (paymentMethod == PaymentMethod.CASH) {
+            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
+        }
+
         thread.setTravelerAnnouncementId(travelerAnnouncementId);
         thread.setTravelerTravelDate(annDate);
+        thread.setPaymentMethod(paymentMethod);
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -356,7 +432,8 @@ public class NegotiationService {
             thread.getCurrentPriceEur(), travelerAnnouncementId
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_LINKED", callerId,
-            Map.of("announcementId", travelerAnnouncementId.toString()));
+            Map.of("announcementId", travelerAnnouncementId.toString(),
+                   "paymentMethod", paymentMethod.name()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
@@ -366,6 +443,29 @@ public class NegotiationService {
             .map(this::buildDisplayName)
             .orElse("Expéditeur");
         return toResponse(thread, allMsgs, null, submitTraveler, request, callerId, senderName, ann);
+    }
+
+    /**
+     * Gate cash au moment de lier un trajet. Wallet d'abord par défaut ; si le
+     * wallet est insuffisant ET que le voyageur consent à un prélèvement carte
+     * ({@code useCard}), on autorise la liaison à condition qu'une carte de
+     * commission soit enregistrée. Le prélèvement réel a lieu plus tard, au
+     * finalize (wallet d'abord puis carte).
+     */
+    private void requireCashCommissionSource(UUID callerId, NegotiationThreadEntity thread, boolean useCard) {
+        if (useCard) {
+            if (!cashGatePort.hasCommissionCard(callerId)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/no-commission-card");
+            }
+            return;
+        }
+        BigDecimal commission = PriceBreakdown.fromNet(
+            thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
+        if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/traveler-insufficient-funds-cash");
+        }
     }
 
     /**
@@ -398,12 +498,21 @@ public class NegotiationService {
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
+        if (!request.getAcceptedPaymentMethods().contains(req.paymentMethod())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-accepted-by-request");
+        }
+
         // Validate the chosen date falls within the sender's tolerance window.
         java.time.LocalDate from = request.getDesiredDate().minusDays(request.getDateToleranceDays());
         java.time.LocalDate to = request.getDesiredDate().plusDays(request.getDateToleranceDays());
         if (req.departureDate().isBefore(from) || req.departureDate().isAfter(to)) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "announcement/date-mismatch");
+        }
+
+        if (req.paymentMethod() == PaymentMethod.CASH) {
+            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
         }
 
         UserEntity traveler = userRepository.findById(callerId)
@@ -424,8 +533,16 @@ public class NegotiationService {
         ann.setDeliveryAddressLabel(req.deliveryAddress().label());
         ann.setDeliveryLat(BigDecimal.valueOf(req.deliveryAddress().lat()));
         ann.setDeliveryLng(BigDecimal.valueOf(req.deliveryAddress().lng()));
-        ann.setAvailableKg(request.getWeightKg());
+        // Before the surplus is opened, NO capacity is available to third parties:
+        // the whole weight is reserved for the sender. availableKg must therefore be
+        // 0 (not the total weight), so the trip card shows it as fully reserved
+        // (booked = totalKg - availableKg = reservedKg) and so it stays consistent
+        // with openSurplus(), which later sets availableKg = surplusKg.
+        ann.setAvailableKg(java.math.BigDecimal.ZERO);
         ann.setTotalKg(request.getWeightKg());
+        // The negotiated weight is locked (reserved) for the sender. Surplus capacity
+        // stays at zero until the traveler opens it after payment (see openSurplus).
+        ann.setReservedKg(request.getWeightKg());
         // Price-per-kg is derived from the agreed total. The trip is private, so
         // this value is never displayed — but it must be > 0 to satisfy the
         // pricePerKg >= 0.01 validation on the entity column.
@@ -441,12 +558,15 @@ public class NegotiationService {
         ann.setAcceptedContentTypes(req.acceptedContentTypes() != null ? req.acceptedContentTypes() : new ArrayList<>());
         ann.setRefusedTypes(req.refusedTypes() != null ? req.refusedTypes() : new ArrayList<>());
         ann.setLinkedPackageRequestId(request.getId());
+        // Sender réservé : il ne pourra pas re-bidder sur le surplus de ce trajet.
+        ann.setReservedSenderId(request.getSenderId());
 
         com.dony.api.matching.AnnouncementEntity savedAnn = announcementRepo.save(ann);
 
         // Link the dedicated trip to the thread and transition to AWAITING_PAYMENT.
         thread.setTravelerAnnouncementId(savedAnn.getId());
         thread.setTravelerTravelDate(savedAnn.getDepartureDate());
+        thread.setPaymentMethod(req.paymentMethod());
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -458,7 +578,8 @@ public class NegotiationService {
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "DEDICATED_TRIP_CREATED", callerId,
             Map.of("announcementId", savedAnn.getId().toString(),
-                   "linkedPackageRequestId", request.getId().toString()));
+                   "linkedPackageRequestId", request.getId().toString(),
+                   "paymentMethod", req.paymentMethod().name()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
@@ -481,6 +602,82 @@ public class NegotiationService {
      */
     @Transactional
     public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId, String paymentIntentId) {
+        // Trusted webhook finalize: the PaymentIntent was already verified by the
+        // signed Stripe webhook (amount_capturable_updated) before reaching here,
+        // so no escrow re-verification is performed on this path.
+        return finalizeInternal(callerId, threadId, paymentIntentId, null, false);
+    }
+
+    /**
+     * Variante avec mode de paiement finalisé par l'expéditeur (parmi ceux
+     * acceptés par la demande). {@code chosenMethod == null} → on garde le mode
+     * déjà porté par le thread (choix du voyageur à la liaison du trajet).
+     *
+     * <p>Point d'entrée du {@code /checkout} synchrone (NON fiable) : pour les
+     * méthodes online (STRIPE…), l'escrow est vérifié auprès de Stripe via
+     * {@link NegotiationEscrowPort} avant toute finalisation.
+     */
+    @Transactional
+    public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId,
+                                                          String paymentIntentId, PaymentMethod chosenMethod) {
+        return finalizeInternal(callerId, threadId, paymentIntentId, chosenMethod, true);
+    }
+
+    /**
+     * Synchronous {@code POST /checkout} entry point — <strong>idempotent</strong>
+     * against the concurrent Stripe webhook finalize
+     * ({@link NegotiationPaymentListener}).
+     *
+     * <p>When the sender pays, Stripe fires {@code amount_capturable_updated}
+     * (→ webhook finalize) <em>and</em> the app calls this {@code /checkout} at
+     * nearly the same instant. Both finalize the SAME thread. The {@code @Version}
+     * guard on {@link com.dony.api.requests.entity.NegotiationThreadEntity} makes
+     * the loser's commit fail with an
+     * {@link org.springframework.orm.ObjectOptimisticLockingFailureException}; a
+     * read that lands just after the webhook flipped the status instead hits the
+     * {@code thread/not-awaiting-payment} 409. In both cases the payment actually
+     * <em>succeeded</em> — surfacing a 409 to the sender ("La ressource a été
+     * modifiée simultanément") is wrong. We resolve the race: if the thread is now
+     * {@code ACCEPTED}, return it as success.
+     *
+     * <p>The webhook path swallows the same loss silently (logs only); this is the
+     * user-facing twin. Calls {@link #finalizeAfterPayment} via {@code self} (the
+     * Spring proxy) so the transaction commits inside this method and the
+     * commit-time optimistic-lock exception is catchable here.
+     */
+    public NegotiationThreadResponse checkout(UUID callerId, UUID threadId,
+                                              String paymentIntentId, PaymentMethod chosenMethod) {
+        try {
+            return self.finalizeAfterPayment(callerId, threadId, paymentIntentId, chosenMethod);
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException race) {
+            // Concurrent webhook finalize won the version race.
+            return resolveConcurrentCheckout(callerId, threadId, race);
+        } catch (ResponseStatusException ex) {
+            // Webhook may have flipped the status before we even read it.
+            if (ex.getStatusCode() == HttpStatus.CONFLICT) {
+                return resolveConcurrentCheckout(callerId, threadId, ex);
+            }
+            throw ex;
+        }
+    }
+
+    /**
+     * Returns the finalized thread when a concurrent webhook already accepted it
+     * (idempotent success), otherwise rethrows the original conflict — the thread
+     * is in a genuinely unexpected state and the caller must hear about it.
+     */
+    private NegotiationThreadResponse resolveConcurrentCheckout(UUID callerId, UUID threadId,
+                                                                RuntimeException original) {
+        NegotiationThreadResponse current = self.getById(callerId, threadId);
+        if (current.status() == NegotiationThreadStatus.ACCEPTED) {
+            return current;
+        }
+        throw original;
+    }
+
+    private NegotiationThreadResponse finalizeInternal(UUID callerId, UUID threadId,
+                                                       String paymentIntentId, PaymentMethod chosenMethod,
+                                                       boolean verifyEscrow) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
@@ -488,14 +685,84 @@ public class NegotiationService {
         if (!callerId.equals(request.getSenderId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
         }
+        // Idempotent: the synchronous /checkout and the Stripe webhook both finalize the same
+        // payment. The first already accepted this thread with THIS exact PaymentIntent — return
+        // the finalized state instead of a 409. Re-finalizing would re-publish
+        // PackageRequestAcceptedEvent (duplicate bid/QR/tracking) and, on the webhook path,
+        // surfaces a "409 + UnexpectedRollbackException". A genuine bad state (REJECTED, or a
+        // different PaymentIntent) still falls through to the 409 below.
+        if (thread.getStatus() == NegotiationThreadStatus.ACCEPTED
+                && paymentIntentId != null
+                && paymentIntentId.equals(thread.getPaymentIntentId())) {
+            return buildFinalizedResponse(thread, request, callerId, paymentIntentId);
+        }
         if (thread.getStatus() != NegotiationThreadStatus.AWAITING_PAYMENT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
+        }
+
+        // Mode de paiement finalisé par l'expéditeur : validé contre les méthodes
+        // acceptées par la demande, puis appliqué AVANT la décision cash/stripe
+        // ci-dessous (sinon la commission cash serait prélevée à tort, ou pas).
+        if (chosenMethod != null && chosenMethod != thread.getPaymentMethod()) {
+            if (!request.getAcceptedPaymentMethods().contains(chosenMethod)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment-method/not-accepted");
+            }
+            // Avant de changer de méthode, on libère tout escrow Stripe en vol pour
+            // ce thread (annulation du hold carte) afin de ne pas le laisser orphelin
+            // ni prélever à tort la commission du voyageur en basculant vers CASH. Si
+            // le hold ne peut pas être libéré (déjà capturé / erreur Stripe), on
+            // refuse la bascule plutôt que de risquer un hold orphelin.
+            if (!escrowPort.releaseEscrowForMethodSwitch(threadId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "payment-method/escrow-release-failed");
+            }
+            thread.setPaymentMethod(chosenMethod);
+        }
+
+        if (request.getRecipientName() == null || request.getRecipientPhone() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/details-incomplete");
+        }
+
+        // CASH threads : prélever la commission Dony au voyageur (wallet puis carte) AVANT
+        // de finaliser. En échec → 422 et la tx @Transactional rollback : le thread reste
+        // AWAITING_PAYMENT (non finalisé). STRIPE : pas de prélèvement ici (application_fee
+        // déjà géré par PaymentService.createNegotiationEscrow).
+        if (thread.getPaymentMethod() == PaymentMethod.CASH) {
+            boolean charged = cashGatePort.chargeNegotiationCashCommission(
+                thread.getTravelerId(), request.getSenderId(), thread.getId(), thread.getCurrentPriceEur());
+            if (!charged) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "negotiation/commission-charge-failed");
+            }
+        } else if (verifyEscrow) {
+            // Online /checkout (untrusted) : ne JAMAIS faire confiance au
+            // paymentIntentId fourni par le client. On confirme auprès de Stripe
+            // qu'il s'agit d'un escrow réel et autorisé (requires_capture) lié à CE
+            // thread avant de finaliser. Ferme le bypass où un expéditeur finalisait
+            // une expédition (voyageur engagé + QR + tracking) sans avoir payé.
+            if (!escrowPort.verifyNegotiationEscrow(threadId, paymentIntentId)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment/escrow-not-verified");
+            }
         }
 
         thread.setPaymentIntentId(paymentIntentId);
         thread.setStatus(NegotiationThreadStatus.ACCEPTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+
+        // Trajet dédié → le voyageur peut désormais ouvrir sa capacité restante au public.
+        UUID annId = thread.getTravelerAnnouncementId();
+        if (annId != null) {
+            announcementRepo.findById(annId).ifPresent(ann -> {
+                if (ann.getLinkedPackageRequestId() != null) {
+                    ann.setSurplusEligible(true);
+                    announcementRepo.save(ann);
+                }
+            });
+        }
 
         request.setStatus(PackageRequestStatus.ACCEPTED);
         requestRepo.save(request);
@@ -521,7 +788,13 @@ public class NegotiationService {
             request.getWeightKg(),
             request.getDescription(),
             request.getContentCategory(),
-            paymentIntentId
+            paymentIntentId,
+            request.getRecipientName(),
+            request.getRecipientPhone(),
+            request.getDeclaredValueEur(),
+            request.getDisclaimerSignedAt(),
+            request.getDisclaimerSignedIp(),
+            thread.getPaymentMethod()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),
@@ -529,7 +802,18 @@ public class NegotiationService {
         auditService.log("PACKAGE_REQUEST", request.getId(), "ACCEPTED", callerId,
             Map.of("threadId", thread.getId().toString()));
 
-        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+        return buildFinalizedResponse(thread, request, callerId, paymentIntentId);
+    }
+
+    /**
+     * Builds the {@link NegotiationThreadResponse} for a finalized (ACCEPTED) thread.
+     * Shared by the nominal finalize path and the idempotent early-return so both produce
+     * the exact same response shape.
+     */
+    private NegotiationThreadResponse buildFinalizedResponse(NegotiationThreadEntity thread,
+                                                             PackageRequestEntity request,
+                                                             UUID callerId, String paymentIntentId) {
+        List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(thread.getId())
             .stream().map(this::toMessageResponse).toList();
         UserEntity finalTraveler = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
@@ -540,6 +824,61 @@ public class NegotiationService {
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
         return toResponse(thread, allMsgs, paymentIntentId, finalTraveler, request, callerId, senderName, linkedAnn);
+    }
+
+    /**
+     * Traveler opens the remaining (surplus) capacity of a DEDICATED trip to the
+     * public, AFTER the negotiating sender has paid (thread status ACCEPTED).
+     *
+     * <p>Capacity model: the reserved part stays locked. We reuse the public
+     * {@code availableKg}/{@code pricePerKg} columns for the surplus so the
+     * existing search / card / bid flow works unchanged:
+     * <ul>
+     *   <li>{@code availableKg = surplusKg}</li>
+     *   <li>{@code totalKg = reservedKg + surplusKg}</li>
+     *   <li>{@code pricePerKg = surplusPricePerKg}</li>
+     *   <li>{@code surplusPublished = true} (irreversible)</li>
+     * </ul>
+     *
+     * <p>Lives here (requests/) — not in matching/ — because it needs both the
+     * announcement and the negotiation thread; matching/ must never read the
+     * thread. Both repos are already injected, so no new cross-package coupling.
+     */
+    @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "announcements-search", allEntries = true)
+    public void openSurplus(UUID callerId, UUID announcementId,
+                            BigDecimal surplusKg, BigDecimal pricePerKg) {
+        com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(announcementId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "announcement/not-found"));
+        if (!callerId.equals(ann.getTravelerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-traveler");
+        }
+        if (ann.getLinkedPackageRequestId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/not-dedicated");
+        }
+        if (ann.isSurplusPublished()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "surplus/already-open");
+        }
+        if (surplusKg == null || surplusKg.compareTo(BigDecimal.ONE) < 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/invalid-kg");
+        }
+        if (pricePerKg == null || pricePerKg.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "surplus/invalid-price");
+        }
+        NegotiationThreadEntity thread = threadRepo.findByTravelerAnnouncementId(announcementId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "surplus/negotiation-not-accepted"));
+        if (thread.getStatus() != NegotiationThreadStatus.ACCEPTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "surplus/negotiation-not-accepted");
+        }
+
+        ann.setAvailableKg(surplusKg);
+        ann.setTotalKg(ann.getReservedKg().add(surplusKg));
+        ann.setPricePerKg(pricePerKg);
+        ann.setSurplusPublished(true);
+        announcementRepo.save(ann);
+
+        auditService.log("ANNOUNCEMENT", announcementId, "SURPLUS_OPENED", callerId,
+            Map.of("surplusKg", surplusKg.toPlainString(), "pricePerKg", pricePerKg.toPlainString()));
     }
 
     @Transactional
@@ -716,7 +1055,8 @@ public class NegotiationService {
             boolean lastIsTarifaire = last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.PROPOSAL
                 || last.kind() == com.dony.api.requests.entity.NegotiationMessageKind.COUNTER;
             canAccept = isMyTurn && lastIsTarifaire;
-            canCounter = isMyTurn && t.getRoundsCount() < config.maxNegotiationRounds();
+            canCounter = isMyTurn && t.getRoundsCount() < config.maxNegotiationRounds()
+                         && request.isNegotiable();
         }
         int roundsRemaining = Math.max(0, config.maxNegotiationRounds() - t.getRoundsCount().intValue());
 
@@ -736,6 +1076,10 @@ public class NegotiationService {
             );
         }
 
+        BigDecimal gross = t.getCurrentPriceEur() != null
+            ? PriceBreakdown.fromNet(t.getCurrentPriceEur(), commissionProperties.rate()).gross()
+            : null;
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -747,7 +1091,9 @@ public class NegotiationService {
             request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg(),
             senderName,
             isMyTurn, canAccept, canCounter, roundsRemaining,
-            linkedTrip
+            linkedTrip,
+            gross,
+            t.getPaymentMethod()
         );
     }
 
@@ -777,5 +1123,20 @@ public class NegotiationService {
         if (city == null) return "";
         int comma = city.indexOf(',');
         return (comma >= 0 ? city.substring(0, comma) : city).strip().toLowerCase();
+    }
+
+    /**
+     * Returns {@code true} if the traveler is technically capable of offering
+     * the given payment method.
+     * <ul>
+     *   <li>STRIPE requires a fully onboarded Stripe Connect account.</li>
+     *   <li>CASH / WAVE / ORANGE_MONEY are always available.</li>
+     * </ul>
+     */
+    private boolean travelerCanOffer(UserEntity t, PaymentMethod m) {
+        return switch (m) {
+            case STRIPE -> t.getStripeAccountStatus() == StripeAccountStatus.ONBOARDING_COMPLETE;
+            case CASH, WAVE, ORANGE_MONEY -> true;
+        };
     }
 }

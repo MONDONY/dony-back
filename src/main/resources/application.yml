@@ -151,11 +151,13 @@ dony:
     code-regeneration-cooldown-days: 30
   requests:
     max-negotiation-rounds: 5
-    thread-inactivity-hours: 48
+    thread-inactivity-hours: 72
+    awaiting-trip-hours: 24
+    awaiting-payment-hours: 24
     date-tolerance-default-days: 2
     date-tolerance-max-days: 7
     weight-kg-min: 0.5
-    weight-kg-max: 30
+    weight-kg-max: 32
     declared-value-max-eur: 500
     body-max-chars: 280
     max-open-requests-per-sender: 10

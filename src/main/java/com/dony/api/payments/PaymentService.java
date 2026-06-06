@@ -783,6 +783,17 @@ public class PaymentService {
         }
 
         return paymentRepository.findByBidId(bidId)
+                // Negotiation-flow shipments (dedicated / linked trips paid via Stripe)
+                // store the escrow payment against the negotiation thread, with a NULL
+                // bid_id — the bid is materialised AFTER payment (ThreadAcceptedBidListener).
+                // Fall back to the thread payment so the sender's shipment screen shows it
+                // as paid (escrow badge) instead of the stale "Payer mon envoi" button.
+                .or(() -> {
+                    UUID threadId = bid.getLinkedNegotiationThreadId();
+                    return threadId != null
+                            ? paymentRepository.findByNegotiationThreadId(threadId)
+                            : Optional.empty();
+                })
                 .map(payment -> toPaymentResponse(payment, null));
     }
 
@@ -879,6 +890,54 @@ public class PaymentService {
         PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
         pi.cancel();
         log.info("PaymentIntent {} cancelled", paymentIntentId);
+    }
+
+    /**
+     * Releases the in-flight Stripe escrow (if any) for a negotiation thread,
+     * canceling the PaymentIntent and marking the payment CANCELLED. Used when the
+     * sender switches the thread to another payment method (e.g. CASH) at checkout,
+     * so the Stripe card hold is not left orphaned.
+     *
+     * @return {@code true} if there is no in-flight escrow to release, or it was
+     *         released; {@code false} if a live escrow exists but Stripe refused to
+     *         cancel it (e.g. already captured) — the caller MUST then keep the
+     *         current method (do not switch).
+     */
+    public boolean cancelNegotiationEscrow(java.util.UUID threadId) {
+        if (threadId == null) {
+            return true;
+        }
+        PaymentEntity payment = paymentRepository.findByNegotiationThreadId(threadId).orElse(null);
+        if (payment == null) {
+            return true; // no escrow created for this thread
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING
+                && payment.getStatus() != PaymentStatus.ESCROW) {
+            return true; // terminal — no live hold to release
+        }
+        try {
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            // Idempotent: a PaymentIntent already 'canceled' (e.g. a prior method
+            // switch whose transaction rolled back AFTER canceling at Stripe) is a
+            // benign no-op — just sync the DB and report success. Only a genuinely
+            // uncancelable PI (captured/succeeded — a live hold) throws on cancel()
+            // below and yields false, so we never switch away from real card money.
+            if (!"canceled".equals(pi.getStatus())) {
+                pi.cancel();
+            }
+            payment.setStatus(PaymentStatus.CANCELLED);
+            paymentRepository.save(payment);
+            auditService.log("PAYMENT", payment.getId(), "NEGOTIATION_ESCROW_CANCELED", null,
+                    Map.of("piId", payment.getStripePaymentIntentId(),
+                            "reason", "payment-method-switch"));
+            log.info("Negotiation escrow released (thread={}, pi={}) for payment-method switch",
+                    threadId, payment.getStripePaymentIntentId());
+            return true;
+        } catch (StripeException e) {
+            log.warn("Could not release negotiation escrow (thread={}, pi={}): {}",
+                    threadId, payment.getStripePaymentIntentId(), e.getMessage());
+            return false; // keep the escrow rather than orphan it (PI captured/succeeded)
+        }
     }
 
     /**
@@ -1089,6 +1148,7 @@ public class PaymentService {
 
         // Idempotency: reuse existing non-failed payment for this thread
         Optional<PaymentEntity> existing = paymentRepository.findByNegotiationThreadId(threadId);
+        PaymentEntity recyclable = null; // stale row to recycle (negotiation_thread_id is UNIQUE)
         if (existing.isPresent()) {
             PaymentEntity payment = existing.get();
             if (payment.getStatus() == PaymentStatus.ESCROW
@@ -1100,18 +1160,27 @@ public class PaymentService {
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 try {
                     PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
-                    if ("requires_payment_method".equals(pi.getStatus())
-                            || "requires_confirmation".equals(pi.getStatus())) {
-                        return toPaymentResponse(payment, pi.getClientSecret());
+                    String piStatus = pi.getStatus();
+                    if ("requires_payment_method".equals(piStatus)
+                            || "requires_confirmation".equals(piStatus)) {
+                        return toPaymentResponse(payment, pi.getClientSecret()); // resume in-flight
                     }
-                    throw new DonyBusinessException(HttpStatus.CONFLICT,
-                            "payment-already-completed", "Payment Already Completed",
-                            "Le paiement pour cette négociation a déjà été effectué");
+                    if (!"canceled".equals(piStatus)) {
+                        // requires_capture / processing / succeeded → a live or used PI
+                        throw new DonyBusinessException(HttpStatus.CONFLICT,
+                                "payment-already-completed", "Payment Already Completed",
+                                "Le paiement pour cette négociation a déjà été effectué");
+                    }
+                    // canceled → stale (e.g. a rolled-back method switch); recycle below
                 } catch (StripeException e) {
-                    log.warn("Could not retrieve existing PaymentIntent for thread {}, creating new one",
+                    log.warn("Could not retrieve existing PaymentIntent for thread {}, recycling row",
                             threadId);
                 }
             }
+            // PENDING-with-canceled-PI, FAILED, REFUNDED, CANCELLED or unretrievable:
+            // recycle this row for a fresh PaymentIntent rather than inserting a second
+            // one (which would violate the UNIQUE negotiation_thread_id constraint).
+            recyclable = payment;
         }
 
         if (traveler.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE
@@ -1120,20 +1189,25 @@ public class PaymentService {
             throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
-        BigDecimal amount = amountEur.setScale(2, RoundingMode.HALF_UP);
         // Taux effectif (override voyageur/expéditeur ; min le plus favorable) — SOURCE UNIQUE.
         BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
-        BigDecimal commission = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
+        // Modèle B : amountEur = NET voyageur. L'expéditeur paie gross = net*(1+rate).
+        PriceBreakdown b = PriceBreakdown.fromNet(amountEur, rate);
 
         try {
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                    .setAmount(amountCents)
+                    .setAmount(b.grossCents())                        // gross, pas net
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     .setOnBehalfOf(traveler.getStripeAccountId())
+                    // Modèle "separate charges and transfers" (cohérent avec createEscrow) :
+                    // PAS d'application_fee_amount ni de transfer_data ici. Le gross reste sur
+                    // le solde plateforme ; à la livraison, DeliveryEventListener crée un
+                    // Transfer(net = gross - commission) vers le voyageur, la commission restant
+                    // acquise à dony. NB : Stripe rejette application_fee_amount sans
+                    // transfer_data[destination] (destination/direct charge requis).
                     .setStatementDescriptorSuffix("DONY")
                     .putMetadata("negotiation_thread_id", threadId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
@@ -1144,18 +1218,19 @@ public class PaymentService {
 
             PaymentIntent pi = PaymentIntent.create(params);
 
-            PaymentEntity payment = new PaymentEntity();
+            // Recycle a stale row when present (UNIQUE negotiation_thread_id), else insert.
+            PaymentEntity payment = (recyclable != null) ? recyclable : new PaymentEntity();
             payment.setNegotiationThreadId(threadId);
             payment.setStripePaymentIntentId(pi.getId());
-            payment.setAmount(amount);
-            payment.setCommissionAmount(commission);
+            payment.setAmount(b.gross());          // total payé par l'expéditeur (gross)
+            payment.setCommissionAmount(b.commission());
             payment.setStatus(PaymentStatus.PENDING);
             paymentRepository.save(payment);
 
             auditService.log("PAYMENT", payment.getId(), "NEGOTIATION_ESCROW_CREATED",
                     sender.getId(),
                     java.util.Map.of("threadId", threadId.toString(),
-                            "amount", amount.toString(),
+                            "amount", b.gross().toString(),
                             "stripePaymentIntentId", pi.getId()));
 
             log.info("PaymentIntent {} created for negotiation thread {} (sender={})",

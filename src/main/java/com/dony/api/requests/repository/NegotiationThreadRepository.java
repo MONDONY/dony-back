@@ -42,6 +42,13 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
 
     List<NegotiationThreadEntity> findByPackageRequestId(UUID packageRequestId);
 
+    /**
+     * The single thread that created a given dedicated trip (1:1 — one thread
+     * creates exactly one dedicated announcement). Used by {@code openSurplus}
+     * to re-check the negotiation reached ACCEPTED before opening surplus.
+     */
+    Optional<NegotiationThreadEntity> findByTravelerAnnouncementId(UUID travelerAnnouncementId);
+
     long countByTravelerIdAndStatus(UUID travelerId, NegotiationThreadStatus status);
 
     @Query("""
@@ -56,6 +63,12 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
         WHERE t.travelerId = :travelerId AND t.createdAt > :since
     """)
     long countCreatedBy(@Param("travelerId") UUID travelerId, @Param("since") LocalDateTime since);
+
+    @Query("SELECT t FROM NegotiationThreadEntity t WHERE t.status = 'AWAITING_TRIP' AND t.lastActivityAt < :cutoff")
+    List<NegotiationThreadEntity> findAwaitingTripExpired(@Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT t FROM NegotiationThreadEntity t WHERE t.status = 'AWAITING_PAYMENT' AND t.lastActivityAt < :cutoff")
+    List<NegotiationThreadEntity> findAwaitingPaymentExpired(@Param("cutoff") LocalDateTime cutoff);
 
     /**
      * All threads where the user is participant — either traveler directly,

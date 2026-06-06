@@ -56,12 +56,19 @@ public class ThreadAcceptedBidListener {
         bid.setAnnouncementId(e.travelerAnnouncementId());
         bid.setSenderId(e.senderId());
         bid.setWeightKg(e.weightKg());
-        // declaredValueEur stays null until the sender completes details.
         bid.setDescription(e.description() != null ? e.description() : e.contentCategory());
         bid.setContentCategory(e.contentCategory());
         bid.setStatus(BidStatus.ACCEPTED);
         bid.setPaymentIntentId(e.paymentIntentId());
         bid.setLinkedNegotiationThreadId(e.threadId());
+        // Recipient details + disclaimer are completed by the sender before payment,
+        // so they are carried on the event and set here at bid creation. If absent
+        // (edited afterwards), onPackageRequestDetailsCompleted re-applies them.
+        bid.setRecipientName(e.recipientName());
+        bid.setRecipientPhone(e.recipientPhone());
+        bid.setDeclaredValueEur(e.declaredValueEur());
+        bid.setDisclaimerSignedAt(e.disclaimerSignedAt());
+        bid.setDisclaimerSignedIp(e.disclaimerSignedIp());
         // Tracking artefacts generated at acceptance, mirroring BidService.acceptBid
         // so the marketplace-issued bid exposes the same QR + tracking number as a
         // classic bid (sender's "Mes envois" screen relies on these to render the
@@ -69,6 +76,17 @@ public class ThreadAcceptedBidListener {
         bid.setQrToken(UUID.randomUUID().toString());
         bid.setTrackingNumber(BidService.generateTrackingNumber());
         bid.setTrackingToken(UUID.randomUUID().toString());
+        // Carry the negotiation thread's payment method onto the materialised bid so
+        // the app shows the correct payment UI (a CASH bid must NOT prompt the sender
+        // for a Stripe payment).
+        if (e.paymentMethod() != null) {
+            bid.setPaymentMethod(e.paymentMethod());
+        }
+        if (e.paymentMethod() == com.dony.api.payments.cash.PaymentMethod.CASH) {
+            // Commission for cash negotiations is charged on the thread at finalize;
+            // mark the bid so the classic cash flow never re-charges and the UI shows "réglée".
+            bid.setCommissionStatus(com.dony.api.payments.cash.CommissionStatus.CHARGED);
+        }
 
         BidEntity saved = bidRepository.save(bid);
 

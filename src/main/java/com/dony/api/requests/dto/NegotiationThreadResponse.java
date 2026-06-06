@@ -1,5 +1,6 @@
 package com.dony.api.requests.dto;
 
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.entity.NegotiationThreadStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -26,5 +27,9 @@ public record NegotiationThreadResponse(
     boolean canCounter,
     int roundsRemaining,
     // Détails du trajet lié (null si aucun trajet lié)
-    LinkedTripSummary linkedTrip
+    LinkedTripSummary linkedTrip,
+    // Modèle B : prix brut (TTC commission) affiché à l'expéditeur
+    BigDecimal grossPriceEur,
+    // Méthode de paiement choisie pour ce thread (null jusqu'à la sélection)
+    PaymentMethod paymentMethod
 ) {}

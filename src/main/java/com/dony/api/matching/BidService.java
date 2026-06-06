@@ -151,6 +151,25 @@ public class BidService {
                     "Cette annonce n'est plus disponible");
         }
 
+        // Dedicated trip (tied to a negotiation): other senders can only bid on the
+        // surplus capacity once the traveler has opened it (after the negotiating
+        // sender paid). The weight cap is enforced by the weight-exceeds-capacity
+        // check below since availableKg == surplus once published.
+        if (announcement.isClosedToThirdPartyBids()) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "surplus-not-open",
+                    "Surplus Not Open",
+                    "La capacité supplémentaire de ce trajet n'est pas ouverte aux autres expéditeurs");
+        }
+
+        // Le sender réservé (celui pour qui le trajet dédié a été créé) a déjà son
+        // colis dessus : il ne peut pas bidder sur le surplus de son propre trajet,
+        // même une fois le surplus publié (sinon deux colis du même sender sur un trajet).
+        if (announcement.isReservedSender(sender.getId())) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "reserved-sender-cannot-bid", "Reserved Sender Cannot Bid",
+                    "Vous avez déjà un colis réservé sur ce trajet");
+        }
+
         if (announcement.getTravelerId().equals(sender.getId())) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",

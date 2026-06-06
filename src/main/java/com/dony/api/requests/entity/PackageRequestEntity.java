@@ -1,7 +1,10 @@
 package com.dony.api.requests.entity;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.payments.cash.PaymentMethod;
+import com.dony.api.payments.cash.PaymentMethodSetConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -10,6 +13,8 @@ import org.hibernate.annotations.SQLRestriction;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -65,6 +70,13 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(nullable = false, length = 20)
     private PackageRequestStatus status;
 
+    @Column(name = "negotiable", nullable = false)
+    private boolean negotiable = true;
+
+    @Convert(converter = PaymentMethodSetConverter.class)
+    @Column(name = "accepted_payment_methods", nullable = false)
+    private Set<PaymentMethod> acceptedPaymentMethods = EnumSet.of(PaymentMethod.STRIPE);
+
     // Post-acceptation fields (nullable until accepted)
     @Column(name = "pickup_address_label", length = 255)
     private String pickupAddressLabel;
@@ -89,6 +101,9 @@ public class PackageRequestEntity extends BaseEntity {
 
     @Column(name = "recipient_phone", length = 30)
     private String recipientPhone;
+
+    @Column(name = "recipient_city", length = 100)
+    private String recipientCity;
 
     @Column(name = "declared_value_eur", precision = 10, scale = 2)
     private BigDecimal declaredValueEur;
@@ -135,6 +150,10 @@ public class PackageRequestEntity extends BaseEntity {
 
     public PackageRequestStatus getStatus() { return status; }
 
+    public boolean isNegotiable() { return negotiable; }
+
+    public Set<PaymentMethod> getAcceptedPaymentMethods() { return acceptedPaymentMethods; }
+
     public String getPickupAddressLabel() { return pickupAddressLabel; }
 
     public BigDecimal getPickupLat() { return pickupLat; }
@@ -150,6 +169,8 @@ public class PackageRequestEntity extends BaseEntity {
     public String getRecipientName() { return recipientName; }
 
     public String getRecipientPhone() { return recipientPhone; }
+
+    public String getRecipientCity() { return recipientCity; }
 
     public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
 
@@ -189,6 +210,10 @@ public class PackageRequestEntity extends BaseEntity {
 
     public void setStatus(PackageRequestStatus status) { this.status = status; }
 
+    public void setNegotiable(boolean negotiable) { this.negotiable = negotiable; }
+
+    public void setAcceptedPaymentMethods(Set<PaymentMethod> acceptedPaymentMethods) { this.acceptedPaymentMethods = acceptedPaymentMethods; }
+
     public void setPickupAddressLabel(String pickupAddressLabel) { this.pickupAddressLabel = pickupAddressLabel; }
 
     public void setPickupLat(BigDecimal pickupLat) { this.pickupLat = pickupLat; }
@@ -204,6 +229,8 @@ public class PackageRequestEntity extends BaseEntity {
     public void setRecipientName(String recipientName) { this.recipientName = recipientName; }
 
     public void setRecipientPhone(String recipientPhone) { this.recipientPhone = recipientPhone; }
+
+    public void setRecipientCity(String recipientCity) { this.recipientCity = recipientCity; }
 
     public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
 

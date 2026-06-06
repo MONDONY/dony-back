@@ -168,4 +168,68 @@ class WalletServiceTest {
         // Le wallet nouvellement créé a bien été persisté (orElseGet) avant le contrôle de solde.
         verify(walletAccountRepository).save(any());
     }
+
+    @Test
+    void debitWithPaymentRef_setsPaymentRefAndIdempotencyKey_noBidId() {
+        // Overload sans bid (commission négociation) : réf dans payment_ref + idempotency_key,
+        // bid_id laissé null (pas de FK vers bids).
+        UUID userId = UUID.randomUUID();
+        WalletAccountEntity wallet = new WalletAccountEntity();
+        wallet.setUserId(userId);
+        wallet.setBalance(new BigDecimal("100.00"));
+        when(walletTransactionRepository.findByIdempotencyKey("nego_commission_wallet_t1"))
+                .thenReturn(Optional.empty());
+        when(walletAccountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(wallet));
+        when(walletAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(walletTransactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        walletService.debit(userId, new BigDecimal("12.00"),
+                WalletTransactionType.COMMISSION_DEDUCTED, "thread-1", "nego_commission_wallet_t1");
+
+        ArgumentCaptor<WalletAccountEntity> wcap = ArgumentCaptor.forClass(WalletAccountEntity.class);
+        verify(walletAccountRepository).save(wcap.capture());
+        assertThat(wcap.getValue().getBalance()).isEqualByComparingTo(new BigDecimal("88.00"));
+
+        ArgumentCaptor<WalletTransactionEntity> tcap = ArgumentCaptor.forClass(WalletTransactionEntity.class);
+        verify(walletTransactionRepository).save(tcap.capture());
+        WalletTransactionEntity tx = tcap.getValue();
+        assertThat(tx.getBidId()).isNull();
+        assertThat(tx.getPaymentRef()).isEqualTo("thread-1");
+        assertThat(tx.getIdempotencyKey()).isEqualTo("nego_commission_wallet_t1");
+        assertThat(tx.getAmount()).isEqualByComparingTo(new BigDecimal("-12.00"));
+    }
+
+    @Test
+    void debitWithPaymentRef_idempotentSkipWhenKeyExists() {
+        UUID userId = UUID.randomUUID();
+        WalletTransactionEntity existing = new WalletTransactionEntity();
+        when(walletTransactionRepository.findByIdempotencyKey("dup-key"))
+                .thenReturn(Optional.of(existing));
+
+        walletService.debit(userId, new BigDecimal("12.00"),
+                WalletTransactionType.COMMISSION_DEDUCTED, "thread-1", "dup-key");
+
+        // Aucun débit : ni lock wallet, ni save compte, ni save transaction.
+        verify(walletAccountRepository, never()).findByUserIdForUpdate(any());
+        verify(walletAccountRepository, never()).save(any());
+        verify(walletTransactionRepository, never()).save(any());
+    }
+
+    @Test
+    void debitWithPaymentRef_insufficientBalance_throws() {
+        UUID userId = UUID.randomUUID();
+        WalletAccountEntity wallet = new WalletAccountEntity();
+        wallet.setUserId(userId);
+        wallet.setBalance(new BigDecimal("5.00"));
+        when(walletTransactionRepository.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(walletAccountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(wallet));
+
+        Throwable thrown = catchThrowable(() ->
+            walletService.debit(userId, new BigDecimal("12.00"),
+                    WalletTransactionType.COMMISSION_DEDUCTED, "thread-1", "k1")
+        );
+
+        assertThat(thrown).isInstanceOf(InsufficientWalletBalanceException.class);
+        verify(walletTransactionRepository, never()).save(any());
+    }
 }

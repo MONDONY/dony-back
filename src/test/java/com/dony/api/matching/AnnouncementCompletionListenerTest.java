@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -106,7 +107,8 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(completedBid()));
         AnnouncementEntity ann = announcement(AnnouncementStatus.ACTIVE);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(false);
 
         listener.onDeliveryConfirmed(deliveryEvent());
@@ -127,12 +129,33 @@ class AnnouncementCompletionListenerTest {
     }
 
     @Test
-    @DisplayName("il reste un bid ACCEPTED → annonce inchangée")
+    @DisplayName("régression : plus aucun ACCEPTED mais un colis encore HANDED_OVER/IN_TRANSIT → annonce NON complétée")
+    void otherInTransitBidRemains_keepsStatus() {
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(completedBid()));
+        AnnouncementEntity ann = announcement(AnnouncementStatus.IN_PROGRESS);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+        // Aucun ACCEPTED ne reste, mais un colis est encore en vol (HANDED_OVER/IN_TRANSIT).
+        // L'ancien code (qui ne testait que ACCEPTED) complétait le trajet à tort → Historique
+        // alors qu'une livraison était en cours.
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
+                .thenReturn(true);
+
+        listener.onDeliveryConfirmed(deliveryEvent());
+
+        assertThat(ann.getStatus()).isEqualTo(AnnouncementStatus.IN_PROGRESS);
+        verify(announcementRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("il reste un bid en vol (ACCEPTED/HANDED_OVER/IN_TRANSIT) → annonce inchangée")
     void otherAcceptedBidsRemain_keepsStatus() {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(completedBid()));
         AnnouncementEntity ann = announcement(AnnouncementStatus.FULL);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(true);
 
         listener.onDeliveryConfirmed(deliveryEvent());
@@ -153,7 +176,7 @@ class AnnouncementCompletionListenerTest {
 
         verify(announcementRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
-        verify(bidRepository, never()).existsByAnnouncementIdAndStatus(any(), any());
+        verify(bidRepository, never()).existsByAnnouncementIdAndStatusIn(any(), any());
     }
 
     @Test
@@ -201,7 +224,8 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(noShowBid()));
         AnnouncementEntity ann = announcement(AnnouncementStatus.IN_PROGRESS);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(false);
 
         listener.onVoyageurNoShow(noShowEvent());
@@ -216,7 +240,8 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(noShowBid()));
         AnnouncementEntity ann = announcement(AnnouncementStatus.ACTIVE);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(true);
 
         listener.onVoyageurNoShow(noShowEvent());
@@ -233,7 +258,8 @@ class AnnouncementCompletionListenerTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(refusedBid()));
         AnnouncementEntity ann = announcement(AnnouncementStatus.IN_PROGRESS);
         when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(bidRepository.existsByAnnouncementIdAndStatus(announcementId, BidStatus.ACCEPTED))
+        when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
                 .thenReturn(false);
 
         listener.onParcelRefused(refusedEvent());

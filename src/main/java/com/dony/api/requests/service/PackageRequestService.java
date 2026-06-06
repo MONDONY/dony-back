@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -19,6 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dony.api.payments.PriceBreakdown;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -36,6 +40,7 @@ public class PackageRequestService {
     private final RequestsConfig config;
     private final NegotiationThreadRepository threadRepository;
     private final com.dony.api.city.CityRepository cityRepository;
+    private final CommissionProperties commissionProperties;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -43,7 +48,8 @@ public class PackageRequestService {
                                   AuditService auditService,
                                   RequestsConfig config,
                                   NegotiationThreadRepository threadRepository,
-                                  com.dony.api.city.CityRepository cityRepository) {
+                                  com.dony.api.city.CityRepository cityRepository,
+                                  CommissionProperties commissionProperties) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -51,17 +57,41 @@ public class PackageRequestService {
         this.config = config;
         this.threadRepository = threadRepository;
         this.cityRepository = cityRepository;
+        this.commissionProperties = commissionProperties;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
 
     @Transactional
     public PackageRequestResponse create(UUID senderId, PackageRequestCreateRequest req) {
+        return toResponse(createAndReturnEntity(senderId, req));
+    }
+
+    /**
+     * Core creation logic returning the saved entity directly.
+     * Used by {@link #create} and by tests that need to assert entity-level fields.
+     *
+     * <p>Business rules applied here:
+     * <ul>
+     *   <li>Transport mode is always {@code PLANE} (avion-only).</li>
+     *   <li>{@link ParcelSize} is derived from {@code weightKg} via
+     *       {@link ParcelSize#fromWeightKg}.</li>
+     *   <li>The caller supplies a <em>gross</em> budget (including the 12 % commission).
+     *       We store the <em>net</em> price: {@code net = gross / (1 + rate)}.</li>
+     *   <li>If {@code !negotiable}, a budget is mandatory (HTTP 422 otherwise).</li>
+     * </ul>
+     */
+    @Transactional
+    public PackageRequestEntity createAndReturnEntity(UUID senderId, PackageRequestCreateRequest req) {
         UserEntity sender = userRepository.findById(senderId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
 
         if (sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
+        }
+        if (!req.negotiable() && req.totalBudgetEur() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/target-price-required-firm");
         }
         if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
@@ -75,6 +105,13 @@ public class PackageRequestService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
         }
 
+        // gross → net conversion: net = gross / (1 + commissionRate)
+        BigDecimal netTarget = null;
+        if (req.totalBudgetEur() != null) {
+            BigDecimal divisor = BigDecimal.ONE.add(commissionProperties.rate());
+            netTarget = req.totalBudgetEur().divide(divisor, 2, RoundingMode.HALF_UP);
+        }
+
         PackageRequestEntity entity = new PackageRequestEntity();
         entity.setSenderId(senderId);
         entity.setDepartureCity(req.departureCity());
@@ -82,15 +119,20 @@ public class PackageRequestService {
         entity.setDesiredDate(req.desiredDate());
         entity.setDateToleranceDays((short) req.dateToleranceDays());
         entity.setWeightKg(req.weightKg());
-        entity.setParcelSize(req.parcelSize());
-        entity.setTransportMode(req.transportMode());
+        entity.setParcelSize(ParcelSize.fromWeightKg(req.weightKg()));
+        entity.setTransportMode(com.dony.api.matching.TransportMode.PLANE);
         entity.setContentCategory(req.contentCategory());
         entity.setDescription(req.description());
-        entity.setTargetPriceEur(req.targetPriceEur());
+        entity.setTargetPriceEur(netTarget);
         entity.setPhotoUrl(req.photoUrl());
         entity.setPickupNeighborhood(req.pickupNeighborhood());
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
+        entity.setNegotiable(req.negotiable());
+        entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
         entity.setStatus(PackageRequestStatus.OPEN);
+        // The customs disclaimer is auto-accepted at publication; the sender
+        // approves it implicitly when creating (publishing) the request.
+        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         PackageRequestEntity saved = repository.save(entity);
 
@@ -99,6 +141,79 @@ public class PackageRequestService {
             saved.getArrivalCity(), saved.getDesiredDate()
         ));
         auditService.log("PACKAGE_REQUEST", saved.getId(), "CREATED", senderId,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return saved;
+    }
+
+    // ─── update ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Modifie une demande tant qu'aucun accord n'a été conclu avec un voyageur
+     * (statut {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
+     * terminée → 409 {@code request/not-editable}.
+     *
+     * <p>Les termes de la demande changent : toute offre en cours ({@code OPEN})
+     * est automatiquement rejetée ({@code AUTO_REJECTED}) — les voyageurs devront
+     * re-proposer sur les nouveaux termes — et la demande repasse {@code OPEN}.
+     * Mêmes validations métier que la création (corridor, date, budget si ferme).
+     */
+    @Transactional
+    public PackageRequestResponse update(UUID callerUid, UUID requestId, PackageRequestCreateRequest req) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() != PackageRequestStatus.OPEN
+            && entity.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
+        }
+        if (!req.negotiable() && req.totalBudgetEur() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/target-price-required-firm");
+        }
+        if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
+        }
+        if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
+        }
+
+        BigDecimal netTarget = null;
+        if (req.totalBudgetEur() != null) {
+            BigDecimal divisor = BigDecimal.ONE.add(commissionProperties.rate());
+            netTarget = req.totalBudgetEur().divide(divisor, 2, RoundingMode.HALF_UP);
+        }
+
+        // Les termes changent → rejeter les offres en cours ; la demande repasse OPEN.
+        threadRepository.findByPackageRequestId(requestId).forEach(t -> {
+            if (t.getStatus() == NegotiationThreadStatus.OPEN) {
+                t.setStatus(NegotiationThreadStatus.AUTO_REJECTED);
+                threadRepository.save(t);
+            }
+        });
+
+        entity.setDepartureCity(req.departureCity());
+        entity.setArrivalCity(req.arrivalCity());
+        entity.setDesiredDate(req.desiredDate());
+        entity.setDateToleranceDays((short) req.dateToleranceDays());
+        entity.setWeightKg(req.weightKg());
+        entity.setParcelSize(ParcelSize.fromWeightKg(req.weightKg()));
+        entity.setContentCategory(req.contentCategory());
+        entity.setDescription(req.description());
+        entity.setTargetPriceEur(netTarget);
+        entity.setPhotoUrl(req.photoUrl());
+        entity.setPickupNeighborhood(req.pickupNeighborhood());
+        entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
+        entity.setNegotiable(req.negotiable());
+        entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
+        entity.setStatus(PackageRequestStatus.OPEN);
+
+        PackageRequestEntity saved = repository.save(entity);
+
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "UPDATED", callerUid,
             Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
 
         return toResponse(saved);
@@ -114,8 +229,16 @@ public class PackageRequestService {
         boolean isOwner = entity.getSenderId().equals(callerUid);
         boolean isThreadParticipant = threadRepository
             .existsByPackageRequestIdAndTravelerId(requestId, callerUid);
+        // Les demandes publiquement listées en recherche (OPEN / NEGOTIATING)
+        // sont consultables par n'importe quel voyageur : il doit pouvoir voir
+        // le détail pour décider de faire une offre. Le DTO ne contient aucune
+        // PII (aucune info destinataire) et les threads/messages restent privés
+        // (endpoint dédié). Dès que la demande est ACCEPTED/terminée, l'accès
+        // est de nouveau restreint au propriétaire et aux participants d'un thread.
+        boolean isPubliclyListed = entity.getStatus() == PackageRequestStatus.OPEN
+            || entity.getStatus() == PackageRequestStatus.NEGOTIATING;
 
-        if (!isOwner && !isThreadParticipant) {
+        if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
         return toResponse(entity);
@@ -172,30 +295,35 @@ public class PackageRequestService {
         if (!entity.getSenderId().equals(callerUid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        if (entity.getStatus() != PackageRequestStatus.ACCEPTED) {
+        // Les détails peuvent être renseignés dès qu'un trajet est lié (thread
+        // AWAITING_PAYMENT — juste avant le paiement, conformément au flux de
+        // négociation) OU après acceptation complète (flux post-paiement « Mes envois »).
+        boolean readyForDetails = entity.getStatus() == PackageRequestStatus.ACCEPTED
+            || threadRepository.findByPackageRequestId(requestId).stream()
+                .anyMatch(t -> t.getStatus()
+                    == com.dony.api.requests.entity.NegotiationThreadStatus.AWAITING_PAYMENT);
+        if (!readyForDetails) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-yet-accepted");
         }
-        if (!req.disclaimerSigned()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/disclaimer-not-signed");
-        }
 
-        entity.setPickupAddressLabel(req.pickupAddressLabel());
-        entity.setPickupLat(req.pickupLat());
-        entity.setPickupLng(req.pickupLng());
-        entity.setDeliveryAddressLabel(req.deliveryAddressLabel());
-        entity.setDeliveryLat(req.deliveryLat());
-        entity.setDeliveryLng(req.deliveryLng());
         entity.setRecipientName(req.recipientName());
         entity.setRecipientPhone(req.recipientPhone());
-        entity.setDeclaredValueEur(req.declaredValueEur());
-        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
-        entity.setDisclaimerSignedIp(clientIp);
+        entity.setRecipientCity(req.recipientCity());
+        // The disclaimer is normally signed at creation; set it defensively here
+        // for legacy requests created before this behaviour existed.
+        if (entity.getDisclaimerSignedAt() == null) {
+            entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+            entity.setDisclaimerSignedIp(clientIp);
+        }
 
         PackageRequestEntity saved = repository.save(entity);
 
-        auditService.log("PACKAGE_REQUEST", requestId, "DETAILS_COMPLETED", callerUid,
-            Map.of("recipient", req.recipientName(),
-                   "declaredValue", req.declaredValueEur().toString()));
+        Map<String, Object> auditPayload = new java.util.HashMap<>();
+        auditPayload.put("recipient", req.recipientName());
+        if (req.recipientCity() != null) {
+            auditPayload.put("city", req.recipientCity());
+        }
+        auditService.log("PACKAGE_REQUEST", requestId, "DETAILS_COMPLETED", callerUid, auditPayload);
 
         // Propagate to the marketplace-issued bid (if any) via the matching/
         // listener so "Mes envois" stays in sync with the package_request data.
@@ -210,7 +338,7 @@ public class PackageRequestService {
                     callerUid,
                     req.recipientName(),
                     req.recipientPhone(),
-                    req.declaredValueEur(),
+                    saved.getDeclaredValueEur(),
                     saved.getDisclaimerSignedAt(),
                     saved.getDisclaimerSignedIp()
                 )));
@@ -273,6 +401,9 @@ public class PackageRequestService {
     // ─── Mappers ─────────────────────────────────────────────────────────────────
 
     PackageRequestResponse toResponse(PackageRequestEntity e) {
+        BigDecimal grossPriceEur = e.getTargetPriceEur() != null
+            ? PriceBreakdown.fromNet(e.getTargetPriceEur(), commissionProperties.rate()).gross()
+            : null;
         return new PackageRequestResponse(
             e.getId(), e.getSenderId(),
             e.getDepartureCity(), e.getArrivalCity(),
@@ -281,7 +412,10 @@ public class PackageRequestService {
             e.getContentCategory(),
             e.getDescription(), e.getTargetPriceEur(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            e.getStatus(), e.getCreatedAt()
+            e.getStatus(), e.getCreatedAt(),
+            e.isNegotiable(),
+            e.getAcceptedPaymentMethods(),
+            grossPriceEur
         );
     }
 
@@ -306,9 +440,10 @@ public class PackageRequestService {
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
             e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
             e.getContentCategory(),
-            e.getTargetPriceEur(), e.getPhotoUrl(),
+            e.getTargetPriceEur(), e.isNegotiable(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            senderProfile
+            senderProfile,
+            e.getAcceptedPaymentMethods()
         );
     }
 

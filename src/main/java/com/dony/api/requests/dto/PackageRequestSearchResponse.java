@@ -1,9 +1,11 @@
 package com.dony.api.requests.dto;
 
 import com.dony.api.matching.TransportMode;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.entity.ParcelSize;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.UUID;
 
 public record PackageRequestSearchResponse(
@@ -15,9 +17,10 @@ public record PackageRequestSearchResponse(
     BigDecimal weightKg, ParcelSize parcelSize,
     TransportMode transportMode,
     String contentCategory,
-    BigDecimal targetPriceEur, String photoUrl,
+    BigDecimal targetPriceEur, boolean negotiable, String photoUrl,
     String pickupNeighborhood, String deliveryNeighborhood,
-    SenderPublicProfile sender
+    SenderPublicProfile sender,
+    Set<PaymentMethod> acceptedPaymentMethods
 ) {
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified) {}
 }

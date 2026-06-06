@@ -82,6 +82,24 @@ public class BidCheckoutService {
                 "Cette annonce n'est plus disponible");
         }
 
+        // Dedicated trip (tied to a negotiation): a fresh dedicated trip is ACTIVE with
+        // availableKg == the negotiating sender's reserved weight. Without this guard a
+        // third-party sender could drive a Stripe escrow against that reserved capacity.
+        // Other senders may only checkout against the surplus once the traveler opens it.
+        if (announcement.isClosedToThirdPartyBids()) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "surplus-not-open",
+                "Surplus Not Open",
+                "La capacité supplémentaire de ce trajet n'est pas ouverte aux autres expéditeurs");
+        }
+
+        // Le sender réservé a déjà son colis sur ce trajet dédié : il ne peut pas
+        // ouvrir un escrow sur le surplus de son propre trajet (deux colis sinon).
+        if (announcement.isReservedSender(sender.getId())) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                "reserved-sender-cannot-bid", "Reserved Sender Cannot Bid",
+                "Vous avez déjà un colis réservé sur ce trajet");
+        }
+
         if (announcement.getTravelerId().equals(sender.getId())) {
             throw new DonyBusinessException(HttpStatus.CONFLICT,
                 "cannot-bid-own-announcement", "Cannot Bid Own Announcement",

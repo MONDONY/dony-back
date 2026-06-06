@@ -78,6 +78,8 @@ dony:
   requests:
     max-negotiation-rounds: 3
     thread-inactivity-hours: 1
+    awaiting-trip-hours: 24
+    awaiting-payment-hours: 24
     auto-expire-check-cron: "-"
   mobilemoney:
     wave:

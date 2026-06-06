@@ -64,6 +64,16 @@ public class PackageRequestController {
         return service.getById(requireUserId(), id);
     }
 
+    /** Sender edits a request while no agreement is reached (OPEN/NEGOTIATING). */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('SENDER')")
+    public PackageRequestResponse update(
+            @PathVariable UUID id,
+            @RequestBody @Valid PackageRequestCreateRequest req
+    ) {
+        return service.update(requireUserId(), id, req);
+    }
+
     @GetMapping("/{id}/threads")
     @PreAuthorize("hasRole('SENDER')")
     public java.util.List<com.dony.api.requests.dto.NegotiationThreadResponse> listThreads(@PathVariable UUID id) {

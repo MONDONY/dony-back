@@ -110,7 +110,7 @@ public class AnnouncementService {
                         .orElse(null);
 
         Specification<AnnouncementEntity> spec = AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE)
-                .and(AnnouncementSpecification.publicOnly());
+                .and(AnnouncementSpecification.publicOrOpenSurplus());
 
         if (viewerId != null)
             spec = spec.and(AnnouncementSpecification.notBlockedBy(viewerId));
@@ -521,7 +521,10 @@ public class AnnouncementService {
                 announcement.getCreatedAt(),
                 announcement.getUpdatedAt(),
                 announcement.getPricingMode(),
-                gridItems
+                gridItems,
+                announcement.getReservedKg(),
+                announcement.isSurplusEligible(),
+                announcement.isSurplusPublished()
         );
     }
 
@@ -646,7 +649,10 @@ public class AnnouncementService {
                 saved.getCreatedAt(),
                 saved.getUpdatedAt(),
                 saved.getPricingMode(),
-                updatedGridItems
+                updatedGridItems,
+                saved.getReservedKg(),
+                saved.isSurplusEligible(),
+                saved.isSurplusPublished()
         );
     }
 
@@ -751,7 +757,10 @@ public class AnnouncementService {
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 entity.getPricingMode(),
-                gridItems
+                gridItems,
+                entity.getReservedKg(),
+                entity.isSurplusEligible(),
+                entity.isSurplusPublished()
         );
     }
 

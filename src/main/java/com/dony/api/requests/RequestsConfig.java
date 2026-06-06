@@ -7,6 +7,8 @@ import java.math.BigDecimal;
 public record RequestsConfig(
     int maxNegotiationRounds,
     int threadInactivityHours,
+    int awaitingTripHours,
+    int awaitingPaymentHours,
     int dateToleranceDefaultDays,
     int dateToleranceMaxDays,
     BigDecimal weightKgMin,
