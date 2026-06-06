@@ -1,27 +1,23 @@
 package com.dony.api.requests.service;
 
-import com.dony.api.common.AuditService;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.entity.NegotiationThreadEntity;
 import com.dony.api.requests.entity.NegotiationThreadStatus;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.entity.PackageRequestStatus;
-import com.dony.api.requests.event.NegotiationExpiredEvent;
-import com.dony.api.requests.event.PackageRequestExpiredEvent;
 import com.dony.api.requests.repository.NegotiationThreadRepository;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -30,8 +26,7 @@ class ExpirationSchedulerTest {
 
     @Mock private PackageRequestRepository requestRepo;
     @Mock private NegotiationThreadRepository threadRepo;
-    @Mock private ApplicationEventPublisher eventPublisher;
-    @Mock private AuditService auditService;
+    @Mock private NegotiationExpiryRunner runner;
     @Mock private RequestsConfig config;
 
     @InjectMocks private ExpirationScheduler scheduler;
@@ -46,23 +41,12 @@ class ExpirationSchedulerTest {
         }
     }
 
-    @Test
-    @DisplayName("requests passé desired_date → EXPIRED + event + audit")
-    void expireRequests_marksAndPublishes() {
-        PackageRequestEntity pastReq = new PackageRequestEntity();
-        pastReq.setSenderId(UUID.randomUUID());
-        pastReq.setStatus(PackageRequestStatus.OPEN);
-        setId(pastReq, UUID.randomUUID());
-
-        when(requestRepo.findExpired(any(LocalDate.class))).thenReturn(List.of(pastReq));
-
-        scheduler.expireRequests();
-
-        assertThat(pastReq.getStatus()).isEqualTo(PackageRequestStatus.EXPIRED);
-        verify(requestRepo).save(pastReq);
-        verify(eventPublisher).publishEvent(any(PackageRequestExpiredEvent.class));
-        verify(auditService).log(eq("PACKAGE_REQUEST"), any(UUID.class), eq("EXPIRED"),
-            isNull(), anyMap());
+    private PackageRequestEntity request(PackageRequestStatus status) {
+        PackageRequestEntity r = new PackageRequestEntity();
+        r.setSenderId(UUID.randomUUID());
+        r.setStatus(status);
+        setId(r, UUID.randomUUID());
+        return r;
     }
 
     private NegotiationThreadEntity thread(NegotiationThreadStatus status) {
@@ -74,62 +58,77 @@ class ExpirationSchedulerTest {
         return t;
     }
 
-    @Test
-    @DisplayName("threads inactifs → EXPIRED + event + audit")
-    void expireThreads_marksAndPublishes() {
+    private void stubAllThreadFindersEmpty() {
         when(config.threadInactivityHours()).thenReturn(48);
         when(config.awaitingTripHours()).thenReturn(24);
         when(config.awaitingPaymentHours()).thenReturn(24);
-
-        NegotiationThreadEntity openThread = thread(NegotiationThreadStatus.OPEN);
-
-        when(threadRepo.findInactive(any(LocalDateTime.class))).thenReturn(List.of(openThread));
+        when(threadRepo.findInactive(any(LocalDateTime.class))).thenReturn(List.of());
         when(threadRepo.findAwaitingTripExpired(any(LocalDateTime.class))).thenReturn(List.of());
         when(threadRepo.findAwaitingPaymentExpired(any(LocalDateTime.class))).thenReturn(List.of());
-
-        scheduler.expireThreads();
-
-        assertThat(openThread.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
-        verify(threadRepo).save(openThread);
-        verify(eventPublisher).publishEvent(any(NegotiationExpiredEvent.class));
-        verify(auditService).log(eq("NEGOTIATION_THREAD"), any(UUID.class), eq("EXPIRED"),
-            isNull(), anyMap());
     }
 
     @Test
-    @DisplayName("AWAITING_TRIP et AWAITING_PAYMENT dépassés → EXPIRED + events + audits")
-    void expireThreads_marksAwaitingTripAndPaymentExpired() {
-        when(config.threadInactivityHours()).thenReturn(72);
-        when(config.awaitingTripHours()).thenReturn(24);
-        when(config.awaitingPaymentHours()).thenReturn(24);
-        when(threadRepo.findInactive(any())).thenReturn(List.of());
-        NegotiationThreadEntity t1 = thread(NegotiationThreadStatus.AWAITING_TRIP);
-        NegotiationThreadEntity t2 = thread(NegotiationThreadStatus.AWAITING_PAYMENT);
-        when(threadRepo.findAwaitingTripExpired(any())).thenReturn(List.of(t1));
-        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of(t2));
+    @DisplayName("expireRequests() délègue chaque request expirée au runner (par id)")
+    void expireRequests_delegatesPerItem() {
+        PackageRequestEntity r = request(PackageRequestStatus.OPEN);
+        when(requestRepo.findExpired(any(LocalDate.class))).thenReturn(List.of(r));
 
-        scheduler.expireThreads();
+        scheduler.expireRequests();
 
-        assertThat(t1.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
-        assertThat(t2.getStatus()).isEqualTo(NegotiationThreadStatus.EXPIRED);
-        verify(eventPublisher, times(2)).publishEvent(any(NegotiationExpiredEvent.class));
+        verify(runner).expireRequest(r.getId());
     }
 
     @Test
-    @DisplayName("runExpiration() appelle expireRequests() et expireThreads() en une transaction")
-    void runExpiration_delegatesToBothMethods() {
-        when(config.threadInactivityHours()).thenReturn(72);
+    @DisplayName("expireThreads() délègue chaque thread au runner avec le statut attendu + la raison")
+    void expireThreads_delegatesPerItemWithStatusAndReason() {
+        when(config.threadInactivityHours()).thenReturn(48);
         when(config.awaitingTripHours()).thenReturn(24);
         when(config.awaitingPaymentHours()).thenReturn(24);
-        when(requestRepo.findExpired(any())).thenReturn(List.of());
+        NegotiationThreadEntity open = thread(NegotiationThreadStatus.OPEN);
+        NegotiationThreadEntity trip = thread(NegotiationThreadStatus.AWAITING_TRIP);
+        NegotiationThreadEntity pay = thread(NegotiationThreadStatus.AWAITING_PAYMENT);
+        when(threadRepo.findInactive(any())).thenReturn(List.of(open));
+        when(threadRepo.findAwaitingTripExpired(any())).thenReturn(List.of(trip));
+        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of(pay));
+
+        scheduler.expireThreads();
+
+        verify(runner).expireThread(open.getId(), NegotiationThreadStatus.OPEN, "INACTIVE_OPEN");
+        verify(runner).expireThread(trip.getId(), NegotiationThreadStatus.AWAITING_TRIP, "AWAITING_TRIP_TIMEOUT");
+        verify(runner).expireThread(pay.getId(), NegotiationThreadStatus.AWAITING_PAYMENT, "AWAITING_PAYMENT_TIMEOUT");
+    }
+
+    @Test
+    @DisplayName("un conflit optimistic-lock sur un item ne stoppe pas le lot (les autres sont traités)")
+    void expireThreads_oneItemConflict_othersStillProcessed() {
+        when(config.threadInactivityHours()).thenReturn(48);
+        when(config.awaitingTripHours()).thenReturn(24);
+        when(config.awaitingPaymentHours()).thenReturn(24);
         when(threadRepo.findInactive(any())).thenReturn(List.of());
         when(threadRepo.findAwaitingTripExpired(any())).thenReturn(List.of());
-        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of());
+        NegotiationThreadEntity a = thread(NegotiationThreadStatus.AWAITING_PAYMENT);
+        NegotiationThreadEntity b = thread(NegotiationThreadStatus.AWAITING_PAYMENT);
+        when(threadRepo.findAwaitingPaymentExpired(any())).thenReturn(List.of(a, b));
+        doThrow(new ObjectOptimisticLockingFailureException("NegotiationThreadEntity", a.getId()))
+            .when(runner).expireThread(eq(a.getId()), any(), any());
+
+        // Ne doit PAS propager l'exception, et doit quand même traiter b.
+        scheduler.expireThreads();
+
+        verify(runner).expireThread(eq(b.getId()), eq(NegotiationThreadStatus.AWAITING_PAYMENT), any());
+    }
+
+    @Test
+    @DisplayName("runExpiration() interroge requests + threads (délègue aux deux)")
+    void runExpiration_runsBoth() {
+        when(requestRepo.findExpired(any())).thenReturn(List.of());
+        stubAllThreadFindersEmpty();
 
         scheduler.runExpiration();
 
-        // Both repos were queried → both sub-methods ran
         verify(requestRepo).findExpired(any());
         verify(threadRepo).findInactive(any());
+        verify(threadRepo).findAwaitingTripExpired(any());
+        verify(threadRepo).findAwaitingPaymentExpired(any());
     }
 }

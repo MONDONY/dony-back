@@ -46,6 +46,7 @@ class NegotiationServiceTest {
     @Mock private RequestsConfig config;
     @Mock private CommissionProperties commissionProperties;
     @Mock private CashGatePort cashGatePort;
+    @Mock private com.dony.api.requests.NegotiationEscrowPort escrowPort;
 
     @InjectMocks private NegotiationService service;
 
@@ -1871,6 +1872,10 @@ class NegotiationServiceTest {
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            // Bascule de méthode → on libère d'abord tout escrow en vol (ici aucun).
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            // Override vers STRIPE → /checkout vérifie l'escrow online.
+            when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_real_override")).thenReturn(true);
 
             service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_override", PaymentMethod.STRIPE);
 
@@ -1878,6 +1883,139 @@ class NegotiationServiceTest {
             // la branche cash (commission) n'est donc PAS déclenchée.
             assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
             org.mockito.Mockito.verifyNoInteractions(cashGatePort);
+        }
+    }
+
+    @Nested
+    @DisplayName("checkout() — vérification de l'escrow online (anti-bypass paiement)")
+    class CheckoutEscrowVerificationTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        private void setId(Object entity, UUID id) {
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(entity, id);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @BeforeEach
+        void setupAwaitingPaymentThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setPaymentMethod(PaymentMethod.STRIPE);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            setId(thread, THREAD_ID);
+
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            request.setRecipientName("Mamadou Diallo");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+        }
+
+        @Test
+        @DisplayName("PaymentIntent non vérifié par Stripe → 422, thread reste AWAITING_PAYMENT, aucun event")
+        void checkout_stripeUnverifiedEscrow_throws422_doesNotFinalize() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "x")).thenReturn(false);
+
+            assertThatThrownBy(() ->
+                    service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "x", PaymentMethod.STRIPE))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("escrow-not-verified");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            assertThat(request.getStatus()).isNotEqualTo(PackageRequestStatus.ACCEPTED);
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("PaymentIntent vérifié (requires_capture) → thread ACCEPTED + event")
+        void checkout_stripeVerifiedEscrow_finalizes() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_real_ok")).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_ok", PaymentMethod.STRIPE);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("switch vers CASH → libère l'escrow Stripe puis finalise en CASH")
+        void checkout_switchToCash_releasesEscrowThenFinalizes() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            when(cashGatePort.chargeNegotiationCashCommission(
+                    eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any())).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH);
+
+            verify(escrowPort).releaseEscrowForMethodSwitch(THREAD_ID);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            verify(cashGatePort).chargeNegotiationCashCommission(
+                eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any());
+        }
+
+        @Test
+        @DisplayName("switch vers CASH mais escrow Stripe impossible à libérer → 409, pas de bascule ni de finalize")
+        void checkout_switchToCash_releaseFails_throws409() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(false);
+
+            assertThatThrownBy(() ->
+                    service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("escrow-release-failed");
+
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE); // pas de bascule
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            verifyNoInteractions(cashGatePort);
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("webhook (3-arg) finalise un thread STRIPE sans appeler escrowPort (déjà vérifié par Stripe)")
+        void webhookFinalize_stripe_doesNotCallEscrowPort() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_webhook");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            verifyNoInteractions(escrowPort);
         }
     }
 }

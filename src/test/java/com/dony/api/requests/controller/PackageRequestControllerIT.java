@@ -158,7 +158,8 @@ class PackageRequestControllerIT {
             "vetements",
             new BigDecimal("25"), true, null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
-                UUID.randomUUID(), "Sender", 4.5, 12, true)
+                UUID.randomUUID(), "Sender", 4.5, 12, true),
+            java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
@@ -169,7 +170,8 @@ class PackageRequestControllerIT {
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].departureCity").value("Paris"))
-            .andExpect(jsonPath("$.content[0].negotiable").value(true));
+            .andExpect(jsonPath("$.content[0].negotiable").value(true))
+            .andExpect(jsonPath("$.content[0].acceptedPaymentMethods[0]").value("STRIPE"));
     }
 
     @Test
@@ -184,7 +186,8 @@ class PackageRequestControllerIT {
             "vetements",
             new BigDecimal("25"), false, null, "10e", "Plateau",
             new PackageRequestSearchResponse.SenderPublicProfile(
-                UUID.randomUUID(), "Sender", 4.5, 12, true)
+                UUID.randomUUID(), "Sender", 4.5, 12, true),
+            java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
         );
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
@@ -239,6 +242,25 @@ class PackageRequestControllerIT {
 
         mockMvc.perform(get("/package-requests/" + id)
                 .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void put_update_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.update(eq(SENDER_UUID), eq(id), any())).thenReturn(fakeResponse(id));
+
+        var req = new com.dony.api.requests.dto.PackageRequestCreateRequest(
+            "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), "vetements", "desc",
+            new BigDecimal("28.00"), null, "10e", "Plateau",
+            true, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE));
+
+        mockMvc.perform(put("/package-requests/" + id)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(id.toString()));
     }

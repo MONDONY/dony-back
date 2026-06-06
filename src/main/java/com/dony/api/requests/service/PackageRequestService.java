@@ -146,6 +146,79 @@ public class PackageRequestService {
         return saved;
     }
 
+    // ─── update ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Modifie une demande tant qu'aucun accord n'a été conclu avec un voyageur
+     * (statut {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
+     * terminée → 409 {@code request/not-editable}.
+     *
+     * <p>Les termes de la demande changent : toute offre en cours ({@code OPEN})
+     * est automatiquement rejetée ({@code AUTO_REJECTED}) — les voyageurs devront
+     * re-proposer sur les nouveaux termes — et la demande repasse {@code OPEN}.
+     * Mêmes validations métier que la création (corridor, date, budget si ferme).
+     */
+    @Transactional
+    public PackageRequestResponse update(UUID callerUid, UUID requestId, PackageRequestCreateRequest req) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() != PackageRequestStatus.OPEN
+            && entity.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
+        }
+        if (!req.negotiable() && req.totalBudgetEur() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/target-price-required-firm");
+        }
+        if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
+        }
+        if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
+        }
+
+        BigDecimal netTarget = null;
+        if (req.totalBudgetEur() != null) {
+            BigDecimal divisor = BigDecimal.ONE.add(commissionProperties.rate());
+            netTarget = req.totalBudgetEur().divide(divisor, 2, RoundingMode.HALF_UP);
+        }
+
+        // Les termes changent → rejeter les offres en cours ; la demande repasse OPEN.
+        threadRepository.findByPackageRequestId(requestId).forEach(t -> {
+            if (t.getStatus() == NegotiationThreadStatus.OPEN) {
+                t.setStatus(NegotiationThreadStatus.AUTO_REJECTED);
+                threadRepository.save(t);
+            }
+        });
+
+        entity.setDepartureCity(req.departureCity());
+        entity.setArrivalCity(req.arrivalCity());
+        entity.setDesiredDate(req.desiredDate());
+        entity.setDateToleranceDays((short) req.dateToleranceDays());
+        entity.setWeightKg(req.weightKg());
+        entity.setParcelSize(ParcelSize.fromWeightKg(req.weightKg()));
+        entity.setContentCategory(req.contentCategory());
+        entity.setDescription(req.description());
+        entity.setTargetPriceEur(netTarget);
+        entity.setPhotoUrl(req.photoUrl());
+        entity.setPickupNeighborhood(req.pickupNeighborhood());
+        entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
+        entity.setNegotiable(req.negotiable());
+        entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
+        entity.setStatus(PackageRequestStatus.OPEN);
+
+        PackageRequestEntity saved = repository.save(entity);
+
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "UPDATED", callerUid,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return toResponse(saved);
+    }
+
     // ─── getById ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
@@ -156,8 +229,16 @@ public class PackageRequestService {
         boolean isOwner = entity.getSenderId().equals(callerUid);
         boolean isThreadParticipant = threadRepository
             .existsByPackageRequestIdAndTravelerId(requestId, callerUid);
+        // Les demandes publiquement listées en recherche (OPEN / NEGOTIATING)
+        // sont consultables par n'importe quel voyageur : il doit pouvoir voir
+        // le détail pour décider de faire une offre. Le DTO ne contient aucune
+        // PII (aucune info destinataire) et les threads/messages restent privés
+        // (endpoint dédié). Dès que la demande est ACCEPTED/terminée, l'accès
+        // est de nouveau restreint au propriétaire et aux participants d'un thread.
+        boolean isPubliclyListed = entity.getStatus() == PackageRequestStatus.OPEN
+            || entity.getStatus() == PackageRequestStatus.NEGOTIATING;
 
-        if (!isOwner && !isThreadParticipant) {
+        if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
         return toResponse(entity);
@@ -361,7 +442,8 @@ public class PackageRequestService {
             e.getContentCategory(),
             e.getTargetPriceEur(), e.isNegotiable(), e.getPhotoUrl(),
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            senderProfile
+            senderProfile,
+            e.getAcceptedPaymentMethods()
         );
     }
 

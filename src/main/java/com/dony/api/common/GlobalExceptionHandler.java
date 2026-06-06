@@ -166,6 +166,21 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    /**
+     * Optimistic-lock conflict (e.g. two concurrent finalizes of the same negotiation
+     * thread — /checkout vs Stripe webhook). The loser maps to 409 instead of 500 so
+     * the client can simply re-read the now-finalized resource.
+     */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ProblemDetail> handleOptimisticLock(
+            org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT, "La ressource a été modifiée simultanément, réessayez");
+        problem.setType(URI.create(BASE_TYPE + "concurrent-update"));
+        problem.setTitle("Concurrent Update");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleGeneric(Exception ex) {
         log.error("Unexpected error", ex);

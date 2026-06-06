@@ -771,6 +771,91 @@ class PaymentServiceTest {
                 "payment-already-completed");
     }
 
+    @Test
+    void createNegotiationEscrow_existingCanceledPayment_recyclesRowNot409() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        PaymentEntity stale = new PaymentEntity();
+        setId(stale, UUID.randomUUID());
+        stale.setNegotiationThreadId(threadId);
+        stale.setStripePaymentIntentId("pi_old_canceled");
+        stale.setStatus(PaymentStatus.CANCELLED);
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(stale));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_fresh");
+            when(mockPi.getClientSecret()).thenReturn("pi_fresh_secret");
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+
+            service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
+
+            // Same row recycled (no duplicate insert under the UNIQUE constraint),
+            // now pointing at the fresh PaymentIntent and back to PENDING.
+            assertThat(stale.getStripePaymentIntentId()).isEqualTo("pi_fresh");
+            assertThat(stale.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            verify(paymentRepository).save(stale);
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_existingPendingCanceledPi_recyclesRow() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        PaymentEntity stale = new PaymentEntity();
+        setId(stale, UUID.randomUUID());
+        stale.setNegotiationThreadId(threadId);
+        stale.setStripePaymentIntentId("pi_old");
+        stale.setStatus(PaymentStatus.PENDING);
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(stale));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            // The existing PENDING PaymentIntent is canceled (stale) → recycle the row.
+            PaymentIntent canceledPi = mock(PaymentIntent.class);
+            when(canceledPi.getStatus()).thenReturn("canceled");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_old")).thenReturn(canceledPi);
+
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent freshPi = mock(PaymentIntent.class);
+            when(freshPi.getId()).thenReturn("pi_fresh2");
+            when(freshPi.getClientSecret()).thenReturn("pi_fresh2_secret");
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(freshPi);
+
+            service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
+
+            assertThat(stale.getStripePaymentIntentId()).isEqualTo("pi_fresh2");
+            assertThat(stale.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            verify(paymentRepository).save(stale);
+        }
+    }
+
     // ── Helper to build a mocked Stripe Event with deserialized object ─────────
 
     private Event buildEventWith(String type, Object stripeObj) {

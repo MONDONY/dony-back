@@ -37,6 +37,17 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(nullable = false, length = 20)
     private NegotiationThreadStatus status;
 
+    /**
+     * Optimistic-lock guard. Serializes the AWAITING_PAYMENT → ACCEPTED finalize:
+     * the synchronous {@code /checkout} and the Stripe webhook can finalize the same
+     * thread concurrently. With this version column the loser's commit fails (version
+     * mismatch → mapped to 409) instead of re-running the finalize body and
+     * double-publishing {@code PackageRequestAcceptedEvent} (duplicate bid/QR/tracking).
+     */
+    @jakarta.persistence.Version
+    @Column(name = "version")
+    private Long version = 0L;
+
     @Column(name = "current_price_eur", nullable = false, precision = 10, scale = 2)
     private BigDecimal currentPriceEur;
 

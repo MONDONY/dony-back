@@ -9,6 +9,7 @@ import com.dony.api.payments.PriceBreakdown;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.CashGatePort;
+import com.dony.api.requests.NegotiationEscrowPort;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -46,6 +47,7 @@ public class NegotiationService {
     private final RequestsConfig config;
     private final CommissionProperties commissionProperties;
     private final CashGatePort cashGatePort;
+    private final NegotiationEscrowPort escrowPort;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -56,7 +58,8 @@ public class NegotiationService {
                                AuditService auditService,
                                RequestsConfig config,
                                CommissionProperties commissionProperties,
-                               CashGatePort cashGatePort) {
+                               CashGatePort cashGatePort,
+                               NegotiationEscrowPort escrowPort) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -67,6 +70,7 @@ public class NegotiationService {
         this.config = config;
         this.commissionProperties = commissionProperties;
         this.cashGatePort = cashGatePort;
+        this.escrowPort = escrowPort;
     }
 
     @Transactional
@@ -565,17 +569,30 @@ public class NegotiationService {
      */
     @Transactional
     public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId, String paymentIntentId) {
-        return finalizeAfterPayment(callerId, threadId, paymentIntentId, null);
+        // Trusted webhook finalize: the PaymentIntent was already verified by the
+        // signed Stripe webhook (amount_capturable_updated) before reaching here,
+        // so no escrow re-verification is performed on this path.
+        return finalizeInternal(callerId, threadId, paymentIntentId, null, false);
     }
 
     /**
      * Variante avec mode de paiement finalisé par l'expéditeur (parmi ceux
      * acceptés par la demande). {@code chosenMethod == null} → on garde le mode
      * déjà porté par le thread (choix du voyageur à la liaison du trajet).
+     *
+     * <p>Point d'entrée du {@code /checkout} synchrone (NON fiable) : pour les
+     * méthodes online (STRIPE…), l'escrow est vérifié auprès de Stripe via
+     * {@link NegotiationEscrowPort} avant toute finalisation.
      */
     @Transactional
     public NegotiationThreadResponse finalizeAfterPayment(UUID callerId, UUID threadId,
                                                           String paymentIntentId, PaymentMethod chosenMethod) {
+        return finalizeInternal(callerId, threadId, paymentIntentId, chosenMethod, true);
+    }
+
+    private NegotiationThreadResponse finalizeInternal(UUID callerId, UUID threadId,
+                                                       String paymentIntentId, PaymentMethod chosenMethod,
+                                                       boolean verifyEscrow) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
@@ -595,6 +612,15 @@ public class NegotiationService {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "payment-method/not-accepted");
             }
+            // Avant de changer de méthode, on libère tout escrow Stripe en vol pour
+            // ce thread (annulation du hold carte) afin de ne pas le laisser orphelin
+            // ni prélever à tort la commission du voyageur en basculant vers CASH. Si
+            // le hold ne peut pas être libéré (déjà capturé / erreur Stripe), on
+            // refuse la bascule plutôt que de risquer un hold orphelin.
+            if (!escrowPort.releaseEscrowForMethodSwitch(threadId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "payment-method/escrow-release-failed");
+            }
             thread.setPaymentMethod(chosenMethod);
         }
 
@@ -613,6 +639,16 @@ public class NegotiationService {
             if (!charged) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "negotiation/commission-charge-failed");
+            }
+        } else if (verifyEscrow) {
+            // Online /checkout (untrusted) : ne JAMAIS faire confiance au
+            // paymentIntentId fourni par le client. On confirme auprès de Stripe
+            // qu'il s'agit d'un escrow réel et autorisé (requires_capture) lié à CE
+            // thread avant de finaliser. Ferme le bypass où un expéditeur finalisait
+            // une expédition (voyageur engagé + QR + tracking) sans avoir payé.
+            if (!escrowPort.verifyNegotiationEscrow(threadId, paymentIntentId)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "payment/escrow-not-verified");
             }
         }
 

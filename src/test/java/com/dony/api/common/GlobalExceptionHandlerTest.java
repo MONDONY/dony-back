@@ -206,6 +206,24 @@ class GlobalExceptionHandlerTest {
     }
 
     @Nested
+    @DisplayName("handleOptimisticLock()")
+    class OptimisticLockTests {
+
+        @Test
+        @DisplayName("ObjectOptimisticLockingFailureException → 409 CONFLICT (concurrent-update)")
+        void handleOptimisticLock_returns409() {
+            var ex = new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                    "NegotiationThreadEntity", java.util.UUID.randomUUID());
+
+            ResponseEntity<ProblemDetail> response = handler.handleOptimisticLock(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getType().toString()).contains("concurrent-update");
+        }
+    }
+
+    @Nested
     @DisplayName("handleGeneric()")
     class GenericExceptionTests {
 
