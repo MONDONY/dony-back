@@ -247,6 +247,25 @@ class PackageRequestControllerIT {
     }
 
     @Test
+    void put_update_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.update(eq(SENDER_UUID), eq(id), any())).thenReturn(fakeResponse(id));
+
+        var req = new com.dony.api.requests.dto.PackageRequestCreateRequest(
+            "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), "vetements", "desc",
+            new BigDecimal("28.00"), null, "10e", "Plateau",
+            true, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE));
+
+        mockMvc.perform(put("/package-requests/" + id)
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
     void get_listThreads_returnsList() throws Exception {
         UUID id = UUID.randomUUID();
         when(negotiationService.listForRequest(eq(SENDER_UUID), eq(id))).thenReturn(java.util.List.of());

@@ -265,6 +265,105 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("update() — édition tant qu'aucun accord")
+    class UpdateTests {
+
+        @Test @DisplayName("OPEN → met à jour les champs, reste OPEN, audit UPDATED")
+        void update_open_updatesAndStaysOpen() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.findByPackageRequestId(entity.getId())).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
+                new BigDecimal("8"), "electronique", "desc",
+                new BigDecimal("56.00"), null, "7e", "ACI 2000",
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            var resp = service.update(SENDER_ID, entity.getId(), req);
+
+            assertThat(entity.getDepartureCity()).isEqualTo("Lyon");
+            assertThat(entity.getArrivalCity()).isEqualTo("Bamako");
+            assertThat(entity.getWeightKg()).isEqualByComparingTo("8");
+            assertThat(entity.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            // net = 56 / 1.12 = 50.00
+            assertThat(entity.getTargetPriceEur()).isEqualByComparingTo("50.00");
+            assertThat(resp.id()).isEqualTo(entity.getId());
+            verify(repository).save(entity);
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(entity.getId()),
+                eq("UPDATED"), eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("NEGOTIATING → rejette les offres OPEN et repasse OPEN")
+        void update_negotiating_rejectsOpenThreads() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(thread));
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.update(SENDER_ID, entity.getId(), validRequest());
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.AUTO_REJECTED);
+            assertThat(entity.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            verify(threadRepository).save(thread);
+        }
+
+        @Test @DisplayName("ACCEPTED → 409 not-editable")
+        void update_accepted_throws409() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.ACCEPTED);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), validRequest()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-editable");
+        }
+
+        @Test @DisplayName("autre que le propriétaire → 403")
+        void update_notOwner_throws403() {
+            UUID other = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            assertThatThrownBy(() -> service.update(other, entity.getId(), validRequest()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("forbidden");
+        }
+
+        @Test @DisplayName("prix ferme sans budget → 422")
+        void update_firmWithoutBudget_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, null, null, null, null,
+                false, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required-firm");
+        }
+
+        @Test @DisplayName("corridor invalide (mêmes villes) → 422")
+        void update_sameCorridor_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Paris", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE));
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid-corridor");
+        }
+    }
+
     @Nested @DisplayName("cancel() — soft delete + cascade threads")
     class CancelTests {
         @Test @DisplayName("status OPEN → soft delete + threads auto-rejected")
