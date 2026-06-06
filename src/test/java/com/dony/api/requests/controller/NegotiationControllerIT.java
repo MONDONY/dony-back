@@ -284,7 +284,7 @@ class NegotiationControllerIT {
     void post_checkout_returns200_andDelegatesFinalize() throws Exception {
         UUID threadId = UUID.randomUUID();
         // No paymentMethod in the body → controller delegates with a null method.
-        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("pi_test"), isNull()))
+        when(service.checkout(eq(SENDER_UUID), eq(threadId), eq("pi_test"), isNull()))
             .thenReturn(fakeThread(threadId, NegotiationThreadStatus.ACCEPTED, "pi_test"));
 
         var req = new java.util.HashMap<String, String>();
@@ -301,7 +301,7 @@ class NegotiationControllerIT {
     @Test
     void post_checkout_withPaymentMethod_delegatesChosenMethod() throws Exception {
         UUID threadId = UUID.randomUUID();
-        when(service.finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("CASH"),
+        when(service.checkout(eq(SENDER_UUID), eq(threadId), eq("CASH"),
                 eq(com.dony.api.payments.cash.PaymentMethod.CASH)))
             .thenReturn(fakeThread(threadId, NegotiationThreadStatus.ACCEPTED, "CASH"));
 
@@ -315,7 +315,7 @@ class NegotiationControllerIT {
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("ACCEPTED"));
-        verify(service).finalizeAfterPayment(eq(SENDER_UUID), eq(threadId), eq("CASH"),
+        verify(service).checkout(eq(SENDER_UUID), eq(threadId), eq("CASH"),
             eq(com.dony.api.payments.cash.PaymentMethod.CASH));
     }
 

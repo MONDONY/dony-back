@@ -186,6 +186,48 @@ class DeliveryEventListenerTest {
     }
 
     @Test
+    void negotiation_thread_payment_released_via_thread_fallback() {
+        // Regression: negotiation / dedicated-trip escrow is keyed on the thread
+        // (bid_id = NULL). findByBidId returns empty → the payout used to be skipped,
+        // so the traveler was never paid. The thread fallback must release it, and the
+        // audit / PaymentReleasedEvent must use the delivered bid id (payment.getBidId()
+        // is null here → would otherwise NPE / lose the reference).
+        UUID bidId = UUID.randomUUID();
+        UUID threadId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+
+        BidEntity bid = new BidEntity();
+        bid.setPaymentMethod(PaymentMethod.STRIPE);
+        bid.setLinkedNegotiationThreadId(threadId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+
+        PaymentEntity p = payment(false, PaymentStatus.ESCROW, "ch_thread");
+        p.setBidId(null); // thread-keyed payment
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(p));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
+
+        try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
+            ArgumentCaptor<TransferCreateParams> captor = ArgumentCaptor.forClass(TransferCreateParams.class);
+            transferStatic.when(() -> Transfer.create(captor.capture())).thenReturn(mock(Transfer.class));
+
+            listener.handleDeliveryConfirmed(event(bidId, travelerId));
+
+            TransferCreateParams params = captor.getValue();
+            assertThat(params.getAmount()).isEqualTo(2640L); // (30 - 3.60) * 100
+            assertThat(params.getDestination()).isEqualTo("acct_xyz");
+            assertThat(params.getSourceTransaction()).isEqualTo("ch_thread");
+            assertThat(params.getMetadata().get("bid_id")).isEqualTo(bidId.toString());
+        }
+
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
+        assertThat(p.getEscrowReleasedAt()).isNotNull();
+        // actor id must be the delivered bid, not the null payment.getBidId()
+        verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_RELEASED_TRANSFER"), eq(bidId), any());
+        verify(eventPublisher).publishEvent(any(PaymentReleasedEvent.class));
+    }
+
+    @Test
     void transfer_failure_is_logged_not_thrown() {
         PaymentEntity p = payment(false, PaymentStatus.ESCROW, "ch_fail");
         UUID travelerId = UUID.randomUUID();

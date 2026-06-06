@@ -498,6 +498,30 @@ class PaymentServiceTest {
         assertThat(resp.get().getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
     }
 
+    @Test
+    void getPaymentStatusForBid_negotiationFlow_fallsBackToThreadPayment() {
+        // Régression : un envoi issu d'une négociation (trajet dédié/lié payé Stripe)
+        // a son paiement escrow rattaché au thread, avec bid_id NULL. La recherche par
+        // bidId échoue → on doit retomber sur le paiement du thread, sinon l'écran
+        // affiche à tort « Payer mon envoi » alors que c'est déjà payé.
+        UUID threadId = UUID.randomUUID();
+        UserEntity caller = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(caller));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        bid.setLinkedNegotiationThreadId(threadId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+        PaymentEntity payment = buildPayment(PaymentStatus.ESCROW, "pi_123");
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(payment));
+
+        Optional<PaymentResponse> resp = service.getPaymentStatusForBid(bidId, "uid-sender");
+
+        assertThat(resp).isPresent();
+        assertThat(resp.get().getStatus()).isEqualTo("ESCROW");
+    }
+
     // ── confirmBidPayment ─────────────────────────────────────────────────────
 
     @Test

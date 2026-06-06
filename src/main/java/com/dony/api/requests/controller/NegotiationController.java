@@ -105,7 +105,7 @@ public class NegotiationController {
             @PathVariable UUID id,
             @RequestBody @Valid NegotiationCheckoutRequest req
     ) {
-        return service.finalizeAfterPayment(requireUserId(), id, req.paymentIntentId(), req.paymentMethod());
+        return service.checkout(requireUserId(), id, req.paymentIntentId(), req.paymentMethod());
     }
 
     /**

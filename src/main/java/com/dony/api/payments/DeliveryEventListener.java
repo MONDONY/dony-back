@@ -81,6 +81,14 @@ public class DeliveryEventListener {
 
         Optional<PaymentEntity> paymentOpt = paymentRepository.findByBidId(event.getBidId());
 
+        // Negotiation / dedicated-trip escrow is keyed on the negotiation thread
+        // (bid_id = NULL) — the bid is materialised after payment. Fall back to the
+        // thread payment so these escrows are released to the traveler too; otherwise
+        // findByBidId returns empty and the payout is silently skipped.
+        if (paymentOpt.isEmpty() && bid != null && bid.getLinkedNegotiationThreadId() != null) {
+            paymentOpt = paymentRepository.findByNegotiationThreadId(bid.getLinkedNegotiationThreadId());
+        }
+
         if (paymentOpt.isEmpty()) {
             log.warn("DeliveryConfirmedEvent received for bidId={} but no payment found — skipping",
                     event.getBidId());
@@ -99,7 +107,7 @@ public class DeliveryEventListener {
             log.warn("Payment {} for bid {} is under chargeback dispute — blocking transfer",
                     payment.getId(), event.getBidId());
             auditService.log("PAYMENT", payment.getId(), "DELIVERY_TRANSFER_BLOCKED_CHARGEBACK",
-                    payment.getBidId(), Map.of("bidId", event.getBidId().toString()));
+                    event.getBidId(), Map.of("bidId", event.getBidId().toString()));
             adminAlert.raise("CHARGEBACK_TRANSFER_BLOCKED",
                     "Tentative de liberation escrow bloquee — litige ouvert sur payment " + payment.getId(),
                     Map.of("paymentId", payment.getId().toString(), "bidId", event.getBidId().toString()));
@@ -120,13 +128,16 @@ public class DeliveryEventListener {
             String action = payment.isLegacyDestinationCharge()
                     ? "ESCROW_RELEASED_LEGACY"
                     : "ESCROW_RELEASED_TRANSFER";
+            // Use event.getBidId() (the delivered bid) for the audit actor/payload: a
+            // negotiation/thread payment has a NULL payment.getBidId(), which would both
+            // lose the bid reference and NPE on toString().
             auditService.log(
                     "PAYMENT",
                     payment.getId(),
                     action,
-                    payment.getBidId(),
+                    event.getBidId(),
                     Map.of(
-                            "bidId", payment.getBidId().toString(),
+                            "bidId", event.getBidId().toString(),
                             "piId", payment.getStripePaymentIntentId(),
                             "amount", payment.getAmount().toPlainString(),
                             "legacy", String.valueOf(payment.isLegacyDestinationCharge())
@@ -136,9 +147,10 @@ public class DeliveryEventListener {
             log.info("Escrow released for payment {} (bid={}, legacy={})",
                     payment.getId(), event.getBidId(), payment.isLegacyDestinationCharge());
 
-            // Notify traveler of payout (Story 8.2)
+            // Notify traveler of payout (Story 8.2). event.getBidId() — payment.getBidId()
+            // is NULL for negotiation/thread payments.
             eventPublisher.publishEvent(new PaymentReleasedEvent(
-                    payment.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
+                    event.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
 
         } catch (StripeException e) {
             log.error("Escrow release failed for payment {} (bid={}, legacy={}): {}",
