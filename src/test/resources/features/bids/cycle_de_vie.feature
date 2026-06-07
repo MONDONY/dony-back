@@ -13,6 +13,7 @@ Fonctionnalité: Cycle de vie d'une offre
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-lc-1"
     Et l'offre "offre-lc-1" est sauvegardée
     Etant donné l'utilisateur "traveler-lc-001" est authentifié en tant que VOYAGEUR
+    Et le paiement de l'offre "offre-lc-1" est validé
     Quand j'accepte l'offre "offre-lc-1"
     Alors la réponse HTTP est 200
     Et le statut de l'offre est "ACCEPTED"
@@ -25,6 +26,7 @@ Fonctionnalité: Cycle de vie d'une offre
     Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "sender-lc-002" et le téléphone "+33677000004"
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-lc-2"
     Et l'offre "offre-lc-2" est sauvegardée
+    Et le paiement de l'offre "offre-lc-2" est validé
     Etant donné l'utilisateur "traveler-lc-002" est authentifié en tant que VOYAGEUR
     Quand je refuse l'offre "offre-lc-2" avec la raison "Poids trop élevé pour mon trajet"
     Alors la réponse HTTP est 200
@@ -49,7 +51,7 @@ Fonctionnalité: Cycle de vie d'une offre
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-lc-4"
     Quand je consulte mes offres en tant qu'expéditeur
     Alors la réponse HTTP est 200
-    Et la réponse contient 1 offre(s)
+    Et la réponse contient 1 offres
 
   @happy-path
   Scénario: Voyageur consulte les offres sur son annonce
@@ -60,7 +62,7 @@ Fonctionnalité: Cycle de vie d'une offre
     Etant donné l'utilisateur "traveler-lc-005" est authentifié en tant que VOYAGEUR
     Quand je consulte les offres de l'annonce "annonce-lc-5"
     Alors la réponse HTTP est 200
-    Et la réponse contient 1 offre(s)
+    Et la réponse contient 1 offres
 
   @happy-path
   Scénario: Définition d'une fenêtre de remise pour une offre acceptée
@@ -70,6 +72,7 @@ Fonctionnalité: Cycle de vie d'une offre
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-lc-6"
     Et l'offre "offre-lc-6" est sauvegardée
     Etant donné l'utilisateur "traveler-lc-006" est authentifié en tant que VOYAGEUR
+    Et le paiement de l'offre "offre-lc-6" est validé
     Et j'accepte l'offre "offre-lc-6"
     Quand je définis la fenêtre de remise pour l'offre "offre-lc-6"
     Alors la réponse HTTP est 200

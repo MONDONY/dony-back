@@ -5,6 +5,8 @@ import io.cucumber.java.fr.Etantdonné;
 import io.cucumber.java.fr.Quand;
 import io.restassured.response.Response;
 import org.assertj.core.api.Assertions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -12,11 +14,27 @@ import java.util.Set;
 
 public class AuthSteps extends AbstractSteps {
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     // ── Given ─────────────────────────────────────────────────────────────────
 
     @Etantdonné("un token Firebase pour l'uid {string}")
     public void givenFirebaseToken(String uid) {
         ctx.setCurrentUser(uid, "");
+    }
+
+    /**
+     * Simulates a completed KYC + Stripe Connect onboarding for the current user.
+     * Real KYC/Stripe flows aren't run in E2E, and activateTravelerRole() hard-requires
+     * both (independent of the dony.kyc.enforce flag) — so this is the test bridge.
+     */
+    @Etantdonné("mon KYC est vérifié et mon compte Stripe est complet")
+    public void givenKycAndStripeComplete() {
+        jdbcTemplate.update(
+                "UPDATE users SET kyc_status = 'VERIFIED', stripe_account_status = 'ONBOARDING_COMPLETE' "
+                        + "WHERE firebase_uid = ?",
+                ctx.getCurrentUid());
     }
 
     @Etantdonné("un utilisateur VOYAGEUR enregistré avec l'uid {string} et le téléphone {string}")
@@ -26,6 +44,9 @@ public class AuthSteps extends AbstractSteps {
                 "phoneNumber", phone,
                 "roles", Set.of("TRAVELER")
         )).post("/auth/register"));
+        // Test travelers accept non-KYC-verified senders so bids aren't blocked by
+        // the default contactKycOnly=true preference (real KYC isn't run in E2E).
+        asCurrentUser().body(Map.of("contactKycOnly", false)).put("/auth/me/privacy-settings");
         ctx.setCurrentUser(uid, "ROLE_TRAVELER");
     }
 
@@ -40,6 +61,14 @@ public class AuthSteps extends AbstractSteps {
     }
 
     // ── When ──────────────────────────────────────────────────────────────────
+
+    @Quand("j'active mon rôle voyageur")
+    public void whenActivateTraveler() {
+        // Registration always grants SENDER only; TRAVELER is obtained via this
+        // explicit activation (POST /users/me/roles/traveler/activate, requires SENDER).
+        ctx.setCurrentUser(ctx.getCurrentUid(), "ROLE_SENDER");
+        store(asCurrentUser().post("/users/me/roles/traveler/activate"));
+    }
 
     @Quand("je m'inscris avec le téléphone {string} et le rôle {string}")
     public void whenRegister(String phone, String role) {

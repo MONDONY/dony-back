@@ -64,6 +64,7 @@ public class PaymentService {
     private final AdminAlertService adminAlert;
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
+    private final StripeGateway stripeGateway;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -75,7 +76,8 @@ public class PaymentService {
                           ObjectMapper objectMapper,
                           AdminAlertService adminAlert,
                           CommissionRateResolver commissionRateResolver,
-                          PromoService promoService) {
+                          PromoService promoService,
+                          StripeGateway stripeGateway) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -87,6 +89,7 @@ public class PaymentService {
         this.adminAlert = adminAlert;
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
+        this.stripeGateway = stripeGateway;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -109,7 +112,7 @@ public class PaymentService {
         // sandbox or expire). If it's missing, reset and recreate.
         if (user.getStripeAccountId() != null) {
             try {
-                Account.retrieve(user.getStripeAccountId());
+                stripeGateway.retrieveAccount(user.getStripeAccountId());
                 return new ConnectAccountResponse(user.getStripeAccountId(), user.getStripeAccountStatus());
             } catch (StripeException e) {
                 if (!isStripeAccountMissing(e)) {
@@ -174,7 +177,7 @@ public class PaymentService {
                     .putMetadata("user_id", user.getId().toString())
                     .build();
 
-            Account account = Account.create(params);
+            Account account = stripeGateway.createAccount(params);
             user.setStripeAccountId(account.getId());
             user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
             user.setStripeAccountCreatedAt(java.time.Instant.now());
@@ -217,7 +220,7 @@ public class PaymentService {
                     .setType(AccountLinkCreateParams.Type.ACCOUNT_ONBOARDING)
                     .build();
 
-            AccountLink link = AccountLink.create(params);
+            AccountLink link = stripeGateway.createAccountLink(params);
             return new OnboardingLinkResponse(link.getUrl());
 
         } catch (StripeException e) {
@@ -280,7 +283,7 @@ public class PaymentService {
         }
 
         try {
-            Account account = Account.retrieve(user.getStripeAccountId());
+            Account account = stripeGateway.retrieveAccount(user.getStripeAccountId());
             boolean chargesEnabled = Boolean.TRUE.equals(account.getChargesEnabled());
             StripeAccountStatus newStatus = deriveStripeAccountStatus(account);
 
@@ -349,7 +352,7 @@ public class PaymentService {
             // PENDING → retourner le clientSecret existant pour que le client finalise
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 try {
-                    PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+                    PaymentIntent pi = stripeGateway.retrievePaymentIntent(payment.getStripePaymentIntentId());
                     if ("requires_payment_method".equals(pi.getStatus())
                             || "requires_confirmation".equals(pi.getStatus())) {
                         return toPaymentResponse(payment, pi.getClientSecret());
@@ -447,7 +450,7 @@ public class PaymentService {
                     .putMetadata("commission_cents", String.valueOf(commissionCents))
                     .build();
 
-            PaymentIntent pi = PaymentIntent.create(params);
+            PaymentIntent pi = stripeGateway.createPaymentIntent(params);
 
             PaymentEntity payment = new PaymentEntity();
             payment.setBidId(bidId);
@@ -523,7 +526,7 @@ public class PaymentService {
             return null;
         }
         try {
-            return Account.retrieve(accountId);
+            return stripeGateway.retrieveAccount(accountId);
         } catch (StripeException e) {
             log.error("handleAccountUpdated: failed to fetch account {} for event {}", accountId, event.getId(), e);
             return null;
@@ -563,7 +566,7 @@ public class PaymentService {
                 String rawJson = event.getDataObjectDeserializer().getRawJson();
                 JsonNode node = objectMapper.readTree(rawJson);
                 String piId = node.get("id").asText();
-                pi = PaymentIntent.retrieve(piId);
+                pi = stripeGateway.retrievePaymentIntent(piId);
                 log.debug("handlePaymentEscrowActive: deserializer was empty for event {}, fetched PI {} via API",
                         event.getId(), piId);
             } catch (Exception e) {
@@ -683,7 +686,7 @@ public class PaymentService {
         }
 
         try {
-            PaymentIntent pi = PaymentIntent.retrieve(piId);
+            PaymentIntent pi = stripeGateway.retrievePaymentIntent(piId);
             String status = pi.getStatus();
             if ("requires_capture".equals(status)
                     || "succeeded".equals(status)
@@ -817,7 +820,7 @@ public class PaymentService {
      * le besoin pour le voyageur de finaliser son onboarding.
      */
     private void ensureCardPaymentsCapability(String stripeAccountId) throws StripeException {
-        Account account = Account.retrieve(stripeAccountId);
+        Account account = stripeGateway.retrieveAccount(stripeAccountId);
         String currentState = account.getCapabilities() == null
                 ? null
                 : account.getCapabilities().getCardPayments();
@@ -887,7 +890,7 @@ public class PaymentService {
      */
     public void cancelPaymentIntent(String paymentIntentId) throws StripeException {
         if (paymentIntentId == null || paymentIntentId.isBlank()) return;
-        PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
+        PaymentIntent pi = stripeGateway.retrievePaymentIntent(paymentIntentId);
         pi.cancel();
         log.info("PaymentIntent {} cancelled", paymentIntentId);
     }
@@ -916,7 +919,7 @@ public class PaymentService {
             return true; // terminal — no live hold to release
         }
         try {
-            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            PaymentIntent pi = stripeGateway.retrievePaymentIntent(payment.getStripePaymentIntentId());
             // Idempotent: a PaymentIntent already 'canceled' (e.g. a prior method
             // switch whose transaction rolled back AFTER canceling at Stripe) is a
             // benign no-op — just sync the DB and report success. Only a genuinely
@@ -946,8 +949,8 @@ public class PaymentService {
      */
     public void capturePaymentIntent(String paymentIntentId) throws StripeException {
         if (paymentIntentId == null || paymentIntentId.isBlank()) return;
-        PaymentIntent pi = PaymentIntent.retrieve(paymentIntentId);
-        pi.capture();
+        PaymentIntent pi = stripeGateway.retrievePaymentIntent(paymentIntentId);
+        stripeGateway.capturePaymentIntent(pi);
         log.info("PaymentIntent {} captured", paymentIntentId);
     }
 
@@ -1159,7 +1162,7 @@ public class PaymentService {
             }
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 try {
-                    PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+                    PaymentIntent pi = stripeGateway.retrievePaymentIntent(payment.getStripePaymentIntentId());
                     String piStatus = pi.getStatus();
                     if ("requires_payment_method".equals(piStatus)
                             || "requires_confirmation".equals(piStatus)) {
@@ -1216,7 +1219,7 @@ public class PaymentService {
                     .putMetadata("scope", "NEGOTIATION")
                     .build();
 
-            PaymentIntent pi = PaymentIntent.create(params);
+            PaymentIntent pi = stripeGateway.createPaymentIntent(params);
 
             // Recycle a stale row when present (UNIQUE negotiation_thread_id), else insert.
             PaymentEntity payment = (recyclable != null) ? recyclable : new PaymentEntity();

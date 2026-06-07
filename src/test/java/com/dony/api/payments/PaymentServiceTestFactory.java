@@ -63,7 +63,8 @@ class PaymentServiceTestFactory {
                 new ObjectMapper(),
                 mock(AdminAlertService.class),
                 stubbedResolver(),
-                mock(PromoService.class)
+                mock(PromoService.class),
+                new StripeGatewayImpl()
         );
     }
 
@@ -94,7 +95,8 @@ class PaymentServiceTestFactory {
                 new ObjectMapper(),
                 adminAlert,
                 stubbedResolver(),
-                mock(PromoService.class)
+                mock(PromoService.class),
+                new StripeGatewayImpl()
         );
     }
 }

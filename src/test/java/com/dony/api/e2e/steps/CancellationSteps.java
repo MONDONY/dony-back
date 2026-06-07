@@ -27,11 +27,31 @@ public class CancellationSteps extends AbstractSteps {
                 ctx.getId(cancellationAlias)));
     }
 
+    @Quand("le voyageur signale un no-show pour l'offre {string}")
+    public void whenReportNoShow(String bidAlias) {
+        store(asCurrentUser().post("/cancellations/bids/{id}/report-noshow", ctx.getId(bidAlias)));
+    }
+
+    @Quand("l'administrateur confirme le no-show pour l'offre {string}")
+    public void whenConfirmNoShow(String bidAlias) {
+        store(asCurrentUser().post("/cancellations/bids/{id}/confirm-noshow", ctx.getId(bidAlias)));
+    }
+
+    @Quand("l'expéditeur conteste le no-show pour l'offre {string}")
+    public void whenContestNoShow(String bidAlias) {
+        store(asCurrentUser().post("/cancellations/bids/{id}/contest-noshow", ctx.getId(bidAlias)));
+    }
+
+    @Quand("je consulte mes litiges")
+    public void whenGetMyDisputes() {
+        store(asCurrentUser().get("/disputes/me"));
+    }
+
     // ── Then ──────────────────────────────────────────────────────────────────
 
     @Alors("la réponse indique que {int} offre(s) ont été annulée(s)")
     public void thenAffectedCount(int count) {
-        Integer actual = lastResponse().jsonPath().getInt("affectedCount");
+        Integer actual = lastResponse().jsonPath().getInt("affectedBidsCount");
         Assertions.assertThat(actual).isEqualTo(count);
     }
 

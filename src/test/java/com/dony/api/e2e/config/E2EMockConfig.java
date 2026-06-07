@@ -4,6 +4,16 @@ import com.dony.api.auth.FirebaseTokenFilter;
 import com.dony.api.auth.UserLinkerService;
 import com.dony.api.common.StorageService;
 import com.dony.api.messaging.FirestoreService;
+import com.dony.api.payments.StripeGateway;
+import com.dony.api.payments.cash.StripeCashGateway;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
+import com.stripe.model.AccountLink;
+import com.stripe.model.Customer;
+import com.stripe.model.PaymentIntent;
+import com.stripe.model.PaymentMethod;
+import com.stripe.model.Refund;
+import com.stripe.model.SetupIntent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -45,6 +55,74 @@ public class E2EMockConfig {
     @Primary
     public FirestoreService firestoreService() {
         return Mockito.mock(FirestoreService.class);
+    }
+
+    /**
+     * Stubs the Stripe gateway so PaymentService's escrow/connect logic runs end-to-end in
+     * E2E without a live Stripe connection. The capability is reported "active" so the
+     * card_payments check short-circuits; the PaymentIntent carries an id + client secret.
+     */
+    @Bean
+    @Primary
+    public StripeGateway stripeGateway() throws StripeException {
+        StripeGateway gateway = Mockito.mock(StripeGateway.class);
+
+        Account.Capabilities caps = Mockito.mock(Account.Capabilities.class);
+        Mockito.when(caps.getCardPayments()).thenReturn("active");
+        Account account = Mockito.mock(Account.class);
+        Mockito.when(account.getId()).thenReturn("acct_test123");
+        Mockito.when(account.getCapabilities()).thenReturn(caps);
+        Mockito.when(account.getChargesEnabled()).thenReturn(true);
+        Mockito.when(account.getPayoutsEnabled()).thenReturn(true);
+        Mockito.when(account.getDetailsSubmitted()).thenReturn(true);
+
+        AccountLink link = Mockito.mock(AccountLink.class);
+        Mockito.when(link.getUrl()).thenReturn("https://connect.stripe.test/onboarding");
+
+        PaymentIntent pi = Mockito.mock(PaymentIntent.class);
+        Mockito.when(pi.getId()).thenReturn("pi_test123");
+        Mockito.when(pi.getClientSecret()).thenReturn("pi_test123_secret_abc");
+        Mockito.when(pi.getStatus()).thenReturn("requires_payment_method");
+
+        Mockito.when(gateway.createAccount(Mockito.any())).thenReturn(account);
+        Mockito.when(gateway.retrieveAccount(Mockito.anyString())).thenReturn(account);
+        Mockito.when(gateway.createAccountLink(Mockito.any())).thenReturn(link);
+        Mockito.when(gateway.createPaymentIntent(Mockito.any())).thenReturn(pi);
+        Mockito.when(gateway.retrievePaymentIntent(Mockito.anyString())).thenReturn(pi);
+        Mockito.when(gateway.capturePaymentIntent(Mockito.any())).thenReturn(pi);
+        return gateway;
+    }
+
+    /** Stubs the cash-commission Stripe gateway (SetupIntent / PaymentMethod / Customer / Refund). */
+    @Bean
+    @Primary
+    public StripeCashGateway stripeCashGateway() throws StripeException {
+        StripeCashGateway gw = Mockito.mock(StripeCashGateway.class);
+
+        Customer customer = Mockito.mock(Customer.class);
+        Mockito.when(customer.getId()).thenReturn("cus_test123");
+        SetupIntent si = Mockito.mock(SetupIntent.class);
+        Mockito.when(si.getId()).thenReturn("seti_test123");
+        Mockito.when(si.getClientSecret()).thenReturn("seti_test123_secret");
+        Mockito.when(si.getStatus()).thenReturn("succeeded");
+        Mockito.when(si.getPaymentMethod()).thenReturn("pm_test123");
+        PaymentMethod pm = Mockito.mock(PaymentMethod.class);
+        Mockito.when(pm.getId()).thenReturn("pm_test123");
+        PaymentIntent pi = Mockito.mock(PaymentIntent.class);
+        Mockito.when(pi.getId()).thenReturn("pi_cash_test123");
+        Mockito.when(pi.getStatus()).thenReturn("succeeded");
+        Mockito.when(pi.getClientSecret()).thenReturn("pi_cash_secret");
+        Refund refund = Mockito.mock(Refund.class);
+        Mockito.when(refund.getId()).thenReturn("re_test123");
+
+        Mockito.when(gw.createCustomer(Mockito.any())).thenReturn(customer);
+        Mockito.when(gw.createSetupIntent(Mockito.any())).thenReturn(si);
+        Mockito.when(gw.retrieveSetupIntent(Mockito.anyString())).thenReturn(si);
+        Mockito.when(gw.retrievePaymentMethod(Mockito.anyString())).thenReturn(pm);
+        Mockito.when(gw.createPaymentIntent(Mockito.any(), Mockito.any())).thenReturn(pi);
+        Mockito.when(gw.retrievePaymentIntent(Mockito.anyString())).thenReturn(pi);
+        Mockito.when(gw.createRefund(Mockito.any(), Mockito.any())).thenReturn(refund);
+        return gw;
     }
 
     @Bean

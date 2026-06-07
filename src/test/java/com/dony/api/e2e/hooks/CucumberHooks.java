@@ -5,8 +5,15 @@ import io.cucumber.java.Before;
 import io.restassured.RestAssured;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Global hooks run before every scenario.
@@ -21,6 +28,10 @@ public class CucumberHooks {
 
     @Autowired
     private StorageService storageService;
+
+    @Autowired
+    @Qualifier("placesRestTemplate")
+    private RestTemplate placesRestTemplate;
 
     @Before(order = 0)
     public void configureRestAssured() {
@@ -41,6 +52,7 @@ public class CucumberHooks {
                     bids,
                     announcements,
                     audit_log,
+                    stripe_event_inbox,
                     kyc_schema.kyc_verifications,
                     user_roles,
                     users
@@ -49,6 +61,7 @@ public class CucumberHooks {
     }
 
     @Before(order = 2)
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public void resetMocks() {
         Mockito.reset(storageService);
         Mockito.when(storageService.generatePresignedUrl(Mockito.anyString(), Mockito.any()))
@@ -57,5 +70,33 @@ public class CucumberHooks {
             Mockito.when(storageService.uploadFile(Mockito.any(), Mockito.anyString()))
                    .thenReturn("tracking/test/fake-key.jpg");
         } catch (Exception ignored) {}
+
+        // Google Places / Geocoding stubs — POST = autocomplete, GET = details, getForObject = reverse.
+        Mockito.reset(placesRestTemplate);
+        Map<String, Object> autocomplete = Map.of("suggestions", List.of(Map.of(
+                "placePrediction", Map.of(
+                        "placeId", "ChIJtest123",
+                        "structuredFormat", Map.of(
+                                "mainText", Map.of("text", "Dakar"),
+                                "secondaryText", Map.of("text", "Sénégal"))))));
+        Map<String, Object> details = Map.of(
+                "formattedAddress", "Avenue Léopold Sédar Senghor, Dakar, Sénégal",
+                "location", Map.of("latitude", 14.6928, "longitude", -17.4467),
+                "addressComponents", List.of(
+                        Map.of("types", List.of("route"), "longText", "Avenue Léopold Sédar Senghor", "shortText", "Av. LSS"),
+                        Map.of("types", List.of("locality"), "longText", "Dakar", "shortText", "Dakar"),
+                        Map.of("types", List.of("postal_code"), "longText", "10000", "shortText", "10000"),
+                        Map.of("types", List.of("country"), "longText", "Senegal", "shortText", "SN")));
+        Map<String, Object> geocode = Map.of("status", "OK", "results", List.of(Map.of(
+                "formatted_address", "Dakar, Sénégal",
+                "geometry", Map.of("location", Map.of("lat", 14.6928, "lng", -17.4467)))));
+        Mockito.when(placesRestTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.POST),
+                        Mockito.any(), Mockito.eq(Map.class)))
+                .thenReturn((ResponseEntity) ResponseEntity.ok(autocomplete));
+        Mockito.when(placesRestTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET),
+                        Mockito.any(), Mockito.eq(Map.class)))
+                .thenReturn((ResponseEntity) ResponseEntity.ok(details));
+        Mockito.when(placesRestTemplate.getForObject(Mockito.anyString(), Mockito.eq(Map.class)))
+                .thenReturn(geocode);
     }
 }
