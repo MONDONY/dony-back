@@ -93,14 +93,41 @@ public class BidService {
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
                         "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
-        if (ann.getPricePerKg() == null || request.weightKg() == null) {
+        // Même détermination de mode que createBid/checkout : au moins poids OU article.
+        List<BidGridItemRequest> gridItems = request.gridItems() != null ? request.gridItems() : List.of();
+        boolean hasGrid = !gridItems.isEmpty();
+        boolean hasKg   = request.weightKg() != null && request.weightKg().compareTo(BigDecimal.ZERO) > 0;
+
+        if (!hasGrid && !hasKg) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "invalid-bid-params", "Invalid Bid Parameters",
-                    "Le poids et le prix au kilo sont requis pour calculer le devis");
+                    "bid-empty", "Bid Empty",
+                    "Au moins un article ou un poids doit être renseigné");
         }
 
-        BigDecimal netEur = ann.getPricePerKg().multiply(request.weightKg())
-                .setScale(2, java.math.RoundingMode.HALF_UP);
+        // Net grille : Σ (prix unitaire net × quantité), articles bornés à CETTE annonce.
+        BigDecimal gridNet = BigDecimal.ZERO;
+        for (BidGridItemRequest g : gridItems) {
+            AnnouncementPriceGridItemEntity annItem = annGridItemRepository.findById(g.announcementGridItemId())
+                    .filter(i -> i.getAnnouncementId().equals(ann.getId()))
+                    .orElseThrow(() -> new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "invalid-grid-item", "Invalid Grid Item",
+                            "Article hors grille de cette annonce : " + g.announcementGridItemId()));
+            gridNet = gridNet.add(annItem.getUnitPriceNet().multiply(BigDecimal.valueOf(g.quantity())));
+        }
+        gridNet = gridNet.setScale(2, java.math.RoundingMode.HALF_UP);
+
+        // Net poids : prix au kilo × poids (mode KG/MIXED).
+        BigDecimal kgNet = BigDecimal.ZERO;
+        if (hasKg) {
+            if (ann.getPricePerKg() == null) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-bid-params", "Invalid Bid Parameters",
+                        "Le prix au kilo est requis pour calculer le devis au poids");
+            }
+            kgNet = ann.getPricePerKg().multiply(request.weightKg()).setScale(2, java.math.RoundingMode.HALF_UP);
+        }
+
+        BigDecimal netEur = gridNet.add(kgNet).setScale(2, java.math.RoundingMode.HALF_UP);
 
         // Résolution du taux — promo validé strictement (exceptions propagées en RFC 7807).
         String promoCode = request.promoCode() != null ? request.promoCode().strip() : null;
@@ -122,7 +149,7 @@ public class BidService {
             promoLabel = "Code " + promoCode.toUpperCase() + " : " + pct + " % de commission";
         }
 
-        return new BidQuoteResponse(netEur, rate, commissionEur, totalEur, promoApplied, promoLabel);
+        return new BidQuoteResponse(netEur, gridNet, kgNet, rate, commissionEur, totalEur, promoApplied, promoLabel);
     }
 
     @Transactional
