@@ -7,8 +7,12 @@ import java.math.BigDecimal;
  * sans calculer localement.
  */
 public record BidQuoteResponse(
-        /** Montant net voyageur (= weightKg × pricePerKg). */
+        /** Montant net voyageur total (= gridNetEur + kgNetEur). */
         BigDecimal netEur,
+        /** Part nette issue des articles de la grille (= Σ unitPriceNet × quantité). 0 si mode KG. */
+        BigDecimal gridNetEur,
+        /** Part nette issue du poids (= weightKg × pricePerKg). 0 si mode GRID. */
+        BigDecimal kgNetEur,
         /** Taux de commission Dony effectif (promo/override/global). */
         BigDecimal rate,
         /** Commission Dony = netEur × rate. */
