@@ -90,15 +90,22 @@ public class CancellationService {
         announcement.setStatus(AnnouncementStatus.CANCELLED);
         announcementRepository.save(announcement);
 
-        // Cancel all accepted bids and create cancellation records
-        List<BidEntity> acceptedBids = bidRepository.findByAnnouncementIdAndStatus(
-                request.announcementId(), BidStatus.ACCEPTED);
+        // Cancel ALL in-progress bids on this trip (not just ACCEPTED) so each
+        // sender's bid reflects the cancelled trip — sinon un bid PENDING /
+        // PAYMENT_ESCROWED gardait son statut partout. Set « actif » canonique
+        // (cf. BidCheckoutService). Les remboursements sont gérés par les
+        // listeners de TripCancelledEvent, par bid, selon le statut du PAIEMENT :
+        // un PAYMENT_ESCROWED (escrow détenu) est remboursé, un PENDING cash
+        // (sans paiement) est simplement annulé.
+        List<BidEntity> affectedBids = bidRepository.findByAnnouncementIdAndStatusIn(
+                request.announcementId(),
+                List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED));
 
         List<UUID> affectedSenderIds = new ArrayList<>();
         List<UUID> affectedBidIds = new ArrayList<>();
         List<CancellationEntity> cancellations = new ArrayList<>();
 
-        for (BidEntity bid : acceptedBids) {
+        for (BidEntity bid : affectedBids) {
             bid.setStatus(BidStatus.CANCELLED);
             bidRepository.save(bid);
 
@@ -120,7 +127,7 @@ public class CancellationService {
 
         auditService.log("ANNOUNCEMENT", request.announcementId(), "TRIP_CANCELLED", traveler.getId(),
                 Map.of("reason", request.reason(),
-                       "affectedBids", String.valueOf(acceptedBids.size()),
+                       "affectedBids", String.valueOf(affectedBids.size()),
                        "cancellationCount", String.valueOf(cancellationCount)));
 
         if (cancellationCount >= 3) {
@@ -134,7 +141,7 @@ public class CancellationService {
         // Build bidPaymentMethods so listeners (e.g. WalletCancellationListener) don't need BidRepository
         Map<UUID, String> bidPaymentMethods = new HashMap<>();
         Map<UUID, String> bidCommissionChargedVia = new HashMap<>();
-        for (BidEntity bid : acceptedBids) {
+        for (BidEntity bid : affectedBids) {
             String methodName = bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE";
             bidPaymentMethods.put(bid.getId(), methodName);
             if (bid.getCommissionChargedVia() != null) {
@@ -149,11 +156,11 @@ public class CancellationService {
 
         // Generate rematch suggestions for each affected bid
         List<RematchSuggestionDto> suggestions = generateRematchSuggestions(
-                announcement, acceptedBids, cancellations);
+                announcement, affectedBids, cancellations);
 
         return new CancellationResponse(
                 request.announcementId(),
-                acceptedBids.size(),
+                affectedBids.size(),
                 request.reason(),
                 suggestions,
                 LocalDateTime.now(ZoneOffset.UTC)
