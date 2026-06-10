@@ -203,6 +203,33 @@ class AnnouncementControllerIntegrationTest {
     }
 
     @Test
+    void createAnnouncement_withKgExactCapacityUnit_returns201() throws Exception {
+        // Régression : capacityUnit "KG_EXACT" (capacité personnalisée saisie par le
+        // voyageur) doit être désérialisé sans 400 « Malformed request payload ».
+        seedTraveler("uid-test-traveler");
+        String body = """
+            {
+              "departureCity": "Paris",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "availableKg": 15,
+              "pricePerKg": 5,
+              "transportMode": "PLANE",
+              "capacityUnit": "KG_EXACT",
+              "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447}
+            }
+            """.formatted(LocalDate.now().plusDays(10));
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.capacityUnit").value("KG_EXACT"))
+            .andExpect(jsonPath("$.availableKg").value(15));
+    }
+
+    @Test
     void createAnnouncement_withInvalidTransportMode_returns400() throws Exception {
         seedTraveler("uid-test-traveler");
         mockMvc.perform(post("/announcements")
