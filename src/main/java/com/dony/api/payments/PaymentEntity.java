@@ -37,6 +37,10 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "commission_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal commissionAmount;
 
+    /** Montant cumulé remboursé (EUR) — miroir absolu de Stripe charge.amount_refunded. */
+    @Column(name = "refunded_amount", precision = 10, scale = 2)
+    private BigDecimal refundedAmount;
+
     @Column(name = "status", nullable = false, length = 30)
     @Enumerated(EnumType.STRING)
     private PaymentStatus status = PaymentStatus.PENDING;
@@ -70,6 +74,9 @@ public class PaymentEntity extends BaseEntity {
 
     public BigDecimal getCommissionAmount() { return commissionAmount; }
     public void setCommissionAmount(BigDecimal commissionAmount) { this.commissionAmount = commissionAmount; }
+
+    public BigDecimal getRefundedAmount() { return refundedAmount; }
+    public void setRefundedAmount(BigDecimal refundedAmount) { this.refundedAmount = refundedAmount; }
 
     public PaymentStatus getStatus() { return status; }
     public void setStatus(PaymentStatus status) { this.status = status; }
