@@ -10,6 +10,7 @@ import com.dony.api.matching.dto.TripsSummaryDto;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,9 @@ class TripsSummaryServiceTest {
     @Test
     void computeSummary_aggregates_active_trips_kg_and_revenue() {
         when(announcementRepository.countByTravelerIdAndStatusIn(
-                eq(traveler.getId()), any())).thenReturn(3L);
+                eq(traveler.getId()),
+                eq(List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL,
+                        AnnouncementStatus.IN_PROGRESS)))).thenReturn(3L);
         when(bidRepository.sumDeliveredKgForTraveler(
                 eq(traveler.getId()), eq(BidStatus.COMPLETED), any(), any()))
                 .thenReturn(new BigDecimal("19.0"));
