@@ -42,6 +42,19 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("from") java.time.LocalDateTime from,
             @Param("to") java.time.LocalDateTime to);
 
+    @Query("""
+        SELECT COALESCE(SUM(b.weightKg), 0)
+        FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.createdAt BETWEEN :from AND :to
+    """)
+    java.math.BigDecimal sumDeliveredKgForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
     /**
      * Counts only bids that are currently visible to the traveler on their announcement
      * (PENDING demands awaiting traveler action). Excludes AWAITING_PAYMENT (sender hasn't paid),

@@ -115,6 +115,9 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     long countByTravelerIdAndStatus(UUID travelerId, AnnouncementStatus status);
 
+    long countByTravelerIdAndStatusIn(
+            UUID travelerId, java.util.Collection<AnnouncementStatus> statuses);
+
     @Query("""
         SELECT new com.dony.api.matching.dto.TravelerStatsDto$DestinationStat(
             a.departureCity, a.arrivalCity, COUNT(a))
