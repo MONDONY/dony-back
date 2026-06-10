@@ -12,5 +12,6 @@ public record LinkedTripSummary(
     String pickupAddressLabel,
     String deliveryAddressLabel,
     int availableKg,
+    String capacityUnit,        // "SUITCASE_23KG" | "SUITCASE_32KG" | "KG_FREE" — null si absent
     String description
 ) {}
