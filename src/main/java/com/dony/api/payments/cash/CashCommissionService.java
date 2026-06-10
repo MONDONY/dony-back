@@ -10,6 +10,7 @@ import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.CapacityUnit;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
@@ -545,7 +546,9 @@ public class CashCommissionService {
                 && bid.getCommissionStatus() == CommissionStatus.CHARGED) {
             return AcceptBidResponse.accepted();
         }
-        if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        // « Kilo libre » (KG_FREE) : capacité non bornée — pas de rejet de capacité.
+        if (announcement.getCapacityUnit() != CapacityUnit.KG_FREE
+                && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(HttpStatus.CONFLICT,
                     "capacity-insufficient", "Insufficient Capacity",
                     "Capacité insuffisante pour accepter cette demande");
@@ -680,9 +683,14 @@ public class CashCommissionService {
         if (bid.getTrackingToken() == null) bid.setTrackingToken(UUID.randomUUID().toString());
         if (bid.getTrackingNumber() == null) bid.setTrackingNumber(generateTrackingNumber());
 
-        announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
-        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
-            announcement.setStatus(AnnouncementStatus.FULL);
+        // « Kilo libre » (KG_FREE) : capacité non bornée — on ne décrémente pas
+        // availableKg et l'annonce ne passe jamais FULL (cohérent avec BidService).
+        final boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        if (!isKgFree) {
+            announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+            if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+                announcement.setStatus(AnnouncementStatus.FULL);
+            }
         }
         announcementRepo.save(announcement);
         bidRepo.save(bid);

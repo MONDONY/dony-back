@@ -797,6 +797,42 @@ class CashCommissionServiceTest {
                 assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
             }
         }
+
+        // --- KG_FREE regression ---
+
+        @Test
+        void kgFreeAnnouncement_weightExceedsAvailable_doesNotThrowCapacityInsufficient() throws StripeException {
+            // Régression : KG_FREE contourne le rejet « capacity-insufficient » et
+            // ne décrémente pas availableKg ni ne passe l'annonce en FULL.
+            announcement.setCapacityUnit(com.dony.api.matching.CapacityUnit.KG_FREE);
+            bid.setWeightKg(new java.math.BigDecimal("999")); // largement > availableKg=20
+            java.math.BigDecimal availableKgBefore = announcement.getAvailableKg();
+
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_kgfree");
+            mockPi.setStatus("succeeded");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                AcceptBidResponse resp = service.acceptCashBid(
+                        bid.getId(), travelerId, com.dony.api.payments.cash.CommissionSource.CARD);
+
+                // 1. Pas d'exception capacity-insufficient — bid accepté
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+                assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+
+                // 2. availableKg inchangé (KG_FREE ne décrémente pas)
+                assertThat(announcement.getAvailableKg()).isEqualByComparingTo(availableKgBefore);
+
+                // 3. L'annonce ne passe pas FULL
+                assertThat(announcement.getStatus()).isNotEqualTo(AnnouncementStatus.FULL);
+
+                // 4. L'événement BidAccepted est bien publié
+                verify(events).publishEvent(any(BidAcceptedEvent.class));
+            }
+        }
     }
 
     // ===================== refundCommission =====================
