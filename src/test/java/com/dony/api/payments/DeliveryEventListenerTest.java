@@ -12,6 +12,8 @@ import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Transfer;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentCaptureParams;
 import com.stripe.param.TransferCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,12 +85,15 @@ class DeliveryEventListenerTest {
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
              MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
-            when(pi.capture()).thenReturn(pi);
+            ArgumentCaptor<RequestOptions> optsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+            when(pi.capture(any(PaymentIntentCaptureParams.class), optsCaptor.capture())).thenReturn(pi);
             piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
 
             listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId));
 
-            verify(pi).capture();
+            verify(pi).capture(any(PaymentIntentCaptureParams.class), any(RequestOptions.class));
+            // Clé d'idempotence stable capture-{paymentId} contre la double capture
+            assertThat(optsCaptor.getValue().getIdempotencyKey()).startsWith("capture-");
             transferStatic.verifyNoInteractions();
         }
 
@@ -110,7 +115,9 @@ class DeliveryEventListenerTest {
              MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
             Transfer transfer = mock(Transfer.class);
             ArgumentCaptor<TransferCreateParams> captor = ArgumentCaptor.forClass(TransferCreateParams.class);
-            transferStatic.when(() -> Transfer.create(captor.capture())).thenReturn(transfer);
+            ArgumentCaptor<RequestOptions> optsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+            transferStatic.when(() -> Transfer.create(captor.capture(), optsCaptor.capture()))
+                    .thenReturn(transfer);
 
             listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId));
 
@@ -120,6 +127,8 @@ class DeliveryEventListenerTest {
             assertThat(params.getCurrency()).isEqualTo("eur");
             assertThat(params.getDestination()).isEqualTo("acct_xyz");
             assertThat(params.getSourceTransaction()).isEqualTo("ch_new");
+            // Clé d'idempotence stable transfer-{paymentId} contre le double Transfer
+            assertThat(optsCaptor.getValue().getIdempotencyKey()).startsWith("transfer-");
         }
 
         verify(paymentRepository).markReleasedIfEscrow(any(), any());
@@ -182,7 +191,8 @@ class DeliveryEventListenerTest {
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
             ArgumentCaptor<TransferCreateParams> captor = ArgumentCaptor.forClass(TransferCreateParams.class);
-            transferStatic.when(() -> Transfer.create(captor.capture())).thenReturn(mock(Transfer.class));
+            transferStatic.when(() -> Transfer.create(captor.capture(), any(RequestOptions.class)))
+                    .thenReturn(mock(Transfer.class));
 
             listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId));
 
@@ -233,7 +243,8 @@ class DeliveryEventListenerTest {
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
             ArgumentCaptor<TransferCreateParams> captor = ArgumentCaptor.forClass(TransferCreateParams.class);
-            transferStatic.when(() -> Transfer.create(captor.capture())).thenReturn(mock(Transfer.class));
+            transferStatic.when(() -> Transfer.create(captor.capture(), any(RequestOptions.class)))
+                    .thenReturn(mock(Transfer.class));
 
             listener.handleDeliveryConfirmed(event(bidId, travelerId));
 
@@ -259,7 +270,7 @@ class DeliveryEventListenerTest {
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
-            transferStatic.when(() -> Transfer.create(any(TransferCreateParams.class)))
+            transferStatic.when(() -> Transfer.create(any(TransferCreateParams.class), any(RequestOptions.class)))
                     .thenThrow(mock(com.stripe.exception.InvalidRequestException.class));
 
             // L'exception est propagée pour faire rollback la transaction REQUIRES_NEW :

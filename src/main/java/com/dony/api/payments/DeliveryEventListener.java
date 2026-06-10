@@ -12,6 +12,8 @@ import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Transfer;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentCaptureParams;
 import com.stripe.param.TransferCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -175,7 +177,12 @@ public class DeliveryEventListener {
         // funds directly to the traveler's Connect account because transfer_data was
         // set at PaymentIntent creation.
         PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
-        pi.capture();
+        // Clé d'idempotence stable : un AFTER_COMMIT rejoué ou une redelivery de webhook
+        // ne déclenche pas une seconde capture côté Stripe.
+        pi.capture(PaymentIntentCaptureParams.builder().build(),
+                RequestOptions.builder()
+                        .setIdempotencyKey("capture-" + payment.getId())
+                        .build());
     }
 
     private void releaseV2(PaymentEntity payment, DeliveryConfirmedEvent event) throws StripeException {
@@ -209,6 +216,11 @@ public class DeliveryEventListener {
             builder.setSourceTransaction(payment.getStripeChargeId());
         }
 
-        Transfer.create(builder.build());
+        // Clé d'idempotence stable : un AFTER_COMMIT rejoué ou une redelivery de webhook
+        // ne déclenche pas un second Transfer côté Stripe.
+        Transfer.create(builder.build(),
+                RequestOptions.builder()
+                        .setIdempotencyKey("transfer-" + payment.getId())
+                        .build());
     }
 }
