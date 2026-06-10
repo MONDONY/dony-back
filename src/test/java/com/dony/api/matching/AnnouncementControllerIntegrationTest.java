@@ -173,6 +173,36 @@ class AnnouncementControllerIntegrationTest {
     }
 
     @Test
+    void createAnnouncement_withCountryCodes_exposesCodesAndFlags() throws Exception {
+        // Les codes pays ISO-2 envoyés à la création sont persistés et renvoyés,
+        // accompagnés de leurs drapeaux emoji résolus par FlagService (US → 🇺🇸).
+        seedTraveler("uid-test-traveler");
+        String body = """
+            {
+              "departureCity": "New York",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "availableKg": 10,
+              "pricePerKg": 5,
+              "transportMode": "PLANE",
+              "pickupAddress": {"label": "JFK", "lat": 40.641, "lng": -73.778},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
+              "departureCountryCode": "US",
+              "arrivalCountryCode": "SN"
+            }
+            """.formatted(LocalDate.now().plusDays(10));
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.departureCountryCode").value("US"))
+            .andExpect(jsonPath("$.arrivalCountryCode").value("SN"))
+            .andExpect(jsonPath("$.departureFlag").value("🇺🇸"))
+            .andExpect(jsonPath("$.arrivalFlag").value("🇸🇳"));
+    }
+
+    @Test
     void createAnnouncement_withInvalidTransportMode_returns400() throws Exception {
         seedTraveler("uid-test-traveler");
         mockMvc.perform(post("/announcements")

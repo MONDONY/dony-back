@@ -39,6 +39,12 @@ public class AnnouncementEntity extends BaseEntity {
     @Column(name = "arrival_city", nullable = false, length = 100)
     private String arrivalCity;
 
+    @Column(name = "departure_country_code", length = 2)
+    private String departureCountryCode;
+
+    @Column(name = "arrival_country_code", length = 2)
+    private String arrivalCountryCode;
+
     @Column(name = "departure_date", nullable = false)
     private LocalDate departureDate;
 
@@ -217,6 +223,12 @@ public class AnnouncementEntity extends BaseEntity {
 
     public String getArrivalCity() { return arrivalCity; }
     public void setArrivalCity(String arrivalCity) { this.arrivalCity = arrivalCity; }
+
+    public String getDepartureCountryCode() { return departureCountryCode; }
+    public void setDepartureCountryCode(String departureCountryCode) { this.departureCountryCode = departureCountryCode; }
+
+    public String getArrivalCountryCode() { return arrivalCountryCode; }
+    public void setArrivalCountryCode(String arrivalCountryCode) { this.arrivalCountryCode = arrivalCountryCode; }
 
     public LocalDate getDepartureDate() { return departureDate; }
     public void setDepartureDate(LocalDate departureDate) { this.departureDate = departureDate; }
