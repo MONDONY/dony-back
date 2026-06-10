@@ -39,7 +39,8 @@ class PaymentListenerTransactionalContractTest {
                 Arguments.of(ParcelRefusedEventListener.class, "onParcelRefused"),
                 Arguments.of(NoShowEventListener.class, "onVoyageurNoShow"),
                 Arguments.of(BidExpiredOnDepartureEventListener.class, "handleBidExpired"),
-                Arguments.of(TripCancelledEventListener.class, "handleTripCancelled")
+                Arguments.of(TripCancelledEventListener.class, "handleTripCancelled"),
+                Arguments.of(SenderNoShowConfirmedListener.class, "onCancellationConfirmed")
         );
     }
 
