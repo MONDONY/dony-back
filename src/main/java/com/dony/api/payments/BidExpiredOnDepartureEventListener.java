@@ -9,10 +9,12 @@ import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.RefundCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Map;
 import java.util.Optional;
@@ -37,9 +39,9 @@ public class BidExpiredOnDepartureEventListener {
         this.auditService = auditService;
     }
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleBidExpired(BidExpiredOnDepartureEvent event) {
         Optional<PaymentEntity> paymentOpt = paymentRepository.findByBidId(event.getBidId());
         if (paymentOpt.isEmpty()) {
@@ -80,24 +82,33 @@ public class BidExpiredOnDepartureEventListener {
     }
 
     private void refundEscrowedPayment(PaymentEntity payment) {
+        // Claim atomique ESCROW → REFUNDED avant l'appel Stripe : empêche un double
+        // remboursement si un autre listener (annulation, no-show…) traite le même paiement.
+        int claimed = paymentRepository.markRefundedIfEscrow(payment.getId());
+        if (claimed == 0) {
+            log.info("Paiement {} déjà sorti d'ESCROW — remboursement ignoré (bid expiré)",
+                    payment.getId());
+            return;
+        }
+
         try {
             Refund.create(RefundCreateParams.builder()
                     .setPaymentIntent(payment.getStripePaymentIntentId())
                     .build());
-
-            payment.setStatus(PaymentStatus.REFUNDED);
-            paymentRepository.save(payment);
-
-            auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED_BID_EXPIRED",
-                    payment.getBidId(),
-                    Map.of("piId", payment.getStripePaymentIntentId(),
-                           "amount", payment.getAmount().toPlainString(),
-                           "reason", "bid_expired_traveler_departed"));
-
-            log.info("Remboursement émis pour PI {} (bid expiré au départ)", payment.getStripePaymentIntentId());
-
         } catch (StripeException e) {
             log.error("Échec remboursement PI {} : {}", payment.getStripePaymentIntentId(), e.getMessage(), e);
+            // Rollback de la transaction REQUIRES_NEW : le claim ESCROW → REFUNDED est
+            // annulé et le paiement reste remboursable (backstop admin).
+            throw new IllegalStateException(
+                    "Stripe refund failed for payment " + payment.getId(), e);
         }
+
+        auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED_BID_EXPIRED",
+                payment.getBidId(),
+                Map.of("piId", payment.getStripePaymentIntentId(),
+                       "amount", payment.getAmount().toPlainString(),
+                       "reason", "bid_expired_traveler_departed"));
+
+        log.info("Remboursement émis pour PI {} (bid expiré au départ)", payment.getStripePaymentIntentId());
     }
 }

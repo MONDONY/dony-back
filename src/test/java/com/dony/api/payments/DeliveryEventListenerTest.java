@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -77,6 +78,7 @@ class DeliveryEventListenerTest {
         PaymentEntity p = payment(true, PaymentStatus.ESCROW, "ch_legacy");
         UUID travelerId = UUID.randomUUID();
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(1);
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
              MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
@@ -90,8 +92,8 @@ class DeliveryEventListenerTest {
             transferStatic.verifyNoInteractions();
         }
 
-        assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
-        assertThat(p.getEscrowReleasedAt()).isNotNull();
+        // Transition de statut faite par le claim atomique markReleasedIfEscrow
+        verify(paymentRepository).markReleasedIfEscrow(any(), any());
         verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_RELEASED_LEGACY"), any(), any());
         verify(eventPublisher).publishEvent(any(PaymentReleasedEvent.class));
     }
@@ -101,6 +103,7 @@ class DeliveryEventListenerTest {
         PaymentEntity p = payment(false, PaymentStatus.ESCROW, "ch_new");
         UUID travelerId = UUID.randomUUID();
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
@@ -119,9 +122,28 @@ class DeliveryEventListenerTest {
             assertThat(params.getSourceTransaction()).isEqualTo("ch_new");
         }
 
-        assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
+        verify(paymentRepository).markReleasedIfEscrow(any(), any());
         verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_RELEASED_TRANSFER"), any(), any());
         verify(eventPublisher).publishEvent(any(PaymentReleasedEvent.class));
+    }
+
+    @Test
+    void release_skipped_when_atomic_claim_lost() {
+        // Un traitement concurrent a déjà sorti le paiement d'ESCROW entre la lecture
+        // et le claim → aucun appel Stripe, aucun audit, aucun event.
+        PaymentEntity p = payment(false, PaymentStatus.ESCROW, "ch_race");
+        UUID travelerId = UUID.randomUUID();
+        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(0);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
+            listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId));
+            piStatic.verifyNoInteractions();
+            transferStatic.verifyNoInteractions();
+        }
+        verifyNoInteractions(auditService);
+        verify(eventPublisher, never()).publishEvent(any(PaymentReleasedEvent.class));
     }
 
     @Test
@@ -155,6 +177,7 @@ class DeliveryEventListenerTest {
         PaymentEntity p = payment(false, PaymentStatus.ESCROW, null);
         UUID travelerId = UUID.randomUUID();
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
@@ -205,6 +228,7 @@ class DeliveryEventListenerTest {
         p.setBidId(null); // thread-keyed payment
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
         when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
@@ -220,28 +244,31 @@ class DeliveryEventListenerTest {
             assertThat(params.getMetadata().get("bid_id")).isEqualTo(bidId.toString());
         }
 
-        assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
-        assertThat(p.getEscrowReleasedAt()).isNotNull();
+        verify(paymentRepository).markReleasedIfEscrow(any(), any());
         // actor id must be the delivered bid, not the null payment.getBidId()
         verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_RELEASED_TRANSFER"), eq(bidId), any());
         verify(eventPublisher).publishEvent(any(PaymentReleasedEvent.class));
     }
 
     @Test
-    void transfer_failure_is_logged_not_thrown() {
+    void transfer_failure_rolls_back_claim() {
         PaymentEntity p = payment(false, PaymentStatus.ESCROW, "ch_fail");
         UUID travelerId = UUID.randomUUID();
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markReleasedIfEscrow(any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler()));
 
         try (MockedStatic<Transfer> transferStatic = mockStatic(Transfer.class)) {
             transferStatic.when(() -> Transfer.create(any(TransferCreateParams.class)))
                     .thenThrow(mock(com.stripe.exception.InvalidRequestException.class));
 
-            assertThatNoException().isThrownBy(() ->
-                    listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId)));
+            // L'exception est propagée pour faire rollback la transaction REQUIRES_NEW :
+            // le claim ESCROW → RELEASED est annulé, le backstop admin J+48 garde la main.
+            assertThatThrownBy(() ->
+                    listener.handleDeliveryConfirmed(event(p.getBidId(), travelerId)))
+                    .isInstanceOf(IllegalStateException.class);
         }
-        assertThat(p.getStatus()).isEqualTo(PaymentStatus.ESCROW); // unchanged
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any(PaymentReleasedEvent.class));
     }
 }

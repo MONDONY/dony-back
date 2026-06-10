@@ -415,7 +415,12 @@ public class AnnouncementService {
      * Checks all ACTIVE/FULL announcements whose departure time has passed and transitions
      * them to IN_PROGRESS (or directly COMPLETED if no ACCEPTED bids remain).
      * Called inline on each "Mes trajets" load, and also by the hourly scheduler as a safety net.
+     *
+     * @Transactional requis : BidExpiredOnDepartureEvent est écouté en
+     * AFTER_COMMIT — publié hors transaction (chemin scheduler), l'event serait
+     * silencieusement perdu et les remboursements jamais déclenchés.
      */
+    @Transactional
     public void triggerInProgressTransitions() {
         ZonedDateTime nowParis = ZonedDateTime.now(DEFAULT_ZONE);
         LocalDate today = nowParis.toLocalDate();

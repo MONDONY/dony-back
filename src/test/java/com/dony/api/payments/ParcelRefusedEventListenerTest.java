@@ -1,7 +1,7 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
-import com.dony.api.matching.events.BidRejectedEvent;
+import com.dony.api.matching.events.ParcelRefusedEvent;
 import com.stripe.exception.ApiException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -11,8 +11,8 @@ import com.stripe.param.RefundCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.MockedStatic;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -31,36 +31,37 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class BidRejectedEventListenerTest {
+class ParcelRefusedEventListenerTest {
 
     @Mock private PaymentRepository paymentRepository;
     @Mock private AuditService auditService;
 
-    private BidRejectedEventListener listener;
+    private ParcelRefusedEventListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new BidRejectedEventListener(paymentRepository, auditService);
+        listener = new ParcelRefusedEventListener(paymentRepository, auditService);
     }
 
-    private PaymentEntity payment(PaymentStatus status, boolean legacy) {
+    private PaymentEntity payment(PaymentStatus status) {
         PaymentEntity p = new PaymentEntity();
         p.setBidId(UUID.randomUUID());
         p.setStripePaymentIntentId("pi_xxx");
         p.setStatus(status);
-        p.setLegacyDestinationCharge(legacy);
         p.setAmount(new BigDecimal("30.00"));
         p.setCommissionAmount(new BigDecimal("3.60"));
         return p;
     }
 
-    private BidRejectedEvent eventFor(UUID bidId) {
-        return new BidRejectedEvent(bidId, UUID.randomUUID(), "test reason");
+    private ParcelRefusedEvent eventFor(UUID bidId) {
+        return new ParcelRefusedEvent(bidId, UUID.randomUUID(), UUID.randomUUID(), "colis abîmé");
     }
 
     @Test
-    void cancels_when_payment_pending() throws Exception {
-        PaymentEntity p = payment(PaymentStatus.PENDING, false);
+    void cancels_payment_intent_when_payment_pending() throws Exception {
+        // Régression : un PI non encore capturé doit être ANNULÉ, pas remboursé
+        // (Refund.create échoue sur un PI non capturé).
+        PaymentEntity p = payment(PaymentStatus.PENDING);
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
@@ -69,20 +70,20 @@ class BidRejectedEventListenerTest {
             when(pi.cancel(any(PaymentIntentCancelParams.class))).thenReturn(pi);
             piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
 
-            listener.handleBidRejected(eventFor(p.getBidId()));
+            listener.onParcelRefused(eventFor(p.getBidId()));
 
             verify(pi).cancel(any(PaymentIntentCancelParams.class));
             refundStatic.verifyNoInteractions();
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(paymentRepository).save(p);
-        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_CANCELLED_BID_REJECTED"),
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_CANCELLED_PARCEL_REFUSED"),
                 any(), any(Map.class));
     }
 
     @Test
-    void refunds_when_payment_escrow_legacy() {
-        PaymentEntity p = payment(PaymentStatus.ESCROW, true);
+    void refunds_when_payment_escrow() {
+        PaymentEntity p = payment(PaymentStatus.ESCROW);
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(any())).thenReturn(1);
 
@@ -90,65 +91,29 @@ class BidRejectedEventListenerTest {
             refundStatic.when(() -> Refund.create(any(RefundCreateParams.class)))
                     .thenReturn(mock(Refund.class));
 
-            listener.handleBidRejected(eventFor(p.getBidId()));
-
-            refundStatic.verify(() -> Refund.create(any(RefundCreateParams.class)));
-        }
-        // Transition de statut faite par le claim atomique, plus par save()
-        verify(paymentRepository).markRefundedIfEscrow(any());
-        verify(paymentRepository, never()).save(any());
-        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_BID_REJECTED"),
-                any(), any(Map.class));
-    }
-
-    @Test
-    void refunds_when_payment_escrow_v2_captured_on_platform() {
-        PaymentEntity p = payment(PaymentStatus.ESCROW, false); // v2 — captured on platform
-        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
-        when(paymentRepository.markRefundedIfEscrow(any())).thenReturn(1);
-
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
-            refundStatic.when(() -> Refund.create(any(RefundCreateParams.class)))
-                    .thenReturn(mock(Refund.class));
-
-            listener.handleBidRejected(eventFor(p.getBidId()));
+            listener.onParcelRefused(eventFor(p.getBidId()));
 
             refundStatic.verify(() -> Refund.create(any(RefundCreateParams.class)));
         }
         verify(paymentRepository).markRefundedIfEscrow(any());
         verify(paymentRepository, never()).save(any());
-        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_BID_REJECTED"),
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_PARCEL_REFUSED"),
                 any(), any(Map.class));
     }
 
     @Test
-    void refund_skipped_when_atomic_claim_lost() {
-        // Un autre listener (annulation, no-show…) a déjà sorti le paiement d'ESCROW
-        // entre la lecture et le claim → aucun appel Stripe, aucun audit.
-        PaymentEntity p = payment(PaymentStatus.ESCROW, false);
-        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
-        when(paymentRepository.markRefundedIfEscrow(any())).thenReturn(0);
-
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
-            listener.handleBidRejected(eventFor(p.getBidId()));
-            refundStatic.verifyNoInteractions();
-        }
-        verify(paymentRepository, never()).save(any());
-        verify(auditService, never()).log(any(), any(), any(), any(), any());
-    }
-
-    @Test
-    void no_op_when_payment_already_released() {
-        PaymentEntity p = payment(PaymentStatus.RELEASED, false);
+    void no_op_when_payment_released() {
+        // Régression : un paiement RELEASED (fonds déjà transférés au voyageur) ne doit
+        // JAMAIS être remboursé — double sortie d'argent sinon.
+        PaymentEntity p = payment(PaymentStatus.RELEASED);
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
              MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
-            listener.handleBidRejected(eventFor(p.getBidId()));
+            listener.onParcelRefused(eventFor(p.getBidId()));
             piStatic.verifyNoInteractions();
             refundStatic.verifyNoInteractions();
         }
-        // Statut inchangé, aucun side effect
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
         verify(paymentRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
@@ -156,7 +121,7 @@ class BidRejectedEventListenerTest {
 
     @Test
     void cancel_pending_swallows_stripe_exception() {
-        PaymentEntity p = payment(PaymentStatus.PENDING, false);
+        PaymentEntity p = payment(PaymentStatus.PENDING);
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
 
         StripeException stripeEx = new ApiException("boom", null, null, 500, null);
@@ -164,17 +129,29 @@ class BidRejectedEventListenerTest {
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
             piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenThrow(stripeEx);
 
-            listener.handleBidRejected(eventFor(p.getBidId()));
+            listener.onParcelRefused(eventFor(p.getBidId()));
         }
-        // statut inchangé : on ne sauvegarde pas, on n'audite pas
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.PENDING);
         verify(paymentRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
 
     @Test
+    void refund_skipped_when_atomic_claim_lost() {
+        PaymentEntity p = payment(PaymentStatus.ESCROW);
+        when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(any())).thenReturn(0);
+
+        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            listener.onParcelRefused(eventFor(p.getBidId()));
+            refundStatic.verifyNoInteractions();
+        }
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
     void refund_escrow_stripe_failure_rolls_back_claim() {
-        PaymentEntity p = payment(PaymentStatus.ESCROW, false);
+        PaymentEntity p = payment(PaymentStatus.ESCROW);
         when(paymentRepository.findByBidId(p.getBidId())).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(any())).thenReturn(1);
 
@@ -183,13 +160,10 @@ class BidRejectedEventListenerTest {
         try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
             refundStatic.when(() -> Refund.create(any(RefundCreateParams.class))).thenThrow(stripeEx);
 
-            // L'exception est propagée pour faire rollback la transaction REQUIRES_NEW
-            // (le claim ESCROW → REFUNDED est ainsi annulé).
-            assertThatThrownBy(() -> listener.handleBidRejected(eventFor(p.getBidId())))
+            assertThatThrownBy(() -> listener.onParcelRefused(eventFor(p.getBidId())))
                     .isInstanceOf(IllegalStateException.class)
                     .hasCause(stripeEx);
         }
-        verify(paymentRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
 
@@ -198,13 +172,10 @@ class BidRejectedEventListenerTest {
         UUID bidId = UUID.randomUUID();
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
 
-        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
-             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
-            listener.handleBidRejected(eventFor(bidId));
-            piStatic.verifyNoInteractions();
+        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            listener.onParcelRefused(eventFor(bidId));
             refundStatic.verifyNoInteractions();
         }
-        verify(paymentRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
 }

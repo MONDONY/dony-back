@@ -114,50 +114,60 @@ public class DeliveryEventListener {
             return;
         }
 
+        // Claim atomique ESCROW → RELEASED avant les appels Stripe : empêche un
+        // double versement (double capture / double Transfer) si l'événement de
+        // livraison est traité deux fois en parallèle.
+        int claimed = paymentRepository.markReleasedIfEscrow(
+                payment.getId(), LocalDateTime.now(ZoneOffset.UTC));
+        if (claimed == 0) {
+            log.info("Payment {} for bid {} already left ESCROW — skipping release",
+                    payment.getId(), event.getBidId());
+            return;
+        }
+
         try {
             if (payment.isLegacyDestinationCharge()) {
                 releaseLegacy(payment);
             } else {
                 releaseV2(payment, event);
             }
-
-            payment.setStatus(PaymentStatus.RELEASED);
-            payment.setEscrowReleasedAt(LocalDateTime.now(ZoneOffset.UTC));
-            paymentRepository.save(payment);
-
-            String action = payment.isLegacyDestinationCharge()
-                    ? "ESCROW_RELEASED_LEGACY"
-                    : "ESCROW_RELEASED_TRANSFER";
-            // Use event.getBidId() (the delivered bid) for the audit actor/payload: a
-            // negotiation/thread payment has a NULL payment.getBidId(), which would both
-            // lose the bid reference and NPE on toString().
-            auditService.log(
-                    "PAYMENT",
-                    payment.getId(),
-                    action,
-                    event.getBidId(),
-                    Map.of(
-                            "bidId", event.getBidId().toString(),
-                            "piId", payment.getStripePaymentIntentId(),
-                            "amount", payment.getAmount().toPlainString(),
-                            "legacy", String.valueOf(payment.isLegacyDestinationCharge())
-                    )
-            );
-
-            log.info("Escrow released for payment {} (bid={}, legacy={})",
-                    payment.getId(), event.getBidId(), payment.isLegacyDestinationCharge());
-
-            // Notify traveler of payout (Story 8.2). event.getBidId() — payment.getBidId()
-            // is NULL for negotiation/thread payments.
-            eventPublisher.publishEvent(new PaymentReleasedEvent(
-                    event.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
-
         } catch (StripeException e) {
             log.error("Escrow release failed for payment {} (bid={}, legacy={}): {}",
                     payment.getId(), event.getBidId(),
                     payment.isLegacyDestinationCharge(), e.getMessage(), e);
-            // Do not rethrow — failure is logged, admin J+48 scheduler will catch it
+            // Rollback de la transaction REQUIRES_NEW : le claim ESCROW → RELEASED
+            // est annulé, le paiement reste en ESCROW — le scheduler admin J+48
+            // garde la main pour retenter la libération.
+            throw new IllegalStateException(
+                    "Stripe escrow release failed for payment " + payment.getId(), e);
         }
+
+        String action = payment.isLegacyDestinationCharge()
+                ? "ESCROW_RELEASED_LEGACY"
+                : "ESCROW_RELEASED_TRANSFER";
+        // Use event.getBidId() (the delivered bid) for the audit actor/payload: a
+        // negotiation/thread payment has a NULL payment.getBidId(), which would both
+        // lose the bid reference and NPE on toString().
+        auditService.log(
+                "PAYMENT",
+                payment.getId(),
+                action,
+                event.getBidId(),
+                Map.of(
+                        "bidId", event.getBidId().toString(),
+                        "piId", payment.getStripePaymentIntentId(),
+                        "amount", payment.getAmount().toPlainString(),
+                        "legacy", String.valueOf(payment.isLegacyDestinationCharge())
+                )
+        );
+
+        log.info("Escrow released for payment {} (bid={}, legacy={})",
+                payment.getId(), event.getBidId(), payment.isLegacyDestinationCharge());
+
+        // Notify traveler of payout (Story 8.2). event.getBidId() — payment.getBidId()
+        // is NULL for negotiation/thread payments.
+        eventPublisher.publishEvent(new PaymentReleasedEvent(
+                event.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
     }
 
     private void releaseLegacy(PaymentEntity payment) throws StripeException {
