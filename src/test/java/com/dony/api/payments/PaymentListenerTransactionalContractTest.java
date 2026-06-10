@@ -38,14 +38,14 @@ class PaymentListenerTransactionalContractTest {
                 Arguments.of(BidRejectedEventListener.class, "handleBidRejected"),
                 Arguments.of(ParcelRefusedEventListener.class, "onParcelRefused"),
                 Arguments.of(NoShowEventListener.class, "onVoyageurNoShow"),
-                Arguments.of(BidExpiredOnDepartureEventListener.class, "handleBidExpired")
+                Arguments.of(BidExpiredOnDepartureEventListener.class, "handleBidExpired"),
+                Arguments.of(TripCancelledEventListener.class, "handleTripCancelled")
         );
     }
 
     /** Listeners portant encore leur propre transaction : AFTER_COMMIT + REQUIRES_NEW. */
     static Stream<Arguments> fullContractListeners() {
         return Stream.of(
-                Arguments.of(TripCancelledEventListener.class, "handleTripCancelled"),
                 Arguments.of(DeliveryEventListener.class, "handleDeliveryConfirmed"),
                 Arguments.of(NegotiationCaptureListener.class, "onEscrowReady"),
                 Arguments.of(BidAcceptedEventListener.class, "onBidAccepted")
