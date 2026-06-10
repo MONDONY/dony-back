@@ -18,7 +18,6 @@ import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.payments.cash.CommissionProperties;
-import com.dony.api.payments.cash.PaymentMethod;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -249,9 +248,6 @@ public class CancellationService {
     @Transactional
     public CancellationEntity reportSenderNoShow(UUID bidId, UUID travelerId) {
         BidEntity bid = bidRepository.findById(bidId).orElseThrow();
-        if (bid.getPaymentMethod() != PaymentMethod.CASH) {
-            throw new IllegalStateException("Le no-show n'est signalable que pour les bids cash.");
-        }
         if (bid.getStatus() != BidStatus.ACCEPTED) {
             throw new IllegalStateException("Le bid doit être en statut ACCEPTED.");
         }
