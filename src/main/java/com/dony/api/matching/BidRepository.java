@@ -47,7 +47,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
         FROM BidEntity b
         JOIN AnnouncementEntity a ON b.announcementId = a.id
         WHERE a.travelerId = :travelerId AND b.status = :status
-          AND b.createdAt BETWEEN :from AND :to
+          AND b.createdAt BETWEEN :from AND :to AND b.deletedAt IS NULL
     """)
     java.math.BigDecimal sumDeliveredKgForTraveler(
             @Param("travelerId") UUID travelerId,
