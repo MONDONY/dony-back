@@ -11,6 +11,7 @@ import java.util.UUID;
 public record NegotiationThreadResponse(
     UUID id, UUID packageRequestId, UUID travelerId,
     UUID travelerAnnouncementId, LocalDate travelerTravelDate, BigDecimal travelerAvailableKg,
+    String travelerCapacityUnit,
     NegotiationThreadStatus status, BigDecimal currentPriceEur, int roundsCount,
     LocalDateTime lastActivityAt, LocalDateTime createdAt,
     List<NegotiationMessageResponse> messages,

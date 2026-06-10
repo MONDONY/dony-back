@@ -10,6 +10,7 @@ import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.CapacityUnit;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
@@ -80,6 +81,7 @@ public class CashCommissionService {
     private final CommissionRateResolver commissionRateResolver;
     private final com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
     private final StripeCashGateway stripeCashGateway;
+    private final com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
@@ -92,7 +94,8 @@ public class CashCommissionService {
                                  AuditService auditService,
                                  CommissionRateResolver commissionRateResolver,
                                  com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository,
-                                 StripeCashGateway stripeCashGateway) {
+                                 StripeCashGateway stripeCashGateway,
+                                 com.dony.api.matching.BidGridItemRepository bidGridItemRepository) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
@@ -104,6 +107,7 @@ public class CashCommissionService {
         this.commissionRateResolver = commissionRateResolver;
         this.negotiationThreadRepository = negotiationThreadRepository;
         this.stripeCashGateway = stripeCashGateway;
+        this.bidGridItemRepository = bidGridItemRepository;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -142,7 +146,16 @@ public class CashCommissionService {
             rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
         }
         bid.setCommissionRate(rate);
-        BigDecimal cashAmount = bid.getWeightKg().multiply(announcement.getPricePerKg());
+        // Base de commission = part kilo (poids × prix/kg, null en mode GRID pur)
+        // + part grille (somme des articles du bid). Aligné sur le calcul net de
+        // BidService — sans quoi un bid grille (weightKg null) provoquait un NPE.
+        BigDecimal kgNet = (bid.getWeightKg() != null && announcement.getPricePerKg() != null)
+                ? bid.getWeightKg().multiply(announcement.getPricePerKg())
+                : BigDecimal.ZERO;
+        BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
+                .map(i -> i.getUnitPriceNetSnapshot().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cashAmount = kgNet.add(gridNet);
         return computeCommission(cashAmount, rate);
     }
 
@@ -545,7 +558,12 @@ public class CashCommissionService {
                 && bid.getCommissionStatus() == CommissionStatus.CHARGED) {
             return AcceptBidResponse.accepted();
         }
-        if (bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        // « Kilo libre » (KG_FREE) : capacité non bornée — pas de rejet de capacité.
+        // Un bid grille pure n'a pas de poids (weightKg null) → aucun contrôle de
+        // capacité kilo à faire (sinon NPE).
+        if (announcement.getCapacityUnit() != CapacityUnit.KG_FREE
+                && bid.getWeightKg() != null
+                && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(HttpStatus.CONFLICT,
                     "capacity-insufficient", "Insufficient Capacity",
                     "Capacité insuffisante pour accepter cette demande");
@@ -680,9 +698,16 @@ public class CashCommissionService {
         if (bid.getTrackingToken() == null) bid.setTrackingToken(UUID.randomUUID().toString());
         if (bid.getTrackingNumber() == null) bid.setTrackingNumber(generateTrackingNumber());
 
-        announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
-        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
-            announcement.setStatus(AnnouncementStatus.FULL);
+        // « Kilo libre » (KG_FREE) : capacité non bornée — on ne décrémente pas
+        // availableKg et l'annonce ne passe jamais FULL (cohérent avec BidService).
+        final boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        // Un bid grille pure n'a pas de poids (weightKg null) → ne décrémente pas
+        // la capacité kilo et ne passe pas l'annonce FULL (cohérent avec BidService).
+        if (!isKgFree && bid.getWeightKg() != null) {
+            announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+            if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+                announcement.setStatus(AnnouncementStatus.FULL);
+            }
         }
         announcementRepo.save(announcement);
         bidRepo.save(bid);

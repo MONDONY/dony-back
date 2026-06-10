@@ -59,5 +59,11 @@ public record AnnouncementRequest(
 
         com.dony.api.matching.CapacityUnit capacityUnit,
 
-        com.dony.api.matching.PricingMode pricingMode
+        com.dony.api.matching.PricingMode pricingMode,
+
+        @Size(max = 2, message = "Le code pays de départ doit faire 2 caractères")
+        String departureCountryCode,
+
+        @Size(max = 2, message = "Le code pays d'arrivée doit faire 2 caractères")
+        String arrivalCountryCode
 ) {}

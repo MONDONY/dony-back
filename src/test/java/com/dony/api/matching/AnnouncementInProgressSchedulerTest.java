@@ -72,7 +72,8 @@ class AnnouncementInProgressTransitionTest {
                 announcementRepository, bidRepository,
                 mock(com.dony.api.auth.UserRepository.class),
                 auditService, eventPublisher, config,
-                mock(PriceGridService.class));
+                mock(PriceGridService.class),
+                mock(com.dony.api.country.FlagService.class));
     }
 
     private static void setId(Object entity, UUID id) {

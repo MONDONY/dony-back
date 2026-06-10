@@ -166,7 +166,9 @@ public class TripRecurrenceService {
                 List.of(),
                 paymentMethods,
                 CapacityUnit.valueOf(rec.getCapacityUnit()),
-                PricingMode.KG
+                PricingMode.KG,
+                null,
+                null
         );
     }
 

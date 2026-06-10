@@ -233,7 +233,9 @@ public class BidService {
                     "Vous avez déjà une demande en cours ou acceptée pour ce trajet");
         }
 
-        if (request.weightKg() != null && request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        boolean isKgFreeCreate = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        if (!isKgFreeCreate && request.weightKg() != null
+                && request.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "weight-exceeds-capacity", "Weight Exceeds Capacity",
                     "Poids demandé supérieur à la capacité disponible");
@@ -458,7 +460,9 @@ public class BidService {
                     "Le voyageur est déjà parti, ce trajet n'accepte plus de colis");
         }
 
-        if (bid.getWeightKg() != null && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        if (!isKgFree && bid.getWeightKg() != null
+                && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",
                     "Capacité insuffisante pour accepter cette demande");
@@ -474,10 +478,10 @@ public class BidService {
         if (bid.getTrackingToken() == null) {
             bid.setTrackingToken(java.util.UUID.randomUUID().toString());
         }
-        if (bid.getWeightKg() != null) {
+        if (!isKgFree && bid.getWeightKg() != null) {
             announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
         }
-        if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+        if (!isKgFree && announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
             announcement.setStatus(AnnouncementStatus.FULL);
         }
         announcementRepository.save(announcement);
@@ -600,13 +604,15 @@ public class BidService {
         }
 
         // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
+        // (sauf pour KG_FREE où la capacité n'est jamais décrémentée)
         if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
             AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
-                if (bid.getWeightKg() != null) {
+                boolean isKgFreeCancel = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+                if (!isKgFreeCancel && bid.getWeightKg() != null) {
                     announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
                 }
-                if (announcement.getStatus() == AnnouncementStatus.FULL) {
+                if (!isKgFreeCancel && announcement.getStatus() == AnnouncementStatus.FULL) {
                     announcement.setStatus(AnnouncementStatus.ACTIVE);
                 }
                 announcementRepository.save(announcement);

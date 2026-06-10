@@ -215,6 +215,31 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("createBid KG_FREE: 10 kg bid on availableKg=1 → bid created (placement check bypassed)")
+        void createBid_kgFree_weightExceedsSentinel_allowed() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.KG_FREE);
+            announcement.setAvailableKg(BigDecimal.ONE);  // sentinel
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            // 10 kg > availableKg=1, but KG_FREE — must not throw
+            assertThatCode(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID,
+                    buildRequest(BigDecimal.TEN, BigDecimal.valueOf(100)),
+                    httpRequest)).doesNotThrowAnyException();
+        }
+
+        @Test
         @DisplayName("valeur déclarée > 500€ → 422 UNPROCESSABLE_ENTITY")
         void createBid_valueTooHigh_throwsUnprocessable() {
             UserEntity sender = buildSender();
@@ -833,6 +858,136 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("announcement-not-accepting"));
+        }
+    }
+
+    // ─── KgFree capacity — acceptance, cancel, and placement ──────────────────
+
+    @Nested
+    @DisplayName("KG_FREE capacity")
+    class KgFreeCapacityTests {
+
+        /** KG_FREE announcement: availableKg is stored as a small sentinel (e.g. 1).
+         *  Accepting a 10 kg bid should NOT throw and should leave availableKg + status untouched. */
+        @Test
+        @DisplayName("acceptBid KG_FREE: 10 kg bid on availableKg=1 → accepted, no capacity error")
+        void acceptBid_kgFree_largeWeightAllowed() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.KG_FREE);
+            announcement.setAvailableKg(BigDecimal.ONE);  // sentinel, must stay unchanged
+            BidEntity bid = buildBid();
+            bid.setWeightKg(BigDecimal.TEN);              // 10 > 1 — would normally be rejected
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatCode(() -> bidService.acceptBid(BID_ID, TRAVELER_UID)).doesNotThrowAnyException();
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+        }
+
+        @Test
+        @DisplayName("acceptBid KG_FREE: availableKg unchanged after acceptance (no decrement)")
+        void acceptBid_kgFree_doesNotDecrementAvailableKg() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.KG_FREE);
+            announcement.setAvailableKg(BigDecimal.ONE);
+            BidEntity bid = buildBid();
+            bid.setWeightKg(BigDecimal.TEN);
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            bidService.acceptBid(BID_ID, TRAVELER_UID);
+
+            // Sentinel must remain at 1 — not decremented, not set to 0
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ONE);
+            // Status must NOT flip to FULL
+            assertThat(announcement.getStatus()).isNotEqualTo(AnnouncementStatus.FULL);
+        }
+
+        @Test
+        @DisplayName("cancelBid KG_FREE: cancelling an accepted bid does NOT re-increment availableKg")
+        void cancelBid_kgFree_doesNotReIncrementAvailableKg() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.KG_FREE);
+            announcement.setAvailableKg(BigDecimal.ONE);  // sentinel
+            BidEntity bid = buildBid();
+            bid.setWeightKg(BigDecimal.TEN);
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            // availableKg must remain at sentinel value — not inflated by 10
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ONE);
+        }
+
+        // ── Regression: non-KG_FREE behavior is unchanged ─────────────────────
+
+        @Test
+        @DisplayName("regression — SUITCASE_23KG: weight > availableKg → capacity-insufficient")
+        void acceptBid_suitcase_weightExceedsCapacity_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.SUITCASE_23KG);
+            announcement.setAvailableKg(BigDecimal.valueOf(5));
+            BidEntity bid = buildBid();
+            bid.setWeightKg(BigDecimal.TEN);  // 10 > 5
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> bidService.acceptBid(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("capacity-insufficient"));
+        }
+
+        @Test
+        @DisplayName("regression — SUITCASE_23KG: weight == availableKg → accepted, status FULL")
+        void acceptBid_suitcase_exactCapacity_becomesFull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setCapacityUnit(CapacityUnit.SUITCASE_23KG);
+            announcement.setAvailableKg(BigDecimal.valueOf(5));
+            BidEntity bid = buildBid();
+            bid.setWeightKg(BigDecimal.valueOf(5));
+            bid.setStatus(BidStatus.PAYMENT_ESCROWED);
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            bidService.acceptBid(BID_ID, TRAVELER_UID);
+
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
         }
     }
 

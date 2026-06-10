@@ -1072,6 +1072,7 @@ public class NegotiationService {
                 linkedAnn.getPickupAddressLabel(),
                 linkedAnn.getDeliveryAddressLabel(),
                 linkedAnn.getAvailableKg() != null ? linkedAnn.getAvailableKg().intValue() : 0,
+                linkedAnn.getCapacityUnit() != null ? linkedAnn.getCapacityUnit().name() : null,
                 linkedAnn.getDescription()
             );
         }
@@ -1083,6 +1084,7 @@ public class NegotiationService {
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
+            linkedAnn != null && linkedAnn.getCapacityUnit() != null ? linkedAnn.getCapacityUnit().name() : null,
             t.getStatus(), t.getCurrentPriceEur(), t.getRoundsCount().intValue(),
             t.getLastActivityAt(), t.getCreatedAt(),
             messages, paymentIntentClientSecret,

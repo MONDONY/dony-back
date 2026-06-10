@@ -38,5 +38,9 @@ public record AnnouncementResponse(
         List<AnnouncementPriceGridItemResponse> priceGridItems,
         BigDecimal reservedKg,
         boolean surplusEligible,
-        boolean surplusPublished
+        boolean surplusPublished,
+        String departureCountryCode,
+        String arrivalCountryCode,
+        String departureFlag,
+        String arrivalFlag
 ) {}

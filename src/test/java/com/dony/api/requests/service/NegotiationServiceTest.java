@@ -1763,6 +1763,73 @@ class NegotiationServiceTest {
 
             assertThat(response.paymentMethod()).isEqualTo(com.dony.api.payments.cash.PaymentMethod.WAVE);
         }
+
+        @Test
+        @DisplayName("linkedAnn KG_FREE → capacityUnit exposé dans linkedTrip ET travelerCapacityUnit")
+        void toResponse_kgFree_exposesCapacityUnit() {
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            com.dony.api.matching.AnnouncementEntity linkedAnn =
+                new com.dony.api.matching.AnnouncementEntity();
+            linkedAnn.setDepartureCity("Paris");
+            linkedAnn.setArrivalCity("Dakar");
+            linkedAnn.setAvailableKg(new BigDecimal("1"));
+            linkedAnn.setCapacityUnit(com.dony.api.matching.CapacityUnit.KG_FREE);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(linkedAnn, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            NegotiationThreadResponse response = service.toResponse(
+                thread, List.of(), null, traveler, request, TRAVELER_ID, "Expéditeur", linkedAnn);
+
+            assertThat(response.linkedTrip()).isNotNull();
+            assertThat(response.linkedTrip().capacityUnit()).isEqualTo("KG_FREE");
+            assertThat(response.travelerCapacityUnit()).isEqualTo("KG_FREE");
+        }
+
+        @Test
+        @DisplayName("linkedAnn null → travelerCapacityUnit null (fallback kg côté front)")
+        void toResponse_nullLinkedAnn_nullCapacityUnit() {
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, UUID.randomUUID());
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+
+            NegotiationThreadResponse response = service.toResponse(
+                thread, List.of(), null, traveler, request, TRAVELER_ID, "Expéditeur", null);
+
+            assertThat(response.linkedTrip()).isNull();
+            assertThat(response.travelerCapacityUnit()).isNull();
+        }
     }
 
     // ─── Task 13 — tests supplémentaires pour couvrir listMine, listForRequest,

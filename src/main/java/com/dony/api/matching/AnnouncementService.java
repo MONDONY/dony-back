@@ -62,6 +62,7 @@ public class AnnouncementService {
     private final ApplicationEventPublisher eventPublisher;
     private final DonyConfigProperties config;
     private final PriceGridService priceGridService;
+    private final com.dony.api.country.FlagService flagService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -76,7 +77,8 @@ public class AnnouncementService {
             AuditService auditService,
             ApplicationEventPublisher eventPublisher,
             DonyConfigProperties config,
-            PriceGridService priceGridService
+            PriceGridService priceGridService,
+            com.dony.api.country.FlagService flagService
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -85,6 +87,7 @@ public class AnnouncementService {
         this.eventPublisher = eventPublisher;
         this.config = config;
         this.priceGridService = priceGridService;
+        this.flagService = flagService;
     }
 
     @Transactional(readOnly = true)
@@ -293,6 +296,8 @@ public class AnnouncementService {
         announcement.setTravelerIsPro(user.isProAccount());
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
+        announcement.setDepartureCountryCode(request.departureCountryCode());
+        announcement.setArrivalCountryCode(request.arrivalCountryCode());
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
@@ -567,6 +572,8 @@ public class AnnouncementService {
 
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
+        announcement.setDepartureCountryCode(request.departureCountryCode());
+        announcement.setArrivalCountryCode(request.arrivalCountryCode());
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
@@ -760,7 +767,11 @@ public class AnnouncementService {
                 gridItems,
                 entity.getReservedKg(),
                 entity.isSurplusEligible(),
-                entity.isSurplusPublished()
+                entity.isSurplusPublished(),
+                entity.getDepartureCountryCode(),
+                entity.getArrivalCountryCode(),
+                flagService.getFlag(entity.getDepartureCountryCode()),
+                flagService.getFlag(entity.getArrivalCountryCode())
         );
     }
 

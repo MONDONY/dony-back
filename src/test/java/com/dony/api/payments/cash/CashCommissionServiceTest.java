@@ -65,6 +65,7 @@ class CashCommissionServiceTest {
     @Mock private com.dony.api.common.AuditService auditService;
     @Mock private CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
+    @Mock private com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
 
     private final CommissionProperties props =
             new CommissionProperties(new BigDecimal("0.12"), new BigDecimal("1.00"), 24);
@@ -75,9 +76,10 @@ class CashCommissionServiceTest {
     void setUp() {
         lenient().when(commissionRateResolver.resolve(any(), any())).thenReturn(new BigDecimal("0.12"));
         lenient().when(commissionRateResolver.resolve(any())).thenReturn(new BigDecimal("0.12"));
+        lenient().when(bidGridItemRepository.findByBidId(any())).thenReturn(java.util.List.of());
         service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events,
                 walletService, walletTransactionRepository, auditService, commissionRateResolver,
-                negotiationThreadRepository, new StripeCashGatewayImpl());
+                negotiationThreadRepository, new StripeCashGatewayImpl(), bidGridItemRepository);
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -646,6 +648,33 @@ class CashCommissionServiceTest {
         }
 
         @Test
+        void gridOnlyBid_nullWeight_acceptsWithoutNpe_commissionFromGrid() {
+            // Bid grille pure : weightKg null. La commission doit venir de la grille
+            // (et non du poids), sans NPE, et la capacité kilo ne doit pas être touchée.
+            bid.setWeightKg(null);
+            com.dony.api.matching.BidGridItemEntity gridItem =
+                    new com.dony.api.matching.BidGridItemEntity();
+            gridItem.setUnitPriceNetSnapshot(new java.math.BigDecimal("50.00"));
+            gridItem.setQuantity(1);
+            when(bidGridItemRepository.findByBidId(bid.getId()))
+                    .thenReturn(java.util.List.of(gridItem));
+            // commission = 50 × 12% = 6.00 → solde suffisant
+            when(walletService.getBalance(travelerId)).thenReturn(new java.math.BigDecimal("100"));
+            when(walletTransactionRepository.existsByUserIdAndBidIdAndType(eq(travelerId), any(), any()))
+                    .thenReturn(false);
+
+            AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId,
+                    com.dony.api.payments.cash.CommissionSource.WALLET_FIRST);
+
+            assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+            // Capacité kilo non décrémentée pour un bid grille (poids null).
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo("20");
+            verify(walletService).debit(eq(travelerId), eq(new java.math.BigDecimal("6.00")),
+                    eq(com.dony.api.payments.wallet.WalletTransactionType.COMMISSION_DEDUCTED), any());
+        }
+
+        @Test
         void walletFirstPath_insufficientBalance_returnsInsufficientWallet() {
             // Solde 0 → pas de carte non plus
             traveler.setCommissionPaymentMethodId(null);
@@ -795,6 +824,42 @@ class CashCommissionServiceTest {
                 service.acceptCashBid(bid.getId(), travelerId, com.dony.api.payments.cash.CommissionSource.CARD);
 
                 assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.FULL);
+            }
+        }
+
+        // --- KG_FREE regression ---
+
+        @Test
+        void kgFreeAnnouncement_weightExceedsAvailable_doesNotThrowCapacityInsufficient() throws StripeException {
+            // Régression : KG_FREE contourne le rejet « capacity-insufficient » et
+            // ne décrémente pas availableKg ni ne passe l'annonce en FULL.
+            announcement.setCapacityUnit(com.dony.api.matching.CapacityUnit.KG_FREE);
+            bid.setWeightKg(new java.math.BigDecimal("999")); // largement > availableKg=20
+            java.math.BigDecimal availableKgBefore = announcement.getAvailableKg();
+
+            PaymentIntent mockPi = new PaymentIntent();
+            mockPi.setId("pi_kgfree");
+            mockPi.setStatus("succeeded");
+
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                pi.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPi);
+
+                AcceptBidResponse resp = service.acceptCashBid(
+                        bid.getId(), travelerId, com.dony.api.payments.cash.CommissionSource.CARD);
+
+                // 1. Pas d'exception capacity-insufficient — bid accepté
+                assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+                assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+
+                // 2. availableKg inchangé (KG_FREE ne décrémente pas)
+                assertThat(announcement.getAvailableKg()).isEqualByComparingTo(availableKgBefore);
+
+                // 3. L'annonce ne passe pas FULL
+                assertThat(announcement.getStatus()).isNotEqualTo(AnnouncementStatus.FULL);
+
+                // 4. L'événement BidAccepted est bien publié
+                verify(events).publishEvent(any(BidAcceptedEvent.class));
             }
         }
     }

@@ -121,7 +121,8 @@ class CancellationServiceTest {
 
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
                     .thenReturn(List.of());
             when(userRepository.save(any())).thenReturn(traveler);
 
@@ -150,7 +151,8 @@ class CancellationServiceTest {
 
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
                     .thenReturn(List.of(acceptedBid));
             when(userRepository.save(any())).thenReturn(traveler);
             when(cancellationRepository.save(any(CancellationEntity.class))).thenAnswer(inv -> {
@@ -168,6 +170,63 @@ class CancellationServiceTest {
         }
 
         @Test
+        @DisplayName("bids PENDING et PAYMENT_ESCROWED → tous annulés + inclus dans TripCancelledEvent")
+        void cancelTrip_pendingAndEscrowedBids_allCancelledAndInEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            CancellationRequest req = new CancellationRequest(ANNOUNCEMENT_ID, "Vol annulé");
+
+            BidEntity pendingBid = new BidEntity();
+            pendingBid.setAnnouncementId(ANNOUNCEMENT_ID);
+            pendingBid.setSenderId(UUID.randomUUID());
+            pendingBid.setStatus(BidStatus.PENDING);
+            pendingBid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            setId(pendingBid, UUID.randomUUID());
+
+            BidEntity escrowedBid = new BidEntity();
+            escrowedBid.setAnnouncementId(ANNOUNCEMENT_ID);
+            escrowedBid.setSenderId(UUID.randomUUID());
+            escrowedBid.setWeightKg(BigDecimal.valueOf(3));
+            escrowedBid.setStatus(BidStatus.PAYMENT_ESCROWED);
+            setId(escrowedBid, UUID.randomUUID());
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(List.of(pendingBid, escrowedBid));
+            when(userRepository.save(any())).thenReturn(traveler);
+            when(cancellationRepository.save(any(CancellationEntity.class))).thenAnswer(inv -> {
+                CancellationEntity c = inv.getArgument(0);
+                setId(c, UUID.randomUUID());
+                return c;
+            });
+            when(announcementRepository.findAll()).thenReturn(List.of());
+
+            CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
+
+            assertThat(pendingBid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            assertThat(escrowedBid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            assertThat(result.affectedBidsCount()).isEqualTo(2);
+
+            ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
+            TripCancelledEvent evt = eventCaptor.getAllValues().stream()
+                    .filter(e -> e instanceof TripCancelledEvent)
+                    .map(e -> (TripCancelledEvent) e)
+                    .findFirst().orElseThrow();
+            assertThat(evt.getAffectedBidIds())
+                    .containsExactlyInAnyOrder(pendingBid.getId(), escrowedBid.getId());
+            // Le paiement par bid est porté par l'event (les listeners refund en dépendent) :
+            // cash explicite pour le PENDING, défaut "STRIPE" pour l'escrowed sans méthode.
+            assertThat(evt.getBidPaymentMethods())
+                    .containsEntry(pendingBid.getId(), "CASH")
+                    .containsEntry(escrowedBid.getId(), "STRIPE");
+            // Aucune commission prélevée à ce stade → map vide (pas de refund commission).
+            assertThat(evt.getBidCommissionChargedVia()).isEmpty();
+        }
+
+        @Test
         @DisplayName("3ème annulation → TravelerHighCancellationEvent publié")
         void cancelTrip_thirdCancellation_publishesHighCancellationEvent() {
             UserEntity traveler = buildTraveler();
@@ -177,7 +236,8 @@ class CancellationServiceTest {
 
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
                     .thenReturn(List.of());
             when(userRepository.save(any())).thenReturn(traveler);
 
@@ -203,7 +263,8 @@ class CancellationServiceTest {
 
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.findByAnnouncementIdAndStatus(ANNOUNCEMENT_ID, BidStatus.ACCEPTED))
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
                     .thenReturn(List.of());
             when(userRepository.save(any())).thenReturn(traveler);
 

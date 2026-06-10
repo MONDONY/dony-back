@@ -71,6 +71,7 @@ class AnnouncementServiceAddressTest {
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock PriceGridService priceGridService;
+    @Mock com.dony.api.country.FlagService flagService;
     AnnouncementService announcementService;
 
     @org.junit.jupiter.api.BeforeEach
@@ -78,7 +79,7 @@ class AnnouncementServiceAddressTest {
         com.dony.api.config.DonyConfigProperties cfg = new com.dony.api.config.DonyConfigProperties(null, null, null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, cfg, priceGridService);
+                auditService, eventPublisher, cfg, priceGridService, flagService);
     }
 
     private static final String TRAVELER_UID = "firebase-uid-123";
@@ -120,7 +121,8 @@ class AnnouncementServiceAddressTest {
             pickup, delivery,
             java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(5),
             com.dony.api.matching.TransportMode.PLANE,
-            null, java.util.List.of(), java.util.List.of(), null, null, null
+            null, java.util.List.of(), java.util.List.of(), null, null, null,
+            null, null
         );
     }
 

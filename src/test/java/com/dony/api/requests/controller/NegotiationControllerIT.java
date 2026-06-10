@@ -72,6 +72,7 @@ class NegotiationControllerIT {
         return new NegotiationThreadResponse(
             threadId, UUID.randomUUID(), TRAVELER_UUID, null,
             LocalDate.now().plusDays(5), new BigDecimal("10"),
+            null, // travelerCapacityUnit
             status, new BigDecimal("30"), 1,
             LocalDateTime.now(), LocalDateTime.now(),
             List.of(), clientSecret,
@@ -177,6 +178,7 @@ class NegotiationControllerIT {
         NegotiationThreadResponse thread = new NegotiationThreadResponse(
             threadId, UUID.randomUUID(), TRAVELER_UUID, null,
             LocalDate.now().plusDays(5), new BigDecimal("10"),
+            null, // travelerCapacityUnit
             NegotiationThreadStatus.OPEN, new BigDecimal("30"), 2,
             LocalDateTime.now(), LocalDateTime.now(),
             List.of(), null,
@@ -359,6 +361,7 @@ class NegotiationControllerIT {
         NegotiationThreadResponse awaitingPaymentThread = new NegotiationThreadResponse(
             threadId, UUID.randomUUID(), TRAVELER_UUID, null,
             LocalDate.now().plusDays(5), new java.math.BigDecimal("10"),
+            null, // travelerCapacityUnit
             NegotiationThreadStatus.AWAITING_PAYMENT, new java.math.BigDecimal("30"), 1,
             LocalDateTime.now(), LocalDateTime.now(),
             java.util.List.of(), null,
@@ -471,10 +474,11 @@ class NegotiationControllerIT {
         UUID threadId = UUID.randomUUID();
         var trip = new com.dony.api.requests.dto.LinkedTripSummary(
             UUID.randomUUID(), "Paris", "Dakar", "2026-06-12", "14:30",
-            "PLANE", "CDG Terminal 2E", "Yoff Virage", 8, "Colis fragile");
+            "PLANE", "CDG Terminal 2E", "Yoff Virage", 8, "KG_FREE", "Colis fragile");
         NegotiationThreadResponse withTrip = new NegotiationThreadResponse(
             threadId, UUID.randomUUID(), TRAVELER_UUID,
             trip.announcementId(), LocalDate.now(), new BigDecimal("5.0"),
+            "KG_FREE", // travelerCapacityUnit
             NegotiationThreadStatus.AWAITING_PAYMENT, new BigDecimal("45.0"), 2,
             LocalDateTime.now(), LocalDateTime.now(),
             List.of(), null,
@@ -493,7 +497,9 @@ class NegotiationControllerIT {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.linkedTrip.departureCity").value("Paris"))
             .andExpect(jsonPath("$.linkedTrip.arrivalCity").value("Dakar"))
-            .andExpect(jsonPath("$.linkedTrip.availableKg").value(8));
+            .andExpect(jsonPath("$.linkedTrip.availableKg").value(8))
+            .andExpect(jsonPath("$.linkedTrip.capacityUnit").value("KG_FREE"))
+            .andExpect(jsonPath("$.travelerCapacityUnit").value("KG_FREE"));
     }
 
     // ─── open-surplus ────────────────────────────────────────────────────────────

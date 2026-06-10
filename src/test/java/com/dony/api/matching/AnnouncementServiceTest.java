@@ -56,6 +56,7 @@ class AnnouncementServiceTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PriceGridService priceGridService;
+    @Mock private com.dony.api.country.FlagService flagService;
 
     private AnnouncementService announcementService;
 
@@ -64,7 +65,7 @@ class AnnouncementServiceTest {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, config, priceGridService);
+                auditService, eventPublisher, config, priceGridService, flagService);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -132,7 +133,8 @@ class AnnouncementServiceTest {
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 mode,
-                null, null, null, null, null, null
+                null, null, null, null, null, null,
+                null, null
         );
     }
 
@@ -167,6 +169,68 @@ class AnnouncementServiceTest {
             assertThat(result.arrivalCity()).isEqualTo("Dakar");
             assertThat(result.status()).isEqualTo("ACTIVE");
             verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_CREATED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("codes pays dans la requête → persistés sur l'entité + drapeaux résolus dans la réponse")
+        void create_withCountryCodes_storesCodesAndResolvesFlags() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+            when(flagService.getFlag("US")).thenReturn("🇺🇸"); // 🇺🇸
+            when(flagService.getFlag("SN")).thenReturn("🇸🇳"); // 🇸🇳
+
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "New York", "Dakar",
+                    LocalDate.now().plusDays(10),
+                    LocalTime.of(10, 0), LocalTime.of(22, 0),
+                    new AddressDto("JFK", 40.641, -73.778),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null, null,
+                    "US", "SN"
+            );
+
+            AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            // Codes persistés sur l'entité
+            assertThat(captor.getValue().getDepartureCountryCode()).isEqualTo("US");
+            assertThat(captor.getValue().getArrivalCountryCode()).isEqualTo("SN");
+            // Codes + drapeaux dans la réponse
+            assertThat(result.departureCountryCode()).isEqualTo("US");
+            assertThat(result.arrivalCountryCode()).isEqualTo("SN");
+            assertThat(result.departureFlag()).isEqualTo("🇺🇸");
+            assertThat(result.arrivalFlag()).isEqualTo("🇸🇳");
+        }
+
+        @Test
+        @DisplayName("codes pays absents → codes et drapeaux null dans la réponse")
+        void create_withoutCountryCodes_nullCodesAndFlags() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+            when(flagService.getFlag(null)).thenReturn(null);
+
+            AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            assertThat(result.departureCountryCode()).isNull();
+            assertThat(result.arrivalCountryCode()).isNull();
+            assertThat(result.departureFlag()).isNull();
+            assertThat(result.arrivalFlag()).isNull();
         }
 
         @Test
@@ -290,7 +354,8 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
+                    null, null
             );
 
             // Ne doit PAS lever CommissionMethodMissingException
@@ -320,7 +385,8 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null
+                    null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
+                    null, null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -355,7 +421,8 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport LSS", 14.739, -17.490),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, null, null, PricingMode.MIXED
+                    null, null, null, null, null, PricingMode.MIXED,
+                    null, null
             );
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -389,7 +456,8 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport LSS", 14.739, -17.490),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, null, null, PricingMode.MIXED
+                    null, null, null, null, null, PricingMode.MIXED,
+                    null, null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -574,7 +642,8 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null, null, null
+                    null, null, null, null, null, null,
+                    null, null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -629,7 +698,8 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(35), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
-                    null, null, null, null, null, null
+                    null, null, null, null, null, null,
+                    null, null
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
@@ -921,7 +991,8 @@ class AnnouncementServiceTest {
                     new AddressDto("Aéroport LSS", 14.739, -17.490),
                     BigDecimal.valueOf(32), BigDecimal.valueOf(8),
                     TransportMode.PLANE,
-                    null, null, null, null, CapacityUnit.SUITCASE_32KG, null
+                    null, null, null, null, CapacityUnit.SUITCASE_32KG, null,
+                    null, null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -962,7 +1033,8 @@ class AnnouncementServiceTest {
                     new AddressDto("DSS", 14.693, -17.447),
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
-                    null, null, null, null, null, null
+                    null, null, null, null, null, null,
+                    null, null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
