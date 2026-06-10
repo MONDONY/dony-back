@@ -184,6 +184,32 @@ class BidCheckoutServiceTest {
     }
 
     @Test
+    void kgFree_allows_weight_above_stored_availableKg() {
+        // KG_FREE : availableKg stocké = 1 (factice), poids demandé = 2 > 1.
+        // Sans la garde KG_FREE, le checkout rejetterait à tort (422
+        // weight-exceeds-capacity). Avec la garde, le bid est créé.
+        announcement.setCapacityUnit(CapacityUnit.KG_FREE);
+        announcement.setAvailableKg(new BigDecimal("1.00"));
+        announcement.setTotalKg(new BigDecimal("1.00"));
+
+        ArgumentCaptor<BidEntity> savedBid = ArgumentCaptor.forClass(BidEntity.class);
+        when(bidRepository.save(savedBid.capture())).thenAnswer(inv -> {
+            BidEntity b = inv.getArgument(0);
+            if (b.getId() == null) ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
+            return b;
+        });
+        when(paymentService.createEscrow(any(CreatePaymentRequest.class), eq("uid-sender")))
+            .thenReturn(stubPaymentResponse());
+
+        BidCheckoutResponse resp = service.checkout("uid-sender", req, httpRequest);
+
+        BidEntity bid = savedBid.getAllValues().get(0);
+        assertThat(bid.getStatus()).isEqualTo(BidStatus.AWAITING_PAYMENT);
+        assertThat(bid.getWeightKg()).isEqualByComparingTo("2.00");
+        assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
+    }
+
+    @Test
     void rejects_value_above_500_eur() {
         BidCheckoutRequest tooHigh = new BidCheckoutRequest(
             announcement.getId(), new BigDecimal("2"), new BigDecimal("501"),

@@ -132,7 +132,13 @@ public class BidCheckoutService {
                 "Vous avez déjà une demande en cours pour ce trajet");
         }
 
-        if (req.weightKg() != null && req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
+        // KG_FREE (« kilo libre ») : capacité non bornée — availableKg est une
+        // valeur stockée factice (>= 1) sans signification. On ne plafonne donc
+        // pas le poids dans ce cas, sinon le poids saisi librement (>= 5) serait
+        // rejeté à tort par le « weight-exceeds-capacity » 422.
+        boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        if (!isKgFree && req.weightKg() != null
+                && req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "weight-exceeds-capacity", "Weight Exceeds Capacity",
                 "Poids demandé supérieur à la capacité disponible");
