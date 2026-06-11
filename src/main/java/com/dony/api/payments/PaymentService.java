@@ -749,18 +749,52 @@ public class PaymentService {
                 return;
             }
             paymentRepository.findByStripePaymentIntentId(piId).ifPresent(payment -> {
-                if (payment.getStatus() == PaymentStatus.REFUNDED) {
-                    // Already marked REFUNDED by TripCancelledEventListener — idempotent, skip
-                    log.info("Refund confirmed by Stripe webhook for payment {} (already REFUNDED)", payment.getId());
+                Long amountRefundedCents = charge.getAmountRefunded();
+                Long amountCents = charge.getAmount();
+                if (amountRefundedCents == null || amountCents == null) {
+                    log.warn("charge.refunded pour PI {} sans montant exploitable — ignoré", piId);
                     return;
                 }
-                log.info("Refund confirmed by Stripe webhook for payment {}", payment.getId());
-                // If for some reason the listener missed it, mark it now
-                payment.setStatus(PaymentStatus.REFUNDED);
+                // Montants Stripe en cents → EUR scale 2. amount_refunded est CUMULÉ et
+                // ABSOLU : rejouer le même webhook réécrit la même valeur (idempotent).
+                BigDecimal refunded = BigDecimal.valueOf(amountRefundedCents, 2);
+                boolean fullRefund = amountRefundedCents >= amountCents;
+                // compareTo (et non equals) : insensible à l'échelle BigDecimal — la valeur
+                // relue depuis NUMERIC(10,2) peut différer d'échelle sans changer de montant.
+                boolean alreadyRecorded = payment.getRefundedAmount() != null
+                        && payment.getRefundedAmount().compareTo(refunded) == 0;
+
+                payment.setRefundedAmount(refunded);
+
+                if (payment.getStatus() == PaymentStatus.RELEASED) {
+                    paymentRepository.save(payment);
+                    if (!alreadyRecorded) {
+                        auditService.log("PAYMENT", payment.getId(), "REFUND_AFTER_RELEASE",
+                                payment.getBidId(),
+                                Map.of("piId", piId, "refundedAmount", refunded.toPlainString(),
+                                        "full", String.valueOf(fullRefund)));
+                        adminAlert.raise("REFUND_AFTER_RELEASE",
+                                "Remboursement Stripe reçu sur un paiement déjà versé au voyageur — "
+                                        + "réconciliation manuelle requise (payment " + payment.getId() + ")",
+                                Map.of("paymentId", payment.getId().toString(), "piId", piId,
+                                        "refundedAmount", refunded.toPlainString()));
+                    }
+                    return;
+                }
+
+                if (fullRefund && payment.getStatus() != PaymentStatus.REFUNDED) {
+                    payment.setStatus(PaymentStatus.REFUNDED);
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED",
+                            payment.getBidId(), Map.of("piId", piId, "source", "stripe_webhook"));
+                    log.info("Refund total confirmé par webhook pour payment {}", payment.getId());
+                } else if (!fullRefund && !alreadyRecorded) {
+                    auditService.log("PAYMENT", payment.getId(), "PAYMENT_PARTIALLY_REFUNDED",
+                            payment.getBidId(),
+                            Map.of("piId", piId, "refundedAmount", refunded.toPlainString()));
+                    log.info("Refund partiel {} enregistré pour payment {} (statut {} conservé)",
+                            refunded, payment.getId(), payment.getStatus());
+                }
                 paymentRepository.save(payment);
-                auditService.log("PAYMENT", payment.getId(), "PAYMENT_REFUNDED",
-                        payment.getBidId(),
-                        Map.of("piId", piId, "source", "stripe_webhook"));
             });
         });
     }

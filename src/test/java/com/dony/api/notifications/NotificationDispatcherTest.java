@@ -7,7 +7,6 @@ import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
-import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -115,20 +114,6 @@ class NotificationDispatcherTest {
         var dataCaptor = ArgumentCaptor.forClass(Map.class);
         verify(fcmService).sendToUser(eq(senderId), eq("Demande refusée"), any(), dataCaptor.capture());
         assertThat(dataCaptor.getValue()).containsEntry("type", "BID_REJECTED");
-    }
-
-    // ── HandoverDefinedEvent ──────────────────────────────────────────────────
-
-    @Test
-    void onHandoverDefined_notifiesSenderWithLocationAndDate() {
-        LocalDateTime start = LocalDateTime.of(2026, 5, 10, 14, 30);
-        HandoverDefinedEvent event = new HandoverDefinedEvent(bidId, senderId, "Gare du Nord", start, start.plusHours(2));
-        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
-
-        dispatcher.onHandoverDefined(event);
-
-        verify(fcmService).sendToUser(eq(senderId), eq("Point de remise défini"),
-                contains("Gare du Nord"), any());
     }
 
     // ── TripCancelledEvent ────────────────────────────────────────────────────

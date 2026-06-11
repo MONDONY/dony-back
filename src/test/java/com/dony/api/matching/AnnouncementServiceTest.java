@@ -34,6 +34,7 @@ import org.springframework.http.HttpStatus;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
@@ -125,16 +126,18 @@ class AnnouncementServiceTest {
     }
 
     private AnnouncementRequest buildRequest(TransportMode mode) {
+        LocalDate departure = LocalDate.now().plusDays(10);
         return new AnnouncementRequest(
                 "Paris", "Dakar",
-                LocalDate.now().plusDays(10),
+                departure,
                 LocalTime.of(10, 0), LocalTime.of(22, 0),
                 new AddressDto("CDG Terminal 2E", 49.009, 2.547),
                 new AddressDto("Aéroport LSS", 14.739, -17.490),
                 BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                 mode,
                 null, null, null, null, null, null,
-                null, null
+                null, null,
+                departure.atTime(8, 0), departure.atTime(9, 0)
         );
     }
 
@@ -196,7 +199,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
-                    "US", "SN"
+                    "US", "SN",
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
             );
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -355,7 +359,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0)
             );
 
             // Ne doit PAS lever CommissionMethodMissingException
@@ -386,7 +391,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0)
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -422,7 +428,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, null, null, PricingMode.MIXED,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
             );
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -457,7 +464,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, null, null, PricingMode.MIXED,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -643,7 +651,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(25), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0)
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -699,7 +708,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(35), BigDecimal.valueOf(6),
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0)
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
@@ -992,7 +1002,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(32), BigDecimal.valueOf(8),
                     TransportMode.PLANE,
                     null, null, null, null, CapacityUnit.SUITCASE_32KG, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -1034,7 +1045,8 @@ class AnnouncementServiceTest {
                     BigDecimal.valueOf(20), BigDecimal.valueOf(5),
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
-                    null, null
+                    null, null,
+                    LocalDate.now().minusDays(1).atTime(16, 0), LocalDate.now().minusDays(1).atTime(18, 0)
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -1045,6 +1057,125 @@ class AnnouncementServiceTest {
                         assertThat(ex.getErrorCode()).isEqualTo("invalid-departure-date");
                         assertThat(ex.getMessage()).contains("passé");
                     });
+        }
+    }
+
+    // ─── HandoverWindow validation ─────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("HandoverWindow — validation createAnnouncement()")
+    class HandoverWindowTests {
+
+        private AnnouncementRequest buildRequestWithWindow(LocalDate departure,
+                                                           LocalDateTime start,
+                                                           LocalDateTime end) {
+            return new AnnouncementRequest(
+                    "Paris", "Dakar",
+                    departure,
+                    LocalTime.of(20, 0), LocalTime.of(22, 0),
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null, null,
+                    null, null,
+                    start, end
+            );
+        }
+
+        @Test
+        @DisplayName("fenêtre de remise nulle → 422 handover-window-required")
+        void createAnnouncement_handoverWindowNull_throws422() {
+            LocalDate departure = LocalDate.now().plusDays(10);
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            AnnouncementRequest req = buildRequestWithWindow(departure, null, null);
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("handover-window-required");
+                    });
+        }
+
+        @Test
+        @DisplayName("fenêtre fin avant début → 422 invalid-handover-window")
+        void createAnnouncement_handoverEndBeforeStart_throws422() {
+            LocalDate departure = LocalDate.now().plusDays(10);
+            LocalDateTime start = departure.atTime(18, 0);
+            LocalDateTime end   = start.minusHours(1);
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            AnnouncementRequest req = buildRequestWithWindow(departure, start, end);
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("invalid-handover-window");
+                    });
+        }
+
+        @Test
+        @DisplayName("fenêtre fin après départ → 422 handover-after-departure")
+        void createAnnouncement_handoverEndAfterDeparture_throws422() {
+            LocalDate departure = LocalDate.now().plusDays(10);
+            LocalDateTime start = departure.atTime(18, 0);
+            LocalDateTime end   = departure.plusDays(1).atTime(8, 0); // after departure
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            // departureTime=null → bound = departure.atTime(LocalTime.MAX)
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar",
+                    departure,
+                    null, null,
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null, null, null, null, null, null,
+                    null, null,
+                    start, end
+            );
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("handover-after-departure");
+                    });
+        }
+
+        @Test
+        @DisplayName("fenêtre valide → persistée sur l'entité")
+        void createAnnouncement_validHandoverWindow_persistsIt() {
+            LocalDate departure = LocalDate.now().plusDays(10);
+            LocalDateTime start = departure.atTime(16, 0);
+            LocalDateTime end   = departure.atTime(18, 0);
+
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementRequest req = buildRequestWithWindow(departure, start, end);
+            announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(captor.getValue().getHandoverWindowStart()).isEqualTo(start);
+            assertThat(captor.getValue().getHandoverWindowEnd()).isEqualTo(end);
         }
     }
 }

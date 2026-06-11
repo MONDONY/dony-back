@@ -710,6 +710,7 @@ public class CashCommissionService {
             }
         }
         announcementRepo.save(announcement);
+        bid.applyHandoverFrom(announcement);
         bidRepo.save(bid);
 
         events.publishEvent(new BidAcceptedEvent(

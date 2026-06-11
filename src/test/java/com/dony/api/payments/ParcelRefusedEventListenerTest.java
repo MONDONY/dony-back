@@ -1,0 +1,65 @@
+package com.dony.api.payments;
+
+import com.dony.api.matching.events.ParcelRefusedEvent;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+/**
+ * Contrat de délégation : le listener délègue à {@link RefundProcessor}.
+ * La logique PENDING/ESCROW/claim/refund est testée dans {@code RefundProcessorTest}.
+ */
+@ExtendWith(MockitoExtension.class)
+class ParcelRefusedEventListenerTest {
+
+    @Mock private PaymentRepository paymentRepository;
+    @Mock private RefundProcessor refundProcessor;
+
+    private ParcelRefusedEventListener listener;
+
+    @BeforeEach
+    void setUp() {
+        listener = new ParcelRefusedEventListener(paymentRepository, refundProcessor);
+    }
+
+    @Test
+    void delegates_refund_to_processor() {
+        UUID bidId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        PaymentEntity p = spy(new PaymentEntity());
+        p.setBidId(bidId);
+        when(p.getId()).thenReturn(paymentId);
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(p));
+
+        listener.onParcelRefused(
+                new ParcelRefusedEvent(bidId, travelerId, UUID.randomUUID(), "colis abîmé"));
+
+        verify(refundProcessor).processRefund(eq(paymentId),
+                eq("PAYMENT_REFUNDED_PARCEL_REFUSED"), eq(travelerId), any(Map.class));
+    }
+
+    @Test
+    void no_payment_no_processor_call() {
+        UUID bidId = UUID.randomUUID();
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        listener.onParcelRefused(
+                new ParcelRefusedEvent(bidId, UUID.randomUUID(), UUID.randomUUID(), "x"));
+
+        verifyNoInteractions(refundProcessor);
+    }
+}

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -150,6 +152,11 @@ public class TripRecurrenceService {
         Set<PaymentMethod> paymentMethods = rec.isCashAccepted()
                 ? Set.of(PaymentMethod.STRIPE, PaymentMethod.CASH)
                 : Set.of(PaymentMethod.STRIPE);
+        LocalTime depTime = rec.getDepartureTime();
+        LocalDateTime departureDt = depTime != null
+                ? date.atTime(depTime) : date.atTime(12, 0);
+        LocalDateTime handoverEnd   = departureDt;
+        LocalDateTime handoverStart = departureDt.minusHours(2);
         return new AnnouncementRequest(
                 rec.getDepartureCity(),
                 rec.getArrivalCity(),
@@ -168,7 +175,9 @@ public class TripRecurrenceService {
                 CapacityUnit.valueOf(rec.getCapacityUnit()),
                 PricingMode.KG,
                 null,
-                null
+                null,
+                handoverStart,
+                handoverEnd
         );
     }
 

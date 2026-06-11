@@ -490,6 +490,33 @@ class NegotiationServiceTest {
             assertThat(otherThread.getStatus()).isEqualTo(NegotiationThreadStatus.OPEN);
             verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationAwaitingTripEvent.class));
             verify(messageRepo, atLeastOnce()).save(argThat(m -> m.getKind() == NegotiationMessageKind.ACCEPT));
+            // Mapper: thread sans bid matérialisé → DTO.materializedBidId == null
+            assertThat(response.materializedBidId()).isNull();
+        }
+
+        @Test
+        @DisplayName("toResponse propage materializedBidId du thread vers le DTO")
+        void accept_mapsMaterializedBidId() {
+            UUID materializedBidId = UUID.randomUUID();
+            thread.setMaterializedBidId(materializedBidId);
+
+            var travelerProposal = NegotiationMessageEntity.create(
+                THREAD_ID, TRAVELER_ID, NegotiationMessageKind.PROPOSAL,
+                new java.math.BigDecimal("30"), null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID))
+                .thenReturn(java.util.List.of(travelerProposal));
+            when(messageRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(threadRepo.save(any())).thenReturn(thread);
+
+            var req = new com.dony.api.requests.dto.NegotiationAcceptRequest("Deal!");
+            var response = service.accept(SENDER_ID, THREAD_ID, req);
+
+            assertThat(response.materializedBidId()).isEqualTo(materializedBidId);
         }
 
         @Test

@@ -1095,7 +1095,8 @@ public class NegotiationService {
             isMyTurn, canAccept, canCounter, roundsRemaining,
             linkedTrip,
             gross,
-            t.getPaymentMethod()
+            t.getPaymentMethod(),
+            t.getMaterializedBidId()
         );
     }
 

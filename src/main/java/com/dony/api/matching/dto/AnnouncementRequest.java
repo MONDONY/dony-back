@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
@@ -65,5 +66,10 @@ public record AnnouncementRequest(
         String departureCountryCode,
 
         @Size(max = 2, message = "Le code pays d'arrivée doit faire 2 caractères")
-        String arrivalCountryCode
+        String arrivalCountryCode,
+
+        // Fenêtre de remise — obligatoire (validée dans AnnouncementService).
+        // Pas de @JsonFormat : reçoit un ISO-8601 (ex "2026-06-14T18:00:00.000Z").
+        LocalDateTime handoverWindowStart,
+        LocalDateTime handoverWindowEnd
 ) {}

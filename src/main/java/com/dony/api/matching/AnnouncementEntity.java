@@ -18,6 +18,7 @@ import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -53,6 +54,12 @@ public class AnnouncementEntity extends BaseEntity {
 
     @Column(name = "arrival_time")
     private LocalTime arrivalTime;
+
+    @Column(name = "handover_window_start")
+    private LocalDateTime handoverWindowStart;
+
+    @Column(name = "handover_window_end")
+    private LocalDateTime handoverWindowEnd;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "transport_mode", nullable = false, length = 20)
@@ -284,4 +291,10 @@ public class AnnouncementEntity extends BaseEntity {
 
     public PricingMode getPricingMode() { return pricingMode; }
     public void setPricingMode(PricingMode pricingMode) { this.pricingMode = pricingMode; }
+
+    public LocalDateTime getHandoverWindowStart() { return handoverWindowStart; }
+    public void setHandoverWindowStart(LocalDateTime handoverWindowStart) { this.handoverWindowStart = handoverWindowStart; }
+
+    public LocalDateTime getHandoverWindowEnd() { return handoverWindowEnd; }
+    public void setHandoverWindowEnd(LocalDateTime handoverWindowEnd) { this.handoverWindowEnd = handoverWindowEnd; }
 }

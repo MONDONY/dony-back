@@ -12,6 +12,8 @@ import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Transfer;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentCaptureParams;
 import com.stripe.param.TransferCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,50 +116,60 @@ public class DeliveryEventListener {
             return;
         }
 
+        // Claim atomique ESCROW → RELEASED avant les appels Stripe : empêche un
+        // double versement (double capture / double Transfer) si l'événement de
+        // livraison est traité deux fois en parallèle.
+        int claimed = paymentRepository.markReleasedIfEscrow(
+                payment.getId(), LocalDateTime.now(ZoneOffset.UTC));
+        if (claimed == 0) {
+            log.info("Payment {} for bid {} already left ESCROW — skipping release",
+                    payment.getId(), event.getBidId());
+            return;
+        }
+
         try {
             if (payment.isLegacyDestinationCharge()) {
                 releaseLegacy(payment);
             } else {
                 releaseV2(payment, event);
             }
-
-            payment.setStatus(PaymentStatus.RELEASED);
-            payment.setEscrowReleasedAt(LocalDateTime.now(ZoneOffset.UTC));
-            paymentRepository.save(payment);
-
-            String action = payment.isLegacyDestinationCharge()
-                    ? "ESCROW_RELEASED_LEGACY"
-                    : "ESCROW_RELEASED_TRANSFER";
-            // Use event.getBidId() (the delivered bid) for the audit actor/payload: a
-            // negotiation/thread payment has a NULL payment.getBidId(), which would both
-            // lose the bid reference and NPE on toString().
-            auditService.log(
-                    "PAYMENT",
-                    payment.getId(),
-                    action,
-                    event.getBidId(),
-                    Map.of(
-                            "bidId", event.getBidId().toString(),
-                            "piId", payment.getStripePaymentIntentId(),
-                            "amount", payment.getAmount().toPlainString(),
-                            "legacy", String.valueOf(payment.isLegacyDestinationCharge())
-                    )
-            );
-
-            log.info("Escrow released for payment {} (bid={}, legacy={})",
-                    payment.getId(), event.getBidId(), payment.isLegacyDestinationCharge());
-
-            // Notify traveler of payout (Story 8.2). event.getBidId() — payment.getBidId()
-            // is NULL for negotiation/thread payments.
-            eventPublisher.publishEvent(new PaymentReleasedEvent(
-                    event.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
-
         } catch (StripeException e) {
             log.error("Escrow release failed for payment {} (bid={}, legacy={}): {}",
                     payment.getId(), event.getBidId(),
                     payment.isLegacyDestinationCharge(), e.getMessage(), e);
-            // Do not rethrow — failure is logged, admin J+48 scheduler will catch it
+            // Rollback de la transaction REQUIRES_NEW : le claim ESCROW → RELEASED
+            // est annulé, le paiement reste en ESCROW — le scheduler admin J+48
+            // garde la main pour retenter la libération.
+            throw new IllegalStateException(
+                    "Stripe escrow release failed for payment " + payment.getId(), e);
         }
+
+        String action = payment.isLegacyDestinationCharge()
+                ? "ESCROW_RELEASED_LEGACY"
+                : "ESCROW_RELEASED_TRANSFER";
+        // Use event.getBidId() (the delivered bid) for the audit actor/payload: a
+        // negotiation/thread payment has a NULL payment.getBidId(), which would both
+        // lose the bid reference and NPE on toString().
+        auditService.log(
+                "PAYMENT",
+                payment.getId(),
+                action,
+                event.getBidId(),
+                Map.of(
+                        "bidId", event.getBidId().toString(),
+                        "piId", payment.getStripePaymentIntentId(),
+                        "amount", payment.getAmount().toPlainString(),
+                        "legacy", String.valueOf(payment.isLegacyDestinationCharge())
+                )
+        );
+
+        log.info("Escrow released for payment {} (bid={}, legacy={})",
+                payment.getId(), event.getBidId(), payment.isLegacyDestinationCharge());
+
+        // Notify traveler of payout (Story 8.2). event.getBidId() — payment.getBidId()
+        // is NULL for negotiation/thread payments.
+        eventPublisher.publishEvent(new PaymentReleasedEvent(
+                event.getBidId(), event.getTravelerId(), event.getSenderId(), payment.getAmount()));
     }
 
     private void releaseLegacy(PaymentEntity payment) throws StripeException {
@@ -165,7 +177,12 @@ public class DeliveryEventListener {
         // funds directly to the traveler's Connect account because transfer_data was
         // set at PaymentIntent creation.
         PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
-        pi.capture();
+        // Clé d'idempotence stable : un AFTER_COMMIT rejoué ou une redelivery de webhook
+        // ne déclenche pas une seconde capture côté Stripe.
+        pi.capture(PaymentIntentCaptureParams.builder().build(),
+                RequestOptions.builder()
+                        .setIdempotencyKey("capture-" + payment.getId())
+                        .build());
     }
 
     private void releaseV2(PaymentEntity payment, DeliveryConfirmedEvent event) throws StripeException {
@@ -199,6 +216,11 @@ public class DeliveryEventListener {
             builder.setSourceTransaction(payment.getStripeChargeId());
         }
 
-        Transfer.create(builder.build());
+        // Clé d'idempotence stable : un AFTER_COMMIT rejoué ou une redelivery de webhook
+        // ne déclenche pas un second Transfer côté Stripe.
+        Transfer.create(builder.build(),
+                RequestOptions.builder()
+                        .setIdempotencyKey("transfer-" + payment.getId())
+                        .build());
     }
 }

@@ -225,7 +225,9 @@ public class AnnouncementService {
                 entity.getCapacityUnit(),
                 entity.getCreatedAt(), entity.getUpdatedAt(),
                 entity.getPricingMode(),
-                gridItems
+                gridItems,
+                entity.getHandoverWindowStart(),
+                entity.getHandoverWindowEnd()
         );
     }
 
@@ -339,6 +341,11 @@ public class AnnouncementService {
             );
         }
 
+        validateHandoverWindow(request.handoverWindowStart(), request.handoverWindowEnd(),
+                request.departureDate(), request.departureTime());
+        announcement.setHandoverWindowStart(request.handoverWindowStart());
+        announcement.setHandoverWindowEnd(request.handoverWindowEnd());
+
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
         if (pricingMode == PricingMode.MIXED) {
@@ -415,7 +422,12 @@ public class AnnouncementService {
      * Checks all ACTIVE/FULL announcements whose departure time has passed and transitions
      * them to IN_PROGRESS (or directly COMPLETED if no ACCEPTED bids remain).
      * Called inline on each "Mes trajets" load, and also by the hourly scheduler as a safety net.
+     *
+     * @Transactional requis : BidExpiredOnDepartureEvent est écouté en
+     * AFTER_COMMIT — publié hors transaction (chemin scheduler), l'event serait
+     * silencieusement perdu et les remboursements jamais déclenchés.
      */
+    @Transactional
     public void triggerInProgressTransitions() {
         ZonedDateTime nowParis = ZonedDateTime.now(DEFAULT_ZONE);
         LocalDate today = nowParis.toLocalDate();
@@ -529,7 +541,9 @@ public class AnnouncementService {
                 gridItems,
                 announcement.getReservedKg(),
                 announcement.isSurplusEligible(),
-                announcement.isSurplusPublished()
+                announcement.isSurplusPublished(),
+                announcement.getHandoverWindowStart(),
+                announcement.getHandoverWindowEnd()
         );
     }
 
@@ -570,6 +584,9 @@ public class AnnouncementService {
             );
         }
 
+        validateHandoverWindow(request.handoverWindowStart(), request.handoverWindowEnd(),
+                request.departureDate(), request.departureTime());
+
         announcement.setDepartureCity(request.departureCity());
         announcement.setArrivalCity(request.arrivalCity());
         announcement.setDepartureCountryCode(request.departureCountryCode());
@@ -577,6 +594,8 @@ public class AnnouncementService {
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
+        announcement.setHandoverWindowStart(request.handoverWindowStart());
+        announcement.setHandoverWindowEnd(request.handoverWindowEnd());
         announcement.setPickupAddressLabel(request.pickupAddress().label());
         announcement.setPickupLat(java.math.BigDecimal.valueOf(request.pickupAddress().lat()));
         announcement.setPickupLng(java.math.BigDecimal.valueOf(request.pickupAddress().lng()));
@@ -659,7 +678,9 @@ public class AnnouncementService {
                 updatedGridItems,
                 saved.getReservedKg(),
                 saved.isSurplusEligible(),
-                saved.isSurplusPublished()
+                saved.isSurplusPublished(),
+                saved.getHandoverWindowStart(),
+                saved.getHandoverWindowEnd()
         );
     }
 
@@ -771,7 +792,9 @@ public class AnnouncementService {
                 entity.getDepartureCountryCode(),
                 entity.getArrivalCountryCode(),
                 flagService.getFlag(entity.getDepartureCountryCode()),
-                flagService.getFlag(entity.getArrivalCountryCode())
+                flagService.getFlag(entity.getArrivalCountryCode()),
+                entity.getHandoverWindowStart(),
+                entity.getHandoverWindowEnd()
         );
     }
 
@@ -805,5 +828,34 @@ public class AnnouncementService {
         // Un voyageur peut offrir le cash dès lors qu'il a un compte Dony,
         // même sans carte de commission enregistrée (le wallet prend en charge).
         return EnumSet.copyOf(requested);
+    }
+
+    /**
+     * Valide la fenêtre de remise saisie à la création/édition d'un trajet.
+     * Règles : non nulle, fin > début, fin <= départ (date+heure si présente,
+     * sinon fin du jour de départ — on ne remet pas un colis après le départ).
+     */
+    private void validateHandoverWindow(LocalDateTime start,
+                                        LocalDateTime end,
+                                        LocalDate departureDate,
+                                        LocalTime departureTime) {
+        if (start == null || end == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "handover-window-required", "Fenêtre requise",
+                    "La fenêtre de remise est obligatoire");
+        }
+        if (!end.isAfter(start)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "invalid-handover-window", "Fenêtre invalide",
+                    "La fin de la fenêtre de remise doit être après le début");
+        }
+        LocalDateTime departureBound = departureTime != null
+                ? departureDate.atTime(departureTime)
+                : departureDate.atTime(LocalTime.MAX);
+        if (end.isAfter(departureBound)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "handover-after-departure", "Fenêtre après le départ",
+                    "La fenêtre de remise doit se terminer avant le départ du voyageur");
+        }
     }
 }

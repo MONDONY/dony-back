@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.events.BidMaterializedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
 import com.dony.api.requests.event.PackageRequestDetailsCompletedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,8 +13,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,7 +31,9 @@ import static org.mockito.Mockito.lenient;
 class ThreadAcceptedBidListenerTest {
 
     @Mock BidRepository bidRepository;
+    @Mock AnnouncementRepository announcementRepository;
     @Mock AuditService auditService;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks ThreadAcceptedBidListener listener;
 
     private static final UUID THREAD_ID = UUID.randomUUID();
@@ -66,6 +71,7 @@ class ThreadAcceptedBidListenerTest {
             lenient().when(bidRepository.findByLinkedNegotiationThreadId(THREAD_ID))
                     .thenReturn(Optional.empty());
             lenient().when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(announcementRepository.findById(any())).thenReturn(Optional.empty());
         }
 
         @Test
@@ -89,6 +95,26 @@ class ThreadAcceptedBidListenerTest {
         }
 
         @Test
+        @DisplayName("BidMaterializedEvent publié avec threadId + bidId après matérialisation")
+        void publishesBidMaterializedEvent() {
+            UUID bidId = UUID.randomUUID();
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                org.springframework.test.util.ReflectionTestUtils.setField(b, "id", bidId);
+                return b;
+            });
+
+            listener.onPackageRequestAccepted(buildEvent());
+
+            ArgumentCaptor<BidMaterializedEvent> captor =
+                    ArgumentCaptor.forClass(BidMaterializedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            BidMaterializedEvent published = captor.getValue();
+            assertThat(published.getNegotiationThreadId()).isEqualTo(THREAD_ID);
+            assertThat(published.getBidId()).isEqualTo(bidId);
+        }
+
+        @Test
         @DisplayName("bid déjà existant → idempotence, aucune création")
         void idempotenceSkipsCreation() {
             when(bidRepository.findByLinkedNegotiationThreadId(THREAD_ID))
@@ -97,6 +123,7 @@ class ThreadAcceptedBidListenerTest {
             listener.onPackageRequestAccepted(buildEvent());
 
             verify(bidRepository, never()).save(any());
+            verify(eventPublisher, never()).publishEvent(any(BidMaterializedEvent.class));
         }
 
         @Test
@@ -168,6 +195,28 @@ class ThreadAcceptedBidListenerTest {
             assertThat(saved.getPaymentMethod())
                     .isEqualTo(com.dony.api.payments.cash.PaymentMethod.STRIPE);
             assertThat(saved.getCommissionStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("annonce trouvée → bid hérite fenêtre de remise + lieu de pickup")
+        void copiesHandoverWindowFromAnnouncement() {
+            LocalDateTime start = LocalDate.now().plusDays(5).atTime(16, 0);
+            LocalDateTime end   = LocalDate.now().plusDays(5).atTime(18, 0);
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setHandoverWindowStart(start);
+            ann.setHandoverWindowEnd(end);
+            ann.setPickupAddressLabel("Gare du Nord");
+            lenient().when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                    .thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent());
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            BidEntity saved = captor.getValue();
+            assertThat(saved.getHandoverWindowStart()).isEqualTo(start);
+            assertThat(saved.getHandoverWindowEnd()).isEqualTo(end);
+            assertThat(saved.getHandoverLocation()).isEqualTo("Gare du Nord");
         }
     }
 
