@@ -177,6 +177,7 @@ class AnnouncementControllerIntegrationTest {
         // Les codes pays ISO-2 envoyés à la création sont persistés et renvoyés,
         // accompagnés de leurs drapeaux emoji résolus par FlagService (US → 🇺🇸).
         seedTraveler("uid-test-traveler");
+        String date = LocalDate.now().plusDays(10).toString();
         String body = """
             {
               "departureCity": "New York",
@@ -188,9 +189,11 @@ class AnnouncementControllerIntegrationTest {
               "pickupAddress": {"label": "JFK", "lat": 40.641, "lng": -73.778},
               "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
               "departureCountryCode": "US",
-              "arrivalCountryCode": "SN"
+              "arrivalCountryCode": "SN",
+              "handoverWindowStart": "%sT06:00:00",
+              "handoverWindowEnd": "%sT07:30:00"
             }
-            """.formatted(LocalDate.now().plusDays(10));
+            """.formatted(date, date, date);
         mockMvc.perform(post("/announcements")
                 .with(authentication(authenticatedAs("uid-test-traveler")))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -207,6 +210,7 @@ class AnnouncementControllerIntegrationTest {
         // Régression : capacityUnit "KG_EXACT" (capacité personnalisée saisie par le
         // voyageur) doit être désérialisé sans 400 « Malformed request payload ».
         seedTraveler("uid-test-traveler");
+        String date = LocalDate.now().plusDays(10).toString();
         String body = """
             {
               "departureCity": "Paris",
@@ -217,9 +221,11 @@ class AnnouncementControllerIntegrationTest {
               "transportMode": "PLANE",
               "capacityUnit": "KG_EXACT",
               "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
-              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447}
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
+              "handoverWindowStart": "%sT06:00:00",
+              "handoverWindowEnd": "%sT07:30:00"
             }
-            """.formatted(LocalDate.now().plusDays(10));
+            """.formatted(date, date, date);
         mockMvc.perform(post("/announcements")
                 .with(authentication(authenticatedAs("uid-test-traveler")))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -277,6 +283,7 @@ class AnnouncementControllerIntegrationTest {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private String validBodyWithMode(String mode) {
+        String date = LocalDate.now().plusDays(10).toString();
         return """
             {
               "departureCity": "Paris",
@@ -286,9 +293,11 @@ class AnnouncementControllerIntegrationTest {
               "pricePerKg": 5,
               "transportMode": "%s",
               "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
-              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447}
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
+              "handoverWindowStart": "%sT06:00:00",
+              "handoverWindowEnd": "%sT07:30:00"
             }
-            """.formatted(LocalDate.now().plusDays(10), mode);
+            """.formatted(date, mode, date, date);
     }
 
     private com.dony.api.auth.UserEntity seedTraveler(String firebaseUid) {
