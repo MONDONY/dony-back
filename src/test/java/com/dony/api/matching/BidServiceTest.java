@@ -859,6 +859,36 @@ class BidServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("announcement-not-accepting"));
         }
+
+        @Test
+        @DisplayName("acceptBid — bid hérite de la fenêtre de remise de l'annonce")
+        void acceptBid_copiesHandoverWindowFromAnnouncement() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            LocalDateTime start = LocalDate.now().plusDays(5).atTime(16, 0);
+            LocalDateTime end   = LocalDate.now().plusDays(5).atTime(18, 0);
+            announcement.setHandoverWindowStart(start);
+            announcement.setHandoverWindowEnd(end);
+            announcement.setPickupAddressLabel("Gare du Nord");
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            bidService.acceptBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository, atLeastOnce()).save(captor.capture());
+            BidEntity saved = captor.getValue();
+            assertThat(saved.getHandoverWindowStart()).isEqualTo(start);
+            assertThat(saved.getHandoverWindowEnd()).isEqualTo(end);
+            assertThat(saved.getHandoverLocation()).isEqualTo("Gare du Nord");
+        }
     }
 
     // ─── KgFree capacity — acceptance, cancel, and placement ──────────────────

@@ -485,6 +485,7 @@ public class BidService {
             announcement.setStatus(AnnouncementStatus.FULL);
         }
         announcementRepository.save(announcement);
+        bid.applyHandoverFrom(announcement);
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_ACCEPTED", traveler.getId(),

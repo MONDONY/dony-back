@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.lenient;
 class ThreadAcceptedBidListenerTest {
 
     @Mock BidRepository bidRepository;
+    @Mock AnnouncementRepository announcementRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks ThreadAcceptedBidListener listener;
@@ -69,6 +71,7 @@ class ThreadAcceptedBidListenerTest {
             lenient().when(bidRepository.findByLinkedNegotiationThreadId(THREAD_ID))
                     .thenReturn(Optional.empty());
             lenient().when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(announcementRepository.findById(any())).thenReturn(Optional.empty());
         }
 
         @Test
@@ -192,6 +195,28 @@ class ThreadAcceptedBidListenerTest {
             assertThat(saved.getPaymentMethod())
                     .isEqualTo(com.dony.api.payments.cash.PaymentMethod.STRIPE);
             assertThat(saved.getCommissionStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("annonce trouvée → bid hérite fenêtre de remise + lieu de pickup")
+        void copiesHandoverWindowFromAnnouncement() {
+            LocalDateTime start = LocalDate.now().plusDays(5).atTime(16, 0);
+            LocalDateTime end   = LocalDate.now().plusDays(5).atTime(18, 0);
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setHandoverWindowStart(start);
+            ann.setHandoverWindowEnd(end);
+            ann.setPickupAddressLabel("Gare du Nord");
+            lenient().when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                    .thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent());
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            BidEntity saved = captor.getValue();
+            assertThat(saved.getHandoverWindowStart()).isEqualTo(start);
+            assertThat(saved.getHandoverWindowEnd()).isEqualTo(end);
+            assertThat(saved.getHandoverLocation()).isEqualTo("Gare du Nord");
         }
     }
 
