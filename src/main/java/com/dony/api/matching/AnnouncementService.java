@@ -225,7 +225,9 @@ public class AnnouncementService {
                 entity.getCapacityUnit(),
                 entity.getCreatedAt(), entity.getUpdatedAt(),
                 entity.getPricingMode(),
-                gridItems
+                gridItems,
+                entity.getHandoverWindowStart(),
+                entity.getHandoverWindowEnd()
         );
     }
 
