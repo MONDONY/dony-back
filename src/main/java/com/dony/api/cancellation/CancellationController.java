@@ -74,6 +74,14 @@ public class CancellationController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/bids/{bidId}/report-traveler-noshow")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<Void> reportTravelerNoShow(@PathVariable UUID bidId) {
+        UUID senderId = resolveUserId();
+        cancellationService.reportTravelerNoShow(bidId, senderId);
+        return ResponseEntity.ok().build();
+    }
+
     private UUID resolveUserId() {
         String firebaseUid = requireFirebaseUid();
         return userRepository.findByFirebaseUid(firebaseUid)

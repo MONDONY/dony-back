@@ -1,27 +1,18 @@
 package com.dony.api.matching;
 
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
-import com.dony.api.matching.events.VoyageurNoShowEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -30,21 +21,15 @@ import static org.mockito.Mockito.*;
 class NoShowSchedulerTest {
 
     @Mock private BidRepository bidRepository;
-    @Mock private UserRepository userRepository;
-    @Mock private AnnouncementRepository announcementRepository;
-    @Mock private AuditService auditService;
-    @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private NoShowService noShowService;
 
     @InjectMocks private NoShowScheduler scheduler;
 
-    private static final UUID TRAVELER_ID = UUID.randomUUID();
-    private static final UUID SENDER_ID = UUID.randomUUID();
     private static final UUID BID_ID = UUID.randomUUID();
     private static final UUID ANNOUNCEMENT_ID = UUID.randomUUID();
+    private static final UUID SENDER_ID = UUID.randomUUID();
 
     private BidEntity bid;
-    private UserEntity traveler;
-    private AnnouncementEntity announcement;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -54,14 +39,6 @@ class NoShowSchedulerTest {
         setField(bid, "announcementId", ANNOUNCEMENT_ID);
         setField(bid, "status", BidStatus.ACCEPTED);
         setField(bid, "noShowAt", null);
-
-        traveler = new UserEntity();
-        setId(traveler, TRAVELER_ID);
-        setField(traveler, "noShowCount", 0);
-
-        announcement = new AnnouncementEntity();
-        setId(announcement, ANNOUNCEMENT_ID);
-        setField(announcement, "travelerId", TRAVELER_ID);
     }
 
     @Nested
@@ -69,65 +46,56 @@ class NoShowSchedulerTest {
     class DetectNoShowTests {
 
         @Test
-        @DisplayName("bid no-show détecté → status NO_SHOW + noShowCount incrémenté + event")
-        void detectNoShows_bidFound_marksNoShowAndPublishesEvent() {
+        @DisplayName("bid no-show détecté → délègue à NoShowService avec source 'scheduler'")
+        void detectNoShows_bidFound_delegatesToService() {
             when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.save(any())).thenReturn(bid);
-            when(userRepository.save(any())).thenReturn(traveler);
 
             scheduler.detectNoShows();
 
-            assertThat(bid.getStatus()).isEqualTo(BidStatus.NO_SHOW);
-            assertThat(bid.getNoShowAt()).isNotNull();
-            assertThat(traveler.getNoShowCount()).isEqualTo(1);
-            verify(bidRepository).save(bid);
-            verify(userRepository).save(traveler);
-
-            ArgumentCaptor<VoyageurNoShowEvent> captor = ArgumentCaptor.forClass(VoyageurNoShowEvent.class);
-            verify(eventPublisher).publishEvent(captor.capture());
-            assertThat(captor.getValue().getBidId()).isEqualTo(BID_ID);
-            assertThat(captor.getValue().getTravelerId()).isEqualTo(TRAVELER_ID);
-            assertThat(captor.getValue().getNoShowCount()).isEqualTo(1);
+            verify(noShowService).recordTravelerNoShow(BID_ID, "scheduler");
         }
 
         @Test
-        @DisplayName("noShowCount >= 2 → alerte admin créée dans audit_log")
-        void detectNoShows_recurringNoShow_adminAlertCreated() throws Exception {
-            setField(traveler, "noShowCount", 1); // already 1, will become 2
-            when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.save(any())).thenReturn(bid);
-            when(userRepository.save(any())).thenReturn(traveler);
+        @DisplayName("plusieurs bids → délègue pour chacun")
+        void detectNoShows_multipleBids_delegatesForEach() throws Exception {
+            BidEntity bid2 = new BidEntity();
+            UUID bid2Id = UUID.randomUUID();
+            setId(bid2, bid2Id);
+            setField(bid2, "status", BidStatus.ACCEPTED);
+            when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid, bid2));
 
             scheduler.detectNoShows();
 
-            assertThat(traveler.getNoShowCount()).isEqualTo(2);
-            verify(auditService).log(eq("USER"), eq(TRAVELER_ID),
-                    eq("ADMIN_ALERT_RECURRING_NO_SHOW"), eq(TRAVELER_ID), any());
+            verify(noShowService).recordTravelerNoShow(BID_ID, "scheduler");
+            verify(noShowService).recordTravelerNoShow(bid2Id, "scheduler");
         }
 
         @Test
-        @DisplayName("aucun bid à traiter → aucune action")
+        @DisplayName("aucun bid à traiter → aucune délégation")
         void detectNoShows_noBids_noOp() {
             when(bidRepository.findNoShowBids(any())).thenReturn(List.of());
 
             scheduler.detectNoShows();
 
-            verify(bidRepository, never()).save(any());
-            verify(eventPublisher, never()).publishEvent(any());
+            verify(noShowService, never()).recordTravelerNoShow(any(), any());
         }
 
         @Test
-        @DisplayName("exception pendant processNoShow → log error et continue")
-        void detectNoShows_exceptionOnOneBid_doesNotAbort() {
-            when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid));
-            when(bidRepository.save(any())).thenThrow(new RuntimeException("db error"));
+        @DisplayName("exception sur un bid → log error et continue avec les suivants")
+        void detectNoShows_exceptionOnOneBid_doesNotAbort() throws Exception {
+            BidEntity bid2 = new BidEntity();
+            UUID bid2Id = UUID.randomUUID();
+            setId(bid2, bid2Id);
+            setField(bid2, "status", BidStatus.ACCEPTED);
+            when(bidRepository.findNoShowBids(any())).thenReturn(List.of(bid, bid2));
+            doThrow(new RuntimeException("db error"))
+                    .when(noShowService).recordTravelerNoShow(BID_ID, "scheduler");
 
             // doit passer sans exception — l'erreur est catchée et loggée
             scheduler.detectNoShows();
+
+            // le 2e bid est quand même traité
+            verify(noShowService).recordTravelerNoShow(bid2Id, "scheduler");
         }
     }
 

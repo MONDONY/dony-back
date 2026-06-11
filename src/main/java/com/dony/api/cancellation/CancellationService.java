@@ -9,6 +9,7 @@ import com.dony.api.cancellation.events.CancellationConfirmedEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
+import com.dony.api.cancellation.events.TravelerNoShowReportedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -267,6 +268,32 @@ public class CancellationService {
         c.setContestationDeadline(
                 OffsetDateTime.now().plusHours(commissionProperties.noShowContestationHours()));
         return cancellationRepository.save(c);
+    }
+
+    /**
+     * L'expéditeur signale un voyageur absent (no-show manuel). Vérifie l'ownership, le statut
+     * ACCEPTED et que la fenêtre de remise est passée, puis publie
+     * {@link TravelerNoShowReportedEvent} — écouté côté matching/ par {@code NoShowService}.
+     */
+    @Transactional
+    public void reportTravelerNoShow(UUID bidId, UUID senderId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        if (!bid.getSenderId().equals(senderId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas l'expéditeur de ce bid.");
+        }
+        if (bid.getStatus() != BidStatus.ACCEPTED) {
+            throw new IllegalStateException("Le bid doit être en statut ACCEPTED.");
+        }
+        LocalDateTime handoverEnd = bid.getHandoverWindowEnd();
+        if (handoverEnd == null || LocalDateTime.now().isBefore(handoverEnd)) {
+            throw new IllegalStateException("Vous ne pouvez signaler qu'après l'heure de remise prévue.");
+        }
+        auditService.log("BID", bidId, "TRAVELER_NO_SHOW_REPORTED", senderId,
+                Map.of("bidId", bidId.toString()));
+        eventPublisher.publishEvent(new TravelerNoShowReportedEvent(bidId, senderId));
     }
 
     @Transactional

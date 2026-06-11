@@ -1,11 +1,14 @@
 package com.dony.api.cancellation;
 
 import com.dony.api.auth.UserRepository;
+import com.dony.api.cancellation.events.TravelerNoShowReportedEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.AnnouncementRepository;
+import org.springframework.http.HttpStatus;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +29,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -138,5 +143,78 @@ class CancellationServiceNoShowTest {
         assertThatThrownBy(() -> service.reportSenderNoShow(BID_ID, TRAVELER_ID))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("déjà");
+    }
+
+    // ─── reportTravelerNoShow (l'expéditeur signale le voyageur absent) ──────────
+
+    /** Happy path : bid ACCEPTED de l'expéditeur, fenêtre passée → audit + event publié. */
+    @Test
+    void reportTravelerNoShow_happyPath_logsAuditAndPublishesEvent() {
+        BidEntity accepted = bid(BidStatus.ACCEPTED, PaymentMethod.STRIPE,
+                LocalDateTime.now().minusHours(1));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(accepted));
+
+        service.reportTravelerNoShow(BID_ID, SENDER_ID);
+
+        verify(auditService).log(eq("BID"), eq(BID_ID), eq("TRAVELER_NO_SHOW_REPORTED"),
+                eq(SENDER_ID), any());
+        ArgumentCaptor<TravelerNoShowReportedEvent> captor =
+                ArgumentCaptor.forClass(TravelerNoShowReportedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().getBidId()).isEqualTo(BID_ID);
+        assertThat(captor.getValue().getSenderId()).isEqualTo(SENDER_ID);
+    }
+
+    /** Bid introuvable → 404 DonyBusinessException, aucun event. */
+    @Test
+    void reportTravelerNoShow_bidNotFound_throwsNotFound() {
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.reportTravelerNoShow(BID_ID, SENDER_ID))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** Le caller n'est pas l'expéditeur du bid → 403 DonyBusinessException. */
+    @Test
+    void reportTravelerNoShow_ownershipMismatch_throwsForbidden() {
+        BidEntity accepted = bid(BidStatus.ACCEPTED, PaymentMethod.STRIPE,
+                LocalDateTime.now().minusHours(1));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(accepted));
+
+        UUID intruder = UUID.randomUUID();
+        assertThatThrownBy(() -> service.reportTravelerNoShow(BID_ID, intruder))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** Bid HANDED_OVER (non ACCEPTED) → IllegalStateException. */
+    @Test
+    void reportTravelerNoShow_handedOverBid_throws() {
+        BidEntity handedOver = bid(BidStatus.HANDED_OVER, PaymentMethod.STRIPE,
+                LocalDateTime.now().minusHours(1));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(handedOver));
+
+        assertThatThrownBy(() -> service.reportTravelerNoShow(BID_ID, SENDER_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ACCEPTED");
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    /** Fenêtre de remise non encore passée → IllegalStateException. */
+    @Test
+    void reportTravelerNoShow_handoverWindowInFuture_throws() {
+        BidEntity future = bid(BidStatus.ACCEPTED, PaymentMethod.STRIPE,
+                LocalDateTime.now().plusHours(1));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(future));
+
+        assertThatThrownBy(() -> service.reportTravelerNoShow(BID_ID, SENDER_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("remise");
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
