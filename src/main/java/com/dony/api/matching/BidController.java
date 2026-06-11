@@ -8,7 +8,6 @@ import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
-import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.dto.RefuseParcelRequest;
 import com.dony.api.payments.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -119,17 +118,6 @@ public class BidController {
     ) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.rejectBid(bidId, firebaseUid, request));
-    }
-
-    // ── Traveler defines handover window ─────────────────────────────────────
-
-    @PutMapping("/bids/{bidId}/handover")
-    public ResponseEntity<BidResponse> setHandover(
-            @PathVariable UUID bidId,
-            @Valid @RequestBody HandoverRequest request
-    ) {
-        String firebaseUid = requireFirebaseUid();
-        return ResponseEntity.ok(bidService.setHandover(bidId, firebaseUid, request));
     }
 
     // ── Traveler confirms presence ────────────────────────────────────────────

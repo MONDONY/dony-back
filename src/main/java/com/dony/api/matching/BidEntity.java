@@ -227,6 +227,17 @@ public class BidEntity extends BaseEntity {
     public LocalDateTime getHandoverWindowEnd() { return handoverWindowEnd; }
     public void setHandoverWindowEnd(LocalDateTime handoverWindowEnd) { this.handoverWindowEnd = handoverWindowEnd; }
 
+    /**
+     * Copie la fenêtre de remise + le lieu de pickup du trajet sur le bid au
+     * moment de l'acceptation. Le bid devient autoporteur : toute la logique
+     * aval (no-show, alerte H-2, confirm-presence) lit ses propres champs.
+     */
+    public void applyHandoverFrom(AnnouncementEntity announcement) {
+        this.handoverWindowStart = announcement.getHandoverWindowStart();
+        this.handoverWindowEnd = announcement.getHandoverWindowEnd();
+        this.handoverLocation = announcement.getPickupAddressLabel();
+    }
+
     public boolean isVoyageurConfirmed() { return voyageurConfirmed; }
     public void setVoyageurConfirmed(boolean voyageurConfirmed) { this.voyageurConfirmed = voyageurConfirmed; }
 

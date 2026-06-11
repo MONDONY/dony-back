@@ -827,6 +827,29 @@ class CashCommissionServiceTest {
             }
         }
 
+        // --- handover window inheritance ---
+
+        @Test
+        void finalizeBidAcceptance_copiesHandoverWindowFromAnnouncement() {
+            java.time.LocalDateTime start = java.time.LocalDate.now().plusDays(5).atTime(16, 0);
+            java.time.LocalDateTime end   = java.time.LocalDate.now().plusDays(5).atTime(18, 0);
+            announcement.setHandoverWindowStart(start);
+            announcement.setHandoverWindowEnd(end);
+            announcement.setPickupAddressLabel("Gare du Nord");
+            // Use wallet path so no Stripe mocking needed
+            java.math.BigDecimal commission = new java.math.BigDecimal("12.00"); // 5kg × 20€ × 12%
+            when(walletService.getBalance(travelerId)).thenReturn(commission.add(java.math.BigDecimal.ONE));
+            when(walletTransactionRepository.existsByUserIdAndBidIdAndType(eq(travelerId), any(), any()))
+                    .thenReturn(false);
+
+            AcceptBidResponse resp = service.acceptCashBid(bid.getId(), travelerId, com.dony.api.payments.cash.CommissionSource.WALLET_FIRST);
+
+            assertThat(resp.status()).isEqualTo(AcceptanceStatusDto.ACCEPTED);
+            assertThat(bid.getHandoverWindowStart()).isEqualTo(start);
+            assertThat(bid.getHandoverWindowEnd()).isEqualTo(end);
+            assertThat(bid.getHandoverLocation()).isEqualTo("Gare du Nord");
+        }
+
         // --- KG_FREE regression ---
 
         @Test

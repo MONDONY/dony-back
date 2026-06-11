@@ -64,15 +64,3 @@ Fonctionnalité: Cycle de vie d'une offre
     Alors la réponse HTTP est 200
     Et la réponse contient 1 offres
 
-  @happy-path
-  Scénario: Définition d'une fenêtre de remise pour une offre acceptée
-    Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-lc-006" et le téléphone "+33677000011"
-    Et il existe une annonce de "Paris" à "Abidjan" avec 20 kg disponibles à 6.0 €/kg sauvegardée sous "annonce-lc-6"
-    Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "sender-lc-006" et le téléphone "+33677000012"
-    Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-lc-6"
-    Et l'offre "offre-lc-6" est sauvegardée
-    Etant donné l'utilisateur "traveler-lc-006" est authentifié en tant que VOYAGEUR
-    Et le paiement de l'offre "offre-lc-6" est validé
-    Et j'accepte l'offre "offre-lc-6"
-    Quand je définis la fenêtre de remise pour l'offre "offre-lc-6"
-    Alors la réponse HTTP est 200

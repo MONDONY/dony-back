@@ -33,12 +33,16 @@ public class ThreadAcceptedBidListener {
     private static final Logger log = LoggerFactory.getLogger(ThreadAcceptedBidListener.class);
 
     private final BidRepository bidRepository;
+    private final AnnouncementRepository announcementRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
-    public ThreadAcceptedBidListener(BidRepository bidRepository, AuditService auditService,
+    public ThreadAcceptedBidListener(BidRepository bidRepository,
+                                     AnnouncementRepository announcementRepository,
+                                     AuditService auditService,
                                      ApplicationEventPublisher eventPublisher) {
         this.bidRepository = bidRepository;
+        this.announcementRepository = announcementRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
     }
@@ -93,6 +97,8 @@ public class ThreadAcceptedBidListener {
             bid.setCommissionStatus(com.dony.api.payments.cash.CommissionStatus.CHARGED);
         }
 
+        announcementRepository.findById(e.travelerAnnouncementId())
+                .ifPresent(bid::applyHandoverFrom);
         BidEntity saved = bidRepository.save(bid);
 
         auditService.log("BID", saved.getId(), "CREATED_FROM_THREAD", e.senderId(),

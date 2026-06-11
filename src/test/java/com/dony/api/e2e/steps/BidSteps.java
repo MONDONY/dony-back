@@ -8,7 +8,6 @@ import org.assertj.core.api.Assertions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,15 +103,6 @@ public class BidSteps extends AbstractSteps {
     @Quand("je consulte les offres de l'annonce {string}")
     public void whenGetBidsForAnnouncement(String announcementAlias) {
         store(asCurrentUser().get("/announcements/{id}/bids", ctx.getId(announcementAlias)));
-    }
-
-    @Quand("je définis la fenêtre de remise pour l'offre {string}")
-    public void whenSetHandover(String bidAlias) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("location", "Gare du Nord, Paris");
-        body.put("windowStart", LocalDateTime.now().plusDays(1).toString());
-        body.put("windowEnd", LocalDateTime.now().plusDays(1).plusHours(2).toString());
-        store(asCurrentUser().body(body).put("/bids/{id}/handover", ctx.getId(bidAlias)));
     }
 
     @Quand("je sauvegarde l'id de l'offre de la réponse sous {string}")

@@ -5,7 +5,6 @@ import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
 import com.dony.api.matching.events.HandoverAlertEvent;
-import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.matching.events.ParcelRefusedEvent;
 import com.dony.api.matching.events.VoyageurNoShowEvent;
 import org.junit.jupiter.api.Test;
@@ -41,14 +40,6 @@ class MatchingEventsTest {
         VoyageurNoShowEvent e = new VoyageurNoShowEvent(bidId, travId, sendId, 2);
         assertThat(e.getSenderId()).isEqualTo(sendId);
         assertThat(e.getNoShowCount()).isEqualTo(2);
-    }
-
-    @Test
-    void handoverDefinedEvent_getters_returnConstructorValues() {
-        UUID bidId = UUID.randomUUID(), sendId = UUID.randomUUID();
-        LocalDateTime start = LocalDateTime.now(), end = start.plusHours(2);
-        HandoverDefinedEvent e = new HandoverDefinedEvent(bidId, sendId, "CDG", start, end);
-        assertThat(e.getWindowEnd()).isEqualTo(end);
     }
 
     @Test
