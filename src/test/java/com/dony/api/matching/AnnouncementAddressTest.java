@@ -114,15 +114,17 @@ class AnnouncementServiceAddressTest {
     }
 
     private AnnouncementRequest buildRequest(AddressDto pickup, AddressDto delivery) {
+        java.time.LocalDate departure = java.time.LocalDate.now().plusDays(10);
         return new AnnouncementRequest(
             "Paris", "Dakar",
-            java.time.LocalDate.now().plusDays(10),
+            departure,
             null, null,
             pickup, delivery,
             java.math.BigDecimal.valueOf(10), java.math.BigDecimal.valueOf(5),
             com.dony.api.matching.TransportMode.PLANE,
             null, java.util.List.of(), java.util.List.of(), null, null, null,
-            null, null
+            null, null,
+            departure.atTime(16, 0), departure.atTime(18, 0)
         );
     }
 
