@@ -9,7 +9,6 @@ import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidExpiredOnDepartureEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
-import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.matching.events.ParcelRefusedEvent;
 import com.dony.api.matching.events.VoyageurNoShowEvent;
 import com.dony.api.payments.events.PaymentReleasedEvent;
@@ -20,7 +19,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -36,7 +34,6 @@ import java.util.UUID;
 public class NotificationDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM HH:mm");
     private static final int MESSAGE_PREVIEW_MAX_LENGTH = 60;
 
     private final FcmService fcmService;
@@ -114,16 +111,6 @@ public class NotificationDispatcher {
         notifyUser(event.getSenderId(), "Demande refusée",
                 "Le voyageur a refusé votre demande",
                 Map.of("type", "BID_REJECTED", "bidId", event.getBidId().toString()));
-    }
-
-    @EventListener @Async
-    public void onHandoverDefined(HandoverDefinedEvent event) {
-        String dateStr = event.getWindowStart() != null
-                ? event.getWindowStart().format(DATE_FMT) : "à confirmer";
-        String location = event.getLocation() != null ? event.getLocation() : "lieu à confirmer";
-        notifyUser(event.getSenderId(), "Point de remise défini",
-                "Remise : " + location + " le " + dateStr,
-                Map.of("type", "HANDOVER_DEFINED", "bidId", event.getBidId().toString()));
     }
 
     @EventListener @Async

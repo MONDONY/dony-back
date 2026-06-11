@@ -77,6 +77,13 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "commission_charged_via", length = 20)
     private String commissionChargedVia;
 
+    // Bid matérialisé une fois le thread ACCEPTED (créé par matching/ via
+    // BidMaterializedEvent). Permet au mobile d'ouvrir le détail du bid
+    // (suivi, no-show…) directement depuis le thread. Null tant que la
+    // matérialisation n'a pas eu lieu.
+    @Column(name = "materialized_bid_id")
+    private UUID materializedBidId;
+
     // === NO-ARG CONSTRUCTOR (required by JPA) ===
 
     public NegotiationThreadEntity() { /* JPA */ }
@@ -111,6 +118,8 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public String getCommissionChargedVia() { return commissionChargedVia; }
 
+    public UUID getMaterializedBidId() { return materializedBidId; }
+
     // === SETTERS ===
 
     public void setPackageRequestId(UUID packageRequestId) { this.packageRequestId = packageRequestId; }
@@ -140,4 +149,6 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setCommissionPaymentIntentId(String commissionPaymentIntentId) { this.commissionPaymentIntentId = commissionPaymentIntentId; }
 
     public void setCommissionChargedVia(String commissionChargedVia) { this.commissionChargedVia = commissionChargedVia; }
+
+    public void setMaterializedBidId(UUID materializedBidId) { this.materializedBidId = materializedBidId; }
 }

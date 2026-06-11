@@ -84,14 +84,20 @@ class CancellationNoShowTest {
     class ReportSenderNoShow {
 
         @Test
-        void failsForNonCashBid() {
+        void allowsStripeBid() {
+            // Produit : le signalement « expéditeur absent » couvre désormais cash ET Stripe.
             BidEntity bid = cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1));
             bid.setPaymentMethod(PaymentMethod.STRIPE);
             when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(cancellationRepository.existsByBidIdAndNoShowStatusIn(any(), any())).thenReturn(false);
+            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            assertThatThrownBy(() -> service.reportSenderNoShow(BID_ID, TRAVELER_ID))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("cash");
+            service.reportSenderNoShow(BID_ID, TRAVELER_ID);
+
+            ArgumentCaptor<CancellationEntity> captor = ArgumentCaptor.forClass(CancellationEntity.class);
+            verify(cancellationRepository).save(captor.capture());
+            assertThat(captor.getValue().getNoShowStatus())
+                    .isEqualTo(CancellationStatus.PENDING_CONFIRMATION);
         }
 
         @Test

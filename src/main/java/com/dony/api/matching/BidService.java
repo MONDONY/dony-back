@@ -14,11 +14,9 @@ import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
-import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
-import com.dony.api.matching.events.HandoverDefinedEvent;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.ratings.RatingRepository;
@@ -485,6 +483,7 @@ public class BidService {
             announcement.setStatus(AnnouncementStatus.FULL);
         }
         announcementRepository.save(announcement);
+        bid.applyHandoverFrom(announcement);
         bidRepository.save(bid);
 
         auditService.log("BID", bidId, "BID_ACCEPTED", traveler.getId(),
@@ -526,41 +525,6 @@ public class BidService {
 
         eventPublisher.publishEvent(new BidRejectedEvent(
                 bidId, bid.getSenderId(), bid.getRejectionReason()));
-
-        return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
-    }
-
-    @Transactional
-    public BidResponse setHandover(UUID bidId, String firebaseUid, HandoverRequest request) {
-        BidEntity bid = findBid(bidId);
-        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
-        UserEntity traveler = findUserByFirebaseUid(firebaseUid);
-
-        requireTravelerOwnsAnnouncement(traveler, announcement);
-
-        if (bid.getStatus() != BidStatus.ACCEPTED) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT, "bid-not-accepted", "Bid Not Accepted",
-                    "La fenêtre de remise ne peut être définie que sur un bid accepté");
-        }
-
-        if (!request.windowEnd().isAfter(request.windowStart())) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-window",
-                    "Invalid Window", "La fin de la fenêtre doit être après le début");
-        }
-
-        bid.setHandoverLocation(request.location());
-        bid.setHandoverWindowStart(request.windowStart());
-        bid.setHandoverWindowEnd(request.windowEnd());
-        bidRepository.save(bid);
-
-        auditService.log("BID", bidId, "HANDOVER_DEFINED", traveler.getId(),
-                Map.of("location", request.location(),
-                       "windowStart", request.windowStart().toString(),
-                       "windowEnd", request.windowEnd().toString()));
-
-        eventPublisher.publishEvent(new HandoverDefinedEvent(
-                bidId, bid.getSenderId(), request.location(),
-                request.windowStart(), request.windowEnd()));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }

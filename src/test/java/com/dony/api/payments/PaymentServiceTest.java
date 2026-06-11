@@ -440,18 +440,26 @@ class PaymentServiceTest {
 
     @Test
     void handleChargeRefunded_alreadyRefunded_idempotent() {
+        // Rejeu d'un charge.refunded sur un paiement déjà REFUNDED : le montant remboursé
+        // (absolu, cumulé) est ré-enregistré à l'identique — aucun changement de statut,
+        // aucun nouvel audit PAYMENT_REFUNDED (idempotence de la nouvelle machine à états).
         PaymentEntity payment = buildPayment(PaymentStatus.REFUNDED, "pi_already_refunded");
+        payment.setRefundedAmount(new BigDecimal("30.00"));
 
         Charge mockCharge = mock(Charge.class);
         when(mockCharge.getPaymentIntent()).thenReturn("pi_already_refunded");
+        when(mockCharge.getAmount()).thenReturn(3000L);
+        when(mockCharge.getAmountRefunded()).thenReturn(3000L);
 
         Event mockEvent = buildEventWith("charge.refunded", mockCharge);
         when(paymentRepository.findByStripePaymentIntentId("pi_already_refunded")).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.handleChargeRefunded(mockEvent);
 
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED); // unchanged
-        verify(paymentRepository, never()).save(any());
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED); // inchangé
+        assertThat(payment.getRefundedAmount()).isEqualByComparingTo("30.00");
+        verify(auditService, never()).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED"), any(), any());
     }
 
     @Test

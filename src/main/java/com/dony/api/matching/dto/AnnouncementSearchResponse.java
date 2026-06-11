@@ -34,5 +34,7 @@ public record AnnouncementSearchResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         com.dony.api.matching.PricingMode pricingMode,
-        List<AnnouncementPriceGridItemResponse> priceGridItems
+        List<AnnouncementPriceGridItemResponse> priceGridItems,
+        LocalDateTime handoverWindowStart,
+        LocalDateTime handoverWindowEnd
 ) {}

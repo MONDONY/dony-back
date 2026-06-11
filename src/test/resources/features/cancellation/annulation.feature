@@ -77,3 +77,16 @@ Fonctionnalité: Annulation d'un voyage
     Etant donné l'utilisateur "ns-traveler-002" est authentifié en tant que VOYAGEUR
     Quand je consulte mes litiges
     Alors la réponse HTTP est 200
+
+  @happy-path @critical
+  Scénario: L'expéditeur signale un voyageur absent après la fenêtre de remise
+    Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "tns-traveler-001" et le téléphone "+33700000020"
+    Et il existe une annonce de "Paris" à "Dakar" avec 20 kg disponibles à 5.0 €/kg sauvegardée sous "annonce-tns-1"
+    Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "tns-sender-001" et le téléphone "+33700000021"
+    Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-tns-1"
+    Et l'offre "offre-tns-1" est sauvegardée
+    Et l'offre "offre-tns-1" est une remise cash dont l'horaire est dépassé
+    Etant donné l'utilisateur "tns-sender-001" est authentifié en tant qu'EXPÉDITEUR
+    Quand l'expéditeur signale le voyageur absent pour l'offre "offre-tns-1"
+    Alors la réponse HTTP est 200
+    Et l'offre "offre-tns-1" passe au statut "NO_SHOW" en base

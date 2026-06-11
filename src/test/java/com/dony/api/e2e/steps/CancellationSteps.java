@@ -4,12 +4,17 @@ import io.cucumber.java.fr.Alors;
 import io.cucumber.java.fr.Etantdonné;
 import io.cucumber.java.fr.Quand;
 import org.assertj.core.api.Assertions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 public class CancellationSteps extends AbstractSteps {
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     // ── When ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,12 @@ public class CancellationSteps extends AbstractSteps {
         store(asCurrentUser().post("/cancellations/bids/{id}/contest-noshow", ctx.getId(bidAlias)));
     }
 
+    @Quand("l'expéditeur signale le voyageur absent pour l'offre {string}")
+    public void whenReportTravelerNoShow(String bidAlias) {
+        store(asCurrentUser().post("/cancellations/bids/{id}/report-traveler-noshow",
+                ctx.getId(bidAlias)));
+    }
+
     @Quand("je consulte mes litiges")
     public void whenGetMyDisputes() {
         store(asCurrentUser().get("/disputes/me"));
@@ -72,5 +83,30 @@ public class CancellationSteps extends AbstractSteps {
     public void thenRematchSuggestionsAvailable() {
         List<?> suggestions = lastResponse().jsonPath().getList("$");
         Assertions.assertThat(suggestions).isNotNull();
+    }
+
+    /**
+     * Asserts the bid reaches the given status in the DB. The traveler no-show flow runs
+     * through an @Async @TransactionalEventListener (AFTER_COMMIT), so we poll for a short
+     * window to let the listener mark the bid NO_SHOW before asserting.
+     */
+    @Alors("l'offre {string} passe au statut {string} en base")
+    public void thenBidStatusInDb(String bidAlias, String expectedStatus) {
+        UUID bidId = ctx.getId(bidAlias);
+        String actual = null;
+        for (int i = 0; i < 50; i++) {
+            actual = jdbcTemplate.queryForObject(
+                    "SELECT status FROM bids WHERE id = ?", String.class, bidId);
+            if (expectedStatus.equals(actual)) {
+                break;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        Assertions.assertThat(actual).isEqualTo(expectedStatus);
     }
 }
