@@ -38,5 +38,7 @@ public record AnnouncementDetailResponse(
         List<AnnouncementPriceGridItemResponse> priceGridItems,
         BigDecimal reservedKg,
         boolean surplusEligible,
-        boolean surplusPublished
+        boolean surplusPublished,
+        LocalDateTime handoverWindowStart,
+        LocalDateTime handoverWindowEnd
 ) {}

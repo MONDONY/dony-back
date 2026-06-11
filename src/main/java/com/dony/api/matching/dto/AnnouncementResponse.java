@@ -42,5 +42,7 @@ public record AnnouncementResponse(
         String departureCountryCode,
         String arrivalCountryCode,
         String departureFlag,
-        String arrivalFlag
+        String arrivalFlag,
+        LocalDateTime handoverWindowStart,
+        LocalDateTime handoverWindowEnd
 ) {}

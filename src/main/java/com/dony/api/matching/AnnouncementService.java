@@ -539,7 +539,9 @@ public class AnnouncementService {
                 gridItems,
                 announcement.getReservedKg(),
                 announcement.isSurplusEligible(),
-                announcement.isSurplusPublished()
+                announcement.isSurplusPublished(),
+                announcement.getHandoverWindowStart(),
+                announcement.getHandoverWindowEnd()
         );
     }
 
@@ -674,7 +676,9 @@ public class AnnouncementService {
                 updatedGridItems,
                 saved.getReservedKg(),
                 saved.isSurplusEligible(),
-                saved.isSurplusPublished()
+                saved.isSurplusPublished(),
+                saved.getHandoverWindowStart(),
+                saved.getHandoverWindowEnd()
         );
     }
 
@@ -786,7 +790,9 @@ public class AnnouncementService {
                 entity.getDepartureCountryCode(),
                 entity.getArrivalCountryCode(),
                 flagService.getFlag(entity.getDepartureCountryCode()),
-                flagService.getFlag(entity.getArrivalCountryCode())
+                flagService.getFlag(entity.getArrivalCountryCode()),
+                entity.getHandoverWindowStart(),
+                entity.getHandoverWindowEnd()
         );
     }
 
