@@ -280,6 +280,44 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$.content[0].transportMode").value("BOAT"));
     }
 
+    // ─── Handover window — Z-suffix serialization contract ───────────────────
+
+    /**
+     * Flutter sends ISO-8601 strings with a trailing 'Z' UTC suffix
+     * (e.g. "2026-06-14T06:00:00.000Z"). The backend deserializes them into
+     * LocalDateTime; this test verifies the round-trip is lossless: no offset
+     * shift occurs, no 422 is produced, and the response echoes the same
+     * wall-clock value with a 'Z' suffix (our UtcLocalDateTimeSerializer).
+     */
+    @Test
+    void createAnnouncement_handoverWindowWithZSuffix_roundTripsWithoutShift() throws Exception {
+        seedTraveler("uid-test-traveler");
+        String date = LocalDate.now().plusDays(30).toString();
+        String body = """
+            {
+              "departureCity": "Paris",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "availableKg": 10,
+              "pricePerKg": 5,
+              "transportMode": "PLANE",
+              "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
+              "handoverWindowStart": "%sT06:00:00.000Z",
+              "handoverWindowEnd": "%sT07:30:00.000Z"
+            }
+            """.formatted(date, date, date);
+
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated())
+            // Wall-clock time must be preserved: 06:00 in, 06:00:00Z out (no TZ shift)
+            .andExpect(jsonPath("$.handoverWindowStart").value(date + "T06:00:00Z"))
+            .andExpect(jsonPath("$.handoverWindowEnd").value(date + "T07:30:00Z"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private String validBodyWithMode(String mode) {
