@@ -32,5 +32,8 @@ public record NegotiationThreadResponse(
     // Modèle B : prix brut (TTC commission) affiché à l'expéditeur
     BigDecimal grossPriceEur,
     // Méthode de paiement choisie pour ce thread (null jusqu'à la sélection)
-    PaymentMethod paymentMethod
+    PaymentMethod paymentMethod,
+    // Bid matérialisé après acceptation (null tant que non matérialisé) — permet
+    // au mobile d'ouvrir le détail du bid (suivi, no-show…) depuis le thread
+    UUID materializedBidId
 ) {}

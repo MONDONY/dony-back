@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.events.BidMaterializedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
 import com.dony.api.requests.event.PackageRequestDetailsCompletedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -29,6 +31,7 @@ class ThreadAcceptedBidListenerTest {
 
     @Mock BidRepository bidRepository;
     @Mock AuditService auditService;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks ThreadAcceptedBidListener listener;
 
     private static final UUID THREAD_ID = UUID.randomUUID();
@@ -89,6 +92,26 @@ class ThreadAcceptedBidListenerTest {
         }
 
         @Test
+        @DisplayName("BidMaterializedEvent publié avec threadId + bidId après matérialisation")
+        void publishesBidMaterializedEvent() {
+            UUID bidId = UUID.randomUUID();
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                org.springframework.test.util.ReflectionTestUtils.setField(b, "id", bidId);
+                return b;
+            });
+
+            listener.onPackageRequestAccepted(buildEvent());
+
+            ArgumentCaptor<BidMaterializedEvent> captor =
+                    ArgumentCaptor.forClass(BidMaterializedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            BidMaterializedEvent published = captor.getValue();
+            assertThat(published.getNegotiationThreadId()).isEqualTo(THREAD_ID);
+            assertThat(published.getBidId()).isEqualTo(bidId);
+        }
+
+        @Test
         @DisplayName("bid déjà existant → idempotence, aucune création")
         void idempotenceSkipsCreation() {
             when(bidRepository.findByLinkedNegotiationThreadId(THREAD_ID))
@@ -97,6 +120,7 @@ class ThreadAcceptedBidListenerTest {
             listener.onPackageRequestAccepted(buildEvent());
 
             verify(bidRepository, never()).save(any());
+            verify(eventPublisher, never()).publishEvent(any(BidMaterializedEvent.class));
         }
 
         @Test

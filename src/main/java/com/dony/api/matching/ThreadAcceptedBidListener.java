@@ -1,10 +1,12 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.matching.events.BidMaterializedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
 import com.dony.api.requests.event.PackageRequestDetailsCompletedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,10 +34,13 @@ public class ThreadAcceptedBidListener {
 
     private final BidRepository bidRepository;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ThreadAcceptedBidListener(BidRepository bidRepository, AuditService auditService) {
+    public ThreadAcceptedBidListener(BidRepository bidRepository, AuditService auditService,
+                                     ApplicationEventPublisher eventPublisher) {
         this.bidRepository = bidRepository;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -98,6 +103,11 @@ public class ThreadAcceptedBidListener {
             ));
         log.info("Bid {} created from thread {} (announcement {})",
             saved.getId(), e.threadId(), e.travelerAnnouncementId());
+
+        // Notify requests/ so it can stamp materialized_bid_id on the thread and let
+        // the mobile app open the bid detail (tracking, no-show…) from the thread.
+        // Cross-package boundary: event only, never direct service injection.
+        eventPublisher.publishEvent(new BidMaterializedEvent(e.threadId(), saved.getId()));
     }
 
     /**
