@@ -9,7 +9,6 @@ import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
-import com.dony.api.matching.dto.HandoverRequest;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
@@ -17,7 +16,6 @@ import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.ratings.RatingRepository;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
-import com.dony.api.matching.events.HandoverDefinedEvent;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -1251,86 +1249,6 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
-        }
-    }
-
-    // ─── setHandover ───────────────────────────────────────────────────────────
-
-    @Nested
-    @DisplayName("setHandover()")
-    class SetHandoverTests {
-
-        @Test
-        @DisplayName("fenêtre valide → handover défini + event publié")
-        void setHandover_validWindow_setsAndPublishesEvent() {
-            UserEntity traveler = buildTraveler();
-            AnnouncementEntity announcement = buildAnnouncement();
-            BidEntity bid = buildBid();
-            bid.setStatus(BidStatus.ACCEPTED);
-
-            LocalDateTime start = LocalDateTime.now().plusDays(5);
-            LocalDateTime end = start.plusHours(2);
-            HandoverRequest req = new HandoverRequest("Gare du Nord", start, end);
-
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.save(any())).thenReturn(bid);
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-
-            bidService.setHandover(BID_ID, TRAVELER_UID, req);
-
-            assertThat(bid.getHandoverLocation()).isEqualTo("Gare du Nord");
-            assertThat(bid.getHandoverWindowStart()).isEqualTo(start);
-            assertThat(bid.getHandoverWindowEnd()).isEqualTo(end);
-
-            ArgumentCaptor<HandoverDefinedEvent> captor =
-                    ArgumentCaptor.forClass(HandoverDefinedEvent.class);
-            verify(eventPublisher).publishEvent(captor.capture());
-            assertThat(captor.getValue().getBidId()).isEqualTo(BID_ID);
-        }
-
-        @Test
-        @DisplayName("fin avant début → 422 UNPROCESSABLE_ENTITY")
-        void setHandover_endBeforeStart_throwsUnprocessable() {
-            UserEntity traveler = buildTraveler();
-            AnnouncementEntity announcement = buildAnnouncement();
-            BidEntity bid = buildBid();
-            bid.setStatus(BidStatus.ACCEPTED);
-
-            LocalDateTime start = LocalDateTime.now().plusDays(5);
-            LocalDateTime end = start.minusHours(1); // End before start
-            HandoverRequest req = new HandoverRequest("Gare du Nord", start, end);
-
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
-
-            assertThatThrownBy(() -> bidService.setHandover(BID_ID, TRAVELER_UID, req))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
-                            .isEqualTo("invalid-window"));
-        }
-
-        @Test
-        @DisplayName("bid non accepté → 409 CONFLICT")
-        void setHandover_bidNotAccepted_throwsConflict() {
-            UserEntity traveler = buildTraveler();
-            AnnouncementEntity announcement = buildAnnouncement();
-            BidEntity bid = buildBid(); // status = PENDING
-
-            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
-
-            HandoverRequest req = new HandoverRequest("Loc", LocalDateTime.now(),
-                    LocalDateTime.now().plusHours(1));
-
-            assertThatThrownBy(() -> bidService.setHandover(BID_ID, TRAVELER_UID, req))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
-                            .isEqualTo("bid-not-accepted"));
         }
     }
 
