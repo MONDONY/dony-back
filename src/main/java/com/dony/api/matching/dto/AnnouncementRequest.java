@@ -26,6 +26,7 @@ public record AnnouncementRequest(
         @FutureOrPresent(message = "La date de départ ne peut pas être dans le passé")
         LocalDate departureDate,
 
+        @NotNull(message = "L'heure de départ est obligatoire")
         @JsonFormat(pattern = "HH:mm")
         LocalTime departureTime,
 

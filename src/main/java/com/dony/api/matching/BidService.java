@@ -770,6 +770,7 @@ public class BidService {
         java.time.LocalDate departureDate = announcement != null ? announcement.getDepartureDate() : null;
         java.time.LocalTime departureTime = announcement != null ? announcement.getDepartureTime() : null;
         java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
+        java.time.OffsetDateTime departureAt = announcement != null ? announcement.getDepartureAt() : null;
         java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
         com.dony.api.matching.TransportMode transportMode = announcement != null ? announcement.getTransportMode() : null;
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
@@ -861,7 +862,8 @@ public class BidService {
                 contestationDeadline,
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
                 bid.getPricingMode(),
-                totalNetAmountEur
+                totalNetAmountEur,
+                departureAt
         );
     }
 }

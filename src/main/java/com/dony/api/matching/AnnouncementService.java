@@ -40,6 +40,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -54,6 +55,23 @@ public class AnnouncementService {
 
     private static final Logger log = LoggerFactory.getLogger(AnnouncementService.class);
     private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Paris");
+
+    /**
+     * Dérive l'instant canonique de départ : (date + heure) interprétées dans le
+     * fuseau de la ville de départ (défaut Europe/Paris). Sert de backstop temporel
+     * au verrou d'annulation après remise (D1/D3). Jette 422 si l'heure est absente.
+     */
+    static OffsetDateTime deriveDepartureAt(LocalDate date, LocalTime time, String zone) {
+        if (date == null || time == null) {
+            throw new DonyBusinessException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "departure-time-required",
+                    "Departure time required",
+                    "L'heure de départ est obligatoire pour calculer l'instant de départ.");
+        }
+        ZoneId resolved = (zone == null || zone.isBlank()) ? DEFAULT_ZONE : ZoneId.of(zone);
+        return date.atTime(time).atZone(resolved).toOffsetDateTime();
+    }
 
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
@@ -303,6 +321,8 @@ public class AnnouncementService {
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureAt(deriveDepartureAt(
+                request.departureDate(), request.departureTime(), announcement.getTimezone()));
         announcement.setPickupAddressLabel(request.pickupAddress().label());
         announcement.setPickupLat(java.math.BigDecimal.valueOf(request.pickupAddress().lat()));
         announcement.setPickupLng(java.math.BigDecimal.valueOf(request.pickupAddress().lng()));
@@ -594,6 +614,8 @@ public class AnnouncementService {
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureAt(deriveDepartureAt(
+                request.departureDate(), request.departureTime(), announcement.getTimezone()));
         announcement.setHandoverWindowStart(request.handoverWindowStart());
         announcement.setHandoverWindowEnd(request.handoverWindowEnd());
         announcement.setPickupAddressLabel(request.pickupAddress().label());
