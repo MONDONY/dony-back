@@ -58,6 +58,7 @@ public record BidResponse(
         String paymentMethod,
         com.dony.api.matching.BidPricingMode pricingMode,
         BigDecimal totalNetAmountEur,
+        BigDecimal totalSenderAmountEur,
         java.time.OffsetDateTime departureAt,
         String returnCode,
         java.time.LocalDateTime returnDeadline,

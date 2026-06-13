@@ -554,9 +554,19 @@ public class BidService {
     @CacheEvict(value = "announcements-search", allEntries = true)
     public BidResponse cancelBid(UUID bidId, String firebaseUid) {
         BidEntity bid = findBid(bidId);
-        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+        UserEntity caller = findUserByFirebaseUid(firebaseUid);
 
-        if (!bid.getSenderId().equals(sender.getId())) {
+        AnnouncementEntity announcement =
+                announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+
+        // L'annulation d'un bid avant remise est ouverte à l'expéditeur ET au
+        // voyageur (qui peut se désister d'un colis déjà accepté, paiement en
+        // séquestre). Le verrou D3 reste l'autorité sur les statuts annulables ;
+        // l'annulation après remise (HANDED_OVER) passe par cancel-after-handover.
+        boolean isSender = bid.getSenderId().equals(caller.getId());
+        boolean isTraveler = announcement != null
+                && announcement.getTravelerId().equals(caller.getId());
+        if (!isSender && !isTraveler) {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
                     "Vous n'êtes pas autorisé à annuler ce bid");
         }
@@ -567,8 +577,6 @@ public class BidService {
                     "Impossible d'annuler un bid déjà terminé");
         }
 
-        AnnouncementEntity announcement =
-                announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
         // Verrou D3 : pas d'annulation en transit ni après le départ réel (colis remis).
         com.dony.api.cancellation.CancellationGuard.assertCancellable(bid, announcement);
 
@@ -590,12 +598,19 @@ public class BidService {
         bid.setStatus(BidStatus.CANCELLED);
         bidRepository.save(bid);
 
-        auditService.log("BID", bidId, "BID_CANCELLED", sender.getId(), Map.of());
+        String reason = isTraveler ? "CANCELLED_BY_TRAVELER" : "CANCELLED_BY_SENDER";
+        auditService.log("BID", bidId, "BID_CANCELLED", caller.getId(),
+                Map.of("actor", isTraveler ? "TRAVELER" : "SENDER"));
 
+        // Rembourse l'expéditeur (séquestre libéré via RefundProcessor) et notifie,
+        // quel que soit l'acteur de l'annulation.
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bid.getId(), bid.getSenderId(), "CANCELLED_BY_SENDER"));
+                bid.getId(), bid.getSenderId(), reason));
 
-        return toResponse(bid, sender);
+        UserEntity senderUser = isSender
+                ? caller
+                : userRepository.findById(bid.getSenderId()).orElse(null);
+        return toResponse(bid, senderUser);
     }
 
     @Transactional
@@ -818,6 +833,18 @@ public class BidService {
         java.math.BigDecimal totalNetAmountEur = gridNet.add(kgNet)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
 
+        // Montant total payé par l'EXPÉDITEUR. Modèle B (cf. PriceBreakdown) :
+        // STRIPE → gross = net*(1+rate) (l'expéditeur paie net + commission) ;
+        // CASH   → net (la commission est prélevée au voyageur, pas à l'expéditeur).
+        // Le taux figé (commissionRate) n'existe qu'après création du paiement ;
+        // avant (PENDING, pas de rate) on retombe sur le net.
+        java.math.BigDecimal commissionRateSnapshot = bid.getCommissionRate();
+        boolean isStripe = bid.getPaymentMethod() == null
+                || bid.getPaymentMethod() == com.dony.api.payments.cash.PaymentMethod.STRIPE;
+        java.math.BigDecimal totalSenderAmountEur = (isStripe && commissionRateSnapshot != null)
+                ? com.dony.api.payments.PriceBreakdown.fromNet(totalNetAmountEur, commissionRateSnapshot).gross()
+                : totalNetAmountEur;
+
         return new BidResponse(
                 bid.getId(),
                 bid.getAnnouncementId(),
@@ -870,6 +897,7 @@ public class BidService {
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
                 bid.getPricingMode(),
                 totalNetAmountEur,
+                totalSenderAmountEur,
                 departureAt,
                 returnCode,
                 bid.getReturnDeadline(),
