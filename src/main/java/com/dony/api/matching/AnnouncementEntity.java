@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -51,6 +52,12 @@ public class AnnouncementEntity extends BaseEntity {
 
     @Column(name = "departure_time")
     private LocalTime departureTime;
+
+    // Instant canonique de départ (date + heure, fuseau ville de départ).
+    // Référence du verrou d'annulation après remise (D1/D3). Nullable au niveau
+    // schéma (best-effort) ; l'obligation est portée par @NotNull sur la requête.
+    @Column(name = "departure_at")
+    private OffsetDateTime departureAt;
 
     @Column(name = "arrival_time")
     private LocalTime arrivalTime;
@@ -242,6 +249,9 @@ public class AnnouncementEntity extends BaseEntity {
 
     public LocalTime getDepartureTime() { return departureTime; }
     public void setDepartureTime(LocalTime departureTime) { this.departureTime = departureTime; }
+
+    public OffsetDateTime getDepartureAt() { return departureAt; }
+    public void setDepartureAt(OffsetDateTime departureAt) { this.departureAt = departureAt; }
 
     public LocalTime getArrivalTime() { return arrivalTime; }
     public void setArrivalTime(LocalTime arrivalTime) { this.arrivalTime = arrivalTime; }

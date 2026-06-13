@@ -35,13 +35,16 @@ public class BidController {
     private final BidService bidService;
     private final BidCheckoutService bidCheckoutService;
     private final PaymentService paymentService;
+    private final com.dony.api.cancellation.CancellationService cancellationService;
 
     public BidController(BidService bidService,
                          BidCheckoutService bidCheckoutService,
-                         PaymentService paymentService) {
+                         PaymentService paymentService,
+                         com.dony.api.cancellation.CancellationService cancellationService) {
         this.bidService = bidService;
         this.bidCheckoutService = bidCheckoutService;
         this.paymentService = paymentService;
+        this.cancellationService = cancellationService;
     }
 
     // ── Sender creates a bid via payment-first checkout ───────────────────────
@@ -132,6 +135,15 @@ public class BidController {
     public ResponseEntity<BidResponse> cancelBid(@PathVariable UUID bidId) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.cancelBid(bidId, firebaseUid));
+    }
+
+    // Annulation après remise du colis (HANDED_OVER) — expéditeur OU voyageur.
+    // Ownership + verrou D3 (409) gérés dans CancellationService (package cancellation/).
+    @PostMapping("/bids/{bidId}/cancel-after-handover")
+    public ResponseEntity<BidResponse> cancelAfterHandover(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        cancellationService.cancelAfterHandover(firebaseUid, bidId);
+        return ResponseEntity.ok(bidService.getBidById(bidId, firebaseUid));
     }
 
     // Story 9.4 — Voyageur refuse le colis lors de l'inspection

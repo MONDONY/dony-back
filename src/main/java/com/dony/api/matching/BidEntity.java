@@ -103,6 +103,23 @@ public class BidEntity extends BaseEntity {
     @Column(name = "confirmation_code_refresh_window_start")
     private LocalDateTime confirmationCodeRefreshWindowStart;
 
+    // Code de retour (annulation après remise, D7) — détenu par l'expéditeur,
+    // saisi par le voyageur pour confirmer la restitution du colis.
+    @Column(name = "return_code", length = 6)
+    private String returnCode;
+
+    @Column(name = "return_code_expiry")
+    private LocalDateTime returnCodeExpiry;
+
+    @Column(name = "return_code_attempts", nullable = false)
+    private int returnCodeAttempts = 0;
+
+    @Column(name = "return_deadline")
+    private LocalDateTime returnDeadline;
+
+    @Column(name = "returned_at")
+    private LocalDateTime returnedAt;
+
     @Column(name = "h2_alert_sent_at")
     private LocalDateTime h2AlertSentAt;
 
@@ -255,6 +272,21 @@ public class BidEntity extends BaseEntity {
 
     public LocalDateTime getConfirmationCodeRefreshWindowStart() { return confirmationCodeRefreshWindowStart; }
     public void setConfirmationCodeRefreshWindowStart(LocalDateTime confirmationCodeRefreshWindowStart) { this.confirmationCodeRefreshWindowStart = confirmationCodeRefreshWindowStart; }
+
+    public String getReturnCode() { return returnCode; }
+    public void setReturnCode(String returnCode) { this.returnCode = returnCode; }
+
+    public LocalDateTime getReturnCodeExpiry() { return returnCodeExpiry; }
+    public void setReturnCodeExpiry(LocalDateTime returnCodeExpiry) { this.returnCodeExpiry = returnCodeExpiry; }
+
+    public int getReturnCodeAttempts() { return returnCodeAttempts; }
+    public void setReturnCodeAttempts(int returnCodeAttempts) { this.returnCodeAttempts = returnCodeAttempts; }
+
+    public LocalDateTime getReturnDeadline() { return returnDeadline; }
+    public void setReturnDeadline(LocalDateTime returnDeadline) { this.returnDeadline = returnDeadline; }
+
+    public LocalDateTime getReturnedAt() { return returnedAt; }
+    public void setReturnedAt(LocalDateTime returnedAt) { this.returnedAt = returnedAt; }
 
     public LocalDateTime getH2AlertSentAt() { return h2AlertSentAt; }
     public void setH2AlertSentAt(LocalDateTime h2AlertSentAt) { this.h2AlertSentAt = h2AlertSentAt; }

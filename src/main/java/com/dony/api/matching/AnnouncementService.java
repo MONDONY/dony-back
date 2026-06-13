@@ -40,6 +40,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -54,6 +55,24 @@ public class AnnouncementService {
 
     private static final Logger log = LoggerFactory.getLogger(AnnouncementService.class);
     private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Paris");
+
+    /**
+     * Dérive l'instant canonique de départ : (date + heure) interprétées dans le
+     * fuseau de la ville de départ (défaut Europe/Paris). Sert de backstop temporel
+     * au verrou d'annulation après remise (D1/D3).
+     *
+     * <p>Tolérant : retourne {@code null} si la date ou l'heure manque, sans pré-empter
+     * les autres validations (fenêtre de remise, date passée…). L'obligation de l'heure
+     * de départ est portée par {@code @NotNull} sur {@code AnnouncementRequest.departureTime}
+     * (validation bean au niveau du contrôleur).
+     */
+    static OffsetDateTime deriveDepartureAt(LocalDate date, LocalTime time, String zone) {
+        if (date == null || time == null) {
+            return null;
+        }
+        ZoneId resolved = (zone == null || zone.isBlank()) ? DEFAULT_ZONE : ZoneId.of(zone);
+        return date.atTime(time).atZone(resolved).toOffsetDateTime();
+    }
 
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
@@ -252,6 +271,13 @@ public class AnnouncementService {
                         "Utilisateur introuvable"
                 ));
 
+        // D4 : voyageur suspendu de publication (retour de colis non rendu, décision admin).
+        if (user.isPublishingSuspended()) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "publishing-suspended",
+                    "Publishing Suspended",
+                    "La publication de trajets est suspendue. Contactez le support.");
+        }
+
         if (!user.isProAccount() && config.limits() != null) {
             YearMonth current = YearMonth.now();
             LocalDateTime from = current.atDay(1).atStartOfDay();
@@ -303,6 +329,8 @@ public class AnnouncementService {
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureAt(deriveDepartureAt(
+                request.departureDate(), request.departureTime(), announcement.getTimezone()));
         announcement.setPickupAddressLabel(request.pickupAddress().label());
         announcement.setPickupLat(java.math.BigDecimal.valueOf(request.pickupAddress().lat()));
         announcement.setPickupLng(java.math.BigDecimal.valueOf(request.pickupAddress().lng()));
@@ -594,6 +622,8 @@ public class AnnouncementService {
         announcement.setDepartureDate(request.departureDate());
         announcement.setDepartureTime(request.departureTime());
         announcement.setArrivalTime(request.arrivalTime());
+        announcement.setDepartureAt(deriveDepartureAt(
+                request.departureDate(), request.departureTime(), announcement.getTimezone()));
         announcement.setHandoverWindowStart(request.handoverWindowStart());
         announcement.setHandoverWindowEnd(request.handoverWindowEnd());
         announcement.setPickupAddressLabel(request.pickupAddress().label());

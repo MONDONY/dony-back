@@ -1204,19 +1204,63 @@ class BidServiceTest {
         }
 
         @Test
-        @DisplayName("pas propriétaire du bid → 403 FORBIDDEN")
+        @DisplayName("tiers (ni expéditeur ni voyageur) → 403 FORBIDDEN")
         void cancelBid_notOwner_throwsForbidden() {
             UserEntity otherUser = new UserEntity();
-            setId(otherUser, UUID.randomUUID());
+            setId(otherUser, UUID.randomUUID()); // ni SENDER_ID ni TRAVELER_ID
             BidEntity bid = buildBid();
 
             when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(otherUser));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(
+                    Optional.of(buildAnnouncement())); // travelerId = TRAVELER_ID
 
             assertThatThrownBy(() -> bidService.cancelBid(BID_ID, SENDER_UID))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid ACCEPTED → autorisé, kg restitués, reason CANCELLED_BY_TRAVELER")
+        void cancelBid_traveler_canCancelAcceptedBid() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(25)); // 20+5
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getSenderId()).isEqualTo(SENDER_ID);
+            assertThat(captor.getValue().getReason()).isEqualTo("CANCELLED_BY_TRAVELER");
+        }
+
+        @Test
+        @DisplayName("voyageur ne peut pas annuler un bid IN_TRANSIT (verrou D3) → 409 CONFLICT")
+        void cancelBid_traveler_inTransit_throwsConflict() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.IN_TRANSIT);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.cancelBid(BID_ID, TRAVELER_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.CONFLICT));
         }
 
         @Test

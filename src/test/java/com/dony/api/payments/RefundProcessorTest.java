@@ -52,13 +52,19 @@ class RefundProcessorTest {
     }
 
     @Test
-    void escrow_refund_claims_then_calls_stripe_with_idempotency_key() {
+    void escrow_captured_payment_is_refunded_with_idempotency_key() {
+        // PI capturé (succeeded) → vrai remboursement via Refund.create.
         PaymentEntity p = payment(PaymentStatus.ESCROW);
         UUID paymentId = UUID.randomUUID();
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
 
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("succeeded");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
             ArgumentCaptor<RequestOptions> optsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
             refundStatic.when(() -> Refund.create(any(RefundCreateParams.class), optsCaptor.capture()))
                     .thenReturn(mock(Refund.class));
@@ -71,6 +77,58 @@ class RefundProcessorTest {
                     .isEqualTo("refund-" + paymentId);
         }
         verify(paymentRepository).markRefundedIfEscrow(paymentId);
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_TEST"), any(), any(Map.class));
+    }
+
+    @Test
+    void escrow_uncaptured_payment_is_cancelled_not_refunded() throws Exception {
+        // Cas normal chez dony : PI autorisé non capturé (requires_capture) →
+        // l'autorisation est annulée (pi.cancel), JAMAIS Refund.create (que Stripe
+        // refuse sur une charge non capturée).
+        PaymentEntity p = payment(PaymentStatus.ESCROW);
+        UUID paymentId = UUID.randomUUID();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture");
+            when(pi.cancel(any(PaymentIntentCancelParams.class))).thenReturn(pi);
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            boolean handled = processor.processRefund(paymentId, "PAYMENT_REFUNDED_TEST",
+                    p.getBidId(), Map.of("reason", "test"));
+
+            assertThat(handled).isTrue();
+            verify(pi).cancel(any(PaymentIntentCancelParams.class));
+            refundStatic.verifyNoInteractions();
+        }
+        verify(paymentRepository).markRefundedIfEscrow(paymentId);
+        verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_TEST"), any(), any(Map.class));
+    }
+
+    @Test
+    void escrow_already_canceled_pi_is_noop_stripe_call() throws Exception {
+        // PI déjà 'canceled' (rollback antérieur) → ni cancel ni refund, idempotent.
+        PaymentEntity p = payment(PaymentStatus.ESCROW);
+        UUID paymentId = UUID.randomUUID();
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("canceled");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            boolean handled = processor.processRefund(paymentId, "PAYMENT_REFUNDED_TEST",
+                    p.getBidId(), Map.of("reason", "test"));
+
+            assertThat(handled).isTrue();
+            verify(pi, never()).cancel(any(PaymentIntentCancelParams.class));
+            refundStatic.verifyNoInteractions();
+        }
         verify(auditService).log(eq("PAYMENT"), any(), eq("PAYMENT_REFUNDED_TEST"), any(), any(Map.class));
     }
 
@@ -96,7 +154,11 @@ class RefundProcessorTest {
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
 
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("succeeded");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
             refundStatic.when(() -> Refund.create(any(RefundCreateParams.class), any(RequestOptions.class)))
                     .thenThrow(new ApiException("boom", null, null, 500, null));
 

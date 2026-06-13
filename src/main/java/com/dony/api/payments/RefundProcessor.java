@@ -25,8 +25,10 @@ import java.util.UUID;
  * <ul>
  *   <li>PENDING → le PaymentIntent est annulé (un PI non capturé ne se rembourse pas) ;</li>
  *   <li>ESCROW → claim atomique {@code markRefundedIfEscrow} (anti double-refund intra-instance)
- *       puis {@code Refund.create} avec clé d'idempotence {@code "refund-" + paymentId}
- *       (anti double-refund inter-instances, déduplication côté Stripe) ;</li>
+ *       puis, selon l'état réel du PaymentIntent : {@code pi.cancel()} si autorisé non capturé
+ *       (requires_capture — cas normal chez dony, capture à la livraison seulement), ou
+ *       {@code Refund.create} (clé d'idempotence {@code "refund-" + paymentId}) si déjà capturé
+ *       (succeeded) ; un PI déjà {@code canceled} est un no-op idempotent ;</li>
  *   <li>échec Stripe → alerte admin + exception : la transaction REQUIRES_NEW rollback le claim,
  *       le paiement reste remboursable ;</li>
  *   <li>RELEASED / REFUNDED / FAILED / CANCELLED → no-op (jamais de refund post-versement).</li>
@@ -105,30 +107,52 @@ public class RefundProcessor {
             return false;
         }
 
+        final String stripeAction;
         try {
-            Refund.create(
-                    RefundCreateParams.builder()
-                            .setPaymentIntent(payment.getStripePaymentIntentId())
-                            .build(),
-                    RequestOptions.builder()
-                            .setIdempotencyKey("refund-" + paymentId)
-                            .build());
+            // Chez dony, la capture du PaymentIntent n'a lieu qu'à la livraison
+            // (DeliveryConfirmedEvent). Un paiement ESCROW correspond donc, dans la
+            // quasi-totalité des cas, à un PaymentIntent AUTORISÉ mais NON CAPTURÉ
+            // (status=requires_capture). Stripe refuse Refund.create sur une charge
+            // non capturée ("You must cancel the PaymentIntent ... instead of
+            // refunding the Charge directly") → il faut annuler l'autorisation.
+            // On ne rembourse (Refund) que si le PI a réellement été capturé (succeeded).
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            if ("succeeded".equals(pi.getStatus())) {
+                Refund.create(
+                        RefundCreateParams.builder()
+                                .setPaymentIntent(payment.getStripePaymentIntentId())
+                                .build(),
+                        RequestOptions.builder()
+                                .setIdempotencyKey("refund-" + paymentId)
+                                .build());
+                stripeAction = "remboursement émis (PI capturé)";
+            } else if (!"canceled".equals(pi.getStatus())) {
+                // requires_capture (et autres états pré-capture) → libère le hold.
+                pi.cancel(PaymentIntentCancelParams.builder()
+                        .setCancellationReason(PaymentIntentCancelParams.CancellationReason.ABANDONED)
+                        .build());
+                stripeAction = "autorisation annulée (PI non capturé)";
+            } else {
+                // PI déjà 'canceled' → no-op idempotent bénin.
+                stripeAction = "aucune action (PI déjà annulé)";
+            }
         } catch (StripeException e) {
-            log.error("Échec remboursement PI {} : {}",
+            log.error("Échec libération escrow PI {} : {}",
                     payment.getStripePaymentIntentId(), e.getMessage(), e);
             Map<String, Object> alertCtx = new HashMap<>();
             alertCtx.put("paymentId", paymentId.toString());
             alertCtx.put("piId", payment.getStripePaymentIntentId());
             alertCtx.put("error", String.valueOf(e.getMessage()));
             adminAlert.raise("STRIPE_REFUND_FAILED",
-                    "Remboursement Stripe échoué pour payment " + paymentId,
+                    "Libération escrow Stripe échouée pour payment " + paymentId,
                     alertCtx);
-            throw new IllegalStateException("Stripe refund failed for payment " + paymentId, e);
+            throw new IllegalStateException("Stripe escrow release failed for payment " + paymentId, e);
         }
 
         auditService.log("PAYMENT", payment.getId(), auditAction, auditActor,
                 enrich(auditPayload, payment));
-        log.info("Remboursement émis pour PI {} ({})", payment.getStripePaymentIntentId(), auditAction);
+        log.info("Escrow libéré pour PI {} — {} ({})",
+                payment.getStripePaymentIntentId(), stripeAction, auditAction);
         return true;
     }
 

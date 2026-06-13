@@ -293,6 +293,22 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("voyageur suspendu de publication → 403 publishing-suspended (D4)")
+        void create_publishingSuspended_throwsForbidden() {
+            UserEntity traveler = buildTraveler();
+            traveler.setPublishingSuspended(true);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, buildRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("publishing-suspended");
+                    });
+        }
+
+        @Test
         @DisplayName("création → totalKg = availableKg")
         void create_setsTotalKgEqualToAvailableKg() {
             UserEntity traveler = buildTraveler();

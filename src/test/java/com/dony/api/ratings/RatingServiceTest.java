@@ -2,6 +2,10 @@ package com.dony.api.ratings;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.cancellation.CancellationEntity;
+import com.dony.api.cancellation.CancellationReason;
+import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -49,6 +53,7 @@ class RatingServiceTest {
     @Mock private BidRepository bidRepository;
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private UserRepository userRepository;
+    @Mock private CancellationRepository cancellationRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
 
@@ -159,6 +164,25 @@ class RatingServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("bid annulé après remise mais colis restitué (returnedAt≠null) → notation autorisée (D5)")
+        void createRating_cancelledButReturned_persists() throws Exception {
+            setField(bid, "status", BidStatus.CANCELLED);
+            setField(bid, "returnedAt", LocalDateTime.now().minusHours(2));
+            setField(bid, "updatedAt", LocalDateTime.now().minusHours(2));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(ratingRepository.existsByBidIdAndRaterId(BID_ID, SENDER_ID)).thenReturn(false);
+            when(ratingRepository.save(any(RatingEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(TRAVELER_ID)).thenReturn(List.of());
+
+            ratingService.createRating(SENDER_UID, new RatingRequest(BID_ID, 3, "Colis rendu"));
+
+            verify(ratingRepository).save(any(RatingEntity.class));
+            verify(eventPublisher).publishEvent(any(RatingCreatedEvent.class));
         }
     }
 
@@ -348,6 +372,67 @@ class RatingServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("no-show expéditeur CONFIRMED → voyageur autorisé à noter (D6)")
+        void createTravelerRating_senderNoShowConfirmed_persists() throws Exception {
+            setField(bid, "status", BidStatus.CANCELLED);
+            setField(bid, "updatedAt", LocalDateTime.now().minusHours(3));
+            CancellationEntity c = new CancellationEntity();
+            c.setReason(CancellationReason.SENDER_NO_SHOW.name());
+            c.setNoShowStatus(CancellationStatus.CONFIRMED);
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+            when(ratingRepository.existsByBidIdAndRaterId(BID_ID, TRAVELER_ID)).thenReturn(false);
+            when(ratingRepository.save(any(RatingEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(SENDER_ID)).thenReturn(List.of());
+
+            ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 1, "Absent à la remise"));
+
+            verify(ratingRepository).save(any(RatingEntity.class));
+            verify(eventPublisher).publishEvent(any(RatingCreatedEvent.class));
+        }
+
+        @Test
+        @DisplayName("no-show expéditeur PENDING (pas encore confirmé) → 422 (D8 anti-farming)")
+        void createTravelerRating_senderNoShowPending_throws422() throws Exception {
+            setField(bid, "status", BidStatus.CANCELLED);
+            CancellationEntity c = new CancellationEntity();
+            c.setReason(CancellationReason.SENDER_NO_SHOW.name());
+            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 2, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("bid-not-delivered"));
+        }
+
+        @Test
+        @DisplayName("annulation pour autre motif (pas no-show) → 422 — pas de droit de notation")
+        void createTravelerRating_otherCancellationReason_throws422() throws Exception {
+            setField(bid, "status", BidStatus.CANCELLED);
+            CancellationEntity c = new CancellationEntity();
+            c.setReason(CancellationReason.TRAVELER_CANCEL_AFTER_HANDOVER.name());
+            c.setNoShowStatus(CancellationStatus.CONFIRMED);
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+
+            assertThatThrownBy(() -> ratingService.createTravelerRating(TRAVELER_UID,
+                    new TravelerRatingRequest(BID_ID, 2, null)))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("bid-not-delivered"));
         }
     }
 

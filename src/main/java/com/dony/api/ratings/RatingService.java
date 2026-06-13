@@ -2,6 +2,9 @@ package com.dony.api.ratings;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.cancellation.CancellationReason;
+import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.matching.AnnouncementEntity;
@@ -48,6 +51,7 @@ public class RatingService {
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
     private final UserRepository userRepository;
+    private final CancellationRepository cancellationRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -55,14 +59,39 @@ public class RatingService {
                          BidRepository bidRepository,
                          AnnouncementRepository announcementRepository,
                          UserRepository userRepository,
+                         CancellationRepository cancellationRepository,
                          AuditService auditService,
                          ApplicationEventPublisher eventPublisher) {
         this.ratingRepository = ratingRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
+        this.cancellationRepository = cancellationRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * L'expéditeur peut noter le voyageur si la livraison est confirmée (COMPLETED) OU si,
+     * après une annulation post-remise par le voyageur (D5), le colis a bien été restitué
+     * ({@code returnedAt != null}).
+     */
+    private boolean senderMayRate(BidEntity bid) {
+        return bid.getStatus() == BidStatus.COMPLETED || bid.getReturnedAt() != null;
+    }
+
+    /**
+     * Le voyageur peut noter l'expéditeur si la livraison est confirmée (COMPLETED) OU si un
+     * no-show expéditeur a été confirmé pour ce bid (D6 : droit de notation/commentaire).
+     */
+    private boolean travelerMayRate(BidEntity bid) {
+        if (bid.getStatus() == BidStatus.COMPLETED) {
+            return true;
+        }
+        return cancellationRepository.findByBidId(bid.getId())
+                .map(c -> CancellationReason.SENDER_NO_SHOW.name().equals(c.getReason())
+                        && c.getNoShowStatus() == CancellationStatus.CONFIRMED)
+                .orElse(false);
     }
 
     // Story 9.1 — Notation par l'expéditeur authentifié
@@ -81,7 +110,7 @@ public class RatingService {
                     "Vous n'êtes pas l'expéditeur de cet envoi");
         }
 
-        if (bid.getStatus() != BidStatus.COMPLETED) {
+        if (!senderMayRate(bid)) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-delivered",
                     "Unprocessable", "La livraison n'a pas encore été confirmée pour cet envoi");
         }
@@ -176,7 +205,7 @@ public class RatingService {
                     "Vous n'êtes pas le voyageur de cet envoi");
         }
 
-        if (bid.getStatus() != BidStatus.COMPLETED) {
+        if (!travelerMayRate(bid)) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "bid-not-delivered",
                     "Unprocessable", "La livraison n'a pas encore été confirmée pour cet envoi");
         }
