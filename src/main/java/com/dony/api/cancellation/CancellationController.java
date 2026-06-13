@@ -82,6 +82,27 @@ public class CancellationController {
         return ResponseEntity.ok().build();
     }
 
+    // Le voyageur confirme le retour du colis (annulation après remise) en saisissant
+    // le code de retour détenu par l'expéditeur.
+    @PostMapping("/bids/{bidId}/confirm-return")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<com.dony.api.cancellation.dto.ReturnCodeResponse> confirmReturn(
+            @PathVariable UUID bidId,
+            @Valid @RequestBody com.dony.api.cancellation.dto.ConfirmReturnRequest request) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(
+                cancellationService.confirmReturn(firebaseUid, bidId, request.returnCode()));
+    }
+
+    // L'expéditeur consulte son code de retour + l'état du retour.
+    @GetMapping("/bids/{bidId}/return-code")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<com.dony.api.cancellation.dto.ReturnCodeResponse> getReturnCode(
+            @PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(cancellationService.getReturnCode(firebaseUid, bidId));
+    }
+
     private UUID resolveUserId() {
         String firebaseUid = requireFirebaseUid();
         return userRepository.findByFirebaseUid(firebaseUid)

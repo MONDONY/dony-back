@@ -7,6 +7,8 @@ import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
 import com.dony.api.cancellation.events.CancellationConfirmedEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
+import com.dony.api.cancellation.dto.ReturnCodeResponse;
+import com.dony.api.cancellation.events.ParcelReturnedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.cancellation.events.TravelerNoShowReportedEvent;
@@ -49,6 +51,7 @@ public class CancellationService {
     private final CommissionProperties commissionProperties;
 
     private static final SecureRandom RETURN_CODE_RANDOM = new SecureRandom();
+    private static final int MAX_RETURN_CODE_ATTEMPTS = 3;
 
     public CancellationService(CancellationRepository cancellationRepository,
                                 RematchSuggestionRepository rematchSuggestionRepository,
@@ -390,6 +393,78 @@ public class CancellationService {
                 announcement != null ? announcement.getTravelerId() : null,
                 List.of(bid.getSenderId()), reason.name(),
                 List.of(bidId), bidPaymentMethods, bidCommissionChargedVia));
+    }
+
+    /**
+     * Le voyageur saisit le code de retour (détenu par l'expéditeur) pour confirmer
+     * la restitution physique du colis (D7). Réutilise la plomberie du confirmationCode
+     * en sens inverse (expiry / tentatives / égalité). Publie {@link ParcelReturnedEvent}.
+     */
+    @Transactional
+    public ReturnCodeResponse confirmReturn(String firebaseUid, UUID bidId, String code) {
+        UserEntity caller = findUserByFirebaseUid(firebaseUid);
+        BidEntity bid = bidRepository.findByIdForUpdate(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Not Found", "Annonce introuvable"));
+
+        if (announcement.getTravelerId() == null
+                || !announcement.getTravelerId().equals(caller.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul le voyageur peut confirmer le retour du colis.");
+        }
+        if (bid.getReturnCode() == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-not-generated",
+                    "Code Not Generated", "Aucun retour de colis en attente pour ce bid.");
+        }
+        if (bid.getReturnedAt() != null) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "already-returned",
+                    "Already Returned", "Le colis a déjà été marqué comme rendu.");
+        }
+        if (bid.getReturnCodeExpiry() != null
+                && LocalDateTime.now().isAfter(bid.getReturnCodeExpiry())) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-expired",
+                    "Code Expired", "Le code de retour a expiré — contactez le support.");
+        }
+        if (bid.getReturnCodeAttempts() >= MAX_RETURN_CODE_ATTEMPTS) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "too-many-attempts",
+                    "Too Many Attempts", "Trop de tentatives — contactez le support.");
+        }
+        if (!bid.getReturnCode().equals(code)) {
+            bid.setReturnCodeAttempts(bid.getReturnCodeAttempts() + 1);
+            bidRepository.save(bid);
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "code-incorrect",
+                    "Code Incorrect", "Code de retour incorrect.");
+        }
+
+        bid.setReturnedAt(LocalDateTime.now());
+        bid.setReturnCode(null);
+        bid.setReturnCodeExpiry(null);
+        bid.setReturnCodeAttempts(0);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "PARCEL_RETURNED", caller.getId(),
+                Map.of("bidId", bidId.toString()));
+        eventPublisher.publishEvent(
+                new ParcelReturnedEvent(bidId, announcement.getTravelerId(), bid.getSenderId()));
+
+        return new ReturnCodeResponse(null, bid.getReturnDeadline(), bid.getReturnedAt());
+    }
+
+    /** L'expéditeur consulte son code de retour (à communiquer au voyageur) + l'état du retour. */
+    @Transactional(readOnly = true)
+    public ReturnCodeResponse getReturnCode(String firebaseUid, UUID bidId) {
+        UserEntity caller = findUserByFirebaseUid(firebaseUid);
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        if (!bid.getSenderId().equals(caller.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Seul l'expéditeur peut consulter le code de retour.");
+        }
+        return new ReturnCodeResponse(bid.getReturnCode(), bid.getReturnDeadline(), bid.getReturnedAt());
     }
 
     @Transactional
