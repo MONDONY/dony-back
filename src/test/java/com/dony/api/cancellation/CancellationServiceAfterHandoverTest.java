@@ -112,6 +112,13 @@ class CancellationServiceAfterHandoverTest {
         assertThat(cCap.getValue().getReason()).isEqualTo("TRAVELER_CANCEL_AFTER_HANDOVER");
         assertThat(cCap.getValue().getNoShowStatus()).isEqualTo(CancellationStatus.CONFIRMED);
 
+        // Réputation : le voyageur qui annule après remise voit son compteur d'annulations
+        // incrémenté (D8 : CONFIRMED immédiat).
+        ArgumentCaptor<UserEntity> uCap = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).save(uCap.capture());
+        assertThat(uCap.getValue().getCancellationCount()).isEqualTo(1);
+        assertThat(uCap.getValue().getSenderHandoverIncidentCount()).isZero();
+
         verify(eventPublisher).publishEvent(any(TripCancelledEvent.class));
     }
 
@@ -124,6 +131,13 @@ class CancellationServiceAfterHandoverTest {
         ArgumentCaptor<CancellationEntity> cCap = ArgumentCaptor.forClass(CancellationEntity.class);
         verify(cancellationRepository).save(cCap.capture());
         assertThat(cCap.getValue().getReason()).isEqualTo("SENDER_CANCEL_AFTER_HANDOVER");
+
+        // Réputation : l'expéditeur qui annule après remise voit son compteur d'incidents
+        // de remise incrémenté (distinct du compteur voyageur).
+        ArgumentCaptor<UserEntity> uCap = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).save(uCap.capture());
+        assertThat(uCap.getValue().getSenderHandoverIncidentCount()).isEqualTo(1);
+        assertThat(uCap.getValue().getCancellationCount()).isZero();
     }
 
     @Test

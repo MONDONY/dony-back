@@ -69,6 +69,13 @@ public class UserEntity extends BaseEntity {
     @Column(name = "cancellation_count", nullable = false)
     private int cancellationCount = 0;
 
+    // Incidents de remise imputables à l'expéditeur (D5/D6) : no-show confirmé ou
+    // annulation après remise. Compteur de réputation distinct des compteurs voyageur
+    // (noShowCount/cancellationCount) — n'incrémente qu'au statut CONFIRMED (D8).
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Column(name = "sender_handover_incident_count", nullable = false)
+    private int senderHandoverIncidentCount = 0;
+
     // Suspension de publication de trajets (D4) — décidée par l'admin, n'impacte
     // pas le login. Distincte de UserStatus.SUSPENDED.
     @org.hibernate.annotations.ColumnDefault("false")
@@ -211,6 +218,9 @@ public class UserEntity extends BaseEntity {
 
     public int getCancellationCount() { return cancellationCount; }
     public void setCancellationCount(int cancellationCount) { this.cancellationCount = cancellationCount; }
+
+    public int getSenderHandoverIncidentCount() { return senderHandoverIncidentCount; }
+    public void setSenderHandoverIncidentCount(int senderHandoverIncidentCount) { this.senderHandoverIncidentCount = senderHandoverIncidentCount; }
 
     public boolean isPublishingSuspended() { return publishingSuspended; }
     public void setPublishingSuspended(boolean publishingSuspended) { this.publishingSuspended = publishingSuspended; }

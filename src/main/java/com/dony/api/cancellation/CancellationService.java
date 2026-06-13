@@ -373,6 +373,16 @@ public class CancellationService {
         c.setNoShowStatus(CancellationStatus.CONFIRMED);
         cancellationRepository.save(c);
 
+        // Réputation (D8 : l'annulation après remise est immédiatement CONFIRMED).
+        // Voyageur → compteur d'annulations existant ; expéditeur → compteur d'incidents
+        // de remise dédié (distinct du no-show voyageur).
+        if (actor == CancellationActor.TRAVELER) {
+            caller.setCancellationCount(caller.getCancellationCount() + 1);
+        } else {
+            caller.setSenderHandoverIncidentCount(caller.getSenderHandoverIncidentCount() + 1);
+        }
+        userRepository.save(caller);
+
         auditService.log("BID", bidId, "BID_CANCELLED_AFTER_HANDOVER", caller.getId(),
                 Map.of("actor", actor.name(),
                        "paymentMethod",
