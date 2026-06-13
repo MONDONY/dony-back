@@ -59,15 +59,16 @@ public class AnnouncementService {
     /**
      * Dérive l'instant canonique de départ : (date + heure) interprétées dans le
      * fuseau de la ville de départ (défaut Europe/Paris). Sert de backstop temporel
-     * au verrou d'annulation après remise (D1/D3). Jette 422 si l'heure est absente.
+     * au verrou d'annulation après remise (D1/D3).
+     *
+     * <p>Tolérant : retourne {@code null} si la date ou l'heure manque, sans pré-empter
+     * les autres validations (fenêtre de remise, date passée…). L'obligation de l'heure
+     * de départ est portée par {@code @NotNull} sur {@code AnnouncementRequest.departureTime}
+     * (validation bean au niveau du contrôleur).
      */
     static OffsetDateTime deriveDepartureAt(LocalDate date, LocalTime time, String zone) {
         if (date == null || time == null) {
-            throw new DonyBusinessException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
-                    "departure-time-required",
-                    "Departure time required",
-                    "L'heure de départ est obligatoire pour calculer l'instant de départ.");
+            return null;
         }
         ZoneId resolved = (zone == null || zone.isBlank()) ? DEFAULT_ZONE : ZoneId.of(zone);
         return date.atTime(time).atZone(resolved).toOffsetDateTime();
@@ -269,6 +270,13 @@ public class AnnouncementService {
                         "User Not Found",
                         "Utilisateur introuvable"
                 ));
+
+        // D4 : voyageur suspendu de publication (retour de colis non rendu, décision admin).
+        if (user.isPublishingSuspended()) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "publishing-suspended",
+                    "Publishing Suspended",
+                    "La publication de trajets est suspendue. Contactez le support.");
+        }
 
         if (!user.isProAccount() && config.limits() != null) {
             YearMonth current = YearMonth.now();

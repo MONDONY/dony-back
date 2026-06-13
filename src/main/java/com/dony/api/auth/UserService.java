@@ -203,4 +203,40 @@ public class UserService {
         auditService.log("USER", userId, "USER_UNSUSPENDED", userId, Map.of());
         log.info("User {} unsuspended by admin", userId);
     }
+
+    /**
+     * Suspend la publication de trajets d'un voyageur (D4) — décidé par l'admin,
+     * typiquement après un délai de retour de colis dépassé. N'impacte pas le login.
+     */
+    @Transactional
+    public void suspendPublishing(UUID userId, String reason) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        user.setPublishingSuspended(true);
+        user.setPublishingSuspendedAt(java.time.Instant.now());
+        user.setPublishingSuspendedReason(reason);
+        userRepository.save(user);
+
+        auditService.log("USER", userId, "TRAVELER_PUBLISHING_SUSPENDED", userId,
+                Map.of("reason", reason != null ? reason : ""));
+        log.info("User {} publishing suspended by admin", userId);
+    }
+
+    /** Lève la suspension de publication (D4). */
+    @Transactional
+    public void liftPublishingSuspension(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        user.setPublishingSuspended(false);
+        user.setPublishingSuspendedAt(null);
+        user.setPublishingSuspendedReason(null);
+        userRepository.save(user);
+
+        auditService.log("USER", userId, "TRAVELER_PUBLISHING_SUSPENSION_LIFTED", userId, Map.of());
+        log.info("User {} publishing suspension lifted by admin", userId);
+    }
 }

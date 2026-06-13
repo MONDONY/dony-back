@@ -19,6 +19,9 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     long countByAnnouncementId(UUID announcementId);
 
+    /** Bids dont le délai de retour (J+3) est dépassé sans retour confirmé (tranche D). */
+    List<BidEntity> findByReturnDeadlineBeforeAndReturnedAtIsNull(LocalDateTime now);
+
     long countByAnnouncementIdAndStatus(UUID announcementId, BidStatus status);
 
     @Query("""

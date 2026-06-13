@@ -247,6 +247,49 @@ class UserServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("Suspension de publication (D4)")
+    class PublishingSuspensionTests {
+
+        @Test
+        @DisplayName("suspendPublishing → flag posé + audit")
+        void suspendPublishing_setsFlag() {
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.suspendPublishing(USER_ID, "retour non rendu");
+
+            assertThat(user.isPublishingSuspended()).isTrue();
+            assertThat(user.getPublishingSuspendedReason()).isEqualTo("retour non rendu");
+            verify(auditService).log(eq("USER"), eq(USER_ID),
+                    eq("TRAVELER_PUBLISHING_SUSPENDED"), eq(USER_ID), anyMap());
+        }
+
+        @Test
+        @DisplayName("liftPublishingSuspension → flag levé")
+        void liftPublishingSuspension_clearsFlag() throws Exception {
+            setField(user, "publishingSuspended", true);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenReturn(user);
+
+            userService.liftPublishingSuspension(USER_ID);
+
+            assertThat(user.isPublishingSuspended()).isFalse();
+            verify(auditService).log(eq("USER"), eq(USER_ID),
+                    eq("TRAVELER_PUBLISHING_SUSPENSION_LIFTED"), eq(USER_ID), anyMap());
+        }
+
+        @Test
+        @DisplayName("suspendPublishing user introuvable → 404")
+        void suspendPublishing_userNotFound() {
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> userService.suspendPublishing(USER_ID, "x"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private static void setId(Object obj, UUID id) throws Exception {

@@ -1,9 +1,7 @@
 package com.dony.api.matching;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.dony.api.common.DonyBusinessException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -45,16 +43,14 @@ class DepartureAtDerivationTest {
     }
 
     @Test
-    void null_time_throws_business_exception() {
-        assertThatThrownBy(() -> AnnouncementService.deriveDepartureAt(
-                LocalDate.of(2026, 7, 1), null, "Europe/Paris"))
-                .isInstanceOf(DonyBusinessException.class);
+    void null_time_returns_null() {
+        assertThat(AnnouncementService.deriveDepartureAt(
+                LocalDate.of(2026, 7, 1), null, "Europe/Paris")).isNull();
     }
 
     @Test
-    void null_date_throws_business_exception() {
-        assertThatThrownBy(() -> AnnouncementService.deriveDepartureAt(
-                null, LocalTime.of(10, 0), "Europe/Paris"))
-                .isInstanceOf(DonyBusinessException.class);
+    void null_date_returns_null() {
+        assertThat(AnnouncementService.deriveDepartureAt(
+                null, LocalTime.of(10, 0), "Europe/Paris")).isNull();
     }
 }

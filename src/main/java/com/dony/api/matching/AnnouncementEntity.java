@@ -54,8 +54,9 @@ public class AnnouncementEntity extends BaseEntity {
     private LocalTime departureTime;
 
     // Instant canonique de départ (date + heure, fuseau ville de départ).
-    // Référence du verrou d'annulation après remise (D1/D3).
-    @Column(name = "departure_at", nullable = false)
+    // Référence du verrou d'annulation après remise (D1/D3). Nullable au niveau
+    // schéma (best-effort) ; l'obligation est portée par @NotNull sur la requête.
+    @Column(name = "departure_at")
     private OffsetDateTime departureAt;
 
     @Column(name = "arrival_time")

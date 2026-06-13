@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -27,6 +28,21 @@ public class AdminUserController {
     @PostMapping("/{userId}/unsuspend")
     public ResponseEntity<Void> unsuspendUser(@PathVariable UUID userId) {
         userService.unsuspendUser(userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // D4 — Admin suspend la publication de trajets (retour de colis non rendu).
+    @PostMapping("/{userId}/suspend-publishing")
+    public ResponseEntity<Void> suspendPublishing(@PathVariable UUID userId,
+            @RequestParam(required = false) String reason) {
+        userService.suspendPublishing(userId, reason);
+        return ResponseEntity.noContent().build();
+    }
+
+    // D4 — Admin lève la suspension de publication.
+    @PostMapping("/{userId}/lift-publishing-suspension")
+    public ResponseEntity<Void> liftPublishingSuspension(@PathVariable UUID userId) {
+        userService.liftPublishingSuspension(userId);
         return ResponseEntity.noContent().build();
     }
 

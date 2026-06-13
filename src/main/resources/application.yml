@@ -114,6 +114,8 @@ dony:
     orphan-pi-timeout-minutes: 30
     no-show-timeout-cron: "0 0 * * * *"
     card-expiration-warning-days: 30
+  cancellation:
+    return-deadline-cron: "0 0 * * * *"
   limits:
     non-pro:
       monthly-announcements: 2
