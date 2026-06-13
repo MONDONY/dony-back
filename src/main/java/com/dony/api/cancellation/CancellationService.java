@@ -18,6 +18,8 @@ import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.CapacityUnit;
+import java.security.SecureRandom;
 import com.dony.api.payments.cash.CommissionProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -45,6 +47,8 @@ public class CancellationService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final CommissionProperties commissionProperties;
+
+    private static final SecureRandom RETURN_CODE_RANDOM = new SecureRandom();
 
     public CancellationService(CancellationRepository cancellationRepository,
                                 RematchSuggestionRepository rematchSuggestionRepository,
@@ -294,6 +298,98 @@ public class CancellationService {
         auditService.log("BID", bidId, "TRAVELER_NO_SHOW_REPORTED", senderId,
                 Map.of("bidId", bidId.toString()));
         eventPublisher.publishEvent(new TravelerNoShowReportedEvent(bidId, senderId));
+    }
+
+    /**
+     * Annulation après remise du colis (HANDED_OVER) par l'expéditeur OU le voyageur.
+     * Verrou D3, restauration du kilo, remboursement intégral (via per-bid
+     * {@link TripCancelledEvent}), génération du code de retour (D7). MVP : aucune
+     * pénalité monétaire.
+     */
+    @Transactional
+    public void cancelAfterHandover(String firebaseUid, UUID bidId) {
+        UserEntity caller = findUserByFirebaseUid(firebaseUid);
+        BidEntity bid = bidRepository.findByIdForUpdate(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElse(null);
+
+        boolean isSender = bid.getSenderId().equals(caller.getId());
+        boolean isTraveler = announcement != null
+                && announcement.getTravelerId() != null
+                && announcement.getTravelerId().equals(caller.getId());
+        if (!isSender && !isTraveler) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas partie prenante de ce bid.");
+        }
+
+        if (bid.getStatus() != BidStatus.HANDED_OVER) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "invalid-status", "Invalid Status",
+                    "L'annulation après remise n'est possible que sur un colis remis (HANDED_OVER).");
+        }
+
+        CancellationGuard.assertCancellable(bid, announcement);
+
+        if (cancellationRepository.findByBidId(bidId).isPresent()) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "already-cancelled",
+                    "Already Cancelled", "Une annulation existe déjà pour ce bid.");
+        }
+
+        CancellationActor actor = isSender ? CancellationActor.SENDER : CancellationActor.TRAVELER;
+        CancellationReason reason = isSender
+                ? CancellationReason.SENDER_CANCEL_AFTER_HANDOVER
+                : CancellationReason.TRAVELER_CANCEL_AFTER_HANDOVER;
+
+        // Restaurer le kilo au voyageur (sauf KG_FREE) + rouvrir l'annonce si FULL.
+        if (announcement != null) {
+            boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+            if (!isKgFree && bid.getWeightKg() != null) {
+                announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+            }
+            if (!isKgFree && announcement.getStatus() == AnnouncementStatus.FULL) {
+                announcement.setStatus(AnnouncementStatus.ACTIVE);
+            }
+            announcementRepository.save(announcement);
+        }
+
+        // Code de retour : détenu par l'expéditeur, saisi par le voyageur (tranche C).
+        LocalDateTime now = LocalDateTime.now();
+        bid.setReturnCode(String.format("%06d", RETURN_CODE_RANDOM.nextInt(1_000_000)));
+        bid.setReturnCodeExpiry(now.plusDays(3));
+        bid.setReturnCodeAttempts(0);
+        bid.setReturnDeadline(now.plusDays(3));
+        bid.setStatus(BidStatus.CANCELLED);
+        bidRepository.save(bid);
+
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(bidId);
+        c.setCancelledBy(caller.getId());
+        c.setReason(reason.name());
+        c.setNoShowStatus(CancellationStatus.CONFIRMED);
+        cancellationRepository.save(c);
+
+        auditService.log("BID", bidId, "BID_CANCELLED_AFTER_HANDOVER", caller.getId(),
+                Map.of("actor", actor.name(),
+                       "paymentMethod",
+                       bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE"));
+        auditService.log("BID", bidId, "RETURN_CODE_GENERATED", caller.getId(),
+                Map.of("returnDeadline", String.valueOf(bid.getReturnDeadline())));
+
+        // Remboursement intégral réutilisant la matrice de TripCancelledEvent (per-bid).
+        Map<UUID, String> bidPaymentMethods = new HashMap<>();
+        Map<UUID, String> bidCommissionChargedVia = new HashMap<>();
+        bidPaymentMethods.put(bidId,
+                bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE");
+        if (bid.getCommissionChargedVia() != null) {
+            bidCommissionChargedVia.put(bidId, bid.getCommissionChargedVia().name());
+        }
+        eventPublisher.publishEvent(new TripCancelledEvent(
+                bid.getAnnouncementId(),
+                announcement != null ? announcement.getTravelerId() : null,
+                List.of(bid.getSenderId()), reason.name(),
+                List.of(bidId), bidPaymentMethods, bidCommissionChargedVia));
     }
 
     @Transactional

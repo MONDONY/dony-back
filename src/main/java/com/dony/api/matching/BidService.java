@@ -567,10 +567,14 @@ public class BidService {
                     "Impossible d'annuler un bid déjà terminé");
         }
 
+        AnnouncementEntity announcement =
+                announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+        // Verrou D3 : pas d'annulation en transit ni après le départ réel (colis remis).
+        com.dony.api.cancellation.CancellationGuard.assertCancellable(bid, announcement);
+
         // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
         // (sauf pour KG_FREE où la capacité n'est jamais décrémentée)
         if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
-            AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
             if (announcement != null) {
                 boolean isKgFreeCancel = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
                 if (!isKgFreeCancel && bid.getWeightKg() != null) {
@@ -775,6 +779,9 @@ public class BidService {
         com.dony.api.matching.TransportMode transportMode = announcement != null ? announcement.getTransportMode() : null;
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
                 ? bid.getConfirmationCode() : null;
+        // Le code de retour n'est visible que par l'expéditeur (qui le communique au voyageur).
+        String returnCode = (callerId != null && callerId.equals(bid.getSenderId()))
+                ? bid.getReturnCode() : null;
 
         UserEntity traveler = (announcement != null)
                 ? userRepository.findById(announcement.getTravelerId()).orElse(null)
@@ -863,7 +870,10 @@ public class BidService {
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
                 bid.getPricingMode(),
                 totalNetAmountEur,
-                departureAt
+                departureAt,
+                returnCode,
+                bid.getReturnDeadline(),
+                bid.getReturnedAt()
         );
     }
 }
