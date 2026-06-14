@@ -87,3 +87,6 @@ app:
     daily-quota-details: 2000
     daily-quota-reverse: 1000
     block-when-quota-exceeded: false
+
+storage:
+  public-base-url: ${STORAGE_PUBLIC_BASE_URL:https://dony-storage.local}

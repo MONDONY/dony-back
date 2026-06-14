@@ -48,7 +48,7 @@ class MyReceivedRatingsControllerTest {
                 new BigDecimal("4.75"),
                 4,
                 Map.of(1, 0L, 2, 0L, 3, 0L, 4, 1L, 5, 3L),
-                List.of(new RatingItemResponse(5, "Parfait", LocalDateTime.now(), false)),
+                List.of(new RatingItemResponse(5, "Parfait", LocalDateTime.now(), false, null, null, null, null)),
                 0,
                 1);
     }

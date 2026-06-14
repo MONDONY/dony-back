@@ -477,6 +477,90 @@ class RatingServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
         }
+
+        @Test
+        @DisplayName("notation avec auteur + corridor → champs enrichis correctement mappés")
+        void getUserRatings_enrichesAuthorAndCorridor() throws Exception {
+            UUID ratedUserId = UUID.randomUUID();
+            UUID raterId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            UserEntity ratedUser = new UserEntity();
+            setId(ratedUser, ratedUserId);
+            setField(ratedUser, "averageRating", new BigDecimal("5.00"));
+
+            UserEntity rater = new UserEntity();
+            setId(rater, raterId);
+            setField(rater, "firstName", "Fatou");
+            setField(rater, "lastName", "Mbaye");
+            setField(rater, "avatarUrl", "https://cdn/f.jpg");
+
+            RatingEntity rating = new RatingEntity();
+            rating.setStars(5);
+            rating.setRatedUserId(ratedUserId);
+            rating.setBidId(bidId);
+            rating.setRaterId(raterId);
+
+            BidEntity bidEntity = new BidEntity();
+            setId(bidEntity, bidId);
+            setField(bidEntity, "announcementId", annId);
+
+            AnnouncementEntity ann = new AnnouncementEntity();
+            setId(ann, annId);
+            setField(ann, "departureCity", "Paris");
+            setField(ann, "arrivalCity", "Dakar");
+            setField(ann, "travelerId", UUID.randomUUID());
+
+            when(userRepository.findById(ratedUserId)).thenReturn(Optional.of(ratedUser));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(ratedUserId))
+                    .thenReturn(List.of(rating));
+            when(ratingRepository.findByRatedUserId(eq(ratedUserId), any()))
+                    .thenReturn(new PageImpl<>(List.of(rating)));
+            when(userRepository.findById(raterId)).thenReturn(Optional.of(rater));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bidEntity));
+            when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+
+            UserRatingsSummaryResponse res = ratingService.getUserRatings(ratedUserId, 0, 20);
+
+            assertThat(res.ratings()).hasSize(1);
+            var item = res.ratings().get(0);
+            assertThat(item.authorName()).isEqualTo("Fatou M.");
+            assertThat(item.authorAvatarUrl()).isEqualTo("https://cdn/f.jpg");
+            assertThat(item.departureCity()).isEqualTo("Paris");
+            assertThat(item.arrivalCity()).isEqualTo("Dakar");
+        }
+
+        @Test
+        @DisplayName("notation anonyme (raterId=null) → authorName null, corridor null si bid absent")
+        void getUserRatings_anonymousRater_authorNullCorridorNull() throws Exception {
+            UUID ratedUserId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+
+            UserEntity ratedUser = new UserEntity();
+            setId(ratedUser, ratedUserId);
+
+            RatingEntity rating = new RatingEntity();
+            rating.setStars(4);
+            rating.setRatedUserId(ratedUserId);
+            rating.setBidId(bidId);
+            // raterId left null (anonymous recipient rating)
+
+            when(userRepository.findById(ratedUserId)).thenReturn(Optional.of(ratedUser));
+            when(ratingRepository.findIncludedRatingsByRatedUserId(ratedUserId)).thenReturn(List.of());
+            when(ratingRepository.findByRatedUserId(eq(ratedUserId), any()))
+                    .thenReturn(new PageImpl<>(List.of(rating)));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+
+            UserRatingsSummaryResponse res = ratingService.getUserRatings(ratedUserId, 0, 20);
+
+            assertThat(res.ratings()).hasSize(1);
+            var item = res.ratings().get(0);
+            assertThat(item.authorName()).isNull();
+            assertThat(item.authorAvatarUrl()).isNull();
+            assertThat(item.departureCity()).isNull();
+            assertThat(item.arrivalCity()).isNull();
+        }
     }
 
     @Nested

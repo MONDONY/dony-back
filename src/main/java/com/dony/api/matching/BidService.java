@@ -8,6 +8,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidQuoteRequest;
 import com.dony.api.matching.dto.BidQuoteResponse;
@@ -53,6 +54,7 @@ public class BidService {
     private final BlockService blockService;
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
+    private final StorageService storageService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -65,7 +67,8 @@ public class BidService {
                       AnnouncementPriceGridItemRepository annGridItemRepository,
                       BlockService blockService,
                       CommissionRateResolver commissionRateResolver,
-                      PromoService promoService) {
+                      PromoService promoService,
+                      StorageService storageService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -78,6 +81,7 @@ public class BidService {
         this.blockService = blockService;
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
+        this.storageService = storageService;
     }
 
     /**
@@ -901,7 +905,9 @@ public class BidService {
                 departureAt,
                 returnCode,
                 bid.getReturnDeadline(),
-                bid.getReturnedAt()
+                bid.getReturnedAt(),
+                storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null),
+                storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null)
         );
     }
 }

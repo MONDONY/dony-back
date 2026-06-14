@@ -22,6 +22,7 @@ public record NegotiationThreadResponse(
     String departureCity, String arrivalCity, BigDecimal weightKg,
     // Profil expéditeur embarqué (affiché côté voyageur)
     String senderName,
+    String senderPhotoUrl,
     // Champs calculés selon le callerId — source de vérité unique pour les clients
     boolean isMyTurn,
     boolean canAccept,

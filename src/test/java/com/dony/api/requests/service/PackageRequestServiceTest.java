@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.TransportMode;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
@@ -43,6 +44,7 @@ class PackageRequestServiceTest {
     @Mock private NegotiationThreadRepository threadRepository;
     @Mock private com.dony.api.city.CityRepository cityRepository;
     @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
+    @Mock private StorageService storageService;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -75,6 +77,8 @@ class PackageRequestServiceTest {
         sender.setKycStatus(KycStatus.VERIFIED);
         // Default commission rate = 12% — lenient because only create-related tests use it
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+        // Pass-through for presigned avatar URLs
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ========== Task 12: create() tests ==========
@@ -678,5 +682,75 @@ class PackageRequestServiceTest {
             "10e arr", "Plateau",
             true, EnumSet.of(PaymentMethod.STRIPE)
         );
+    }
+
+    // ========== AvatarUrl in SenderPublicProfile ==========
+
+    @Nested @DisplayName("search() — SenderPublicProfile.avatarUrl")
+    class SenderPublicProfileAvatarTests {
+
+        private PackageRequestEntity buildEntity() {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, UUID.randomUUID());
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(5));
+            e.setWeightKg(new BigDecimal("5"));
+            e.setStatus(PackageRequestStatus.OPEN);
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            return e;
+        }
+
+        @Test @DisplayName("sender avec avatarUrl → SenderPublicProfile.avatarUrl propagé")
+        void search_senderAvatarUrl_isMapped() {
+            sender.setAvatarUrl("https://cdn.example.com/sender.jpg");
+            PackageRequestEntity entity = buildEntity();
+
+            when(repository.findAll(
+                    org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
+                    org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+
+            var result = page.getContent().get(0);
+            assertThat(result.sender().avatarUrl()).isEqualTo("https://cdn.example.com/sender.jpg");
+        }
+
+        @Test @DisplayName("sender sans avatarUrl → SenderPublicProfile.avatarUrl null")
+        void search_senderNoAvatarUrl_null() {
+            // sender.avatarUrl is null by default
+            PackageRequestEntity entity = buildEntity();
+
+            when(repository.findAll(
+                    org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
+                    org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+
+            var result = page.getContent().get(0);
+            assertThat(result.sender().avatarUrl()).isNull();
+        }
+
+        @Test @DisplayName("sender introuvable → SenderPublicProfile.avatarUrl null")
+        void search_senderNotFound_avatarUrlNull() {
+            PackageRequestEntity entity = buildEntity();
+
+            when(repository.findAll(
+                    org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
+                    org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+
+            var result = page.getContent().get(0);
+            assertThat(result.sender().avatarUrl()).isNull();
+        }
     }
 }

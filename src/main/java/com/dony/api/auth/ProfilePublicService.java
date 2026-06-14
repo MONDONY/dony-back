@@ -3,6 +3,7 @@ package com.dony.api.auth;
 import com.dony.api.auth.dto.ProfilePublicResponse;
 import com.dony.api.auth.dto.PublicTravelerProfileResponse;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
 import com.dony.api.settings.UserBusinessPrefsEntity;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -22,13 +24,16 @@ public class ProfilePublicService {
     private final UserRepository userRepository;
     private final RatingService ratingService;
     private final UserBusinessPrefsRepository userBusinessPrefsRepository;
+    private final StorageService storageService;
 
     public ProfilePublicService(UserRepository userRepository,
                                 RatingService ratingService,
-                                UserBusinessPrefsRepository userBusinessPrefsRepository) {
+                                UserBusinessPrefsRepository userBusinessPrefsRepository,
+                                StorageService storageService) {
         this.userRepository = userRepository;
         this.ratingService = ratingService;
         this.userBusinessPrefsRepository = userBusinessPrefsRepository;
+        this.storageService = storageService;
     }
 
     public ProfilePublicResponse getProfilePublic(UUID userId) {
@@ -50,7 +55,7 @@ public class ProfilePublicService {
         return new ProfilePublicResponse(
                 userId.toString(),
                 displayName,
-                null,
+                storageService.avatarUrl(user.getAvatarUrl()),
                 kycVerified,
                 user.isProAccount(),
                 user.isKiloPro(),
@@ -60,7 +65,10 @@ public class ProfilePublicService {
                 memberSince,
                 List.of(),
                 contactMode,
-                responseDelayHours
+                responseDelayHours,
+                user.getBio(),
+                new ArrayList<>(user.getLanguages()),
+                user.getTransportMode() != null ? user.getTransportMode().name() : null
         );
     }
 

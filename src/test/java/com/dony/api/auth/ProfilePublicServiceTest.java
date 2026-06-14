@@ -2,6 +2,7 @@ package com.dony.api.auth;
 
 import com.dony.api.auth.dto.ProfilePublicResponse;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.RatingItemResponse;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +39,7 @@ class ProfilePublicServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private RatingService ratingService;
     @Mock private UserBusinessPrefsRepository userBusinessPrefsRepository;
+    @Mock private StorageService storageService;
 
     @InjectMocks private ProfilePublicService profilePublicService;
 
@@ -61,13 +64,20 @@ class ProfilePublicServiceTest {
         org.mockito.Mockito.lenient()
                 .when(userBusinessPrefsRepository.findById(USER_ID))
                 .thenReturn(Optional.empty());
+        // Pass-through: return the stored value as-is so assertions on avatarUrl still work
+        org.mockito.Mockito.lenient()
+                .when(storageService.avatarUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.lenient()
+                .when(storageService.avatarUrl(null))
+                .thenReturn(null);
     }
 
     private UserRatingsSummaryResponse stubRatingSummary() {
         return new UserRatingsSummaryResponse(
                 new BigDecimal("4.80"), 10,
                 Map.of(1, 0L, 2, 0L, 3, 0L, 4, 2L, 5, 8L),
-                List.of(new RatingItemResponse(5, "Top", LocalDateTime.now(), false)),
+                List.of(new RatingItemResponse(5, "Top", LocalDateTime.now(), false, null, null, null, null)),
                 0, 1);
     }
 
@@ -218,6 +228,38 @@ class ProfilePublicServiceTest {
 
         assertThat(response.contactMode()).isEqualTo("WHATSAPP");
         assertThat(response.responseDelayHours()).isEqualTo(24);
+    }
+
+    @Test
+    @DisplayName("profil public expose bio, avatar, langues et mode de transport")
+    void getProfilePublic_includesBioLanguagesTransportAvatar() throws Exception {
+        UserEntity u = new UserEntity();
+        setId(u, USER_ID);
+        setField(u, "firstName", "Moussa");
+        setField(u, "lastName", "Diallo");
+        setField(u, "kycStatus", KycStatus.VERIFIED);
+        setField(u, "isProAccount", false);
+        setField(u, "kiloPro", false);
+        setField(u, "totalTrips", 0);
+        setField(u, "totalShipments", 0);
+        setField(u, "createdAt", LocalDateTime.of(2025, 3, 15, 10, 0));
+        u.setBio("Hello");
+        u.setAvatarUrl("https://cdn/a.jpg");
+        u.setLanguages(Set.of("FR"));
+        u.setTransportMode(TransportMode.AVION);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(u));
+        when(ratingService.getUserRatings(USER_ID, 0, 3))
+                .thenReturn(new UserRatingsSummaryResponse(
+                        BigDecimal.ZERO, 0, Map.of(), List.of(), 0, 0));
+        when(userBusinessPrefsRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        ProfilePublicResponse r = profilePublicService.getProfilePublic(USER_ID);
+
+        assertThat(r.bio()).isEqualTo("Hello");
+        assertThat(r.avatarUrl()).isEqualTo("https://cdn/a.jpg");
+        assertThat(r.languages()).containsExactly("FR");
+        assertThat(r.transportMode()).isEqualTo("AVION");
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────

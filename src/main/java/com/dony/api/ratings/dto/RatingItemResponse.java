@@ -6,5 +6,9 @@ public record RatingItemResponse(
         int stars,
         String comment,
         LocalDateTime createdAt,
-        boolean excluded
+        boolean excluded,
+        String authorName,
+        String authorAvatarUrl,
+        String departureCity,
+        String arrivalCity
 ) {}

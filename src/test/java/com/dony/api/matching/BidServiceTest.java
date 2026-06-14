@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
@@ -58,6 +59,7 @@ class BidServiceTest {
     @Mock private com.dony.api.auth.BlockService blockService;
     @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.promo.PromoService promoService;
+    @Mock private StorageService storageService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -145,6 +147,8 @@ class BidServiceTest {
     void stubCancellationRepository() {
         lenient().when(cancellationRepository.findByBidId(any()))
                 .thenReturn(java.util.Optional.empty());
+        // Pass-through for presigned avatar URLs — tests don't care about the URL value
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────
@@ -1643,6 +1647,47 @@ class BidServiceTest {
             BidResponse resp = bidService.toResponse(bid, sender);
 
             assertThat(resp.senderName()).isEqualTo("Alice Dupont");
+        }
+
+        @Test
+        @DisplayName("senderAvatarUrl mappé depuis UserEntity")
+        void toResponse_senderAvatarUrl_isMapped() {
+            UserEntity sender = buildSender();
+            sender.setAvatarUrl("https://cdn.example.com/sender.jpg");
+            BidEntity bid = buildBid();
+
+            // No announcement → traveler=null → travelerAvatarUrl=null
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.senderAvatarUrl()).isEqualTo("https://cdn.example.com/sender.jpg");
+            assertThat(resp.travelerAvatarUrl()).isNull();
+        }
+
+        @Test
+        @DisplayName("travelerAvatarUrl mappé depuis UserEntity du voyageur")
+        void toResponse_travelerAvatarUrl_isMapped() {
+            UserEntity sender = buildSender();
+            UserEntity traveler = buildTraveler();
+            traveler.setAvatarUrl("https://cdn.example.com/traveler.jpg");
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.travelerAvatarUrl()).isEqualTo("https://cdn.example.com/traveler.jpg");
+        }
+
+        @Test
+        @DisplayName("sender null → senderAvatarUrl null")
+        void toResponse_senderNull_avatarUrlNull() {
+            BidEntity bid = buildBid();
+
+            BidResponse resp = bidService.toResponse(bid, null);
+
+            assertThat(resp.senderAvatarUrl()).isNull();
         }
     }
 

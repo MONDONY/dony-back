@@ -79,7 +79,8 @@ class AnnouncementServiceAddressTest {
         com.dony.api.config.DonyConfigProperties cfg = new com.dony.api.config.DonyConfigProperties(null, null, null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, cfg, priceGridService, flagService);
+                auditService, eventPublisher, cfg, priceGridService, flagService,
+                mock(com.dony.api.common.StorageService.class));
     }
 
     private static final String TRAVELER_UID = "firebase-uid-123";

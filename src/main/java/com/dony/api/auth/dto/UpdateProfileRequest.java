@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.util.Set;
 
 public record UpdateProfileRequest(
     @Size(max = 100) String firstName,
@@ -14,5 +15,9 @@ public record UpdateProfileRequest(
     @Past LocalDate birthDate,
     @Size(max = 100) String city,
     @Pattern(regexp = "^\\+[1-9]\\d{1,14}$", message = "Format E.164 requis (ex: +33612345678)")
-    String phoneNumber
+    String phoneNumber,
+    @Size(max = 280) String bio,
+    Set<String> languages,
+    @Pattern(regexp = "AVION|VOITURE|TRAIN", message = "Mode de transport invalide")
+    String transportMode
 ) {}

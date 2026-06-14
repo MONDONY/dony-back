@@ -5,6 +5,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.CashGatePort;
@@ -47,6 +48,7 @@ class NegotiationServiceTest {
     @Mock private CommissionProperties commissionProperties;
     @Mock private CashGatePort cashGatePort;
     @Mock private com.dony.api.requests.NegotiationEscrowPort escrowPort;
+    @Mock private StorageService storageService;
 
     @InjectMocks private NegotiationService service;
 
@@ -85,6 +87,8 @@ class NegotiationServiceTest {
         // Default commission rate used whenever toResponse() is called.
         // Lenient to avoid UnnecessaryStubbingException in error-path tests that never reach toResponse().
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+        // Pass-through for presigned avatar URLs
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Nested
@@ -2278,6 +2282,88 @@ class NegotiationServiceTest {
 
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
             verifyNoInteractions(escrowPort);
+        }
+    }
+
+    // ========== AvatarUrl in NegotiationThreadResponse ==========
+
+    @Nested
+    @DisplayName("toResponse() — photo URLs")
+    class PhotoUrlTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        private NegotiationThreadEntity buildThread() {
+            NegotiationThreadEntity t = new NegotiationThreadEntity();
+            t.setPackageRequestId(REQUEST_ID);
+            t.setTravelerId(TRAVELER_ID);
+            t.setStatus(NegotiationThreadStatus.OPEN);
+            t.setCurrentPriceEur(new BigDecimal("30"));
+            t.setRoundsCount((short) 1);
+            t.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(t, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return t;
+        }
+
+        @Test
+        @DisplayName("travelerPhotoUrl mappé depuis UserEntity du voyageur")
+        void toResponse_travelerPhotoUrl_isMapped() {
+            traveler.setAvatarUrl("https://cdn.example.com/traveler.jpg");
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler)); // sender returns same user
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.travelerPhotoUrl()).isEqualTo("https://cdn.example.com/traveler.jpg");
+        }
+
+        @Test
+        @DisplayName("senderPhotoUrl mappé depuis UserEntity de l'expéditeur")
+        void toResponse_senderPhotoUrl_isMapped() {
+            UserEntity sender = new UserEntity();
+            sender.setAvatarUrl("https://cdn.example.com/sender.jpg");
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.senderPhotoUrl()).isEqualTo("https://cdn.example.com/sender.jpg");
+        }
+
+        @Test
+        @DisplayName("sender introuvable → senderPhotoUrl null")
+        void toResponse_senderNotFound_senderPhotoUrlNull() {
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.senderPhotoUrl()).isNull();
         }
     }
 }

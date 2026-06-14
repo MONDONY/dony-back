@@ -16,5 +16,8 @@ public record ProfilePublicResponse(
         String memberSince,
         List<String> badges,
         String contactMode,
-        Integer responseDelayHours
+        Integer responseDelayHours,
+        String bio,
+        List<String> languages,
+        String transportMode
 ) {}

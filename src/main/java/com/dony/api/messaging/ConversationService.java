@@ -3,6 +3,7 @@ package com.dony.api.messaging;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -35,19 +36,22 @@ public class ConversationService {
     private final AuditService auditService;
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
+    private final StorageService storageService;
 
     public ConversationService(ConversationRepository conversationRepository,
                                 FirestoreService firestoreService,
                                 UserRepository userRepository,
                                 AuditService auditService,
                                 BidRepository bidRepository,
-                                AnnouncementRepository announcementRepository) {
+                                AnnouncementRepository announcementRepository,
+                                StorageService storageService) {
         this.conversationRepository = conversationRepository;
         this.firestoreService = firestoreService;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -271,7 +275,8 @@ public class ConversationService {
         }
         String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
             + (user.getLastName() != null ? user.getLastName() : "")).strip();
-        return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name, null);
+        return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
+                storageService.avatarUrl(user.getAvatarUrl()));
     }
 
     private String mapBidStatus(BidStatus status) {

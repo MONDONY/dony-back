@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
@@ -41,6 +42,7 @@ public class PackageRequestService {
     private final NegotiationThreadRepository threadRepository;
     private final com.dony.api.city.CityRepository cityRepository;
     private final CommissionProperties commissionProperties;
+    private final StorageService storageService;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -49,7 +51,8 @@ public class PackageRequestService {
                                   RequestsConfig config,
                                   NegotiationThreadRepository threadRepository,
                                   com.dony.api.city.CityRepository cityRepository,
-                                  CommissionProperties commissionProperties) {
+                                  CommissionProperties commissionProperties,
+                                  StorageService storageService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -58,6 +61,7 @@ public class PackageRequestService {
         this.threadRepository = threadRepository;
         this.cityRepository = cityRepository;
         this.commissionProperties = commissionProperties;
+        this.storageService = storageService;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -427,7 +431,8 @@ public class PackageRequestService {
         int totalRatings = sender != null ? sender.getRatingCount() : 0;
         boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
         var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified
+            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified,
+            storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null)
         );
         var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
         var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);

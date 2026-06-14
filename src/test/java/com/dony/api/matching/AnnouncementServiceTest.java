@@ -58,15 +58,19 @@ class AnnouncementServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PriceGridService priceGridService;
     @Mock private com.dony.api.country.FlagService flagService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     private AnnouncementService announcementService;
 
     @org.junit.jupiter.api.BeforeEach
     void initService() {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
+        // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, config, priceGridService, flagService);
+                auditService, eventPublisher, config, priceGridService, flagService,
+                storageService);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -986,6 +990,48 @@ class AnnouncementServiceTest {
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
                     null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10), null));
+        }
+
+        @Test
+        @DisplayName("voyageur avec avatarUrl → TravelerProfileDto.avatarUrl propagé")
+        void search_travelerAvatarUrl_isMappedInProfile() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            traveler.setAvatarUrl("https://cdn.example.com/avatar.jpg");
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.traveler()).isNotNull();
+            assertThat(response.traveler().avatarUrl()).isEqualTo("https://cdn.example.com/avatar.jpg");
+        }
+
+        @Test
+        @DisplayName("voyageur sans avatarUrl → TravelerProfileDto.avatarUrl null")
+        void search_travelerNoAvatarUrl_profileAvatarUrlNull() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            // avatarUrl not set → null
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.traveler()).isNotNull();
+            assertThat(response.traveler().avatarUrl()).isNull();
         }
     }
 

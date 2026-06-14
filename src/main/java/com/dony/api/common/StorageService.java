@@ -64,6 +64,18 @@ public class StorageService {
     }
 
     /**
+     * Client-facing URL for a stored avatar reference. null/blank → null.
+     * Already-absolute http(s) values are returned as-is (legacy).
+     * Otherwise the value is treated as an object key and a presigned GET URL
+     * (7-day TTL) is returned.
+     */
+    public String avatarUrl(String storedKeyOrUrl) {
+        if (storedKeyOrUrl == null || storedKeyOrUrl.isBlank()) return null;
+        if (storedKeyOrUrl.startsWith("http://") || storedKeyOrUrl.startsWith("https://")) return storedKeyOrUrl;
+        return generatePresignedUrl(storedKeyOrUrl, java.time.Duration.ofDays(7));
+    }
+
+    /**
      * Upload a file to S3 under the given prefix.
      * Allowed prefixes: "tracking/" and "users/"
      *

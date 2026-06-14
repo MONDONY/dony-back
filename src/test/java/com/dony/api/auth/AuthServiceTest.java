@@ -5,6 +5,7 @@ import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -21,6 +22,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
@@ -43,6 +46,8 @@ class AuthServiceTest {
     @Mock private PaymentRepository paymentRepository;
     @Mock private AccountFinalizationService accountFinalizationService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ConnectedDevicesService connectedDevicesService;
+    @Mock private StorageService storageService;
 
     @InjectMocks private AuthService authService;
 
@@ -250,7 +255,7 @@ class AuthServiceTest {
 
             UpdateProfileRequest req = new UpdateProfileRequest(
                     "Amadou", "Diallo", "amadou@dony.app",
-                    LocalDate.of(1990, 5, 15), "Paris", null
+                    LocalDate.of(1990, 5, 15), "Paris", null, null, null, null
             );
 
             UserResponse result = authService.updateProfile(FIREBASE_UID, req);
@@ -271,7 +276,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ", null);
+            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ", null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isNull();
@@ -286,7 +291,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null);
+            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isEqualTo("Original");
@@ -301,7 +306,7 @@ class AuthServiceTest {
             when(userRepository.save(any())).thenReturn(user);
 
             authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest(null, null, null, null, null, "+33699000001"));
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699000001", null, null, null));
 
             assertThat(user.getPhoneNumber()).isEqualTo("+33699000001");
         }
@@ -314,7 +319,7 @@ class AuthServiceTest {
             when(userRepository.existsByPhoneNumber("+33699999999")).thenReturn(true);
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest(null, null, null, null, null, "+33699999999")))
+                    new UpdateProfileRequest(null, null, null, null, null, "+33699999999", null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
@@ -326,10 +331,27 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest("A", null, null, null, null, null)))
+                    new UpdateProfileRequest("A", null, null, null, null, null, null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("bio/languages/transportMode → persistés et retournés")
+        void updateProfile_persistsBioLanguagesTransport() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            var req = new UpdateProfileRequest(null, null, null, null, null, null,
+                    "Voyageur sérieux", Set.of("FR", "WO"), "AVION");
+
+            UserResponse res = authService.updateProfile(FIREBASE_UID, req);
+
+            assertThat(res.bio()).isEqualTo("Voyageur sérieux");
+            assertThat(res.languages()).containsExactlyInAnyOrder("FR", "WO");
+            assertThat(res.transportMode()).isEqualTo("AVION");
         }
     }
 
@@ -451,6 +473,73 @@ class AuthServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
             verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+    }
+
+    // ─── updateAvatar ──────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("updateAvatar()")
+    class UpdateAvatarTests {
+
+        @Test
+        @DisplayName("fichier valide → upload + clé S3 persistée dans avatarUrl, presigned URL retournée")
+        void updateAvatar_uploadsAndPersistsKey() throws Exception {
+            String key = "users/" + FIREBASE_UID + "/123_a.jpg";
+            String presignedUrl = "https://r2.example.com/presigned/users/" + FIREBASE_UID + "/123_a.jpg?X-Amz-Signature=abc";
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            MultipartFile file = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            when(storageService.uploadFile(eq(file), startsWith("users/" + FIREBASE_UID + "/")))
+                    .thenReturn(key);
+            when(storageService.avatarUrl(key)).thenReturn(presignedUrl);
+
+            UserResponse res = authService.updateAvatar(FIREBASE_UID, file);
+
+            // The raw key is persisted in the entity
+            assertThat(user.getAvatarUrl()).isEqualTo(key);
+            // The response exposes a presigned URL, not the raw key
+            assertThat(res.avatarUrl()).isEqualTo(presignedUrl);
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
+        void updateAvatar_unknownUser_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            MultipartFile file = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, file))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("fichier vide → 400 BAD_REQUEST")
+        void updateAvatar_emptyFile_throwsBadRequest() throws Exception {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            MultipartFile emptyFile = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[0]);
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, emptyFile))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+
+        @Test
+        @DisplayName("fichier > 10 Mo → 413 PAYLOAD_TOO_LARGE")
+        void updateAvatar_fileTooLarge_throwsPayloadTooLarge() throws Exception {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            MultipartFile bigFile = new MockMultipartFile("file", "big.jpg", "image/jpeg",
+                    new byte[10 * 1024 * 1024 + 1]);
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, bigFile))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
         }
     }
 

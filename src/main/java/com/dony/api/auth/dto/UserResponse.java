@@ -21,5 +21,9 @@ public record UserResponse(
     int totalShipments,
     Boolean isProAccount,
     StripeAccountStatus stripeAccountStatus,
-    String country
+    String country,
+    String bio,
+    Set<String> languages,
+    String transportMode,
+    String avatarUrl
 ) {}

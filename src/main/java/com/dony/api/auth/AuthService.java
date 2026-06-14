@@ -8,6 +8,7 @@ import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.auth.events.UserRegisteredEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.slf4j.Logger;
@@ -17,11 +18,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -40,6 +43,7 @@ public class AuthService {
     private final AccountFinalizationService accountFinalizationService;
     private final ApplicationEventPublisher eventPublisher;
     private final ConnectedDevicesService connectedDevicesService;
+    private final StorageService storageService;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
@@ -47,7 +51,8 @@ public class AuthService {
                        PaymentRepository paymentRepository,
                        AccountFinalizationService accountFinalizationService,
                        ApplicationEventPublisher eventPublisher,
-                       ConnectedDevicesService connectedDevicesService) {
+                       ConnectedDevicesService connectedDevicesService,
+                       StorageService storageService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
@@ -55,6 +60,7 @@ public class AuthService {
         this.accountFinalizationService = accountFinalizationService;
         this.eventPublisher = eventPublisher;
         this.connectedDevicesService = connectedDevicesService;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -162,6 +168,17 @@ public class AuthService {
                 }
                 user.setPhoneNumber(v);
             }
+        }
+        if (request.bio() != null) {
+            String v = request.bio().trim();
+            user.setBio(v.isEmpty() ? null : v);
+        }
+        if (request.languages() != null) {
+            user.setLanguages(new HashSet<>(request.languages()));
+        }
+        if (request.transportMode() != null) {
+            String v = request.transportMode().trim();
+            user.setTransportMode(v.isEmpty() ? null : TransportMode.valueOf(v));
         }
 
         return toResponse(userRepository.save(user));
@@ -459,6 +476,33 @@ public class AuthService {
                 .collect(Collectors.toSet());
     }
 
+    @Transactional
+    public UserResponse updateAvatar(String firebaseUid, MultipartFile file) throws IOException {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "user-not-found",
+                        "User Not Found",
+                        "Utilisateur introuvable"));
+        if (file == null || file.isEmpty()) {
+            throw new DonyBusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "file-missing",
+                    "File Missing",
+                    "Fichier manquant");
+        }
+        if (file.getSize() > 10L * 1024 * 1024) {
+            throw new DonyBusinessException(
+                    HttpStatus.PAYLOAD_TOO_LARGE,
+                    "file-too-large",
+                    "File Too Large",
+                    "Image trop volumineuse (max 10 Mo)");
+        }
+        String key = storageService.uploadFile(file, "users/" + firebaseUid + "/");
+        user.setAvatarUrl(key);
+        return toResponse(userRepository.save(user));
+    }
+
     public UserResponse toResponse(UserEntity user) {
         return new UserResponse(
                 user.getId(),
@@ -475,7 +519,11 @@ public class AuthService {
                 user.getTotalShipments(),
                 user.isProAccount(),
                 user.getStripeAccountStatus(),
-                user.getCountry()
+                user.getCountry(),
+                user.getBio(),
+                user.getLanguages(),
+                user.getTransportMode() != null ? user.getTransportMode().name() : null,
+                storageService.avatarUrl(user.getAvatarUrl())
         );
     }
 }

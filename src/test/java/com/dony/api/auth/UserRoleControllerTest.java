@@ -44,7 +44,7 @@ class UserRoleControllerTest {
         UserResponse fakeResponse = new UserResponse(
                 UUID.randomUUID(), null, null, null, null, null, null,
                 Set.of("SENDER", "TRAVELER"), "NOT_STARTED", "ACTIVE", 0, 0,
-                false, null, "FR");
+                false, null, "FR", null, null, null, null);
         when(userRoleService.activateTravelerRole("uid-1")).thenReturn(fakeResponse);
 
         var response = controller.activateTraveler();
@@ -84,7 +84,7 @@ class UserRoleControllerTest {
         UserResponse fakeResponse = new UserResponse(
                 UUID.randomUUID(), null, null, null, null, null, null,
                 Set.of("SENDER"), "NOT_STARTED", "ACTIVE", 0, 0,
-                false, null, "FR");
+                false, null, "FR", null, null, null, null);
         when(userRoleService.deactivateTravelerRole("uid-1")).thenReturn(fakeResponse);
 
         var response = controller.deactivateTraveler();
