@@ -68,7 +68,7 @@ class ProfilePublicServiceTest {
         return new UserRatingsSummaryResponse(
                 new BigDecimal("4.80"), 10,
                 Map.of(1, 0L, 2, 0L, 3, 0L, 4, 2L, 5, 8L),
-                List.of(new RatingItemResponse(5, "Top", LocalDateTime.now(), false)),
+                List.of(new RatingItemResponse(5, "Top", LocalDateTime.now(), false, null, null, null, null)),
                 0, 1);
     }
 

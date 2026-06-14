@@ -265,9 +265,21 @@ public class RatingService {
                 .collect(Collectors.groupingBy(RatingEntity::getStars, Collectors.counting()))
                 .forEach(distribution::put);
 
-        List<RatingItemResponse> items = ratingsPage.getContent().stream()
-                .map(r -> new RatingItemResponse(r.getStars(), r.getComment(), r.getCreatedAt(), r.isExcludedFromAverage()))
-                .collect(Collectors.toList());
+        List<RatingItemResponse> items = ratingsPage.getContent().stream().map(r -> {
+            UserEntity author = r.getRaterId() != null
+                    ? userRepository.findById(r.getRaterId()).orElse(null) : null;
+            String dep = null, arr = null;
+            BidEntity bid = bidRepository.findById(r.getBidId()).orElse(null);
+            if (bid != null) {
+                AnnouncementEntity ann = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+                if (ann != null) { dep = ann.getDepartureCity(); arr = ann.getArrivalCity(); }
+            }
+            return new RatingItemResponse(
+                    r.getStars(), r.getComment(), r.getCreatedAt(), r.isExcludedFromAverage(),
+                    authorShortName(author),
+                    author != null ? author.getAvatarUrl() : null,
+                    dep, arr);
+        }).collect(Collectors.toList());
 
         return new UserRatingsSummaryResponse(
                 user.getAverageRating(),
@@ -301,6 +313,16 @@ public class RatingService {
 
         return Optional.of(new PendingRatingResponse(
                 bid.getId(), otherPartyName, otherPartyId, bid.getUpdatedAt(), isTravelerRating));
+    }
+
+    /** « Prénom + initiale » sans PII complète. null si auteur inconnu. */
+    private String authorShortName(UserEntity author) {
+        if (author == null) return null;
+        String fn = author.getFirstName();
+        String ln = author.getLastName();
+        if (fn == null || fn.isBlank()) return null;
+        String initial = (ln != null && !ln.isBlank()) ? " " + ln.trim().charAt(0) + "." : "";
+        return fn.trim() + initial;
     }
 
     private String buildDisplayName(UserEntity user) {
