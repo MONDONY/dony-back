@@ -79,6 +79,7 @@ class NegotiationControllerIT {
             "Test T.", null, 0, null,
             "Paris", "Dakar", new BigDecimal("5"),
             "Chaka D.",
+            null,   // senderPhotoUrl
             false,  // isMyTurn
             false,  // canAccept
             false,  // canCounter
@@ -186,6 +187,7 @@ class NegotiationControllerIT {
             "Test T.", null, 0, null,
             "Paris", "Dakar", new BigDecimal("5"),
             "Chaka D.",
+            null,   // senderPhotoUrl
             true,   // isMyTurn
             true,   // canAccept
             false,  // canCounter
@@ -370,6 +372,7 @@ class NegotiationControllerIT {
             "Test T.", null, 0, null,
             "Paris", "Dakar", new java.math.BigDecimal("5"),
             "Chaka D.",
+            null, // senderPhotoUrl
             false, false, false, 4, null,
             new java.math.BigDecimal("33.60"), null,
             null // materializedBidId
@@ -488,6 +491,7 @@ class NegotiationControllerIT {
             "Moussa T.", new BigDecimal("4.5"), 12, null,
             "Paris", "Dakar", new BigDecimal("5.0"),
             "Amadou S.",
+            null, // senderPhotoUrl
             false, false, false, 3,
             trip,
             new BigDecimal("50.40"), // grossPriceEur (45 * 1.12)

@@ -219,7 +219,8 @@ public class AnnouncementService {
                         traveler.getTotalTrips(),
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
-                        kycVerified)
+                        kycVerified,
+                        traveler.getAvatarUrl())
                 : null;
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
@@ -531,7 +532,8 @@ public class AnnouncementService {
                         null,
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
-                        kycVerified)
+                        kycVerified,
+                        traveler.getAvatarUrl())
                 : null;
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
@@ -671,7 +673,8 @@ public class AnnouncementService {
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
                 user.getId(),
                 buildDisplayName(user),
-                null, null, false, user.isProAccount(), kycVerified);
+                null, null, false, user.isProAccount(), kycVerified,
+                user.getAvatarUrl());
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> updatedGridItems =
                 saved.getPricingMode() == PricingMode.MIXED

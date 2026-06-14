@@ -1081,6 +1081,10 @@ public class NegotiationService {
             ? PriceBreakdown.fromNet(t.getCurrentPriceEur(), commissionProperties.rate()).gross()
             : null;
 
+        String senderPhotoUrl = userRepository.findById(request.getSenderId())
+            .map(com.dony.api.auth.UserEntity::getAvatarUrl)
+            .orElse(null);
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1089,9 +1093,10 @@ public class NegotiationService {
             t.getLastActivityAt(), t.getCreatedAt(),
             messages, paymentIntentClientSecret,
             buildDisplayName(traveler), traveler.getAverageRating(),
-            traveler.getTotalTrips(), null,
+            traveler.getTotalTrips(), traveler.getAvatarUrl(),
             request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg(),
             senderName,
+            senderPhotoUrl,
             isMyTurn, canAccept, canCounter, roundsRemaining,
             linkedTrip,
             gross,

@@ -62,5 +62,7 @@ public record BidResponse(
         java.time.OffsetDateTime departureAt,
         String returnCode,
         java.time.LocalDateTime returnDeadline,
-        java.time.LocalDateTime returnedAt
+        java.time.LocalDateTime returnedAt,
+        String senderAvatarUrl,
+        String travelerAvatarUrl
 ) {}

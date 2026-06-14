@@ -987,6 +987,48 @@ class AnnouncementServiceTest {
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
                     null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10), null));
         }
+
+        @Test
+        @DisplayName("voyageur avec avatarUrl → TravelerProfileDto.avatarUrl propagé")
+        void search_travelerAvatarUrl_isMappedInProfile() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            traveler.setAvatarUrl("https://cdn.example.com/avatar.jpg");
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.traveler()).isNotNull();
+            assertThat(response.traveler().avatarUrl()).isEqualTo("https://cdn.example.com/avatar.jpg");
+        }
+
+        @Test
+        @DisplayName("voyageur sans avatarUrl → TravelerProfileDto.avatarUrl null")
+        void search_travelerNoAvatarUrl_profileAvatarUrlNull() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            // avatarUrl not set → null
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.traveler()).isNotNull();
+            assertThat(response.traveler().avatarUrl()).isNull();
+        }
     }
 
     // ─── capacityUnit + date validation ───────────────────────────────────────

@@ -22,5 +22,5 @@ public record PackageRequestSearchResponse(
     SenderPublicProfile sender,
     Set<PaymentMethod> acceptedPaymentMethods
 ) {
-    public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified) {}
+    public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
 }

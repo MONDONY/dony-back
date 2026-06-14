@@ -9,5 +9,6 @@ public record TravelerProfileDto(
         Integer totalTrips,
         boolean kiloPro,
         boolean isProAccount,
-        boolean kycVerified
+        boolean kycVerified,
+        String avatarUrl
 ) {}

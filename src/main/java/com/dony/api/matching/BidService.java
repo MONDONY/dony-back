@@ -901,7 +901,9 @@ public class BidService {
                 departureAt,
                 returnCode,
                 bid.getReturnDeadline(),
-                bid.getReturnedAt()
+                bid.getReturnedAt(),
+                sender != null ? sender.getAvatarUrl() : null,
+                traveler != null ? traveler.getAvatarUrl() : null
         );
     }
 }

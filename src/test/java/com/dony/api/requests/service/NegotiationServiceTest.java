@@ -2280,4 +2280,86 @@ class NegotiationServiceTest {
             verifyNoInteractions(escrowPort);
         }
     }
+
+    // ========== AvatarUrl in NegotiationThreadResponse ==========
+
+    @Nested
+    @DisplayName("toResponse() — photo URLs")
+    class PhotoUrlTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        private NegotiationThreadEntity buildThread() {
+            NegotiationThreadEntity t = new NegotiationThreadEntity();
+            t.setPackageRequestId(REQUEST_ID);
+            t.setTravelerId(TRAVELER_ID);
+            t.setStatus(NegotiationThreadStatus.OPEN);
+            t.setCurrentPriceEur(new BigDecimal("30"));
+            t.setRoundsCount((short) 1);
+            t.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(t, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return t;
+        }
+
+        @Test
+        @DisplayName("travelerPhotoUrl mappé depuis UserEntity du voyageur")
+        void toResponse_travelerPhotoUrl_isMapped() {
+            traveler.setAvatarUrl("https://cdn.example.com/traveler.jpg");
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler)); // sender returns same user
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.travelerPhotoUrl()).isEqualTo("https://cdn.example.com/traveler.jpg");
+        }
+
+        @Test
+        @DisplayName("senderPhotoUrl mappé depuis UserEntity de l'expéditeur")
+        void toResponse_senderPhotoUrl_isMapped() {
+            UserEntity sender = new UserEntity();
+            sender.setAvatarUrl("https://cdn.example.com/sender.jpg");
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.senderPhotoUrl()).isEqualTo("https://cdn.example.com/sender.jpg");
+        }
+
+        @Test
+        @DisplayName("sender introuvable → senderPhotoUrl null")
+        void toResponse_senderNotFound_senderPhotoUrlNull() {
+            request.setNegotiable(true);
+            NegotiationThreadEntity thread = buildThread();
+
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            var response = service.getById(SENDER_ID, THREAD_ID);
+
+            assertThat(response.senderPhotoUrl()).isNull();
+        }
+    }
 }

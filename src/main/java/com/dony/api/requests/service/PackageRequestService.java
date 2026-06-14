@@ -427,7 +427,8 @@ public class PackageRequestService {
         int totalRatings = sender != null ? sender.getRatingCount() : 0;
         boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
         var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified
+            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified,
+            sender != null ? sender.getAvatarUrl() : null
         );
         var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
         var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
