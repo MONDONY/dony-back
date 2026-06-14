@@ -104,7 +104,10 @@ public class UserRoleService {
                 user.getTotalShipments(),
                 user.isProAccount(),
                 user.getStripeAccountStatus(),
-                user.getCountry()
+                user.getCountry(),
+                user.getBio(),
+                user.getLanguages(),
+                user.getTransportMode() != null ? user.getTransportMode().name() : null
         );
     }
 }

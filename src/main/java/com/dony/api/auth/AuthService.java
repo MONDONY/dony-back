@@ -22,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -162,6 +163,17 @@ public class AuthService {
                 }
                 user.setPhoneNumber(v);
             }
+        }
+        if (request.bio() != null) {
+            String v = request.bio().trim();
+            user.setBio(v.isEmpty() ? null : v);
+        }
+        if (request.languages() != null) {
+            user.setLanguages(new HashSet<>(request.languages()));
+        }
+        if (request.transportMode() != null) {
+            String v = request.transportMode().trim();
+            user.setTransportMode(v.isEmpty() ? null : TransportMode.valueOf(v));
         }
 
         return toResponse(userRepository.save(user));
@@ -475,7 +487,10 @@ public class AuthService {
                 user.getTotalShipments(),
                 user.isProAccount(),
                 user.getStripeAccountStatus(),
-                user.getCountry()
+                user.getCountry(),
+                user.getBio(),
+                user.getLanguages(),
+                user.getTransportMode() != null ? user.getTransportMode().name() : null
         );
     }
 }
