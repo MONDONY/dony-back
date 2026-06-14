@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -218,6 +219,38 @@ class ProfilePublicServiceTest {
 
         assertThat(response.contactMode()).isEqualTo("WHATSAPP");
         assertThat(response.responseDelayHours()).isEqualTo(24);
+    }
+
+    @Test
+    @DisplayName("profil public expose bio, avatar, langues et mode de transport")
+    void getProfilePublic_includesBioLanguagesTransportAvatar() throws Exception {
+        UserEntity u = new UserEntity();
+        setId(u, USER_ID);
+        setField(u, "firstName", "Moussa");
+        setField(u, "lastName", "Diallo");
+        setField(u, "kycStatus", KycStatus.VERIFIED);
+        setField(u, "isProAccount", false);
+        setField(u, "kiloPro", false);
+        setField(u, "totalTrips", 0);
+        setField(u, "totalShipments", 0);
+        setField(u, "createdAt", LocalDateTime.of(2025, 3, 15, 10, 0));
+        u.setBio("Hello");
+        u.setAvatarUrl("https://cdn/a.jpg");
+        u.setLanguages(Set.of("FR"));
+        u.setTransportMode(TransportMode.AVION);
+
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(u));
+        when(ratingService.getUserRatings(USER_ID, 0, 3))
+                .thenReturn(new UserRatingsSummaryResponse(
+                        BigDecimal.ZERO, 0, Map.of(), List.of(), 0, 0));
+        when(userBusinessPrefsRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        ProfilePublicResponse r = profilePublicService.getProfilePublic(USER_ID);
+
+        assertThat(r.bio()).isEqualTo("Hello");
+        assertThat(r.avatarUrl()).isEqualTo("https://cdn/a.jpg");
+        assertThat(r.languages()).containsExactly("FR");
+        assertThat(r.transportMode()).isEqualTo("AVION");
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -58,6 +58,9 @@ class ProfilePublicControllerTest {
                 "Membre depuis mars 2025",
                 List.of(),
                 null,
+                null,
+                null,
+                null,
                 null);
     }
 

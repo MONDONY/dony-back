@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -50,7 +51,7 @@ public class ProfilePublicService {
         return new ProfilePublicResponse(
                 userId.toString(),
                 displayName,
-                null,
+                user.getAvatarUrl(),
                 kycVerified,
                 user.isProAccount(),
                 user.isKiloPro(),
@@ -60,7 +61,10 @@ public class ProfilePublicService {
                 memberSince,
                 List.of(),
                 contactMode,
-                responseDelayHours
+                responseDelayHours,
+                user.getBio(),
+                new ArrayList<>(user.getLanguages()),
+                user.getTransportMode() != null ? user.getTransportMode().name() : null
         );
     }
 
