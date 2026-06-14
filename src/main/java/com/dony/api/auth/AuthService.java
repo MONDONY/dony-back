@@ -499,7 +499,7 @@ public class AuthService {
                     "Image trop volumineuse (max 10 Mo)");
         }
         String key = storageService.uploadFile(file, "users/" + firebaseUid + "/");
-        user.setAvatarUrl(storageService.publicUrl(key));
+        user.setAvatarUrl(key);
         return toResponse(userRepository.save(user));
     }
 
@@ -523,7 +523,7 @@ public class AuthService {
                 user.getBio(),
                 user.getLanguages(),
                 user.getTransportMode() != null ? user.getTransportMode().name() : null,
-                user.getAvatarUrl()
+                storageService.avatarUrl(user.getAvatarUrl())
         );
     }
 }

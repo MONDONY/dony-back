@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
@@ -58,6 +59,7 @@ class BidServiceTest {
     @Mock private com.dony.api.auth.BlockService blockService;
     @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.promo.PromoService promoService;
+    @Mock private StorageService storageService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -145,6 +147,8 @@ class BidServiceTest {
     void stubCancellationRepository() {
         lenient().when(cancellationRepository.findByBidId(any()))
                 .thenReturn(java.util.Optional.empty());
+        // Pass-through for presigned avatar URLs — tests don't care about the URL value
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────

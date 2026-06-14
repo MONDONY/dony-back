@@ -5,6 +5,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.PriceBreakdown;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -48,6 +49,7 @@ public class NegotiationService {
     private final CommissionProperties commissionProperties;
     private final CashGatePort cashGatePort;
     private final NegotiationEscrowPort escrowPort;
+    private final StorageService storageService;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -59,7 +61,8 @@ public class NegotiationService {
                                RequestsConfig config,
                                CommissionProperties commissionProperties,
                                CashGatePort cashGatePort,
-                               NegotiationEscrowPort escrowPort) {
+                               NegotiationEscrowPort escrowPort,
+                               StorageService storageService) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -71,6 +74,7 @@ public class NegotiationService {
         this.commissionProperties = commissionProperties;
         this.cashGatePort = cashGatePort;
         this.escrowPort = escrowPort;
+        this.storageService = storageService;
     }
 
     /**
@@ -1081,9 +1085,10 @@ public class NegotiationService {
             ? PriceBreakdown.fromNet(t.getCurrentPriceEur(), commissionProperties.rate()).gross()
             : null;
 
-        String senderPhotoUrl = userRepository.findById(request.getSenderId())
-            .map(com.dony.api.auth.UserEntity::getAvatarUrl)
-            .orElse(null);
+        String senderPhotoUrl = storageService.avatarUrl(
+            userRepository.findById(request.getSenderId())
+                .map(com.dony.api.auth.UserEntity::getAvatarUrl)
+                .orElse(null));
 
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
@@ -1093,7 +1098,7 @@ public class NegotiationService {
             t.getLastActivityAt(), t.getCreatedAt(),
             messages, paymentIntentClientSecret,
             buildDisplayName(traveler), traveler.getAverageRating(),
-            traveler.getTotalTrips(), traveler.getAvatarUrl(),
+            traveler.getTotalTrips(), storageService.avatarUrl(traveler.getAvatarUrl()),
             request.getDepartureCity(), request.getArrivalCity(), request.getWeightKg(),
             senderName,
             senderPhotoUrl,

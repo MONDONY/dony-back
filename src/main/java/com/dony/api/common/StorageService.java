@@ -56,9 +56,6 @@ public class StorageService {
     @Value("${aws.s3.bucket}")
     private String bucket;
 
-    @Value("${storage.public-base-url}")
-    private String publicBaseUrl;
-
     public StorageService(S3Client s3Client, S3Presigner s3Presigner,
                           ImageProcessingService imageProcessingService) {
         this.s3Client = s3Client;
@@ -66,9 +63,16 @@ public class StorageService {
         this.imageProcessingService = imageProcessingService;
     }
 
-    /** Public stable URL for an object (public-read prefixes only, never KYC). */
-    public String publicUrl(String objectKey) {
-        return publicBaseUrl.replaceAll("/+$", "") + "/" + objectKey;
+    /**
+     * Client-facing URL for a stored avatar reference. null/blank → null.
+     * Already-absolute http(s) values are returned as-is (legacy).
+     * Otherwise the value is treated as an object key and a presigned GET URL
+     * (7-day TTL) is returned.
+     */
+    public String avatarUrl(String storedKeyOrUrl) {
+        if (storedKeyOrUrl == null || storedKeyOrUrl.isBlank()) return null;
+        if (storedKeyOrUrl.startsWith("http://") || storedKeyOrUrl.startsWith("https://")) return storedKeyOrUrl;
+        return generatePresignedUrl(storedKeyOrUrl, java.time.Duration.ofDays(7));
     }
 
     /**

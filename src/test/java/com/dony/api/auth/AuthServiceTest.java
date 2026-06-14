@@ -483,20 +483,24 @@ class AuthServiceTest {
     class UpdateAvatarTests {
 
         @Test
-        @DisplayName("fichier valide → upload + URL publique persistée dans avatarUrl")
-        void updateAvatar_uploadsAndPersistsPublicUrl() throws Exception {
+        @DisplayName("fichier valide → upload + clé S3 persistée dans avatarUrl, presigned URL retournée")
+        void updateAvatar_uploadsAndPersistsKey() throws Exception {
+            String key = "users/" + FIREBASE_UID + "/123_a.jpg";
+            String presignedUrl = "https://r2.example.com/presigned/users/" + FIREBASE_UID + "/123_a.jpg?X-Amz-Signature=abc";
             UserEntity user = buildUser();
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
             MultipartFile file = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1, 2, 3});
             when(storageService.uploadFile(eq(file), startsWith("users/" + FIREBASE_UID + "/")))
-                    .thenReturn("users/" + FIREBASE_UID + "/123_a.jpg");
-            when(storageService.publicUrl("users/" + FIREBASE_UID + "/123_a.jpg"))
-                    .thenReturn("https://cdn/x/users/" + FIREBASE_UID + "/123_a.jpg");
+                    .thenReturn(key);
+            when(storageService.avatarUrl(key)).thenReturn(presignedUrl);
 
             UserResponse res = authService.updateAvatar(FIREBASE_UID, file);
 
-            assertThat(res.avatarUrl()).isEqualTo("https://cdn/x/users/" + FIREBASE_UID + "/123_a.jpg");
+            // The raw key is persisted in the entity
+            assertThat(user.getAvatarUrl()).isEqualTo(key);
+            // The response exposes a presigned URL, not the raw key
+            assertThat(res.avatarUrl()).isEqualTo(presignedUrl);
         }
 
         @Test

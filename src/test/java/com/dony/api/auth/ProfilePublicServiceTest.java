@@ -2,6 +2,7 @@ package com.dony.api.auth;
 
 import com.dony.api.auth.dto.ProfilePublicResponse;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.ratings.RatingService;
 import com.dony.api.ratings.dto.RatingItemResponse;
 import com.dony.api.ratings.dto.UserRatingsSummaryResponse;
@@ -38,6 +39,7 @@ class ProfilePublicServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private RatingService ratingService;
     @Mock private UserBusinessPrefsRepository userBusinessPrefsRepository;
+    @Mock private StorageService storageService;
 
     @InjectMocks private ProfilePublicService profilePublicService;
 
@@ -62,6 +64,13 @@ class ProfilePublicServiceTest {
         org.mockito.Mockito.lenient()
                 .when(userBusinessPrefsRepository.findById(USER_ID))
                 .thenReturn(Optional.empty());
+        // Pass-through: return the stored value as-is so assertions on avatarUrl still work
+        org.mockito.Mockito.lenient()
+                .when(storageService.avatarUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.lenient()
+                .when(storageService.avatarUrl(null))
+                .thenReturn(null);
     }
 
     private UserRatingsSummaryResponse stubRatingSummary() {

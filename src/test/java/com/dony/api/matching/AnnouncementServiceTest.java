@@ -58,15 +58,19 @@ class AnnouncementServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PriceGridService priceGridService;
     @Mock private com.dony.api.country.FlagService flagService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     private AnnouncementService announcementService;
 
     @org.junit.jupiter.api.BeforeEach
     void initService() {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
+        // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
-                auditService, eventPublisher, config, priceGridService, flagService);
+                auditService, eventPublisher, config, priceGridService, flagService,
+                storageService);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";

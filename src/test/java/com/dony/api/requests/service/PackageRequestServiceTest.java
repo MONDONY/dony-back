@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.TransportMode;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
@@ -43,6 +44,7 @@ class PackageRequestServiceTest {
     @Mock private NegotiationThreadRepository threadRepository;
     @Mock private com.dony.api.city.CityRepository cityRepository;
     @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
+    @Mock private StorageService storageService;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -75,6 +77,8 @@ class PackageRequestServiceTest {
         sender.setKycStatus(KycStatus.VERIFIED);
         // Default commission rate = 12% — lenient because only create-related tests use it
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+        // Pass-through for presigned avatar URLs
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ========== Task 12: create() tests ==========

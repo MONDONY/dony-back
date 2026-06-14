@@ -5,6 +5,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.CashGatePort;
@@ -47,6 +48,7 @@ class NegotiationServiceTest {
     @Mock private CommissionProperties commissionProperties;
     @Mock private CashGatePort cashGatePort;
     @Mock private com.dony.api.requests.NegotiationEscrowPort escrowPort;
+    @Mock private StorageService storageService;
 
     @InjectMocks private NegotiationService service;
 
@@ -85,6 +87,8 @@ class NegotiationServiceTest {
         // Default commission rate used whenever toResponse() is called.
         // Lenient to avoid UnnecessaryStubbingException in error-path tests that never reach toResponse().
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+        // Pass-through for presigned avatar URLs
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Nested

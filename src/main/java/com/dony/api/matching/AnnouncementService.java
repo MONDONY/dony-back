@@ -10,6 +10,7 @@ import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
@@ -82,6 +83,7 @@ public class AnnouncementService {
     private final DonyConfigProperties config;
     private final PriceGridService priceGridService;
     private final com.dony.api.country.FlagService flagService;
+    private final StorageService storageService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -97,7 +99,8 @@ public class AnnouncementService {
             ApplicationEventPublisher eventPublisher,
             DonyConfigProperties config,
             PriceGridService priceGridService,
-            com.dony.api.country.FlagService flagService
+            com.dony.api.country.FlagService flagService,
+            StorageService storageService
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -107,6 +110,7 @@ public class AnnouncementService {
         this.config = config;
         this.priceGridService = priceGridService;
         this.flagService = flagService;
+        this.storageService = storageService;
     }
 
     @Transactional(readOnly = true)
@@ -220,7 +224,7 @@ public class AnnouncementService {
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
                         kycVerified,
-                        traveler.getAvatarUrl())
+                        storageService.avatarUrl(traveler.getAvatarUrl()))
                 : null;
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
@@ -533,7 +537,7 @@ public class AnnouncementService {
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
                         kycVerified,
-                        traveler.getAvatarUrl())
+                        storageService.avatarUrl(traveler.getAvatarUrl()))
                 : null;
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =

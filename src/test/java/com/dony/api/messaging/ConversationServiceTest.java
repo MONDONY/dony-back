@@ -3,6 +3,7 @@ package com.dony.api.messaging;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +28,7 @@ class ConversationServiceTest {
     @Mock AuditService auditService;
     @Mock BidRepository bidRepository;
     @Mock AnnouncementRepository announcementRepository;
+    @Mock StorageService storageService;
 
     ConversationService service;
 
@@ -36,8 +38,9 @@ class ConversationServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         service = new ConversationService(conversationRepository, firestoreService, userRepository, auditService,
-                bidRepository, announcementRepository);
+                bidRepository, announcementRepository, storageService);
 
         UserEntity sender   = mockUser(senderId,   "Alice", "Martin", "uid-sender");
         UserEntity traveler = mockUser(travelerId, "Bob",   "Dupont", "uid-traveler");
