@@ -3,6 +3,7 @@ package com.dony.api.matching;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.ratings.RatingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ class BidVisibilityTest {
     @Mock private CancellationRepository cancellationRepository;
     @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
+    @Mock private StorageService storageService;
 
     @InjectMocks private BidService bidService;
 
@@ -81,6 +83,9 @@ class BidVisibilityTest {
         org.mockito.Mockito.lenient()
                 .when(cancellationRepository.findByBidId(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.empty());
+        org.mockito.Mockito.lenient()
+                .when(storageService.avatarUrl(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test
