@@ -56,11 +56,19 @@ public class StorageService {
     @Value("${aws.s3.bucket}")
     private String bucket;
 
+    @Value("${storage.public-base-url}")
+    private String publicBaseUrl;
+
     public StorageService(S3Client s3Client, S3Presigner s3Presigner,
                           ImageProcessingService imageProcessingService) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
         this.imageProcessingService = imageProcessingService;
+    }
+
+    /** Public stable URL for an object (public-read prefixes only, never KYC). */
+    public String publicUrl(String objectKey) {
+        return publicBaseUrl.replaceAll("/+$", "") + "/" + objectKey;
     }
 
     /**

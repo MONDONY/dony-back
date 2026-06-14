@@ -5,6 +5,7 @@ import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -21,6 +22,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
@@ -43,6 +46,8 @@ class AuthServiceTest {
     @Mock private PaymentRepository paymentRepository;
     @Mock private AccountFinalizationService accountFinalizationService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ConnectedDevicesService connectedDevicesService;
+    @Mock private StorageService storageService;
 
     @InjectMocks private AuthService authService;
 
@@ -468,6 +473,69 @@ class AuthServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
             verify(auditService, never()).log(any(), any(), any(), any(), any());
+        }
+    }
+
+    // ─── updateAvatar ──────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("updateAvatar()")
+    class UpdateAvatarTests {
+
+        @Test
+        @DisplayName("fichier valide → upload + URL publique persistée dans avatarUrl")
+        void updateAvatar_uploadsAndPersistsPublicUrl() throws Exception {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            MultipartFile file = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            when(storageService.uploadFile(eq(file), startsWith("users/" + FIREBASE_UID + "/")))
+                    .thenReturn("users/" + FIREBASE_UID + "/123_a.jpg");
+            when(storageService.publicUrl("users/" + FIREBASE_UID + "/123_a.jpg"))
+                    .thenReturn("https://cdn/x/users/" + FIREBASE_UID + "/123_a.jpg");
+
+            UserResponse res = authService.updateAvatar(FIREBASE_UID, file);
+
+            assertThat(res.avatarUrl()).isEqualTo("https://cdn/x/users/" + FIREBASE_UID + "/123_a.jpg");
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
+        void updateAvatar_unknownUser_throwsNotFound() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            MultipartFile file = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, file))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("fichier vide → 400 BAD_REQUEST")
+        void updateAvatar_emptyFile_throwsBadRequest() throws Exception {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            MultipartFile emptyFile = new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[0]);
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, emptyFile))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+
+        @Test
+        @DisplayName("fichier > 10 Mo → 413 PAYLOAD_TOO_LARGE")
+        void updateAvatar_fileTooLarge_throwsPayloadTooLarge() throws Exception {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            MultipartFile bigFile = new MockMultipartFile("file", "big.jpg", "image/jpeg",
+                    new byte[10 * 1024 * 1024 + 1]);
+
+            assertThatThrownBy(() -> authService.updateAvatar(FIREBASE_UID, bigFile))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
         }
     }
 

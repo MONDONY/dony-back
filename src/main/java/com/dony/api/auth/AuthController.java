@@ -10,6 +10,7 @@ import com.dony.api.common.DonyBusinessException;
 import com.google.firebase.auth.FirebaseToken;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,7 +21,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/auth")
@@ -116,6 +121,12 @@ public class AuthController {
         String firebaseUid = requireFirebaseUid();
         authService.deleteImmediately(firebaseUid, request);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<UserResponse> uploadAvatar(@RequestParam("file") MultipartFile file) throws IOException {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.updateAvatar(firebaseUid, file));
     }
 
     private String requireFirebaseUid() {

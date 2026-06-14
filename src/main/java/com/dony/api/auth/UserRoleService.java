@@ -107,7 +107,8 @@ public class UserRoleService {
                 user.getCountry(),
                 user.getBio(),
                 user.getLanguages(),
-                user.getTransportMode() != null ? user.getTransportMode().name() : null
+                user.getTransportMode() != null ? user.getTransportMode().name() : null,
+                user.getAvatarUrl()
         );
     }
 }
