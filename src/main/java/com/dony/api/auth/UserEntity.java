@@ -116,6 +116,21 @@ public class UserEntity extends BaseEntity {
     @Column(name = "pro_siret", length = 14)
     private String proSiret;
 
+    @Column(name = "bio", length = 280)
+    private String bio;
+
+    @Column(name = "avatar_url", length = 512)
+    private String avatarUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transport_mode", length = 16)
+    private TransportMode transportMode;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_languages", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "language", length = 32)
+    private Set<String> languages = new HashSet<>();
+
     @Column(name = "country", nullable = false, length = 2)
     private String country = "FR";
 
@@ -254,6 +269,18 @@ public class UserEntity extends BaseEntity {
 
     public String getProSiret() { return proSiret; }
     public void setProSiret(String proSiret) { this.proSiret = proSiret; }
+
+    public String getBio() { return bio; }
+    public void setBio(String bio) { this.bio = bio; }
+
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+    public TransportMode getTransportMode() { return transportMode; }
+    public void setTransportMode(TransportMode transportMode) { this.transportMode = transportMode; }
+
+    public Set<String> getLanguages() { return languages; }
+    public void setLanguages(Set<String> languages) { this.languages = languages; }
 
     public String getCountry() { return country; }
     public void setCountry(String country) { this.country = country; }
