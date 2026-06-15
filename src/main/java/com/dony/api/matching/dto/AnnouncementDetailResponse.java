@@ -25,6 +25,7 @@ public record AnnouncementDetailResponse(
         com.dony.api.matching.TransportMode transportMode,
         String status,
         long bidsCount,
+        long confirmedParcelCount,
         TravelerProfileDto traveler,
         String description,
         List<String> acceptedContentTypes,

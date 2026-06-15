@@ -525,6 +525,10 @@ public class AnnouncementService {
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
+        long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
+                id,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED)
+        );
 
         UserEntity traveler = userRepository.findById(announcement.getTravelerId()).orElse(null);
         boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
@@ -562,6 +566,7 @@ public class AnnouncementService {
                 announcement.getTransportMode(),
                 announcement.getStatus().name(),
                 bidsCount,
+                confirmedParcelCount,
                 travelerDto,
                 announcement.getDescription(),
                 announcement.getAcceptedContentTypes(),
@@ -672,6 +677,10 @@ public class AnnouncementService {
         );
 
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
+        long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
+                id,
+                List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED)
+        );
 
         boolean kycVerified = user.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto updatedTravelerDto = new TravelerProfileDto(
@@ -702,6 +711,7 @@ public class AnnouncementService {
                 saved.getTransportMode(),
                 saved.getStatus().name(),
                 bidsCount,
+                confirmedParcelCount,
                 updatedTravelerDto,
                 saved.getDescription(),
                 saved.getAcceptedContentTypes(),
