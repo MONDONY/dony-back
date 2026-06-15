@@ -567,6 +567,22 @@ class AnnouncementServiceTest {
         }
 
         @Test
+        @DisplayName("détail expose le nombre de colis acceptés (confirmedParcelCount)")
+        void getDetail_exposesConfirmedParcelCount() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(5L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(2L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.confirmedParcelCount()).isEqualTo(2L);
+            assertThat(result.bidsCount()).isEqualTo(5L);
+        }
+
+        @Test
         @DisplayName("détail expose reservedKg / surplusEligible / surplusPublished")
         void getDetail_exposesSurplusFields() {
             UserEntity traveler = buildTraveler();
