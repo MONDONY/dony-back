@@ -25,5 +25,6 @@ public record UserResponse(
     String bio,
     Set<String> languages,
     String transportMode,
-    String avatarUrl
+    String avatarUrl,
+    Double averageRating
 ) {}
