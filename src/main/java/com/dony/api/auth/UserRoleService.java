@@ -108,7 +108,8 @@ public class UserRoleService {
                 user.getBio(),
                 user.getLanguages(),
                 user.getTransportMode() != null ? user.getTransportMode().name() : null,
-                user.getAvatarUrl()
+                user.getAvatarUrl(),
+                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null
         );
     }
 }

@@ -523,7 +523,8 @@ public class AuthService {
                 user.getBio(),
                 user.getLanguages(),
                 user.getTransportMode() != null ? user.getTransportMode().name() : null,
-                storageService.avatarUrl(user.getAvatarUrl())
+                storageService.avatarUrl(user.getAvatarUrl()),
+                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null
         );
     }
 }
