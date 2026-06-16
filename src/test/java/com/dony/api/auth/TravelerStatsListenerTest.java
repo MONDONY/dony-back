@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -31,13 +33,16 @@ class TravelerStatsListenerTest {
     @Mock private BidRepository bidRepository;
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private AuditService auditService;
+    @Mock private CacheManager cacheManager;
+    @Mock private Cache tripsSummaryCache;
 
     private TravelerStatsListener listener;
 
     @BeforeEach
     void setUp() {
         listener = new TravelerStatsListener(userRepository, bidRepository,
-                announcementRepository, auditService);
+                announcementRepository, auditService, cacheManager);
+        lenient().when(cacheManager.getCache("trips-summary")).thenReturn(tripsSummaryCache);
     }
 
     private static void setEntityId(Object entity, UUID id) {
@@ -207,5 +212,39 @@ class TravelerStatsListenerTest {
         verify(userRepository, never()).save(any());
         verify(announcementRepository, never()).save(any());
         verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void evicts_trips_summary_cache_after_increment() {
+        UUID bidId = UUID.randomUUID();
+        UUID announcementId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        BidEntity bid = completedBid(bidId, announcementId);
+        AnnouncementEntity ann = announcement(announcementId, false);
+        UserEntity user = traveler(travelerId, 2);
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(user));
+
+        listener.onDeliveryConfirmed(new DeliveryConfirmedEvent(bidId, UUID.randomUUID(), travelerId));
+
+        verify(tripsSummaryCache).evict(travelerId);
+    }
+
+    @Test
+    void does_not_evict_cache_when_already_counted() {
+        UUID bidId = UUID.randomUUID();
+        UUID announcementId = UUID.randomUUID();
+        UUID travelerId = UUID.randomUUID();
+        BidEntity bid = completedBid(bidId, announcementId);
+        AnnouncementEntity ann = announcement(announcementId, true);
+
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(ann));
+
+        listener.onDeliveryConfirmed(new DeliveryConfirmedEvent(bidId, UUID.randomUUID(), travelerId));
+
+        verify(tripsSummaryCache, never()).evict(any());
     }
 }

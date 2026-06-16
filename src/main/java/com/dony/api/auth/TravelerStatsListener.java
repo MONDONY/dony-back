@@ -9,6 +9,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,15 +38,18 @@ public class TravelerStatsListener {
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
     private final AuditService auditService;
+    private final CacheManager cacheManager;
 
     public TravelerStatsListener(UserRepository userRepository,
                                  BidRepository bidRepository,
                                  AnnouncementRepository announcementRepository,
-                                 AuditService auditService) {
+                                 AuditService auditService,
+                                 CacheManager cacheManager) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.auditService = auditService;
+        this.cacheManager = cacheManager;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -102,6 +106,11 @@ public class TravelerStatsListener {
 
         announcement.setTotalTripsCounted(true);
         announcementRepository.save(announcement);
+
+        var cache = cacheManager.getCache("trips-summary");
+        if (cache != null) {
+            cache.evict(traveler.getId());
+        }
 
         auditService.log(
                 "USER",
