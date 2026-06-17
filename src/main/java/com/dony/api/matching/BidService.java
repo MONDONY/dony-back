@@ -30,6 +30,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -704,7 +705,7 @@ public class BidService {
     }
 
     /** Upload une photo de colis pour le sender courant ; renvoie la clé S3. */
-    public String uploadBidPhoto(String firebaseUid, org.springframework.web.multipart.MultipartFile file) {
+    public String uploadBidPhoto(String firebaseUid, MultipartFile file) {
         UserEntity sender = findUserByFirebaseUid(firebaseUid);
         return bidPhotoService.uploadPhoto(sender.getId(), file);
     }

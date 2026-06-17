@@ -55,6 +55,6 @@ class BidPhotoControllerIntegrationTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "c.jpg", "image/jpeg", new byte[]{1});
         mockMvc.perform(multipart("/bids/photos").file(file))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnauthorized());
     }
 }
