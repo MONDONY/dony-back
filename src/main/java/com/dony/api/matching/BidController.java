@@ -24,7 +24,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -179,6 +181,16 @@ public class BidController {
     ) {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.quote(firebaseUid, request));
+    }
+
+    @PostMapping("/bids/photos")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<java.util.Map<String, String>> uploadBidPhoto(
+            @RequestParam("file") MultipartFile file) {
+        String firebaseUid = requireFirebaseUid();
+        String key = bidService.uploadBidPhoto(firebaseUid, file);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(java.util.Map.of("key", key));
     }
 
     private String requireFirebaseUid() {

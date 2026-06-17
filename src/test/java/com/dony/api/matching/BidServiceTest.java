@@ -60,6 +60,7 @@ class BidServiceTest {
     @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.promo.PromoService promoService;
     @Mock private StorageService storageService;
+    @Mock private BidPhotoService bidPhotoService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;

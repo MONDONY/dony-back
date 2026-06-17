@@ -55,6 +55,7 @@ public class BidService {
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
     private final StorageService storageService;
+    private final BidPhotoService bidPhotoService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -68,7 +69,8 @@ public class BidService {
                       BlockService blockService,
                       CommissionRateResolver commissionRateResolver,
                       PromoService promoService,
-                      StorageService storageService) {
+                      StorageService storageService,
+                      BidPhotoService bidPhotoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -82,6 +84,7 @@ public class BidService {
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
         this.storageService = storageService;
+        this.bidPhotoService = bidPhotoService;
     }
 
     /**
@@ -698,6 +701,12 @@ public class BidService {
             bid.setH2AlertSentAt(LocalDateTime.now(ZoneOffset.UTC));
             bidRepository.save(bid);
         });
+    }
+
+    /** Upload une photo de colis pour le sender courant ; renvoie la clé S3. */
+    public String uploadBidPhoto(String firebaseUid, org.springframework.web.multipart.MultipartFile file) {
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+        return bidPhotoService.uploadPhoto(sender.getId(), file);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
