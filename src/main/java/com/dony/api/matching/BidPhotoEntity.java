@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
@@ -43,7 +44,7 @@ public class BidPhotoEntity {
     private LocalDateTime deletingSince;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now(ZoneOffset.UTC);
+    private LocalDateTime createdAt;
 
     protected BidPhotoEntity() {
     }
@@ -59,6 +60,13 @@ public class BidPhotoEntity {
         if (this.status != BidPhotoStatus.DELETING) {
             this.status = BidPhotoStatus.DELETING;
             this.deletingSince = LocalDateTime.now(ZoneOffset.UTC);
+        }
+    }
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now(ZoneOffset.UTC);
         }
     }
 

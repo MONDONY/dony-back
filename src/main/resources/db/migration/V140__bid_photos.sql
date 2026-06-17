@@ -11,4 +11,4 @@ CREATE TABLE bid_photos (
     created_at     TIMESTAMP     NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_bid_photos_bid ON bid_photos(bid_id);
-CREATE INDEX idx_bid_photos_status ON bid_photos(status);
+CREATE INDEX idx_bid_photos_deleting ON bid_photos(status) WHERE status = 'DELETING';

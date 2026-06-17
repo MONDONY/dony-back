@@ -36,6 +36,11 @@ class BidPhotoRepositoryTest {
         BidPhotoEntity p = repository.save(new BidPhotoEntity(bidId, "bids/s/1.jpg", 0));
         p.markDeleting();
         repository.save(p);
+        repository.flush();
+
+        BidPhotoEntity reloaded = repository.findById(p.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(BidPhotoStatus.DELETING);
+        assertThat(reloaded.getDeletingSince()).isNotNull();
 
         assertThat(repository.findByBidIdAndStatusOrderByPositionAsc(bidId, BidPhotoStatus.ACTIVE)).isEmpty();
         assertThat(repository.findByStatus(BidPhotoStatus.DELETING)).extracting(BidPhotoEntity::getId).contains(p.getId());
