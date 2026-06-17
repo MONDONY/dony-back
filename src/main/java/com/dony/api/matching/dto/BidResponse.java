@@ -64,5 +64,6 @@ public record BidResponse(
         java.time.LocalDateTime returnDeadline,
         java.time.LocalDateTime returnedAt,
         String senderAvatarUrl,
-        String travelerAvatarUrl
+        String travelerAvatarUrl,
+        java.util.List<com.dony.api.matching.dto.BidPhotoResponse> photos
 ) {}

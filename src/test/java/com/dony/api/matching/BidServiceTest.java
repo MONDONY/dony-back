@@ -150,6 +150,8 @@ class BidServiceTest {
                 .thenReturn(java.util.Optional.empty());
         // Pass-through for presigned avatar URLs — tests don't care about the URL value
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Return empty photos list by default — toResponse calls this for every bid
+        lenient().when(bidPhotoService.activePhotos(any())).thenReturn(java.util.List.of());
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────
@@ -188,6 +190,7 @@ class BidServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
+            assertThat(result.photos()).isEmpty();
             verify(auditService).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
             // Task 8: BidCreatedEvent is no longer published from createBid — the
             // webhook (PaymentService.promoteBidOnPaymentAuthorized) does it now.

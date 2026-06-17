@@ -921,7 +921,8 @@ public class BidService {
                 bid.getReturnDeadline(),
                 bid.getReturnedAt(),
                 storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null),
-                storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null)
+                storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null),
+                bidPhotoService.activePhotos(bid.getId())
         );
     }
 }

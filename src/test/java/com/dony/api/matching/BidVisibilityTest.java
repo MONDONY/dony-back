@@ -36,6 +36,7 @@ class BidVisibilityTest {
     @Mock private BidGridItemRepository bidGridItemRepository;
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
     @Mock private StorageService storageService;
+    @Mock private BidPhotoService bidPhotoService;
 
     @InjectMocks private BidService bidService;
 
@@ -86,6 +87,9 @@ class BidVisibilityTest {
         org.mockito.Mockito.lenient()
                 .when(storageService.avatarUrl(org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.lenient()
+                .when(bidPhotoService.activePhotos(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
     }
 
     @Test
