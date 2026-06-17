@@ -209,6 +209,8 @@ public class BidService {
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
 
+        BidContentRules.assertNotRefused(announcement, request.contentCategory());
+
         UUID travelerId = announcement.getTravelerId();
 
         // Confidentialité v2 — blocage : 404 masque délibérément le blocage
@@ -371,6 +373,8 @@ public class BidService {
         // Note: BidCreatedEvent is no longer published here. Traveler notification
         // happens after the sender's payment is authorized — see
         // PaymentService.promoteBidOnPaymentAuthorized().
+
+        bidPhotoService.attachPhotos(saved.getId(), request.photoKeys());
 
         return toResponse(saved, sender);
     }

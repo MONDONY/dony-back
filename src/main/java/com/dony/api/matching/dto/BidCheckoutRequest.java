@@ -20,5 +20,6 @@ public record BidCheckoutRequest(
         @Size(max = 200) String recipientName,
         @Size(max = 30) String recipientPhone,
         @AssertTrue(message = "Le disclaimer doit être signé") Boolean disclaimerSigned,
+        @Size(max = 4) List<String> photoKeys,
         @Valid List<BidGridItemRequest> gridItems
 ) {}

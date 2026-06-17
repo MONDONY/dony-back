@@ -54,7 +54,7 @@ class BidCheckoutControllerIntegrationTest {
 
         BidCheckoutRequest req = new BidCheckoutRequest(
                 UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
-                "x", "OTHER", "n", "+221", true, null);
+                "x", "OTHER", "n", "+221", true, null, null);
 
         mockMvc.perform(post("/bids/checkout")
                         .with(authentication(authenticatedAs("uid-sender")))
@@ -69,7 +69,7 @@ class BidCheckoutControllerIntegrationTest {
     void post_checkout_with_invalid_body_returns_4xx() throws Exception {
         BidCheckoutRequest invalid = new BidCheckoutRequest(
                 UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
-                "x", "OTHER", "n", "+221", false, null);
+                "x", "OTHER", "n", "+221", false, null, null);
 
         mockMvc.perform(post("/bids/checkout")
                         .with(authentication(authenticatedAs("uid-sender")))
@@ -82,7 +82,7 @@ class BidCheckoutControllerIntegrationTest {
     void unauthenticated_request_is_rejected() throws Exception {
         BidCheckoutRequest req = new BidCheckoutRequest(
                 UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
-                "x", "OTHER", "n", "+221", true, null);
+                "x", "OTHER", "n", "+221", true, null, null);
 
         mockMvc.perform(post("/bids/checkout")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -101,6 +101,7 @@ class BidCheckoutControllerIntegrationTest {
         BidCheckoutRequest req = new BidCheckoutRequest(
                 UUID.randomUUID(), null, new BigDecimal("50"),
                 "Vêtements", "OTHER", "Fatou", "+221771234567", true,
+                null,
                 List.of(new BidGridItemRequest(UUID.randomUUID(), 2)));
 
         mockMvc.perform(post("/bids/checkout")
@@ -115,7 +116,7 @@ class BidCheckoutControllerIntegrationTest {
     void missing_declared_value_returns_4xx() throws Exception {
         BidCheckoutRequest invalid = new BidCheckoutRequest(
                 UUID.randomUUID(), new BigDecimal("2"), null,
-                "x", "OTHER", "n", "+221", true, null);
+                "x", "OTHER", "n", "+221", true, null, null);
 
         mockMvc.perform(post("/bids/checkout")
                         .with(authentication(authenticatedAs("uid-sender")))

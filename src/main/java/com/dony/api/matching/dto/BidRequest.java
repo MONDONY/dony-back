@@ -6,6 +6,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -44,6 +45,8 @@ public record BidRequest(
 
         /** Code promo optionnel (insensible à la casse) — validé et racheté au paiement. */
         String promoCode,
+
+        @Size(max = 4, message = "Maximum 4 photos") List<String> photoKeys,
 
         @Valid List<BidGridItemRequest> gridItems  // peut être null ou vide — doit rester en DERNIER
 ) {}
