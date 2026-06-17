@@ -11,7 +11,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ class BidPhotoServiceTest {
 
     @Mock private BidPhotoRepository photoRepository;
     @Mock private StorageService storageService;
+    @Mock private MultipartFile file;
     @InjectMocks private BidPhotoService service;
 
     @Captor private ArgumentCaptor<List<BidPhotoEntity>> rowsCaptor;
@@ -58,8 +61,31 @@ class BidPhotoServiceTest {
         assertThatThrownBy(() -> service.attachPhotos(BID,
                 List.of("bids/1", "bids/2", "bids/3", "bids/4", "bids/5")))
                 .isInstanceOf(DonyBusinessException.class)
-                .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
-                        .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+                .satisfies(e -> {
+                    DonyBusinessException ex = (DonyBusinessException) e;
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(ex.getErrorCode()).isEqualTo("too-many-photos");
+                });
+    }
+
+    @Test
+    void uploadPhoto_returnsKeyFromStorage() throws IOException {
+        UUID sender = UUID.randomUUID();
+        when(storageService.uploadFile(eq(file), eq("bids/" + sender + "/")))
+                .thenReturn("bids/" + sender + "/1.jpg");
+
+        assertThat(service.uploadPhoto(sender, file)).isEqualTo("bids/" + sender + "/1.jpg");
+    }
+
+    @Test
+    void uploadPhoto_ioException_throws422() throws IOException {
+        UUID sender = UUID.randomUUID();
+        when(storageService.uploadFile(any(), any())).thenThrow(new IOException("disk"));
+
+        assertThatThrownBy(() -> service.uploadPhoto(sender, file))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                        .isEqualTo("photo-upload-failed"));
     }
 
     @Test

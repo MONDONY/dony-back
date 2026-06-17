@@ -66,6 +66,7 @@ public class BidPhotoService {
     }
 
     /** Photos ACTIVE en URLs présignées, triées par position. */
+    @Transactional(readOnly = true)
     public List<BidPhotoResponse> activePhotos(UUID bidId) {
         return photoRepository
                 .findByBidIdAndStatusOrderByPositionAsc(bidId, BidPhotoStatus.ACTIVE)
