@@ -38,6 +38,7 @@ public class BidCheckoutService {
     private final String stripePublishableKey;
     private final BidGridItemRepository bidGridItemRepository;
     private final AnnouncementPriceGridItemRepository annGridItemRepository;
+    private final BidPhotoService bidPhotoService;
 
     public BidCheckoutService(BidRepository bidRepository,
                               AnnouncementRepository announcementRepository,
@@ -46,7 +47,8 @@ public class BidCheckoutService {
                               PaymentService paymentService,
                               @Value("${stripe.publishable-key:}") String stripePublishableKey,
                               BidGridItemRepository bidGridItemRepository,
-                              AnnouncementPriceGridItemRepository annGridItemRepository) {
+                              AnnouncementPriceGridItemRepository annGridItemRepository,
+                              BidPhotoService bidPhotoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -55,6 +57,7 @@ public class BidCheckoutService {
         this.stripePublishableKey = stripePublishableKey;
         this.bidGridItemRepository = bidGridItemRepository;
         this.annGridItemRepository = annGridItemRepository;
+        this.bidPhotoService = bidPhotoService;
     }
 
     @Transactional
@@ -105,6 +108,8 @@ public class BidCheckoutService {
                 "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                 "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
+
+        BidContentRules.assertNotRefused(announcement, req.contentCategory());
 
         // Idempotency: if an AWAITING_PAYMENT bid exists (e.g. payment sheet crashed),
         // resume it instead of creating a new one.
@@ -206,6 +211,8 @@ public class BidCheckoutService {
             }
             bidGridItemRepository.saveAll(bidGridItems);
         }
+
+        bidPhotoService.attachPhotos(saved.getId(), req.photoKeys());
 
         BigDecimal kgNet = hasKg && announcement.getPricePerKg() != null
             ? saved.getWeightKg().multiply(announcement.getPricePerKg())

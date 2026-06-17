@@ -30,6 +30,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -55,6 +56,7 @@ public class BidService {
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
     private final StorageService storageService;
+    private final BidPhotoService bidPhotoService;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -68,7 +70,8 @@ public class BidService {
                       BlockService blockService,
                       CommissionRateResolver commissionRateResolver,
                       PromoService promoService,
-                      StorageService storageService) {
+                      StorageService storageService,
+                      BidPhotoService bidPhotoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -82,6 +85,7 @@ public class BidService {
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
         this.storageService = storageService;
+        this.bidPhotoService = bidPhotoService;
     }
 
     /**
@@ -204,6 +208,8 @@ public class BidService {
                     HttpStatus.CONFLICT, "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
+
+        BidContentRules.assertNotRefused(announcement, request.contentCategory());
 
         UUID travelerId = announcement.getTravelerId();
 
@@ -367,6 +373,8 @@ public class BidService {
         // Note: BidCreatedEvent is no longer published here. Traveler notification
         // happens after the sender's payment is authorized — see
         // PaymentService.promoteBidOnPaymentAuthorized().
+
+        bidPhotoService.attachPhotos(saved.getId(), request.photoKeys());
 
         return toResponse(saved, sender);
     }
@@ -700,6 +708,12 @@ public class BidService {
         });
     }
 
+    /** Upload une photo de colis pour le sender courant ; renvoie la clé S3. */
+    public String uploadBidPhoto(String firebaseUid, MultipartFile file) {
+        UserEntity sender = findUserByFirebaseUid(firebaseUid);
+        return bidPhotoService.uploadPhoto(sender.getId(), file);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private String buildSenderName(UserEntity user) {
@@ -907,7 +921,8 @@ public class BidService {
                 bid.getReturnDeadline(),
                 bid.getReturnedAt(),
                 storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null),
-                storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null)
+                storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null),
+                bidPhotoService.activePhotos(bid.getId())
         );
     }
 }

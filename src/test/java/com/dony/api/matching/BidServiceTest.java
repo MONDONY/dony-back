@@ -60,6 +60,7 @@ class BidServiceTest {
     @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.promo.PromoService promoService;
     @Mock private StorageService storageService;
+    @Mock private BidPhotoService bidPhotoService;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -140,7 +141,7 @@ class BidServiceTest {
 
     private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
         return new BidRequest(weight, value, "Vêtements", "CLOTHING",
-                "Aminata Diallo", "+221701234567", true, null, null, null, null, null);
+                "Aminata Diallo", "+221701234567", true, null, null, null, null, null, null);
     }
 
     @BeforeEach
@@ -149,6 +150,8 @@ class BidServiceTest {
                 .thenReturn(java.util.Optional.empty());
         // Pass-through for presigned avatar URLs — tests don't care about the URL value
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Return empty photos list by default — toResponse calls this for every bid
+        lenient().when(bidPhotoService.activePhotos(any())).thenReturn(java.util.List.of());
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────
@@ -187,6 +190,7 @@ class BidServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.weightKg()).isEqualByComparingTo(BigDecimal.valueOf(5));
+            assertThat(result.photos()).isEmpty();
             verify(auditService).log(eq("BID"), any(), eq("BID_CREATED"), any(), any());
             // Task 8: BidCreatedEvent is no longer published from createBid — the
             // webhook (PaymentService.promoteBidOnPaymentAuthorized) does it now.
@@ -276,7 +280,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Desc", "CAT", "Recip", "+221", false, null, null, null, null, null); // not signed
+                    "Desc", "CAT", "Recip", "+221", false, null, null, null, null, null, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -512,7 +516,7 @@ class BidServiceTest {
             });
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null, null);
 
             BidResponse result = bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest);
@@ -536,7 +540,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, cashReq, httpRequest))
@@ -560,7 +564,7 @@ class BidServiceTest {
                     .thenReturn(false);
 
             BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null, null);
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, badReq, httpRequest))
@@ -590,7 +594,7 @@ class BidServiceTest {
 
             BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "WAVE", "+221771234567", "SN", null, null);
+                    true, "WAVE", "+221771234567", "SN", null, null, null);
 
             BidResponse result = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest);
 
@@ -616,7 +620,7 @@ class BidServiceTest {
 
             BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "WAVE", "+221771234567", "SN", null, null);
+                    true, "WAVE", "+221771234567", "SN", null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -642,7 +646,7 @@ class BidServiceTest {
 
             BidRequest omReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "ORANGE_MONEY", null, "CI", null, null); // phoneNumber null
+                    true, "ORANGE_MONEY", null, "CI", null, null, null); // phoneNumber null
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, omReq, httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
@@ -691,6 +695,7 @@ class BidServiceTest {
                 true, "STRIPE",
                 null, null,  // phoneNumber, countryCode
                 null,        // promoCode
+                null,        // photoKeys
                 List.of(new BidGridItemRequest(gridItemId, 2))
             );
 
@@ -723,6 +728,7 @@ class BidServiceTest {
                 true, "STRIPE",
                 null, null,              // phoneNumber, countryCode
                 null,                    // promoCode
+                null,                    // photoKeys
                 List.of()               // gridItems vide
             );
 
@@ -730,6 +736,49 @@ class BidServiceTest {
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                     .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+
+        @Test
+        @DisplayName("photoKeys présents → attachPhotos appelé")
+        void createBid_withPhotoKeys_attachesPhotos() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true,
+                    null, null, null, null, java.util.List.of("bids/s/1.jpg"), null);
+
+            bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest);
+
+            verify(bidPhotoService).attachPhotos(eq(BID_ID), eq(java.util.List.of("bids/s/1.jpg")));
+        }
+
+        @Test
+        @DisplayName("catégorie refusée par l'annonce → 422 content-type-refused")
+        void createBid_refusedCategory_throws422() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setRefusedTypes(java.util.List.of("Hi-fi"));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "Hi-fi", "Aminata Diallo", "+221701234567", true,
+                    null, null, null, null, null, null);
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("content-type-refused"));
         }
     }
 
