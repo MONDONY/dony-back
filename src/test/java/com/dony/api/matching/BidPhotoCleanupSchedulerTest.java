@@ -3,6 +3,8 @@ package com.dony.api.matching;
 import com.dony.api.common.StorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -59,13 +61,15 @@ class BidPhotoCleanupSchedulerTest {
         verify(photoRepository).delete(p);
     }
 
-    @Test
-    void defensiveSweep_marksActivePhotoOfTerminalBidDeleting() {
+    @ParameterizedTest
+    @EnumSource(value = BidStatus.class, names = {
+            "REJECTED", "CANCELLED", "EXPIRED", "IN_TRANSIT", "NO_SHOW", "PARCEL_REFUSED", "COMPLETED"})
+    void defensiveSweep_marksActivePhotoOfTerminalBidDeleting(BidStatus terminal) {
         UUID bidId = UUID.randomUUID();
         BidPhotoEntity p = photo(bidId, "bids/s/1.jpg");
         when(photoRepository.findByStatus(BidPhotoStatus.ACTIVE)).thenReturn(List.of(p));
         when(photoRepository.findByStatus(BidPhotoStatus.DELETING)).thenReturn(List.of());
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bidWithStatus(BidStatus.IN_TRANSIT)));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bidWithStatus(terminal)));
 
         scheduler.purgeDeletingPhotos();
 
@@ -86,13 +90,15 @@ class BidPhotoCleanupSchedulerTest {
         assertThat(p.getStatus()).isEqualTo(BidPhotoStatus.DELETING);
     }
 
-    @Test
-    void defensiveSweep_leavesActivePhotoOfAcceptedBid() {
+    @ParameterizedTest
+    @EnumSource(value = BidStatus.class, names = {
+            "ACCEPTED", "HANDED_OVER", "AWAITING_PAYMENT", "PENDING", "PAYMENT_ESCROWED"})
+    void defensiveSweep_leavesActivePhotoOfNonTerminalBid(BidStatus nonTerminal) {
         UUID bidId = UUID.randomUUID();
         BidPhotoEntity p = photo(bidId, "bids/s/1.jpg");
         when(photoRepository.findByStatus(BidPhotoStatus.ACTIVE)).thenReturn(List.of(p));
         when(photoRepository.findByStatus(BidPhotoStatus.DELETING)).thenReturn(List.of());
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bidWithStatus(BidStatus.ACCEPTED)));
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bidWithStatus(nonTerminal)));
 
         scheduler.purgeDeletingPhotos();
 

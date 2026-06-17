@@ -38,7 +38,7 @@ public class BidPhotoCleanupScheduler {
         this.storageService = storageService;
     }
 
-    @Scheduled(cron = "0 0 0 * * *")
+    @Scheduled(cron = "0 0 0 * * *", zone = "UTC")
     @Transactional
     public void purgeDeletingPhotos() {
         defensiveSweep();
