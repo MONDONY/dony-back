@@ -35,8 +35,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests specifically covering the on_behalf_of PR-3 changes:
- * - PaymentIntentCreateParams contains on_behalf_of = traveler.stripeAccountId
+ * Unit tests specifically covering the escrow PaymentIntent params:
+ * - on_behalf_of retiré (incompatible PayPal) ; PI Stripe-native carte + PayPal
  * - No transfer_data, no application_fee_amount (separate charges and transfers)
  * - TravelerNotEligibleForPaymentException thrown for all non-ONBOARDING_COMPLETE statuses
  *   or null/blank stripeAccountId
@@ -147,7 +147,7 @@ class PaymentServiceOnBehalfOfTest {
     // ── on_behalf_of success path ─────────────────────────────────────────────
 
     @Test
-    void success_paymentIntent_has_onBehalfOf_and_no_transferData_no_appFee() {
+    void success_paymentIntent_no_onBehalfOf_cardAndPaypal_no_transferData_no_appFee() {
         UserEntity traveler = buildTraveler("acct_traveler_123", StripeAccountStatus.ONBOARDING_COMPLETE);
         stubCommonRepositories(traveler);
         when(paymentRepository.save(any())).thenAnswer(inv -> {
@@ -176,8 +176,9 @@ class PaymentServiceOnBehalfOfTest {
             assertThat(resp.getStatus()).isEqualTo("PENDING");
 
             PaymentIntentCreateParams params = paramsCaptor.getValue();
-            // on_behalf_of must be set to traveler's Stripe account
-            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler_123");
+            // on_behalf_of retiré (incompatible PayPal) ; PI Stripe-native carte + PayPal
+            assertThat(params.getOnBehalfOf()).isNull();
+            assertThat(params.getPaymentMethodTypes()).containsExactly("card", "paypal");
             // statement descriptor suffix
             assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
             // capture_method = manual (escrow)
