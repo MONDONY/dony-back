@@ -50,6 +50,7 @@ public class NegotiationService {
     private final CashGatePort cashGatePort;
     private final NegotiationEscrowPort escrowPort;
     private final StorageService storageService;
+    private final PackageRequestPhotoService photoService;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -62,7 +63,8 @@ public class NegotiationService {
                                CommissionProperties commissionProperties,
                                CashGatePort cashGatePort,
                                NegotiationEscrowPort escrowPort,
-                               StorageService storageService) {
+                               StorageService storageService,
+                               PackageRequestPhotoService photoService) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -75,6 +77,7 @@ public class NegotiationService {
         this.cashGatePort = cashGatePort;
         this.escrowPort = escrowPort;
         this.storageService = storageService;
+        this.photoService = photoService;
     }
 
     /**
@@ -531,6 +534,12 @@ public class NegotiationService {
         ann.setDepartureDate(req.departureDate());
         ann.setDepartureTime(req.departureTime());
         ann.setArrivalTime(req.arrivalTime());
+        // Fenêtre de remise dérivée : le jour du départ, jusqu'à l'heure de départ
+        // (le bid dédié hérite de cette fenêtre via applyHandoverFrom).
+        java.time.LocalTime handoverEnd =
+            req.departureTime() != null ? req.departureTime() : java.time.LocalTime.of(23, 59);
+        ann.setHandoverWindowStart(req.departureDate().atStartOfDay());
+        ann.setHandoverWindowEnd(java.time.LocalDateTime.of(req.departureDate(), handoverEnd));
         ann.setPickupAddressLabel(req.pickupAddress().label());
         ann.setPickupLat(BigDecimal.valueOf(req.pickupAddress().lat()));
         ann.setPickupLng(BigDecimal.valueOf(req.pickupAddress().lng()));
@@ -798,7 +807,8 @@ public class NegotiationService {
             request.getDeclaredValueEur(),
             request.getDisclaimerSignedAt(),
             request.getDisclaimerSignedIp(),
-            thread.getPaymentMethod()
+            thread.getPaymentMethod(),
+            photoService.objectKeys(request.getId())
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

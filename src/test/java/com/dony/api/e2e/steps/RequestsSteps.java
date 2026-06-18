@@ -81,6 +81,7 @@ public class RequestsSteps extends AbstractSteps {
         body.put("recipientName", "Fatou Diallo");
         body.put("recipientPhone", "+221771234567");
         body.put("recipientCity", "Dakar");
+        body.put("declaredValueEur", 120.0);
         store(asCurrentUser().body(body).post("/package-requests/{id}/complete-details", ctx.getId(alias)));
     }
 

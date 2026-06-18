@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.events.BidMaterializedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
 import com.dony.api.requests.event.PackageRequestDetailsCompletedEvent;
@@ -34,6 +35,8 @@ class ThreadAcceptedBidListenerTest {
     @Mock AnnouncementRepository announcementRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock StorageService storageService;
+    @Mock BidPhotoService bidPhotoService;
     @InjectMocks ThreadAcceptedBidListener listener;
 
     private static final UUID THREAD_ID = UUID.randomUUID();
@@ -59,7 +62,7 @@ class ThreadAcceptedBidListenerTest {
                 "Fatou Diop", "+221771234567",
                 BigDecimal.valueOf(120),
                 DISCLAIMER_AT, "1.2.3.4",
-                paymentMethod);
+                paymentMethod, java.util.List.of());
     }
 
     @Nested
@@ -91,7 +94,74 @@ class ThreadAcceptedBidListenerTest {
             assertThat(saved.getDeclaredValueEur()).isEqualByComparingTo(BigDecimal.valueOf(120));
             assertThat(saved.getDisclaimerSignedAt()).isEqualTo(DISCLAIMER_AT);
             assertThat(saved.getDisclaimerSignedIp()).isEqualTo("1.2.3.4");
+            // Net négocié figé depuis agreedPriceEur (= 50) de l'événement.
+            assertThat(saved.getNegotiatedNetEur()).isEqualByComparingTo(BigDecimal.valueOf(50));
             verify(auditService).log(eq("BID"), any(), eq("CREATED_FROM_THREAD"), eq(SENDER_ID), any());
+        }
+
+        private PackageRequestAcceptedEvent buildEventWithPhotos(java.util.List<String> keys) {
+            return new PackageRequestAcceptedEvent(
+                    THREAD_ID, PACKAGE_REQUEST_ID, SENDER_ID, TRAVELER_ID,
+                    BigDecimal.valueOf(50), ANNOUNCEMENT_ID, BigDecimal.valueOf(5),
+                    "Vêtements", "CLOTHING", "pi_test",
+                    "Fatou Diop", "+221771234567", BigDecimal.valueOf(120),
+                    DISCLAIMER_AT, "1.2.3.4",
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, keys);
+        }
+
+        private void saveSetsId(UUID bidId) {
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                org.springframework.test.util.ReflectionTestUtils.setField(b, "id", bidId);
+                return b;
+            });
+        }
+
+        @Test
+        @DisplayName("photos demande → copiées vers bids/ puis attachées au bid")
+        void copiesAndAttachesPhotos() {
+            UUID bidId = UUID.randomUUID();
+            saveSetsId(bidId);
+            when(storageService.copyObject(eq("package_requests/" + SENDER_ID + "/1.jpg"), eq("bids/" + SENDER_ID + "/")))
+                    .thenReturn("bids/" + SENDER_ID + "/copy1.jpg");
+            when(storageService.copyObject(eq("package_requests/" + SENDER_ID + "/2.jpg"), eq("bids/" + SENDER_ID + "/")))
+                    .thenReturn("bids/" + SENDER_ID + "/copy2.jpg");
+
+            listener.onPackageRequestAccepted(buildEventWithPhotos(java.util.List.of(
+                    "package_requests/" + SENDER_ID + "/1.jpg",
+                    "package_requests/" + SENDER_ID + "/2.jpg")));
+
+            verify(bidPhotoService).attachPhotos(bidId, java.util.List.of(
+                    "bids/" + SENDER_ID + "/copy1.jpg", "bids/" + SENDER_ID + "/copy2.jpg"));
+        }
+
+        @Test
+        @DisplayName("échec copie d'une photo → best-effort, les autres sont attachées")
+        void photoCopyFailureIsBestEffort() {
+            UUID bidId = UUID.randomUUID();
+            saveSetsId(bidId);
+            when(storageService.copyObject(eq("package_requests/" + SENDER_ID + "/bad.jpg"), any()))
+                    .thenThrow(new RuntimeException("s3 down"));
+            when(storageService.copyObject(eq("package_requests/" + SENDER_ID + "/ok.jpg"), any()))
+                    .thenReturn("bids/" + SENDER_ID + "/ok-copy.jpg");
+
+            listener.onPackageRequestAccepted(buildEventWithPhotos(java.util.List.of(
+                    "package_requests/" + SENDER_ID + "/bad.jpg",
+                    "package_requests/" + SENDER_ID + "/ok.jpg")));
+
+            verify(bidRepository).save(any(BidEntity.class));
+            verify(bidPhotoService).attachPhotos(bidId, java.util.List.of("bids/" + SENDER_ID + "/ok-copy.jpg"));
+        }
+
+        @Test
+        @DisplayName("aucune photo → ni copie ni attache")
+        void noPhotos_noCopyNoAttach() {
+            saveSetsId(UUID.randomUUID());
+
+            listener.onPackageRequestAccepted(buildEventWithPhotos(java.util.List.of()));
+
+            verify(storageService, never()).copyObject(any(), any());
+            verify(bidPhotoService, never()).attachPhotos(any(), any());
         }
 
         @Test
@@ -139,7 +209,7 @@ class ThreadAcceptedBidListenerTest {
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.dony.api.payments.cash.PaymentMethod.STRIPE);
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of());
 
             listener.onPackageRequestAccepted(event);
 
@@ -159,7 +229,7 @@ class ThreadAcceptedBidListenerTest {
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.dony.api.payments.cash.PaymentMethod.STRIPE);
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of());
 
             listener.onPackageRequestAccepted(event);
 

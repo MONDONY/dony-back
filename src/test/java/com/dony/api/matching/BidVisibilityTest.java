@@ -37,6 +37,7 @@ class BidVisibilityTest {
     @Mock private AnnouncementPriceGridItemRepository annGridItemRepository;
     @Mock private StorageService storageService;
     @Mock private BidPhotoService bidPhotoService;
+    @Mock private com.dony.api.common.CommissionRateResolver commissionRateResolver;
 
     @InjectMocks private BidService bidService;
 

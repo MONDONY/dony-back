@@ -31,15 +31,18 @@ public class PackageRequestController {
     private final PackageRequestService service;
     private final PriceEstimationService estimationService;
     private final com.dony.api.requests.service.NegotiationService negotiationService;
+    private final com.dony.api.requests.service.PackageRequestReportService reportService;
     private final UserRepository userRepository;
 
     public PackageRequestController(PackageRequestService service,
                                     PriceEstimationService estimationService,
                                     com.dony.api.requests.service.NegotiationService negotiationService,
+                                    com.dony.api.requests.service.PackageRequestReportService reportService,
                                     UserRepository userRepository) {
         this.service = service;
         this.estimationService = estimationService;
         this.negotiationService = negotiationService;
+        this.reportService = reportService;
         this.userRepository = userRepository;
     }
 
@@ -125,6 +128,16 @@ public class PackageRequestController {
             return service.searchNearMe(spec, pageable, lat, lng, radius);
         }
         return service.search(spec, pageable);
+    }
+
+    /** Signale une demande (modération). Tout utilisateur authentifié, sauf le propriétaire. */
+    @PostMapping("/{id}/report")
+    public ResponseEntity<Void> report(
+            @PathVariable UUID id,
+            @RequestBody @Valid PackageRequestReportRequest req
+    ) {
+        reportService.report(requireUserId(), id, req);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/estimate")

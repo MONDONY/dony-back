@@ -49,6 +49,7 @@ class NegotiationServiceTest {
     @Mock private CashGatePort cashGatePort;
     @Mock private com.dony.api.requests.NegotiationEscrowPort escrowPort;
     @Mock private StorageService storageService;
+    @Mock private PackageRequestPhotoService photoService;
 
     @InjectMocks private NegotiationService service;
 
@@ -938,6 +939,13 @@ class NegotiationServiceTest {
             // Price-per-kg derived from agreed total (80 / 5 = 16)
             assertThat(savedAnn.getPricePerKg()).isEqualByComparingTo("16.00");
             assertThat(savedAnn.getStatus()).isEqualTo(com.dony.api.matching.AnnouncementStatus.ACTIVE);
+            // Fenêtre de remise dérivée du jour de départ (héritée par le bid dédié).
+            assertThat(savedAnn.getHandoverWindowStart()).isNotNull();
+            assertThat(savedAnn.getHandoverWindowEnd()).isNotNull();
+            assertThat(savedAnn.getHandoverWindowStart().toLocalDate())
+                .isEqualTo(savedAnn.getDepartureDate());
+            assertThat(savedAnn.getHandoverWindowEnd().toLocalDate())
+                .isEqualTo(savedAnn.getDepartureDate());
 
             verify(eventPublisher).publishEvent(any(com.dony.api.requests.event.NegotiationAwaitingPaymentEvent.class));
         }

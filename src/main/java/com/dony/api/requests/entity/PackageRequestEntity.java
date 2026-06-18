@@ -48,7 +48,7 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "transport_mode", nullable = false, length = 20)
     private com.dony.api.matching.TransportMode transportMode;
 
-    @Column(name = "content_category", nullable = false, length = 50)
+    @Column(name = "content_category", nullable = false, length = 255)
     private String contentCategory;
 
     @Column(name = "description", length = 500)

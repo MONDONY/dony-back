@@ -108,9 +108,13 @@ public class StorageController {
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal String uid) throws IOException {
 
-        if (uid == null || !UID_PATTERN.matcher(uid).matches()) {
+        // Le prefix utilise user.getId() (UUID DB), jamais le raw uid → pas de risque
+        // d'injection de chemin. On résout l'utilisateur comme le reste de l'app
+        // (findByFirebaseUid) sans imposer UID_PATTERN, qui rejetait à tort certains
+        // UID Firebase valides (ex. environnements dev / UID non strictement alphanum).
+        if (uid == null) {
             throw new DonyBusinessException(HttpStatus.UNAUTHORIZED,
-                    "invalid-uid", "Unauthorized", "Identifiant utilisateur invalide");
+                    "unauthenticated", "Unauthorized", "Non authentifié");
         }
         var user = userRepository.findByFirebaseUid(uid).orElseThrow(() -> new DonyBusinessException(
                 HttpStatus.UNAUTHORIZED, "unauthenticated", "Unauthorized", "Utilisateur introuvable"));

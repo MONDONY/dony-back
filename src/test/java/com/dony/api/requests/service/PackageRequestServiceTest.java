@@ -45,6 +45,7 @@ class PackageRequestServiceTest {
     @Mock private com.dony.api.city.CityRepository cityRepository;
     @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
     @Mock private StorageService storageService;
+    @Mock private PackageRequestPhotoService photoService;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -79,6 +80,8 @@ class PackageRequestServiceTest {
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
         // Pass-through for presigned avatar URLs
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Aucune photo par défaut (les mappers appellent activePhotos)
+        lenient().when(photoService.activePhotos(any())).thenReturn(List.of());
     }
 
     // ========== Task 12: create() tests ==========
@@ -104,6 +107,30 @@ class PackageRequestServiceTest {
             verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
             verify(auditService).log(eq("PACKAGE_REQUEST"), any(UUID.class), eq("CREATED"), eq(SENDER_ID), anyMap());
         }
+
+        @Test @DisplayName("création → attache les photoKeys via replacePhotos(reqId, sender, keys)")
+        void create_attachesPhotoKeys() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            UUID reqId = UUID.randomUUID();
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> {
+                PackageRequestEntity e = inv.getArgument(0);
+                setId(e, reqId);
+                return e;
+            });
+
+            List<String> keys = List.of("package_requests/" + SENDER_ID + "/1.jpg",
+                                        "package_requests/" + SENDER_ID + "/2.jpg");
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), keys);
+
+            service.create(SENDER_ID, req);
+
+            verify(photoService).replacePhotos(reqId, SENDER_ID, keys);
+        }
     }
 
     @Nested @DisplayName("create() — validation errors")
@@ -127,7 +154,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            );
+            , List.of());
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -154,7 +181,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            );
+            , List.of());
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -178,7 +205,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("23"), "Médicaments", "desc",
                 new BigDecimal("39.20"), null, null, null,
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
 
             PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
 
@@ -196,7 +223,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("6"), "Médicaments", null,
                 null /* pas de budget */, null, null, null,
-                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE));
+                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE), List.of());
 
             assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -217,6 +244,48 @@ class PackageRequestServiceTest {
 
             var resp = service.getById(SENDER_ID, entity.getId());
             assertThat(resp.id()).isEqualTo(entity.getId());
+        }
+
+        @Test @DisplayName("photos non vides → photos[] présignées + photoUrl = 1ère")
+        void getById_withPhotos_exposesPhotosAndDerivesPhotoUrl() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(photoService.activePhotos(entity.getId())).thenReturn(List.of(
+                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "package_requests/s/1.jpg", "https://signed/1"),
+                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "package_requests/s/2.jpg", "https://signed/2")));
+
+            var resp = service.getById(SENDER_ID, entity.getId());
+
+            assertThat(resp.photos()).hasSize(2);
+            assertThat(resp.photoUrl()).isEqualTo("https://signed/1");
+        }
+
+        @Test @DisplayName("voyageur avec offre active → viewerThreadId + statut exposés")
+        void getById_travelerWithActiveThread_exposesViewerThread() {
+            UUID traveler = UUID.randomUUID();
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            UUID threadId = UUID.randomUUID();
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setId(thread, threadId);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepository.findActiveByPackageRequestIdAndTravelerId(entity.getId(), traveler))
+                .thenReturn(Optional.of(thread));
+
+            var resp = service.getById(traveler, entity.getId());
+
+            assertThat(resp.viewerThreadId()).isEqualTo(threadId);
+            assertThat(resp.viewerThreadStatus()).isEqualTo("OPEN");
+        }
+
+        @Test @DisplayName("propriétaire → pas de viewerThreadId")
+        void getById_owner_noViewerThread() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var resp = service.getById(SENDER_ID, entity.getId());
+
+            assertThat(resp.viewerThreadId()).isNull();
         }
 
         @Test @DisplayName("non-participant, demande OPEN → OK (consultable publiquement)")
@@ -283,7 +352,7 @@ class PackageRequestServiceTest {
                 "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
                 new BigDecimal("8"), "electronique", "desc",
                 new BigDecimal("56.00"), null, "7e", "ACI 2000",
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
 
             var resp = service.update(SENDER_ID, entity.getId(), req);
 
@@ -345,7 +414,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, null, null, null, null,
-                false, EnumSet.of(PaymentMethod.STRIPE));
+                false, EnumSet.of(PaymentMethod.STRIPE), List.of());
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -360,7 +429,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Paris", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
-                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE));
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of());
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -414,7 +483,7 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Marie", "+221771234567", "Dakar"
+                "Marie", "+221771234567", "Dakar", new BigDecimal("120.00")
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
@@ -422,6 +491,7 @@ class PackageRequestServiceTest {
             assertThat(entity.getRecipientName()).isEqualTo("Marie");
             assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
             assertThat(entity.getRecipientCity()).isEqualTo("Dakar");
+            assertThat(entity.getDeclaredValueEur()).isEqualByComparingTo("120.00");
             // The entity had no disclaimerSignedAt (bare entity), so the defensive
             // branch signs it now using the client IP.
             assertThat(entity.getDisclaimerSignedAt()).isNotNull();
@@ -441,7 +511,7 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Fatou Diop", "+221771234567", null
+                "Fatou Diop", "+221771234567", null, new BigDecimal("80.00")
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
@@ -464,7 +534,7 @@ class PackageRequestServiceTest {
             when(repository.findById(reqId)).thenReturn(Optional.of(entity));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Z", "+221771234567", "Dakar"
+                "Z", "+221771234567", "Dakar", new BigDecimal("50.00")
             );
 
             assertThatThrownBy(() -> service.completeDetails(SENDER_ID, reqId, req, "1.2.3.4"))
@@ -489,7 +559,7 @@ class PackageRequestServiceTest {
                 .thenReturn(List.of(thread));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Awa", "+221770000000", "Abobo"
+                "Awa", "+221770000000", "Abobo", new BigDecimal("99.00")
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.9");
@@ -681,7 +751,7 @@ class PackageRequestServiceTest {
             "Cadeau pour ma mère", new BigDecimal("28.00"), null,
             "10e arr", "Plateau",
             true, EnumSet.of(PaymentMethod.STRIPE)
-        );
+        , List.of());
     }
 
     // ========== AvatarUrl in SenderPublicProfile ==========

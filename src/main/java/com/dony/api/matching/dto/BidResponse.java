@@ -37,6 +37,9 @@ public record BidResponse(
         LocalTime departureTime,
         LocalTime arrivalTime,
         BigDecimal pricePerKg,
+        /** Tarif/kg BRUT affiché à l'expéditeur (net + commission). L'expéditeur
+         * ne reçoit jamais le tarif net {@code pricePerKg}. */
+        BigDecimal pricePerKgSenderEur,
         com.dony.api.matching.TransportMode transportMode,
         String trackingNumber,
         String trackingToken,

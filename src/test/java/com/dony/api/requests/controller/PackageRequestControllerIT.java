@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.HttpStatus.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -47,6 +48,7 @@ class PackageRequestControllerIT {
     @MockBean private PriceEstimationService estimationService;
     @MockBean private UserRepository userRepository;
     @MockBean private com.dony.api.requests.service.NegotiationService negotiationService;
+    @MockBean private com.dony.api.requests.service.PackageRequestReportService reportService;
 
     private static final UUID SENDER_UUID = UUID.randomUUID();
     private static final UUID TRAVELER_UUID = UUID.randomUUID();
@@ -70,6 +72,27 @@ class PackageRequestControllerIT {
         when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(travelerEntity));
     }
 
+    @Test
+    void post_report_returns204() throws Exception {
+        UUID id = UUID.randomUUID();
+        mockMvc.perform(post("/package-requests/" + id + "/report")
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"SCAM\",\"details\":\"annonce frauduleuse\"}"))
+            .andExpect(status().isNoContent());
+        verify(reportService).report(eq(TRAVELER_UUID), eq(id), any());
+    }
+
+    @Test
+    void post_report_missingReason_returns400() throws Exception {
+        UUID id = UUID.randomUUID();
+        mockMvc.perform(post("/package-requests/" + id + "/report")
+                .with(authentication(authAs("uid-traveler", "TRAVELER")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"details\":\"x\"}"))
+            .andExpect(status().isUnprocessableEntity());
+    }
+
     private static UsernamePasswordAuthenticationToken authAs(String uid, String role) {
         return new UsernamePasswordAuthenticationToken(
             uid, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
@@ -83,7 +106,7 @@ class PackageRequestControllerIT {
             "Cadeau", new BigDecimal("28.00"), null,
             "10e", "Plateau",
             true, java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        );
+        , List.of());
     }
 
     private PackageRequestResponse fakeResponse(UUID id) {
@@ -100,7 +123,7 @@ class PackageRequestControllerIT {
             true,
             java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE),
             new BigDecimal("28.00")
-        );
+        , List.of(), null, null);
     }
 
     @Test
@@ -160,7 +183,7 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        );
+        , List.of());
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
@@ -188,7 +211,7 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        );
+        , List.of());
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
@@ -255,7 +278,7 @@ class PackageRequestControllerIT {
             "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
             new BigDecimal("5"), "vetements", "desc",
             new BigDecimal("28.00"), null, "10e", "Plateau",
-            true, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE));
+            true, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE), List.of());
 
         mockMvc.perform(put("/package-requests/" + id)
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -284,7 +307,8 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Mamadou Diallo",
             "+221771234567",
-            "Dakar"
+            "Dakar",
+            new BigDecimal("150.00")
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -304,7 +328,8 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Fatou Diop",
             "+221771234567",
-            null
+            null,
+            new BigDecimal("150.00")
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -324,7 +349,8 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Mamadou Diallo",
             "+221771234567",
-            "Dakar"
+            "Dakar",
+            new BigDecimal("150.00")
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -368,7 +394,7 @@ class PackageRequestControllerIT {
             "10e", "Plateau",
             false,  // non négociable — budget requis
             java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        );
+        , List.of());
 
         when(service.create(eq(SENDER_UUID), any()))
             .thenThrow(new org.springframework.web.server.ResponseStatusException(
@@ -407,7 +433,7 @@ class PackageRequestControllerIT {
                 com.dony.api.payments.cash.PaymentMethod.STRIPE,
                 com.dony.api.payments.cash.PaymentMethod.CASH),
             new BigDecimal("28.00")
-        );
+        , List.of(), null, null);
         when(service.create(eq(SENDER_UUID), any())).thenReturn(responseWithMethods);
 
         PackageRequestCreateRequest req = new PackageRequestCreateRequest(
@@ -420,7 +446,7 @@ class PackageRequestControllerIT {
             java.util.EnumSet.of(
                 com.dony.api.payments.cash.PaymentMethod.STRIPE,
                 com.dony.api.payments.cash.PaymentMethod.CASH)
-        );
+        , List.of());
 
         mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))

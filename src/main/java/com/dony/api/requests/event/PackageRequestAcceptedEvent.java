@@ -18,5 +18,7 @@ public record PackageRequestAcceptedEvent(
     BigDecimal declaredValueEur,
     LocalDateTime disclaimerSignedAt,
     String disclaimerSignedIp,
-    com.dony.api.payments.cash.PaymentMethod paymentMethod
+    com.dony.api.payments.cash.PaymentMethod paymentMethod,
+    /** Clés S3 des photos colis de la demande (package_requests/…) à copier vers le bid. */
+    java.util.List<String> photoObjectKeys
 ) {}

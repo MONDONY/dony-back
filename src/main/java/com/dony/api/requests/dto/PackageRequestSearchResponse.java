@@ -5,6 +5,7 @@ import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.entity.ParcelSize;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,7 +21,9 @@ public record PackageRequestSearchResponse(
     BigDecimal targetPriceEur, boolean negotiable, String photoUrl,
     String pickupNeighborhood, String deliveryNeighborhood,
     SenderPublicProfile sender,
-    Set<PaymentMethod> acceptedPaymentMethods
+    Set<PaymentMethod> acceptedPaymentMethods,
+    /** Photos colis présignées (max 4, ordonnées). photoUrl = 1ère pour rétro-compat. */
+    List<PackageRequestPhotoResponse> photos
 ) {
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
 }

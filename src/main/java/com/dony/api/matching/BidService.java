@@ -809,6 +809,14 @@ public class BidService {
         java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
         java.time.OffsetDateTime departureAt = announcement != null ? announcement.getDepartureAt() : null;
         java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
+        // Bid issu d'une négociation : prix au kilo (et donc net) figés sur le prix
+        // négocié, pour ne pas dériver si l'annonce dédiée ouvre son surplus (réécrit
+        // son pricePerKg) ou si le trajet lié a un tarif catalogue différent.
+        if (bid.getNegotiatedNetEur() != null && bid.getWeightKg() != null
+                && bid.getWeightKg().signum() > 0) {
+            pricePerKg = bid.getNegotiatedNetEur()
+                    .divide(bid.getWeightKg(), 2, java.math.RoundingMode.HALF_UP);
+        }
         com.dony.api.matching.TransportMode transportMode = announcement != null ? announcement.getTransportMode() : null;
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
                 ? bid.getConfirmationCode() : null;
@@ -856,12 +864,30 @@ public class BidService {
         // CASH   → net (la commission est prélevée au voyageur, pas à l'expéditeur).
         // Le taux figé (commissionRate) n'existe qu'après création du paiement ;
         // avant (PENDING, pas de rate) on retombe sur le net.
-        java.math.BigDecimal commissionRateSnapshot = bid.getCommissionRate();
+        // Taux effectif : snapshot figé au paiement, sinon résolu en direct (bid
+        // PENDING) — ainsi le brut est toujours calculable côté serveur, sans que
+        // l'app n'ait besoin du net pour le dériver.
+        java.math.BigDecimal effectiveRate = bid.getCommissionRate();
+        if (effectiveRate == null && announcement != null) {
+            effectiveRate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
+        }
         boolean isStripe = bid.getPaymentMethod() == null
                 || bid.getPaymentMethod() == com.dony.api.payments.cash.PaymentMethod.STRIPE;
-        java.math.BigDecimal totalSenderAmountEur = (isStripe && commissionRateSnapshot != null)
-                ? com.dony.api.payments.PriceBreakdown.fromNet(totalNetAmountEur, commissionRateSnapshot).gross()
+        java.math.BigDecimal totalSenderAmountEur = (isStripe && effectiveRate != null)
+                ? com.dony.api.payments.PriceBreakdown.fromNet(totalNetAmountEur, effectiveRate).gross()
                 : totalNetAmountEur;
+        // Tarif/kg affiché à l'expéditeur (brut), dérivé du total brut.
+        java.math.BigDecimal pricePerKgSenderEur =
+                (totalSenderAmountEur != null && bid.getWeightKg() != null
+                        && bid.getWeightKg().signum() > 0)
+                        ? totalSenderAmountEur.divide(bid.getWeightKg(), 2, java.math.RoundingMode.HALF_UP)
+                        : null;
+        // SÉCURITÉ (règle métier) : l'expéditeur ne reçoit JAMAIS le net du
+        // voyageur — ni le tarif/kg net, ni le total net. Seulement le brut.
+        if (callerId != null && callerId.equals(bid.getSenderId())) {
+            pricePerKg = null;
+            totalNetAmountEur = null;
+        }
 
         return new BidResponse(
                 bid.getId(),
@@ -894,6 +920,7 @@ public class BidService {
                 departureTime,
                 arrivalTime,
                 pricePerKg,
+                pricePerKgSenderEur,
                 transportMode,
                 bid.getTrackingNumber(),
                 bid.getTrackingToken(),
