@@ -45,7 +45,7 @@ public class BidEntity extends BaseEntity {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "content_category", length = 50)
+    @Column(name = "content_category", length = 255)
     private String contentCategory;
 
     @Column(name = "recipient_name", length = 200)
