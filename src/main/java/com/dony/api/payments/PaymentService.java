@@ -436,7 +436,11 @@ public class PaymentService {
                     .setAmount(amountCents)
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
-                    .setOnBehalfOf(traveler.getStripeAccountId())
+                    // Approche A : carte + Apple Pay + Google Pay (= "card") + PayPal,
+                    // tous dans la PaymentSheet. on_behalf_of retiré : PayPal ne le
+                    // supporte pas, et il n'est pas requis en separate charges & transfers.
+                    .addPaymentMethodType("card")
+                    .addPaymentMethodType("paypal")
                     .setStatementDescriptorSuffix("DONY")
                     // Separate charges and transfers: no transfer_data, no application_fee_amount.
                     // Funds stay on platform balance (on_behalf_of = statement/dashboard only).
