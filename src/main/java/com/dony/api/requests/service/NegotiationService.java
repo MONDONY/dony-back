@@ -534,6 +534,12 @@ public class NegotiationService {
         ann.setDepartureDate(req.departureDate());
         ann.setDepartureTime(req.departureTime());
         ann.setArrivalTime(req.arrivalTime());
+        // Fenêtre de remise dérivée : le jour du départ, jusqu'à l'heure de départ
+        // (le bid dédié hérite de cette fenêtre via applyHandoverFrom).
+        java.time.LocalTime handoverEnd =
+            req.departureTime() != null ? req.departureTime() : java.time.LocalTime.of(23, 59);
+        ann.setHandoverWindowStart(req.departureDate().atStartOfDay());
+        ann.setHandoverWindowEnd(java.time.LocalDateTime.of(req.departureDate(), handoverEnd));
         ann.setPickupAddressLabel(req.pickupAddress().label());
         ann.setPickupLat(BigDecimal.valueOf(req.pickupAddress().lat()));
         ann.setPickupLng(BigDecimal.valueOf(req.pickupAddress().lng()));
