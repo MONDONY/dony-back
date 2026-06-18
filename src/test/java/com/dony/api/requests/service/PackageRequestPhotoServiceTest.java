@@ -113,6 +113,7 @@ class PackageRequestPhotoServiceTest {
 
         List<PackageRequestPhotoResponse> out = service.activePhotos(REQ);
         assertThat(out).hasSize(1);
+        assertThat(out.get(0).objectKey()).isEqualTo(key("1.jpg"));
         assertThat(out.get(0).url()).isEqualTo("https://signed/1");
     }
 

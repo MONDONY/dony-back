@@ -83,7 +83,7 @@ public class PackageRequestPhotoService {
     public List<PackageRequestPhotoResponse> activePhotos(UUID packageRequestId) {
         return photoRepository.findByPackageRequestIdOrderByPositionAsc(packageRequestId)
                 .stream()
-                .map(p -> new PackageRequestPhotoResponse(p.getId(),
+                .map(p -> new PackageRequestPhotoResponse(p.getId(), p.getObjectKey(),
                         storageService.generatePresignedUrl(p.getObjectKey(), PRESIGN_TTL)))
                 .toList();
     }

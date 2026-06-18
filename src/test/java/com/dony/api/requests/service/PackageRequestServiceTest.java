@@ -251,8 +251,8 @@ class PackageRequestServiceTest {
             PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
             when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
             when(photoService.activePhotos(entity.getId())).thenReturn(List.of(
-                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "https://signed/1"),
-                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "https://signed/2")));
+                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "package_requests/s/1.jpg", "https://signed/1"),
+                new com.dony.api.requests.dto.PackageRequestPhotoResponse(UUID.randomUUID(), "package_requests/s/2.jpg", "https://signed/2")));
 
             var resp = service.getById(SENDER_ID, entity.getId());
 
