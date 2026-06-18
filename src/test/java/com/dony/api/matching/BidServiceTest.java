@@ -1495,6 +1495,28 @@ class BidServiceTest {
     }
 
     @Test
+    @DisplayName("expéditeur : net masqué — pricePerKg + totalNetAmountEur null, brut exposé")
+    void getBidById_callerIsSender_hidesNet() {
+        UserEntity sender = buildSender();
+        BidEntity bid = buildBid();
+        AnnouncementEntity announcement = buildAnnouncement();
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+        when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+        when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+        when(commissionRateResolver.resolve(any(), any())).thenReturn(new BigDecimal("0.12"));
+
+        BidResponse result = bidService.getBidById(BID_ID, SENDER_UID);
+
+        // L'expéditeur ne reçoit jamais le net : tarif/kg net + total net masqués.
+        assertThat(result.pricePerKg()).isNull();
+        assertThat(result.totalNetAmountEur()).isNull();
+        // Il reçoit le brut (net + commission) : tarif/kg brut + total brut.
+        assertThat(result.pricePerKgSenderEur()).isNotNull();
+        assertThat(result.totalSenderAmountEur()).isNotNull();
+    }
+
+    @Test
     @DisplayName("tiers → 403 FORBIDDEN")
     void getBidById_foreignerForbidden() {
         UserEntity stranger = new UserEntity();
