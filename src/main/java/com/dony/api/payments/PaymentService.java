@@ -143,7 +143,7 @@ public class PaymentService {
                             AccountCreateParams.Capabilities.builder()
                                     .setCardPayments(
                                             AccountCreateParams.Capabilities.CardPayments.builder()
-                                                    .setRequested(true) // CRITICAL: required for on_behalf_of
+                                                    .setRequested(true) // historiquement requis pour on_behalf_of (retiré) — conservé, no-op
                                                     .build()
                                     )
                                     .setTransfers(
@@ -848,14 +848,12 @@ public class PaymentService {
 
     /**
      * Garantit que la capacité {@code card_payments} est demandée sur le compte Connect.
-     * Sans elle, Stripe rejette {@code PaymentIntent.create(on_behalf_of=…)} :
-     * « You cannot create a payment with on_behalf_of set to a connected account
-     *   representing the transfers feature without enabling the card_payments feature. »
      * <p>
-     * Idempotent : si la capacité est déjà active ou pending, no-op.
-     * Si le compte n'a pas encore complété l'onboarding pour activer la capacité,
-     * Stripe lèvera tout de même une erreur sur PaymentIntent.create — ce check ne masque pas
-     * le besoin pour le voyageur de finaliser son onboarding.
+     * Historiquement requise : Stripe rejetait {@code PaymentIntent.create(on_behalf_of=…)}
+     * sans elle. Depuis le passage aux wallets (Approche A), {@code on_behalf_of} a été retiré
+     * des PaymentIntents escrow — ce check n'est donc plus strictement nécessaire à la création
+     * du PaymentIntent. Conservé (idempotent : no-op si déjà active/pending) en attendant un
+     * nettoyage côté onboarding Connect ; aucun effet de bord négatif.
      */
     private void ensureCardPaymentsCapability(String stripeAccountId) throws StripeException {
         Account account = stripeGateway.retrieveAccount(stripeAccountId);
