@@ -1242,7 +1242,10 @@ public class PaymentService {
                     .setAmount(b.grossCents())                        // gross, pas net
                     .setCurrency("eur")
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
-                    .setOnBehalfOf(traveler.getStripeAccountId())
+                    // Approche A : carte + wallets + PayPal dans la PaymentSheet.
+                    // on_behalf_of retiré (PayPal ne le supporte pas).
+                    .addPaymentMethodType("card")
+                    .addPaymentMethodType("paypal")
                     // Modèle "separate charges and transfers" (cohérent avec createEscrow) :
                     // PAS d'application_fee_amount ni de transfer_data ici. Le gross reste sur
                     // le solde plateforme ; à la livraison, DeliveryEventListener crée un

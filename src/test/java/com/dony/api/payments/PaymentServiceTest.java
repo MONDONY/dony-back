@@ -753,7 +753,8 @@ class PaymentServiceTest {
             assertThat(params.getAmount()).isEqualTo(3920L);               // gross cents
             assertThat(params.getApplicationFeeAmount()).isNull();         // PAS de fee ici
             assertThat(params.getTransferData()).isNull();                 // pas de destination charge
-            assertThat(params.getOnBehalfOf()).isEqualTo("acct_traveler"); // merchant of record
+            assertThat(params.getOnBehalfOf()).isNull();                   // retiré (incompatible PayPal)
+            assertThat(params.getPaymentMethodTypes()).containsExactly("card", "paypal");
 
             // L'entité paiement enregistre toujours gross + commission : la commission
             // sert au calcul du Transfer(net = gross - commission) à la livraison.
