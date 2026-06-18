@@ -79,6 +79,10 @@ public class ThreadAcceptedBidListener {
         bid.setStatus(BidStatus.ACCEPTED);
         bid.setPaymentIntentId(e.paymentIntentId());
         bid.setLinkedNegotiationThreadId(e.threadId());
+        // Fige le net négocié : l'affichage ne doit pas dériver si l'annonce
+        // dédiée ouvre son surplus (réécrit price_per_kg) ou si le trajet lié a
+        // un tarif catalogue différent du prix d'accord.
+        bid.setNegotiatedNetEur(e.agreedPriceEur());
         // Recipient details + disclaimer are completed by the sender before payment,
         // so they are carried on the event and set here at bid creation. If absent
         // (edited afterwards), onPackageRequestDetailsCompleted re-applies them.

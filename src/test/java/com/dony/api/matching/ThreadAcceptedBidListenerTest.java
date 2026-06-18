@@ -94,6 +94,8 @@ class ThreadAcceptedBidListenerTest {
             assertThat(saved.getDeclaredValueEur()).isEqualByComparingTo(BigDecimal.valueOf(120));
             assertThat(saved.getDisclaimerSignedAt()).isEqualTo(DISCLAIMER_AT);
             assertThat(saved.getDisclaimerSignedIp()).isEqualTo("1.2.3.4");
+            // Net négocié figé depuis agreedPriceEur (= 50) de l'événement.
+            assertThat(saved.getNegotiatedNetEur()).isEqualByComparingTo(BigDecimal.valueOf(50));
             verify(auditService).log(eq("BID"), any(), eq("CREATED_FROM_THREAD"), eq(SENDER_ID), any());
         }
 

@@ -809,6 +809,14 @@ public class BidService {
         java.time.LocalTime arrivalTime = announcement != null ? announcement.getArrivalTime() : null;
         java.time.OffsetDateTime departureAt = announcement != null ? announcement.getDepartureAt() : null;
         java.math.BigDecimal pricePerKg = announcement != null ? announcement.getPricePerKg() : null;
+        // Bid issu d'une négociation : prix au kilo (et donc net) figés sur le prix
+        // négocié, pour ne pas dériver si l'annonce dédiée ouvre son surplus (réécrit
+        // son pricePerKg) ou si le trajet lié a un tarif catalogue différent.
+        if (bid.getNegotiatedNetEur() != null && bid.getWeightKg() != null
+                && bid.getWeightKg().signum() > 0) {
+            pricePerKg = bid.getNegotiatedNetEur()
+                    .divide(bid.getWeightKg(), 2, java.math.RoundingMode.HALF_UP);
+        }
         com.dony.api.matching.TransportMode transportMode = announcement != null ? announcement.getTransportMode() : null;
         String confirmationCode = (callerId != null && callerId.equals(bid.getSenderId()))
                 ? bid.getConfirmationCode() : null;

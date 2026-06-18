@@ -33,6 +33,12 @@ public class BidEntity extends BaseEntity {
     @Column(name = "declared_value_eur", precision = 10, scale = 2)
     private BigDecimal declaredValueEur;
 
+    /** Net négocié figé (= prix d'accord du thread) pour un bid issu d'une
+     * demande. Prime sur le tarif de l'annonce dans le calcul d'affichage,
+     * qui peut dériver. Null pour un bid d'offre directe. */
+    @Column(name = "negotiated_net_eur", precision = 10, scale = 2)
+    private BigDecimal negotiatedNetEur;
+
     /**
      * If non-null, this bid was created from the package_request marketplace
      * flow (NegotiationThread → ACCEPTED) rather than the classic announce-bid flow.
@@ -198,6 +204,9 @@ public class BidEntity extends BaseEntity {
 
     public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
     public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
+
+    public BigDecimal getNegotiatedNetEur() { return negotiatedNetEur; }
+    public void setNegotiatedNetEur(BigDecimal negotiatedNetEur) { this.negotiatedNetEur = negotiatedNetEur; }
 
     public UUID getLinkedNegotiationThreadId() { return linkedNegotiationThreadId; }
     public void setLinkedNegotiationThreadId(UUID id) { this.linkedNegotiationThreadId = id; }
