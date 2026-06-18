@@ -1,0 +1,98 @@
+package com.dony.api.requests.service;
+
+import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
+import com.dony.api.requests.dto.PackageRequestPhotoResponse;
+import com.dony.api.requests.entity.PackageRequestPhotoEntity;
+import com.dony.api.requests.repository.PackageRequestPhotoRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Cycle de vie des photos de colis d'une demande d'envoi : remplacement (création/édition),
+ * lecture présignée, extraction des clés brutes (pour la copie vers le bid à la matérialisation).
+ */
+@Service
+public class PackageRequestPhotoService {
+
+    static final int MAX_PHOTOS = 4;
+    static final String PHOTO_PREFIX = "package_requests/";
+    private static final Duration PRESIGN_TTL = Duration.ofMinutes(15);
+
+    private final PackageRequestPhotoRepository photoRepository;
+    private final StorageService storageService;
+
+    public PackageRequestPhotoService(PackageRequestPhotoRepository photoRepository,
+                                      StorageService storageService) {
+        this.photoRepository = photoRepository;
+        this.storageService = storageService;
+    }
+
+    /**
+     * Remplace l'ensemble des photos d'une demande. Valide AVANT de supprimer (rollback propre).
+     * Chaque clé doit appartenir au sender (prefix package_requests/{senderId}/). Max {@value #MAX_PHOTOS}.
+     */
+    @Transactional
+    public void replacePhotos(UUID packageRequestId, UUID senderId, List<String> photoKeys) {
+        List<PackageRequestPhotoEntity> rows = buildValidatedRows(packageRequestId, senderId, photoKeys);
+        photoRepository.deleteByPackageRequestId(packageRequestId);
+        if (!rows.isEmpty()) {
+            photoRepository.saveAll(rows);
+        }
+    }
+
+    private List<PackageRequestPhotoEntity> buildValidatedRows(UUID packageRequestId, UUID senderId,
+                                                               List<String> photoKeys) {
+        if (photoKeys == null || photoKeys.isEmpty()) {
+            return List.of();
+        }
+        if (photoKeys.size() > MAX_PHOTOS) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "too-many-photos", "Too Many Photos",
+                    "Maximum " + MAX_PHOTOS + " photos par colis");
+        }
+        String ownerPrefix = PHOTO_PREFIX + senderId + "/";
+        List<PackageRequestPhotoEntity> rows = new ArrayList<>();
+        int position = 0;
+        for (String key : photoKeys) {
+            if (key == null || !key.startsWith(ownerPrefix)) {
+                throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "invalid-photo-key", "Invalid Photo Key",
+                        "Clé photo invalide");
+            }
+            rows.add(new PackageRequestPhotoEntity(packageRequestId, key, position++));
+        }
+        return rows;
+    }
+
+    /** Clés brutes ordonnées (pour la copie vers le bid à la matérialisation). */
+    @Transactional(readOnly = true)
+    public List<String> objectKeys(UUID packageRequestId) {
+        return photoRepository.findByPackageRequestIdOrderByPositionAsc(packageRequestId)
+                .stream().map(PackageRequestPhotoEntity::getObjectKey).toList();
+    }
+
+    /** Photos en URLs présignées triées par position. */
+    @Transactional(readOnly = true)
+    public List<PackageRequestPhotoResponse> activePhotos(UUID packageRequestId) {
+        return photoRepository.findByPackageRequestIdOrderByPositionAsc(packageRequestId)
+                .stream()
+                .map(p -> new PackageRequestPhotoResponse(p.getId(),
+                        storageService.generatePresignedUrl(p.getObjectKey(), PRESIGN_TTL)))
+                .toList();
+    }
+
+    /** URL présignée de la 1ère photo, ou null (alimente photo_url, rétro-compat). */
+    @Transactional(readOnly = true)
+    public String firstPhotoUrl(UUID packageRequestId) {
+        return photoRepository.findFirstByPackageRequestIdOrderByPositionAsc(packageRequestId)
+                .map(p -> storageService.generatePresignedUrl(p.getObjectKey(), PRESIGN_TTL))
+                .orElse(null);
+    }
+}

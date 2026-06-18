@@ -4,6 +4,7 @@ import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 
 public record PackageRequestCreateRequest(
@@ -20,5 +21,7 @@ public record PackageRequestCreateRequest(
     @Size(max = 100) String pickupNeighborhood,
     @Size(max = 100) String deliveryNeighborhood,
     boolean negotiable,
-    @NotEmpty Set<PaymentMethod> acceptedPaymentMethods
+    @NotEmpty Set<PaymentMethod> acceptedPaymentMethods,
+    // Clés S3 des photos colis (max 4) — sous package_requests/{senderId}/. Remplace photoUrl.
+    @Size(max = 4) List<String> photoKeys
 ) {}

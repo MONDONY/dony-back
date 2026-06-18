@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
@@ -177,6 +178,29 @@ public class StorageService {
                 .build();
 
         return s3Presigner.presignGetObject(presignRequest).url().toString();
+    }
+
+    /**
+     * Copie server-side un objet S3 existant vers une NOUVELLE clé sous {@code destPrefix}
+     * (extension préservée). Utilisé pour donner au bid sa propre copie des photos de la
+     * demande (lifecycle/cleanup indépendants). Renvoie la nouvelle clé.
+     */
+    public String copyObject(String sourceKey, String destPrefix) {
+        String ext = sourceKey.contains(".") ? sourceKey.substring(sourceKey.lastIndexOf('.')) : ".jpg";
+        String destKey = destPrefix + Instant.now().toEpochMilli() + "_" + UUID.randomUUID() + ext;
+        long t0 = System.currentTimeMillis();
+        try {
+            s3Client.copyObject(CopyObjectRequest.builder()
+                    .sourceBucket(bucket).sourceKey(sourceKey)
+                    .destinationBucket(bucket).destinationKey(destKey)
+                    .build());
+            log.info("copyObject OK src={} dest={} ({} ms)", sourceKey, destKey, System.currentTimeMillis() - t0);
+            return destKey;
+        } catch (Exception ex) {
+            log.error("copyObject FAILED src={} dest={} ({} ms): {}", sourceKey, destKey,
+                    System.currentTimeMillis() - t0, ex.toString(), ex);
+            throw ex;
+        }
     }
 
     /**

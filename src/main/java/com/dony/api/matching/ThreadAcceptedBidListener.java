@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.events.BidMaterializedEvent;
 import com.dony.api.requests.event.PackageRequestAcceptedEvent;
 import com.dony.api.requests.event.PackageRequestDetailsCompletedEvent;
@@ -13,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,15 +39,21 @@ public class ThreadAcceptedBidListener {
     private final AnnouncementRepository announcementRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final StorageService storageService;
+    private final BidPhotoService bidPhotoService;
 
     public ThreadAcceptedBidListener(BidRepository bidRepository,
                                      AnnouncementRepository announcementRepository,
                                      AuditService auditService,
-                                     ApplicationEventPublisher eventPublisher) {
+                                     ApplicationEventPublisher eventPublisher,
+                                     StorageService storageService,
+                                     BidPhotoService bidPhotoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
+        this.storageService = storageService;
+        this.bidPhotoService = bidPhotoService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -101,6 +110,11 @@ public class ThreadAcceptedBidListener {
                 .ifPresent(bid::applyHandoverFrom);
         BidEntity saved = bidRepository.save(bid);
 
+        // Les photos colis de la demande (package_requests/…) sont copiées vers bids/ pour
+        // donner au bid sa propre copie (lifecycle/cleanup indépendants), puis attachées.
+        // Best-effort : un échec de copie ne doit pas casser la matérialisation du bid.
+        attachCopiedPhotos(saved.getId(), e.senderId(), e.photoObjectKeys());
+
         auditService.log("BID", saved.getId(), "CREATED_FROM_THREAD", e.senderId(),
             Map.of(
                 "threadId", e.threadId().toString(),
@@ -138,5 +152,31 @@ public class ThreadAcceptedBidListener {
         bid.setDisclaimerSignedIp(e.disclaimerSignedIp());
         bidRepository.save(bid);
         log.info("Bid {} synced with package_request details (thread {})", bid.getId(), e.threadId());
+    }
+
+    /**
+     * Copie chaque photo source (package_requests/…) vers bids/{senderId}/ puis les attache
+     * au bid. Best-effort : toute erreur de copie/attache est loggée sans interrompre la
+     * matérialisation (les photos sont un confort, pas un bloquant métier).
+     */
+    private void attachCopiedPhotos(UUID bidId, UUID senderId, List<String> sourceKeys) {
+        if (sourceKeys == null || sourceKeys.isEmpty()) {
+            return;
+        }
+        List<String> copied = new ArrayList<>();
+        for (String src : sourceKeys) {
+            try {
+                copied.add(storageService.copyObject(src, "bids/" + senderId + "/"));
+            } catch (Exception ex) {
+                log.error("Échec copie photo demande {} vers bid {}: {}", src, bidId, ex.toString());
+            }
+        }
+        if (!copied.isEmpty()) {
+            try {
+                bidPhotoService.attachPhotos(bidId, copied);
+            } catch (Exception ex) {
+                log.error("Échec attache photos copiées au bid {}: {}", bidId, ex.toString());
+            }
+        }
     }
 }

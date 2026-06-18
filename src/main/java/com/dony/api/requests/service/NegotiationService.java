@@ -50,6 +50,7 @@ public class NegotiationService {
     private final CashGatePort cashGatePort;
     private final NegotiationEscrowPort escrowPort;
     private final StorageService storageService;
+    private final PackageRequestPhotoService photoService;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -62,7 +63,8 @@ public class NegotiationService {
                                CommissionProperties commissionProperties,
                                CashGatePort cashGatePort,
                                NegotiationEscrowPort escrowPort,
-                               StorageService storageService) {
+                               StorageService storageService,
+                               PackageRequestPhotoService photoService) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -75,6 +77,7 @@ public class NegotiationService {
         this.cashGatePort = cashGatePort;
         this.escrowPort = escrowPort;
         this.storageService = storageService;
+        this.photoService = photoService;
     }
 
     /**
@@ -798,7 +801,8 @@ public class NegotiationService {
             request.getDeclaredValueEur(),
             request.getDisclaimerSignedAt(),
             request.getDisclaimerSignedIp(),
-            thread.getPaymentMethod()
+            thread.getPaymentMethod(),
+            photoService.objectKeys(request.getId())
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

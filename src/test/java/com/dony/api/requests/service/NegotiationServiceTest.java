@@ -49,6 +49,7 @@ class NegotiationServiceTest {
     @Mock private CashGatePort cashGatePort;
     @Mock private com.dony.api.requests.NegotiationEscrowPort escrowPort;
     @Mock private StorageService storageService;
+    @Mock private PackageRequestPhotoService photoService;
 
     @InjectMocks private NegotiationService service;
 

@@ -56,7 +56,7 @@ class RequestEventsListenerTest {
             "Fatou Diop", "+221771234567", new BigDecimal("120"),
             java.time.LocalDateTime.now(), "1.2.3.4",
             com.dony.api.payments.cash.PaymentMethod.STRIPE
-        );
+        , java.util.List.of());
 
         listener.onPackageRequestAccepted(event);
 

@@ -43,6 +43,7 @@ public class PackageRequestService {
     private final com.dony.api.city.CityRepository cityRepository;
     private final CommissionProperties commissionProperties;
     private final StorageService storageService;
+    private final PackageRequestPhotoService photoService;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -52,7 +53,8 @@ public class PackageRequestService {
                                   NegotiationThreadRepository threadRepository,
                                   com.dony.api.city.CityRepository cityRepository,
                                   CommissionProperties commissionProperties,
-                                  StorageService storageService) {
+                                  StorageService storageService,
+                                  PackageRequestPhotoService photoService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -62,6 +64,7 @@ public class PackageRequestService {
         this.cityRepository = cityRepository;
         this.commissionProperties = commissionProperties;
         this.storageService = storageService;
+        this.photoService = photoService;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ public class PackageRequestService {
         entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         PackageRequestEntity saved = repository.save(entity);
+        photoService.replacePhotos(saved.getId(), senderId, req.photoKeys());
 
         eventPublisher.publishEvent(new PackageRequestCreatedEvent(
             saved.getId(), senderId, saved.getDepartureCity(),
@@ -216,6 +220,11 @@ public class PackageRequestService {
         entity.setStatus(PackageRequestStatus.OPEN);
 
         PackageRequestEntity saved = repository.save(entity);
+        // photoKeys == null → on conserve les photos existantes (édition sans toucher aux photos).
+        // photoKeys fourni (même vide) → remplace l'ensemble.
+        if (req.photoKeys() != null) {
+            photoService.replacePhotos(saved.getId(), callerUid, req.photoKeys());
+        }
 
         auditService.log("PACKAGE_REQUEST", saved.getId(), "UPDATED", callerUid,
             Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
@@ -245,7 +254,14 @@ public class PackageRequestService {
         if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        return toResponse(entity);
+        // Voyageur (non-owner) : expose son thread ACTIF pour que l'app bascule le CTA
+        // (« Proposer mon trajet » → « Voir ma négociation » / proposition de trajet).
+        var viewerThread = isOwner
+            ? java.util.Optional.<com.dony.api.requests.entity.NegotiationThreadEntity>empty()
+            : threadRepository.findActiveByPackageRequestIdAndTravelerId(requestId, callerUid);
+        return toResponse(entity,
+            viewerThread.map(com.dony.api.requests.entity.NegotiationThreadEntity::getId).orElse(null),
+            viewerThread.map(t -> t.getStatus().name()).orElse(null));
     }
 
     // ─── findMine ─────────────────────────────────────────────────────────────────
@@ -405,21 +421,31 @@ public class PackageRequestService {
     // ─── Mappers ─────────────────────────────────────────────────────────────────
 
     PackageRequestResponse toResponse(PackageRequestEntity e) {
+        return toResponse(e, null, null);
+    }
+
+    PackageRequestResponse toResponse(PackageRequestEntity e, java.util.UUID viewerThreadId,
+                                      String viewerThreadStatus) {
         BigDecimal grossPriceEur = e.getTargetPriceEur() != null
             ? PriceBreakdown.fromNet(e.getTargetPriceEur(), commissionProperties.rate()).gross()
             : null;
+        List<PackageRequestPhotoResponse> photos = photoService.activePhotos(e.getId());
+        String photoUrl = photos.isEmpty() ? e.getPhotoUrl() : photos.get(0).url();
         return new PackageRequestResponse(
             e.getId(), e.getSenderId(),
             e.getDepartureCity(), e.getArrivalCity(),
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
             e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
             e.getContentCategory(),
-            e.getDescription(), e.getTargetPriceEur(), e.getPhotoUrl(),
+            e.getDescription(), e.getTargetPriceEur(), photoUrl,
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             e.getStatus(), e.getCreatedAt(),
             e.isNegotiable(),
             e.getAcceptedPaymentMethods(),
-            grossPriceEur
+            grossPriceEur,
+            photos,
+            viewerThreadId,
+            viewerThreadStatus
         );
     }
 
@@ -436,6 +462,8 @@ public class PackageRequestService {
         );
         var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
         var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
+        List<PackageRequestPhotoResponse> photos = photoService.activePhotos(e.getId());
+        String photoUrl = photos.isEmpty() ? e.getPhotoUrl() : photos.get(0).url();
         return new PackageRequestSearchResponse(
             e.getId(), e.getDepartureCity(), e.getArrivalCity(),
             depCity != null ? depCity.getLatitude() : null,
@@ -445,10 +473,11 @@ public class PackageRequestService {
             e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
             e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
             e.getContentCategory(),
-            e.getTargetPriceEur(), e.isNegotiable(), e.getPhotoUrl(),
+            e.getTargetPriceEur(), e.isNegotiable(), photoUrl,
             e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
             senderProfile,
-            e.getAcceptedPaymentMethods()
+            e.getAcceptedPaymentMethods(),
+            photos
         );
     }
 
