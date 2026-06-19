@@ -70,6 +70,9 @@ dony:
       deep-link-refresh: "dony://stripe/onboarding/refresh"
   internal:
     secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
+  admin:
+    bootstrap:
+      secret: ${ADMIN_BOOTSTRAP_SECRET:dony-admin-bootstrap-dev}
   commission:
     rate: 0.12
 
