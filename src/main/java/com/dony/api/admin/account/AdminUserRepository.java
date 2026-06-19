@@ -39,4 +39,10 @@ public interface AdminUserRepository extends JpaRepository<AdminUserEntity, UUID
      * Find admin users by role and status with pagination (soft-deleted are excluded by @Where).
      */
     Page<AdminUserEntity> findByRoleAndStatus(AdminRole role, AdminStatus status, Pageable pageable);
+
+    /**
+     * Find the first admin user matching the given role and status (used by break-glass bootstrap).
+     * Soft-deleted entities are excluded by @Where clause on AdminUserEntity.
+     */
+    Optional<AdminUserEntity> findFirstByRoleAndStatus(AdminRole role, AdminStatus status);
 }
