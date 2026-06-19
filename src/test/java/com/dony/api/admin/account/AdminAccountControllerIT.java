@@ -324,6 +324,23 @@ class AdminAccountControllerIT {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("DELETE /admin/admins/{id} — self-delete guard → 409")
+    void deleteAdmin_selfDelete_returns409() throws Exception {
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000042");
+
+        doThrow(new com.dony.api.common.DonyBusinessException(
+                org.springframework.http.HttpStatus.CONFLICT,
+                "ADMIN_SELF_DELETE",
+                "Cannot delete your own account",
+                "You cannot delete your own admin account"
+        )).when(adminAccountService).deleteAdmin(eq(targetId), any());
+
+        mockMvc.perform(delete("/admin/admins/{id}", targetId)
+                        .with(authentication(superAdminAuth())))
+                .andExpect(status().isConflict());
+    }
+
     // -------------------------------------------------------------------------
     // POST /admin/me/change-password
     // -------------------------------------------------------------------------
