@@ -383,4 +383,356 @@ class AdminAccountServiceTest {
         assertThat(entity.getDeletedAt()).isNotNull();
         verify(adminAuthService).evictByFirebaseUid("uid-admin-del");
     }
+
+    // -------------------------------------------------------------------------
+    // createAdmin(generate=false, login=null) → ADMIN_LOGIN_REQUIRED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("createAdmin(generate=false, login=null) → DonyBusinessException ADMIN_LOGIN_REQUIRED")
+    void createAdmin_generateFalse_loginNull_throwsLoginRequired() {
+        UUID actorId = UUID.randomUUID();
+        CreateAdminRequest req = new CreateAdminRequest(null, "somePassword", false, AdminRole.ADMIN, null);
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_LOGIN_REQUIRED");
+
+        verify(adminUserRepository, never()).existsByLogin(any());
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createAdmin(generate=false, login=blank) → DonyBusinessException ADMIN_LOGIN_REQUIRED")
+    void createAdmin_generateFalse_loginBlank_throwsLoginRequired() {
+        UUID actorId = UUID.randomUUID();
+        CreateAdminRequest req = new CreateAdminRequest("  ", "somePassword", false, AdminRole.ADMIN, null);
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_LOGIN_REQUIRED");
+    }
+
+    // -------------------------------------------------------------------------
+    // createAdmin → Firebase createUser throws FirebaseAuthException → FIREBASE_CREATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("createAdmin → Firebase createUser throws FirebaseAuthException → DonyBusinessException FIREBASE_CREATE_FAILED")
+    void createAdmin_firebaseCreateUser_throws_firebaseCreateFailed() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+
+        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase create error");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(ex);
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_CREATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // resetPassword → Firebase updateUser throws FirebaseAuthException → FIREBASE_UPDATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("resetPassword → Firebase updateUser throws FirebaseAuthException → DonyBusinessException FIREBASE_UPDATE_FAILED")
+    void resetPassword_firebaseUpdateUser_throws_firebaseUpdateFailed() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-reset-fail", "admin.reset", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase update error");
+        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
+
+        assertThatThrownBy(() -> adminAccountService.resetPassword(adminId, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_UPDATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // changeOwnPassword → Firebase updateUser throws FirebaseAuthException → FIREBASE_UPDATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("changeOwnPassword → Firebase updateUser throws FirebaseAuthException → DonyBusinessException FIREBASE_UPDATE_FAILED")
+    void changeOwnPassword_firebaseUpdateUser_throws_firebaseUpdateFailed() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = adminId;
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-own-fail", "admin.own", AdminRole.SUPPORT, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase change error");
+        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
+
+        assertThatThrownBy(() -> adminAccountService.changeOwnPassword(adminId, "NewStr0ng!P@ssword99", actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_UPDATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → status=DISABLED, actorId == adminId → ADMIN_SELF_DISABLE
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with status=DISABLED and actorId==adminId → DonyBusinessException ADMIN_SELF_DISABLE")
+    void updateAdmin_selfDisable_throws() {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = adminId;
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-self-disable", "admin.self", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_SELF_DISABLE");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → status=DISABLED on last active SUPER_ADMIN → ADMIN_LAST_SUPER_ADMIN
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with status=DISABLED on last active SUPER_ADMIN → DonyBusinessException ADMIN_LAST_SUPER_ADMIN")
+    void updateAdmin_lastSuperAdmin_throws() {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-last-sa", "admin.superadmin", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)).thenReturn(1L);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_LAST_SUPER_ADMIN");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → new login already taken → ADMIN_LOGIN_DUPLICATE
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with new login already taken → DonyBusinessException ADMIN_LOGIN_DUPLICATE")
+    void updateAdmin_newLoginDuplicate_throws() {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-dup-login", "admin.current", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.existsByLogin("admin.taken")).thenReturn(true);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, null, "admin.taken");
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_LOGIN_DUPLICATE");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → new login + Firebase updateUser throws → FIREBASE_UPDATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with new login, Firebase updateUser throws → DonyBusinessException FIREBASE_UPDATE_FAILED")
+    void updateAdmin_newLogin_firebaseUpdateUser_throws_firebaseUpdateFailed() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-newlogin-fail", "admin.old", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.existsByLogin("admin.new")).thenReturn(false);
+
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase email update error");
+        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, null, "admin.new");
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_UPDATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → status=ACTIVE → enableFirebaseUser called
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with status=ACTIVE → enableFirebaseUser called (Firebase updateUser with disabled=false)")
+    void updateAdmin_statusActive_enableFirebaseUser() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-enable", "admin.disabled", AdminRole.ADMIN, AdminStatus.DISABLED);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.save(any())).thenReturn(entity);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE, null);
+
+        adminAccountService.updateAdmin(adminId, req, actorId);
+
+        ArgumentCaptor<UserRecord.UpdateRequest> captor = ArgumentCaptor.forClass(UserRecord.UpdateRequest.class);
+        verify(firebaseAuth).updateUser(captor.capture());
+        assertThat(entity.getStatus()).isEqualTo(AdminStatus.ACTIVE);
+        verify(adminAuthService).evictByFirebaseUid("uid-enable");
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → status=ACTIVE → Firebase enableUser throws → FIREBASE_UPDATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with status=ACTIVE, Firebase enable throws → DonyBusinessException FIREBASE_UPDATE_FAILED")
+    void updateAdmin_statusActive_firebaseEnable_throws_firebaseUpdateFailed() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-enable-fail", "admin.toenable", AdminRole.ADMIN, AdminStatus.DISABLED);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase enable error");
+        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE, null);
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_UPDATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → status=DISABLED → disableFirebaseUser throws → FIREBASE_UPDATE_FAILED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin with status=DISABLED, Firebase disable throws → DonyBusinessException FIREBASE_UPDATE_FAILED")
+    void updateAdmin_statusDisabled_firebaseDisable_throws_firebaseUpdateFailed() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-disable-fail", "admin.todisable", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+
+        FirebaseAuthException ex = mock(FirebaseAuthException.class);
+        when(ex.getMessage()).thenReturn("firebase disable error");
+        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_UPDATE_FAILED");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // generateLogin → all admin.1..999 taken → returns admin.<hex>
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("generateLogin → all admin.1..999 taken → returns login with hex suffix")
+    void generateLogin_allNumericTaken_returnsHexSuffix() {
+        // All "admin.N" for N=1..999 are taken
+        when(adminUserRepository.existsByLogin(anyString())).thenReturn(true);
+
+        String login = adminAccountService.generateLogin();
+
+        assertThat(login).startsWith("admin.");
+        String suffix = login.substring("admin.".length());
+        // Suffix should be a hex string (parseable as long hex) — not a pure integer 1-999
+        assertThat(suffix).matches("[0-9a-f]+");
+    }
+
+    // -------------------------------------------------------------------------
+    // updateAdmin → happy path (change role + permissionOverrides)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("updateAdmin happy path: change role and permissionOverrides → entity updated, saved, audit ADMIN_ACCOUNT_UPDATED")
+    void updateAdmin_changeRoleAndPermissions_happyPath() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        AdminUserEntity entity = buildEntity(adminId, "uid-update", "admin.update", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.save(any())).thenReturn(entity);
+
+        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, Map.of("MANAGE_USERS", true), null, null);
+
+        AdminUserEntity result = adminAccountService.updateAdmin(adminId, req, actorId);
+
+        assertThat(result.getRole()).isEqualTo(AdminRole.SUPPORT);
+        assertThat(result.getPermissionOverrides()).containsEntry("MANAGE_USERS", true);
+
+        verify(adminUserRepository).save(entity);
+        verify(adminAuthService).evictByFirebaseUid("uid-update");
+        verify(auditService).log(
+                eq("admin_users"),
+                eq(adminId),
+                eq("ADMIN_ACCOUNT_UPDATED"),
+                eq(actorId),
+                any()
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // findOrThrow → admin not found → ADMIN_NOT_FOUND
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("resetPassword on non-existent admin → DonyBusinessException ADMIN_NOT_FOUND")
+    void resetPassword_adminNotFound_throws() {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminAccountService.resetPassword(adminId, actorId))
+                .isInstanceOf(DonyBusinessException.class)
+                .extracting(e -> ((DonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_NOT_FOUND");
+    }
 }
