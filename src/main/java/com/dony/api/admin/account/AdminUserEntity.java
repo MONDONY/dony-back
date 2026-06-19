@@ -41,7 +41,7 @@ public class AdminUserEntity extends BaseEntity {
     private Boolean mustChangePassword;
 
     @Convert(converter = PermissionOverridesConverter.class)
-    @Column(name = "permission_overrides", nullable = false, columnDefinition = "jsonb")
+    @Column(name = "permission_overrides", nullable = false)
     private Map<String, Boolean> permissionOverrides = new HashMap<>();
 
     @Column(name = "created_by")
