@@ -1,5 +1,4 @@
 ALTER TABLE disputes
-    ADD COLUMN resolution         VARCHAR(50),
-    ADD COLUMN resolved_at        TIMESTAMP,
-    ADD COLUMN resolution_note    TEXT,
-    ADD COLUMN beneficiary_user_id UUID;
+    ADD COLUMN IF NOT EXISTS resolved_at        TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS resolution_note    TEXT,
+    ADD COLUMN IF NOT EXISTS beneficiary_user_id UUID;
