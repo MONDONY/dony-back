@@ -33,7 +33,7 @@ import java.security.MessageDigest;
 @RequestMapping("/admin/bootstrap")
 public class AdminBootstrapController {
 
-    @Value("${admin.bootstrap.secret:}")
+    @Value("${dony.admin.bootstrap.secret:}")
     private String bootstrapSecret;
 
     private final AdminAccountService adminAccountService;

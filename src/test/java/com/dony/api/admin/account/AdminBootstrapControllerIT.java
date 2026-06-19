@@ -48,7 +48,7 @@ class AdminBootstrapControllerIT {
     @SpringBootTest
     @ActiveProfiles("test")
     @AutoConfigureMockMvc
-    @TestPropertySource(properties = "admin.bootstrap.secret=")
+    @TestPropertySource(properties = "dony.admin.bootstrap.secret=")
     class WhenSecretNotConfigured {
 
         @Autowired
@@ -97,7 +97,7 @@ class AdminBootstrapControllerIT {
     @SpringBootTest
     @ActiveProfiles("test")
     @AutoConfigureMockMvc
-    @TestPropertySource(properties = "admin.bootstrap.secret=test-bootstrap-secret-123")
+    @TestPropertySource(properties = "dony.admin.bootstrap.secret=test-bootstrap-secret-123")
     class WhenSecretConfigured {
 
         static final String VALID_SECRET = "test-bootstrap-secret-123";
