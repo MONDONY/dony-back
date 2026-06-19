@@ -1,5 +1,8 @@
 package com.dony.api.auth;
 
+import com.dony.api.admin.account.AdminAuthService;
+import com.dony.api.admin.account.AdminAuthorities;
+import com.dony.api.admin.account.AdminPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -23,6 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class FirebaseTokenFilter extends OncePerRequestFilter {
@@ -32,10 +36,14 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
     private final UserLinkerService userLinkerService;
     private final ObjectMapper objectMapper;
+    private final AdminAuthService adminAuthService;
 
-    public FirebaseTokenFilter(UserLinkerService userLinkerService, ObjectMapper objectMapper) {
+    public FirebaseTokenFilter(UserLinkerService userLinkerService,
+                               ObjectMapper objectMapper,
+                               AdminAuthService adminAuthService) {
         this.userLinkerService = userLinkerService;
         this.objectMapper = objectMapper;
+        this.adminAuthService = adminAuthService;
     }
 
     @Override
@@ -46,7 +54,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
         if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
             String token = authHeader.substring(BEARER_PREFIX.length()).trim();
-            boolean blocked = authenticateToken(token, response);
+            boolean blocked = authenticateToken(token, request, response);
             if (blocked) return;
         }
 
@@ -54,9 +62,10 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
     }
 
     /**
-     * @return true if the request was blocked (suspended/banned user), false to continue
+     * @return true if the request was blocked (admin-only route accessed by non-admin, or suspended/banned user),
+     *         false to continue
      */
-    private boolean authenticateToken(String token, HttpServletResponse response) throws IOException {
+    private boolean authenticateToken(String token, HttpServletRequest request, HttpServletResponse response) throws IOException {
         if (!isFirebaseReady()) return false;
 
         FirebaseToken decoded;
@@ -68,6 +77,25 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             log.debug("Invalid Firebase token: {}", e.getMessage());
             SecurityContextHolder.clearContext();
             return false;
+        }
+
+        // Admin fast-path: resolve admin before normal user lookup
+        Optional<AdminAuthorities> adminOpt = adminAuthService.resolve(uid);
+        if (adminOpt.isPresent()) {
+            AdminAuthorities admin = adminOpt.get();
+            UsernamePasswordAuthenticationToken adminAuth =
+                    new UsernamePasswordAuthenticationToken(
+                            new AdminPrincipal(admin.adminId(), admin.login(), admin.role(), admin.mustChangePassword()),
+                            decoded,
+                            admin.authorities()
+                    );
+            SecurityContextHolder.getContext().setAuthentication(adminAuth);
+            return false; // not blocked
+        }
+        // If request targets admin routes and caller is not an admin → 403
+        if (request.getRequestURI().startsWith("/admin/")) {
+            writeForbidden(response, "Accès réservé aux administrateurs");
+            return true;
         }
 
         try {
@@ -108,8 +136,8 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
     private void writeForbidden(HttpServletResponse response, String detail) throws IOException {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, detail);
-        problem.setType(URI.create("https://dony.app/errors/account-suspended"));
-        problem.setTitle("Account Suspended");
+        problem.setType(URI.create("https://dony.app/errors/access-denied"));
+        problem.setTitle("Access Denied");
 
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

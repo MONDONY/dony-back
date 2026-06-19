@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.admin.account.AdminAuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.*;
 class FirebaseTokenFilterTest {
 
     @Mock private UserLinkerService userLinkerService;
+    @Mock private AdminAuthService adminAuthService;
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
     @Mock private FilterChain filterChain;
@@ -45,7 +47,11 @@ class FirebaseTokenFilterTest {
     private static final String FIREBASE_UID = "uid-test-001";
 
     private FirebaseTokenFilter buildFilter() {
-        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper());
+        // Default: adminAuthService returns empty (no admin) so non-admin tests are unaffected
+        when(adminAuthService.resolve(any())).thenReturn(Optional.empty());
+        // Default: request is not an admin route
+        when(request.getRequestURI()).thenReturn("/api/some-path");
+        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService);
     }
 
     private UserEntity makeUser(UserStatus status) {

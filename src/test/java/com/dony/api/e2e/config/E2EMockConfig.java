@@ -1,5 +1,6 @@
 package com.dony.api.e2e.config;
 
+import com.dony.api.admin.account.AdminAuthService;
 import com.dony.api.auth.FirebaseTokenFilter;
 import com.dony.api.auth.UserLinkerService;
 import com.dony.api.common.StorageService;
@@ -38,8 +39,9 @@ public class E2EMockConfig {
     @Bean
     @Primary
     public FirebaseTokenFilter firebaseTokenFilter(UserLinkerService userLinkerService,
-                                                   ObjectMapper objectMapper) {
-        return new TestFirebaseTokenFilter(userLinkerService, objectMapper);
+                                                   ObjectMapper objectMapper,
+                                                   AdminAuthService adminAuthService) {
+        return new TestFirebaseTokenFilter(userLinkerService, objectMapper, adminAuthService);
     }
 
     @Bean
