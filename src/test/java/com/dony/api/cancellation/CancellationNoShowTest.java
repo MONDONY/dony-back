@@ -193,6 +193,34 @@ class CancellationNoShowTest {
             verify(cancellationRepository, never()).save(any());
             verifyNoInteractions(eventPublisher);
         }
+
+        @Test
+        void senderOverload_ownerConfirms() {
+            CancellationEntity c = new CancellationEntity();
+            ReflectionTestUtils.setField(c, "id", UUID.randomUUID());
+            c.setBidId(BID_ID);
+            c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(
+                    Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(c));
+            when(cancellationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.confirmSenderNoShow(BID_ID, SENDER_ID);
+
+            assertThat(c.getNoShowStatus()).isEqualTo(CancellationStatus.CONFIRMED);
+            verify(eventPublisher).publishEvent(any(CancellationConfirmedEvent.class));
+        }
+
+        @Test
+        void senderOverload_nonOwnerForbidden() {
+            when(bidRepository.findById(BID_ID)).thenReturn(
+                    Optional.of(cashBid(BidStatus.ACCEPTED, LocalDateTime.now().minusHours(1))));
+
+            assertThatThrownBy(() -> service.confirmSenderNoShow(BID_ID, UUID.randomUUID()))
+                    .isInstanceOf(com.dony.api.common.DonyBusinessException.class)
+                    .hasMessageContaining("expéditeur");
+        }
     }
 
     // ═══════════════════════════════ contestSenderNoShow ══════════════════════

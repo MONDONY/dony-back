@@ -488,6 +488,23 @@ public class CancellationService {
                 new CancellationConfirmedEvent(bidId, c.getId(), CancellationReason.SENDER_NO_SHOW));
     }
 
+    /**
+     * Variante côté expéditeur : il confirme lui-même son absence (le bid sera
+     * annulé, pas de débit). Vérifie qu'il est bien l'expéditeur du bid avant de
+     * réutiliser la logique de confirmation.
+     */
+    @Transactional
+    public void confirmSenderNoShow(UUID bidId, UUID senderId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        if (!bid.getSenderId().equals(senderId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas l'expéditeur de ce bid.");
+        }
+        confirmSenderNoShow(bidId);
+    }
+
     @Transactional
     public void contestSenderNoShow(UUID bidId, UUID senderId) {
         BidEntity bid = bidRepository.findById(bidId)

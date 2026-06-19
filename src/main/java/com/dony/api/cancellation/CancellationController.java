@@ -66,6 +66,14 @@ public class CancellationController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/bids/{bidId}/confirm-noshow-self")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<Void> confirmNoShowSelf(@PathVariable UUID bidId) {
+        UUID senderId = resolveUserId();
+        cancellationService.confirmSenderNoShow(bidId, senderId);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/bids/{bidId}/contest-noshow")
     @PreAuthorize("hasRole('SENDER')")
     public ResponseEntity<Void> contestNoShow(@PathVariable UUID bidId) {
