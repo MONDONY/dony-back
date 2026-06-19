@@ -11,6 +11,7 @@ import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,7 +50,7 @@ public class AdminAccountService {
     private final AdminAuthService adminAuthService;
 
     public AdminAccountService(AdminUserRepository adminUserRepository,
-                                FirebaseAuth firebaseAuth,
+                                @Nullable FirebaseAuth firebaseAuth,
                                 AuditService auditService,
                                 AdminAuthService adminAuthService) {
         this.adminUserRepository = adminUserRepository;
@@ -105,7 +106,7 @@ public class AdminAccountService {
                     .setEmail(email)
                     .setPassword(password)
                     .setDisplayName(login);
-            UserRecord userRecord = firebaseAuth.createUser(createRequest);
+            UserRecord userRecord = requireFirebase().createUser(createRequest);
             firebaseUid = userRecord.getUid();
         } catch (FirebaseAuthException e) {
             log.error("Firebase createUser failed for login={}: {}", login, e.getMessage());
@@ -119,10 +120,10 @@ public class AdminAccountService {
 
         // Set custom claim ROLE_ADMIN — if this fails, rollback the Firebase user
         try {
-            firebaseAuth.setCustomUserClaims(firebaseUid, Map.of("ROLE_ADMIN", true));
+            requireFirebase().setCustomUserClaims(firebaseUid, Map.of("ROLE_ADMIN", true));
         } catch (FirebaseAuthException e) {
             log.error("Failed to set custom claims for uid={}, rolling back Firebase user: {}", firebaseUid, e.getMessage());
-            try { firebaseAuth.deleteUser(firebaseUid); } catch (Exception ignored) {}
+            try { requireFirebase().deleteUser(firebaseUid); } catch (Exception ignored) {}
             throw new RuntimeException("Failed to set admin claims for " + firebaseUid, e);
         }
 
@@ -164,7 +165,7 @@ public class AdminAccountService {
         try {
             UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
                     .setPassword(newPassword);
-            firebaseAuth.updateUser(updateRequest);
+            requireFirebase().updateUser(updateRequest);
         } catch (FirebaseAuthException e) {
             log.error("Firebase updateUser (reset) failed for adminId={}: {}", adminId, e.getMessage());
             throw new DonyBusinessException(
@@ -206,7 +207,7 @@ public class AdminAccountService {
         try {
             UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
                     .setPassword(newPassword);
-            firebaseAuth.updateUser(updateRequest);
+            requireFirebase().updateUser(updateRequest);
         } catch (FirebaseAuthException e) {
             log.error("Firebase updateUser (changeOwn) failed for adminId={}: {}", adminId, e.getMessage());
             throw new DonyBusinessException(
@@ -293,7 +294,7 @@ public class AdminAccountService {
             try {
                 UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
                         .setEmail(syntheticEmail(req.login()));
-                firebaseAuth.updateUser(updateRequest);
+                requireFirebase().updateUser(updateRequest);
             } catch (FirebaseAuthException e) {
                 log.error("Firebase updateUser (email) failed for adminId={}: {}", adminId, e.getMessage());
                 throw new DonyBusinessException(
@@ -435,6 +436,13 @@ public class AdminAccountService {
     // Private helpers
     // -------------------------------------------------------------------------
 
+    private FirebaseAuth requireFirebase() {
+        if (firebaseAuth == null) {
+            throw new IllegalStateException("Firebase is not available in this environment");
+        }
+        return firebaseAuth;
+    }
+
     private AdminUserEntity findOrThrow(UUID adminId) {
         return adminUserRepository.findById(adminId)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -449,7 +457,7 @@ public class AdminAccountService {
         try {
             UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(firebaseUid)
                     .setDisabled(true);
-            firebaseAuth.updateUser(updateRequest);
+            requireFirebase().updateUser(updateRequest);
         } catch (FirebaseAuthException e) {
             log.error("Firebase disable user failed for uid={}: {}", firebaseUid, e.getMessage());
             throw new DonyBusinessException(
@@ -465,7 +473,7 @@ public class AdminAccountService {
         try {
             UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(firebaseUid)
                     .setDisabled(false);
-            firebaseAuth.updateUser(updateRequest);
+            requireFirebase().updateUser(updateRequest);
         } catch (FirebaseAuthException e) {
             log.error("Firebase enable user failed for uid={}: {}", firebaseUid, e.getMessage());
             throw new DonyBusinessException(
