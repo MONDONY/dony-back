@@ -4,18 +4,23 @@ import com.dony.api.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Where;
 
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Admin user account entity for RBAC (Task 1).
+ * Admin user account entity for RBAC (Task 3).
  * Extends BaseEntity for id, created_at, updated_at, deleted_at (soft delete).
+ * Enforces soft-delete convention via @Where clause.
  */
 @Entity
 @Table(name = "admin_users")
+@Where(clause = "deleted_at IS NULL")
 public class AdminUserEntity extends BaseEntity {
 
     @Column(name = "firebase_uid", nullable = false, unique = true, length = 128)
@@ -25,10 +30,12 @@ public class AdminUserEntity extends BaseEntity {
     private String login;
 
     @Column(name = "role", nullable = false, length = 20)
-    private String role;
+    @Enumerated(EnumType.STRING)
+    private AdminRole role;
 
     @Column(name = "status", nullable = false, length = 10)
-    private String status;
+    @Enumerated(EnumType.STRING)
+    private AdminStatus status;
 
     @Column(name = "must_change_password", nullable = false)
     private Boolean mustChangePassword;
@@ -47,10 +54,10 @@ public class AdminUserEntity extends BaseEntity {
     public AdminUserEntity() {
         this.mustChangePassword = true;
         this.permissionOverrides = new HashMap<>();
-        this.status = "ACTIVE";
+        this.status = AdminStatus.ACTIVE;
     }
 
-    public AdminUserEntity(String firebaseUid, String login, String role) {
+    public AdminUserEntity(String firebaseUid, String login, AdminRole role) {
         this();
         this.firebaseUid = firebaseUid;
         this.login = login;
@@ -64,11 +71,11 @@ public class AdminUserEntity extends BaseEntity {
     public String getLogin() { return login; }
     public void setLogin(String login) { this.login = login; }
 
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role; }
+    public AdminRole getRole() { return role; }
+    public void setRole(AdminRole role) { this.role = role; }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public AdminStatus getStatus() { return status; }
+    public void setStatus(AdminStatus status) { this.status = status; }
 
     public Boolean getMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(Boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }

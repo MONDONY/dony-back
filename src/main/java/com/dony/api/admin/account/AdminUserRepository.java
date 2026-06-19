@@ -1,5 +1,7 @@
 package com.dony.api.admin.account;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -7,7 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for AdminUserEntity (Task 1 — RBAC).
+ * Repository for AdminUserEntity (Task 3 — RBAC).
+ * Soft-delete filtering is handled by @Where clause on AdminUserEntity.
  */
 @Repository
 public interface AdminUserRepository extends JpaRepository<AdminUserEntity, UUID> {
@@ -23,7 +26,17 @@ public interface AdminUserRepository extends JpaRepository<AdminUserEntity, UUID
     Optional<AdminUserEntity> findByLogin(String login);
 
     /**
-     * Count active admin users by role (excludes soft-deleted).
+     * Check if an admin user with the given login exists.
      */
-    long countByRoleAndStatusAndDeletedAtIsNull(String role, String status);
+    boolean existsByLogin(String login);
+
+    /**
+     * Count admin users by role and status (soft-deleted are excluded by @Where).
+     */
+    long countByRoleAndStatus(AdminRole role, AdminStatus status);
+
+    /**
+     * Find admin users by role and status with pagination (soft-deleted are excluded by @Where).
+     */
+    Page<AdminUserEntity> findByRoleAndStatus(AdminRole role, AdminStatus status, Pageable pageable);
 }

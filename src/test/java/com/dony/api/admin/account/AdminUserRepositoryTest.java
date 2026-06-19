@@ -16,8 +16,8 @@ class AdminUserRepositoryTest {
 
     @Test
     void findByFirebaseUid() {
-        AdminUserEntity admin = new AdminUserEntity("firebase_uid_001", "admin1", "SUPER_ADMIN");
-        admin.setStatus("ACTIVE");
+        AdminUserEntity admin = new AdminUserEntity("firebase_uid_001", "admin1", AdminRole.SUPER_ADMIN);
+        admin.setStatus(AdminStatus.ACTIVE);
         repository.save(admin);
 
         var found = repository.findByFirebaseUid("firebase_uid_001");
@@ -28,8 +28,8 @@ class AdminUserRepositoryTest {
 
     @Test
     void findByLogin() {
-        AdminUserEntity admin = new AdminUserEntity("firebase_uid_002", "admin2", "ADMIN");
-        admin.setStatus("ACTIVE");
+        AdminUserEntity admin = new AdminUserEntity("firebase_uid_002", "admin2", AdminRole.ADMIN);
+        admin.setStatus(AdminStatus.ACTIVE);
         repository.save(admin);
 
         var found = repository.findByLogin("admin2");
@@ -39,16 +39,16 @@ class AdminUserRepositoryTest {
     }
 
     @Test
-    void countByRoleAndStatusAndDeletedAtIsNull() {
-        AdminUserEntity admin1 = new AdminUserEntity("firebase_uid_003", "admin3", "SUPER_ADMIN");
-        admin1.setStatus("ACTIVE");
+    void countByRoleAndStatus() {
+        AdminUserEntity admin1 = new AdminUserEntity("firebase_uid_003", "admin3", AdminRole.SUPER_ADMIN);
+        admin1.setStatus(AdminStatus.ACTIVE);
         repository.save(admin1);
 
-        AdminUserEntity admin2 = new AdminUserEntity("firebase_uid_004", "admin4", "SUPER_ADMIN");
-        admin2.setStatus("DISABLED");
+        AdminUserEntity admin2 = new AdminUserEntity("firebase_uid_004", "admin4", AdminRole.SUPER_ADMIN);
+        admin2.setStatus(AdminStatus.DISABLED);
         repository.save(admin2);
 
-        long count = repository.countByRoleAndStatusAndDeletedAtIsNull("SUPER_ADMIN", "ACTIVE");
+        long count = repository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
 
         assertThat(count).isEqualTo(1);
     }
