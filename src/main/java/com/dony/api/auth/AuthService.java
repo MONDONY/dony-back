@@ -1,5 +1,8 @@
 package com.dony.api.auth;
 
+import com.dony.api.admin.account.AdminAuthService;
+import com.dony.api.admin.account.AdminAuthorities;
+import com.dony.api.auth.dto.AdminInfo;
 import com.dony.api.auth.dto.DeleteImmediatelyRequest;
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
@@ -25,6 +28,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,6 +48,7 @@ public class AuthService {
     private final ApplicationEventPublisher eventPublisher;
     private final ConnectedDevicesService connectedDevicesService;
     private final StorageService storageService;
+    private final AdminAuthService adminAuthService;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
@@ -52,7 +57,8 @@ public class AuthService {
                        AccountFinalizationService accountFinalizationService,
                        ApplicationEventPublisher eventPublisher,
                        ConnectedDevicesService connectedDevicesService,
-                       StorageService storageService) {
+                       StorageService storageService,
+                       AdminAuthService adminAuthService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
@@ -61,6 +67,7 @@ public class AuthService {
         this.eventPublisher = eventPublisher;
         this.connectedDevicesService = connectedDevicesService;
         this.storageService = storageService;
+        this.adminAuthService = adminAuthService;
     }
 
     @Transactional
@@ -504,6 +511,23 @@ public class AuthService {
     }
 
     public UserResponse toResponse(UserEntity user) {
+        // Check if this user is also an admin and resolve admin info if so
+        AdminInfo adminInfo = null;
+        Optional<AdminAuthorities> adminAuthOpt = adminAuthService.resolve(user.getFirebaseUid());
+        if (adminAuthOpt.isPresent()) {
+            AdminAuthorities auth = adminAuthOpt.get();
+            List<String> permissions = auth.authorities().stream()
+                    .map(a -> a.getAuthority())
+                    .filter(a -> !a.startsWith("ROLE_"))
+                    .collect(Collectors.toList());
+            adminInfo = new AdminInfo(
+                    auth.login(),
+                    auth.role(),
+                    permissions,
+                    auth.mustChangePassword()
+            );
+        }
+
         return new UserResponse(
                 user.getId(),
                 user.getPhoneNumber(),
@@ -524,7 +548,8 @@ public class AuthService {
                 user.getLanguages(),
                 user.getTransportMode() != null ? user.getTransportMode().name() : null,
                 storageService.avatarUrl(user.getAvatarUrl()),
-                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null
+                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null,
+                adminInfo
         );
     }
 }
