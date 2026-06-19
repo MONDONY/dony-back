@@ -99,7 +99,7 @@ public class AdminAccountService {
 
         String email = syntheticEmail(login);
 
-        // Create Firebase user
+        // Create Firebase user (or recover orphan if email already exists)
         String firebaseUid;
         try {
             UserRecord.CreateRequest createRequest = new UserRecord.CreateRequest()
@@ -109,13 +109,26 @@ public class AdminAccountService {
             UserRecord userRecord = requireFirebase().createUser(createRequest);
             firebaseUid = userRecord.getUid();
         } catch (FirebaseAuthException e) {
-            log.error("Firebase createUser failed for login={}: {}", login, e.getMessage());
-            throw new DonyBusinessException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "FIREBASE_CREATE_FAILED",
-                    "Firebase account creation failed",
-                    e.getMessage()
-            );
+            if ("EMAIL_EXISTS".equals(e.getErrorCode() != null ? e.getErrorCode().toString() : "")
+                    || (e.getMessage() != null && e.getMessage().contains("EMAIL_EXISTS"))) {
+                // Orphan Firebase user (previous bootstrap failed after Firebase create but before DB save).
+                // Recover: fetch existing UID, reset password, re-use.
+                try {
+                    UserRecord existing = requireFirebase().getUserByEmail(email);
+                    firebaseUid = existing.getUid();
+                    UserRecord.UpdateRequest resetReq = new UserRecord.UpdateRequest(firebaseUid).setPassword(password);
+                    requireFirebase().updateUser(resetReq);
+                    log.warn("Recovered orphan Firebase user uid={} for login={}", firebaseUid, login);
+                } catch (FirebaseAuthException ex) {
+                    log.error("Firebase orphan recovery failed for login={}: {}", login, ex.getMessage());
+                    throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED",
+                            "Firebase account creation failed", ex.getMessage());
+                }
+            } else {
+                log.error("Firebase createUser failed for login={}: {}", login, e.getMessage());
+                throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED",
+                        "Firebase account creation failed", e.getMessage());
+            }
         }
 
         // Set custom claim ROLE_ADMIN — if this fails, rollback the Firebase user
