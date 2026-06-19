@@ -1,5 +1,6 @@
 package com.dony.api.admin.account;
 
+import com.dony.api.admin.account.dto.AdminProfileResponse;
 import com.dony.api.admin.account.dto.AdminSummary;
 import com.dony.api.admin.account.dto.ChangePasswordRequest;
 import com.dony.api.admin.account.dto.CreateAdminRequest;
@@ -8,6 +9,7 @@ import com.dony.api.admin.account.dto.UpdateAdminRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -129,8 +131,25 @@ public class AdminAccountController {
     }
 
     // -------------------------------------------------------------------------
-    // Self-service: change own password
+    // Self-service: own profile + change password
     // -------------------------------------------------------------------------
+
+    /**
+     * Returns the authenticated admin's own profile.
+     * Does NOT require ADMIN_MANAGE — available to all admin roles.
+     */
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public AdminProfileResponse getMyProfile(Authentication auth) {
+        UUID adminId = extractActorId(auth);
+        AdminUserEntity entity = adminUserRepository.findById(adminId)
+                .orElseThrow(() -> new com.dony.api.common.DonyBusinessException(
+                        org.springframework.http.HttpStatus.NOT_FOUND,
+                        "ADMIN_NOT_FOUND",
+                        "Admin not found",
+                        "No admin with id " + adminId));
+        return AdminProfileResponse.from(entity);
+    }
 
     /**
      * Allows any authenticated admin to change their own password.
