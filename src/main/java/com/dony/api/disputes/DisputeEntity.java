@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -31,6 +32,18 @@ public class DisputeEntity extends BaseEntity {
     @Column(name = "refund_frozen", nullable = false)
     private boolean refundFrozen = false;
 
+    @Column(name = "resolution", length = 50)
+    private String resolution;
+
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
+    @Column(name = "resolution_note", columnDefinition = "TEXT")
+    private String resolutionNote;
+
+    @Column(name = "beneficiary_user_id")
+    private UUID beneficiaryUserId;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -48,4 +61,16 @@ public class DisputeEntity extends BaseEntity {
 
     public boolean isRefundFrozen() { return refundFrozen; }
     public void setRefundFrozen(boolean refundFrozen) { this.refundFrozen = refundFrozen; }
+
+    public String getResolution() { return resolution; }
+    public void setResolution(String resolution) { this.resolution = resolution; }
+
+    public LocalDateTime getResolvedAt() { return resolvedAt; }
+    public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+
+    public String getResolutionNote() { return resolutionNote; }
+    public void setResolutionNote(String resolutionNote) { this.resolutionNote = resolutionNote; }
+
+    public UUID getBeneficiaryUserId() { return beneficiaryUserId; }
+    public void setBeneficiaryUserId(UUID beneficiaryUserId) { this.beneficiaryUserId = beneficiaryUserId; }
 }
