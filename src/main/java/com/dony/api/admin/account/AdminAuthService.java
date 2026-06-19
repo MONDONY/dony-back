@@ -44,7 +44,7 @@ public class AdminAuthService {
      *
      * Result is cached under "adminAuthz" with 30-second TTL.
      */
-    @Cacheable(value = "adminAuthz", key = "#firebaseUid", unless = "#result != null && #result.isEmpty()")
+    @Cacheable(value = "adminAuthz", key = "#firebaseUid", unless = "#result == null")
     public Optional<AdminAuthorities> resolve(String firebaseUid) {
         Optional<AdminUserEntity> entityOpt = adminUserRepository.findByFirebaseUid(firebaseUid);
 
