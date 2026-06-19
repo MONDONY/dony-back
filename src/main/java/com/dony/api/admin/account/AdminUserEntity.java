@@ -2,10 +2,13 @@ package com.dony.api.admin.account;
 
 import com.dony.api.common.BaseEntity;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Admin user account entity for RBAC (Task 1).
@@ -30,8 +33,9 @@ public class AdminUserEntity extends BaseEntity {
     @Column(name = "must_change_password", nullable = false)
     private Boolean mustChangePassword;
 
+    @Convert(converter = PermissionOverridesConverter.class)
     @Column(name = "permission_overrides", nullable = false)
-    private String permissionOverrides;
+    private Map<String, Boolean> permissionOverrides = new HashMap<>();
 
     @Column(name = "created_by")
     private java.util.UUID createdBy;
@@ -42,7 +46,7 @@ public class AdminUserEntity extends BaseEntity {
     // Constructors
     public AdminUserEntity() {
         this.mustChangePassword = true;
-        this.permissionOverrides = "{}";
+        this.permissionOverrides = new HashMap<>();
         this.status = "ACTIVE";
     }
 
@@ -69,8 +73,8 @@ public class AdminUserEntity extends BaseEntity {
     public Boolean getMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(Boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
 
-    public String getPermissionOverrides() { return permissionOverrides; }
-    public void setPermissionOverrides(String permissionOverrides) { this.permissionOverrides = permissionOverrides; }
+    public Map<String, Boolean> getPermissionOverrides() { return permissionOverrides; }
+    public void setPermissionOverrides(Map<String, Boolean> permissionOverrides) { this.permissionOverrides = permissionOverrides; }
 
     public java.util.UUID getCreatedBy() { return createdBy; }
     public void setCreatedBy(java.util.UUID createdBy) { this.createdBy = createdBy; }
