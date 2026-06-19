@@ -135,7 +135,18 @@ public class AdminAccountService {
         if (req.permissionOverrides() != null) {
             entity.setPermissionOverrides(new HashMap<>(req.permissionOverrides()));
         }
-        adminUserRepository.save(entity);
+        try {
+            adminUserRepository.save(entity);
+        } catch (Exception e) {
+            log.error("DB save failed for admin login={}, rolling back Firebase user uid={}: {}", login, firebaseUid, e.getMessage());
+            try { requireFirebase().deleteUser(firebaseUid); } catch (Exception ignored) {}
+            throw new DonyBusinessException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "ADMIN_CREATE_DB_FAILED",
+                    "Admin account creation failed",
+                    e.getMessage()
+            );
+        }
         adminAuthService.evictByFirebaseUid(firebaseUid);
 
         auditService.log(

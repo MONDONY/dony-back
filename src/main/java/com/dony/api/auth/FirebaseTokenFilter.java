@@ -85,7 +85,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             AdminAuthorities admin = adminOpt.get();
             UsernamePasswordAuthenticationToken adminAuth =
                     new UsernamePasswordAuthenticationToken(
-                            new AdminPrincipal(admin.adminId(), admin.login(), admin.role(), admin.mustChangePassword()),
+                            new AdminPrincipal(admin.adminId(), admin.login(), admin.role(), admin.mustChangePassword(), uid),
                             decoded,
                             admin.authorities()
                     );

@@ -93,9 +93,9 @@ class AuthMeIT {
 
     private UsernamePasswordAuthenticationToken superAdminUserAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false);
+        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false, FIREBASE_UID_ADMIN);
         return new UsernamePasswordAuthenticationToken(
-                FIREBASE_UID_ADMIN, null,
+                principal, null,
                 List.of(
                         new SimpleGrantedAuthority("ADMIN_MANAGE"),
                         new SimpleGrantedAuthority("ROLE_ADMIN"),

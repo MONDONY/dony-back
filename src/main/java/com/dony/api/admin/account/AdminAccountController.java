@@ -60,8 +60,11 @@ public class AdminAccountController {
             Pageable pageable) {
 
         if (role != null && status != null) {
-            return adminUserRepository.findByRoleAndStatus(role, status, pageable)
-                    .map(AdminSummary::from);
+            return adminUserRepository.findByRoleAndStatus(role, status, pageable).map(AdminSummary::from);
+        } else if (role != null) {
+            return adminUserRepository.findByRole(role, pageable).map(AdminSummary::from);
+        } else if (status != null) {
+            return adminUserRepository.findByStatus(status, pageable).map(AdminSummary::from);
         }
         return adminUserRepository.findAll(pageable).map(AdminSummary::from);
     }
@@ -145,9 +148,14 @@ public class AdminAccountController {
     // -------------------------------------------------------------------------
 
     private UUID extractActorId(Authentication auth) {
-        if (auth != null && auth.getPrincipal() instanceof AdminPrincipal p) {
+        if (auth.getPrincipal() instanceof AdminPrincipal p) {
             return p.adminId();
         }
-        return null;
+        throw new com.dony.api.common.DonyBusinessException(
+            org.springframework.http.HttpStatus.FORBIDDEN,
+            "ADMIN_PRINCIPAL_REQUIRED",
+            "Admin principal required",
+            "Expected AdminPrincipal"
+        );
     }
 }

@@ -76,7 +76,7 @@ class AdminAccountControllerIT {
     /** SUPER_ADMIN principal — has ADMIN_MANAGE authority. */
     private static UsernamePasswordAuthenticationToken superAdminAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false);
+        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false, "uid-super-admin-001");
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -91,7 +91,7 @@ class AdminAccountControllerIT {
     /** ADMIN principal — lacks ADMIN_MANAGE. */
     private static UsernamePasswordAuthenticationToken adminAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000002");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.2", AdminRole.ADMIN, false);
+        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.2", AdminRole.ADMIN, false, "uid-admin-002");
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -102,7 +102,7 @@ class AdminAccountControllerIT {
     /** SUPPORT principal — lacks ADMIN_MANAGE. */
     private static UsernamePasswordAuthenticationToken supportAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000003");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "support.1", AdminRole.SUPPORT, false);
+        AdminPrincipal principal = new AdminPrincipal(adminId, "support.1", AdminRole.SUPPORT, false, "uid-support-003");
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,

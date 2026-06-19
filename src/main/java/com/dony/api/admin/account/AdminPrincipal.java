@@ -13,5 +13,6 @@ public record AdminPrincipal(
         UUID adminId,
         String login,
         AdminRole role,
-        boolean mustChangePassword
+        boolean mustChangePassword,
+        String firebaseUid
 ) {}
