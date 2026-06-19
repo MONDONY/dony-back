@@ -105,7 +105,9 @@ public class SecurityConfig {
                     // enforced via HMAC signature verification in MobileMoneyPaymentService.
                     "/webhooks/mobile-money/**",
                     // Public shareable traveler profile (minimal, no-auth)
-                    "/public/**"
+                    "/public/**",
+                    // Admin bootstrap: initial configuration without auth
+                    "/admin/bootstrap"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
