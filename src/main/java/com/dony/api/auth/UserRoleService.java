@@ -109,7 +109,8 @@ public class UserRoleService {
                 user.getLanguages(),
                 user.getTransportMode() != null ? user.getTransportMode().name() : null,
                 user.getAvatarUrl(),
-                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null
+                user.getAverageRating() != null ? user.getAverageRating().doubleValue() : null,
+                null // admin field
         );
     }
 }

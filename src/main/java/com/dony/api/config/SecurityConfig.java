@@ -52,7 +52,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Internal-Secret", "X-Device-Id"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Internal-Secret", "X-Device-Id", "X-Bootstrap-Secret"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 
@@ -105,7 +105,9 @@ public class SecurityConfig {
                     // enforced via HMAC signature verification in MobileMoneyPaymentService.
                     "/webhooks/mobile-money/**",
                     // Public shareable traveler profile (minimal, no-auth)
-                    "/public/**"
+                    "/public/**",
+                    // Admin bootstrap: initial configuration without auth
+                    "/admin/bootstrap"
                 ).permitAll()
                 .anyRequest().authenticated()
             )

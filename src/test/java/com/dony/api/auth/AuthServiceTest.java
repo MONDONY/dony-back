@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.admin.account.AdminAuthService;
 import com.dony.api.auth.dto.RegisterRequest;
 import com.dony.api.auth.dto.UpdateProfileRequest;
 import com.dony.api.auth.dto.UserResponse;
@@ -48,6 +49,7 @@ class AuthServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private ConnectedDevicesService connectedDevicesService;
     @Mock private StorageService storageService;
+    @Mock private AdminAuthService adminAuthService;
 
     @InjectMocks private AuthService authService;
 

@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.admin.account.AdminPrincipal;
 import com.dony.api.auth.dto.DeleteImmediatelyRequest;
 import com.dony.api.auth.dto.FcmTokenRequest;
 import com.dony.api.auth.dto.RegisterRequest;
@@ -138,6 +139,9 @@ public class AuthController {
                     "Unauthorized",
                     "Un token Firebase valide est requis"
             );
+        }
+        if (auth.getPrincipal() instanceof AdminPrincipal ap) {
+            return ap.firebaseUid();
         }
         return (String) auth.getPrincipal();
     }

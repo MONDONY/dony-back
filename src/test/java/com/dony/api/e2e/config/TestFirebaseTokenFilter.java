@@ -1,5 +1,6 @@
 package com.dony.api.e2e.config;
 
+import com.dony.api.admin.account.AdminAuthService;
 import com.dony.api.auth.FirebaseTokenFilter;
 import com.dony.api.auth.UserLinkerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,8 +35,10 @@ import java.util.stream.Collectors;
  */
 public class TestFirebaseTokenFilter extends FirebaseTokenFilter {
 
-    public TestFirebaseTokenFilter(UserLinkerService userLinkerService, ObjectMapper objectMapper) {
-        super(userLinkerService, objectMapper);
+    public TestFirebaseTokenFilter(UserLinkerService userLinkerService,
+                                   ObjectMapper objectMapper,
+                                   AdminAuthService adminAuthService) {
+        super(userLinkerService, objectMapper, adminAuthService);
     }
 
     @Override
