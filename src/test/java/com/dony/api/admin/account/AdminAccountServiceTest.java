@@ -104,6 +104,7 @@ class AdminAccountServiceTest {
 
         verify(firebaseAuth).createUser(any(UserRecord.CreateRequest.class));
         verify(adminUserRepository).save(any(AdminUserEntity.class));
+        verify(adminAuthService).evictByFirebaseUid("firebase-uid-new");
         verify(auditService).log(
                 eq("admin_users"),
                 any(),
@@ -133,7 +134,36 @@ class AdminAccountServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // 2. createAdmin(login="dup") where existsByLogin("dup")=true → exception
+    // 2. createAdmin → setCustomUserClaims fails → deleteUser called + exception propagated
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("createAdmin → setCustomUserClaims throws FirebaseAuthException → Firebase user deleted, RuntimeException propagated")
+    void createAdmin_claimsFail_rollbackAndPropagate() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+
+        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        UserRecord userRecord = mockUserRecord("firebase-uid-claims-fail");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
+        FirebaseAuthException claimsException = mock(FirebaseAuthException.class);
+        when(claimsException.getMessage()).thenReturn("claims error");
+        doThrow(claimsException).when(firebaseAuth).setCustomUserClaims(eq("firebase-uid-claims-fail"), any());
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("firebase-uid-claims-fail");
+
+        // Firebase user must be rolled back
+        verify(firebaseAuth).deleteUser("firebase-uid-claims-fail");
+        // Entity must NOT be persisted
+        verify(adminUserRepository, never()).save(any());
+        // No audit entry
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. createAdmin(login="dup") where existsByLogin("dup")=true → exception
     // -------------------------------------------------------------------------
 
     @Test
@@ -181,7 +211,7 @@ class AdminAccountServiceTest {
                 eq(actorId),
                 any()
         );
-        verify(adminAuthService).evict(adminId);
+        verify(adminAuthService).evictByFirebaseUid("uid-reset");
     }
 
     // -------------------------------------------------------------------------
@@ -211,7 +241,7 @@ class AdminAccountServiceTest {
                 eq(actorId),
                 any()
         );
-        verify(adminAuthService).evict(adminId);
+        verify(adminAuthService).evictByFirebaseUid("uid-own");
     }
 
     // -------------------------------------------------------------------------
@@ -285,8 +315,8 @@ class AdminAccountServiceTest {
                 any()
         );
 
-        // Cache evicted
-        verify(adminAuthService).evict(adminId);
+        // Cache evicted by firebaseUid (not adminId, to survive soft-delete @Where filter)
+        verify(adminAuthService).evictByFirebaseUid("uid-del");
     }
 
     // -------------------------------------------------------------------------
@@ -351,5 +381,6 @@ class AdminAccountServiceTest {
 
         verify(adminUserRepository, never()).countByRoleAndStatus(any(), any());
         assertThat(entity.getDeletedAt()).isNotNull();
+        verify(adminAuthService).evictByFirebaseUid("uid-admin-del");
     }
 }

@@ -117,12 +117,13 @@ public class AdminAccountService {
             );
         }
 
-        // Set custom claim ROLE_ADMIN
+        // Set custom claim ROLE_ADMIN — if this fails, rollback the Firebase user
         try {
             firebaseAuth.setCustomUserClaims(firebaseUid, Map.of("ROLE_ADMIN", true));
         } catch (FirebaseAuthException e) {
-            log.error("Failed to set custom claims for uid={}: {}", firebaseUid, e.getMessage());
-            // Non-fatal: account is created, but claim is missing — log and continue
+            log.error("Failed to set custom claims for uid={}, rolling back Firebase user: {}", firebaseUid, e.getMessage());
+            try { firebaseAuth.deleteUser(firebaseUid); } catch (Exception ignored) {}
+            throw new RuntimeException("Failed to set admin claims for " + firebaseUid, e);
         }
 
         // Persist admin entity
@@ -134,6 +135,7 @@ public class AdminAccountService {
             entity.setPermissionOverrides(new HashMap<>(req.permissionOverrides()));
         }
         adminUserRepository.save(entity);
+        adminAuthService.evictByFirebaseUid(firebaseUid);
 
         auditService.log(
                 "admin_users",
@@ -176,7 +178,7 @@ public class AdminAccountService {
         entity.setMustChangePassword(true);
         adminUserRepository.save(entity);
 
-        adminAuthService.evict(adminId);
+        adminAuthService.evictByFirebaseUid(entity.getFirebaseUid());
 
         auditService.log(
                 "admin_users",
@@ -218,7 +220,7 @@ public class AdminAccountService {
         entity.setMustChangePassword(false);
         adminUserRepository.save(entity);
 
-        adminAuthService.evict(adminId);
+        adminAuthService.evictByFirebaseUid(entity.getFirebaseUid());
 
         auditService.log(
                 "admin_users",
@@ -304,8 +306,9 @@ public class AdminAccountService {
             entity.setLogin(req.login());
         }
 
+        String firebaseUidForEvict = entity.getFirebaseUid();
         adminUserRepository.save(entity);
-        adminAuthService.evict(adminId);
+        adminAuthService.evictByFirebaseUid(firebaseUidForEvict);
 
         auditService.log(
                 "admin_users",
@@ -350,15 +353,18 @@ public class AdminAccountService {
             );
         }
 
+        // Capture firebaseUid before soft-delete (after soft-delete @Where filter hides the entity)
+        String firebaseUid = entity.getFirebaseUid();
+
         // Disable in Firebase before soft-deleting
-        disableFirebaseUser(entity.getFirebaseUid());
+        disableFirebaseUser(firebaseUid);
 
         // Soft-delete: use BaseEntity helper
         entity.softDelete();
         entity.setStatus(AdminStatus.DISABLED);
         adminUserRepository.save(entity);
 
-        adminAuthService.evict(adminId);
+        adminAuthService.evictByFirebaseUid(firebaseUid);
 
         auditService.log(
                 "admin_users",

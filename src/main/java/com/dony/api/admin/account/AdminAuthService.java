@@ -95,6 +95,17 @@ public class AdminAuthService {
                 .orElse("");
     }
 
+    /**
+     * Evicts the cached authorities entry directly by firebaseUid.
+     * Prefer this over evict(UUID) when the caller already holds the firebaseUid —
+     * in particular after a soft-delete where findById would return empty (due to
+     * {@code @Where(deleted_at IS NULL)}), which would cause evict(UUID) to miss.
+     */
+    @CacheEvict(value = "adminAuthz", key = "#firebaseUid")
+    public void evictByFirebaseUid(String firebaseUid) {
+        // no-op — @CacheEvict annotation handles eviction
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
