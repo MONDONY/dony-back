@@ -98,7 +98,9 @@ class AlertControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "departureCity", "", "arrivalCity", "Bamako"))))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.status").value(422));
     }
 
     @Test
@@ -113,6 +115,8 @@ class AlertControllerTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "departureCity", "Paris", "arrivalCity", "Bamako"))))
                 .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.status").value(422))
                 .andExpect(jsonPath("$.code").value("alert-limit-reached"));
     }
 
@@ -128,6 +132,8 @@ class AlertControllerTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "departureCity", "Paris", "arrivalCity", "Bamako"))))
                 .andExpect(status().isConflict())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.code").value("alert-duplicate"));
     }
 
@@ -155,8 +161,19 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako"))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako", "active", true))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void delete_notOwner_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        doThrow(new DonyNotFoundException("Alert not found")).when(alertService).delete(FIREBASE_UID, id);
+
+        mockMvc.perform(delete("/me/corridor-alerts/{id}", id)
+                        .with(authentication(asTraveler())))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentType("application/problem+json"));
     }
 
     @Test
