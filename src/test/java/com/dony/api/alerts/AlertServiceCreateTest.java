@@ -6,6 +6,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,7 @@ class AlertServiceCreateTest {
     @Mock CorridorAlertRepository alertRepository;
     @Mock UserRepository userRepository;
     @Mock PackageRequestRepository packageRequestRepository;
+    @Mock AnnouncementRepository announcementRepository;
     @InjectMocks AlertService service;
 
     final String uid = "firebase-uid";

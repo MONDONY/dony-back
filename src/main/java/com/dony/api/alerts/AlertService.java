@@ -1,5 +1,6 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.dto.AlertTripMatchDto;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.auth.UserEntity;
@@ -7,6 +8,8 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.common.MatchingTextUtil;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -34,13 +38,16 @@ public class AlertService {
     private final CorridorAlertRepository alertRepository;
     private final UserRepository userRepository;
     private final PackageRequestRepository packageRequestRepository;
+    private final AnnouncementRepository announcementRepository;
 
     public AlertService(CorridorAlertRepository alertRepository,
                         UserRepository userRepository,
-                        PackageRequestRepository packageRequestRepository) {
+                        PackageRequestRepository packageRequestRepository,
+                        AnnouncementRepository announcementRepository) {
         this.alertRepository = alertRepository;
         this.userRepository = userRepository;
         this.packageRequestRepository = packageRequestRepository;
+        this.announcementRepository = announcementRepository;
     }
 
     private UUID ownerId(String firebaseUid) {
@@ -154,7 +161,14 @@ public class AlertService {
     public List<MatchingRequestDto> getMatches(String firebaseUid, UUID alertId) {
         UUID oid = ownerId(firebaseUid);
         CorridorAlertEntity alert = ownedAlert(oid, alertId);
-        return toMatchingDtos(findMatches(alert));
+        return toMatchingDtos(findMatchingPackages(alert));
+    }
+
+    @Transactional(readOnly = true)
+    public List<AlertTripMatchDto> getTripMatches(String firebaseUid, UUID alertId) {
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
+        return toTripDtos(findMatchingTrips(alert));
     }
 
     private CorridorAlertEntity ownedAlert(UUID oid, UUID alertId) {
@@ -167,31 +181,66 @@ public class AlertService {
     }
 
     private long countMatches(CorridorAlertEntity alert) {
-        return findMatches(alert).size();
+        return alert.getDirection() == AlertDirection.SENDER_WANTS_TRIPS
+                ? findMatchingTrips(alert).size()
+                : findMatchingPackages(alert).size();
     }
 
     public List<PackageRequestEntity> findRecentMatches(CorridorAlertEntity alert, java.time.LocalDateTime since) {
-        return findMatches(alert).stream()
+        return findMatchingPackages(alert).stream()
                 .filter(p -> p.getCreatedAt() != null && p.getCreatedAt().isAfter(since))
                 .toList();
     }
 
-    private List<PackageRequestEntity> findMatches(CorridorAlertEntity alert) {
+    public List<AnnouncementEntity> findRecentTripMatches(CorridorAlertEntity alert, java.time.LocalDateTime since) {
+        return findMatchingTrips(alert).stream()
+                .filter(a -> a.getCreatedAt() != null && a.getCreatedAt().isAfter(since))
+                .toList();
+    }
+
+    private List<PackageRequestEntity> findMatchingPackages(CorridorAlertEntity alert) {
         return packageRequestRepository
                 .findOpenByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
                 .stream()
-                .filter(p -> fitsAlertDate(p, alert))
+                .filter(p -> fitsAlertDate(p.getDesiredDate(), alert))
                 .filter(p -> fitsAlertWeight(p, alert))
                 .filter(p -> fitsAlertCategory(p, alert))
                 .toList();
     }
 
-    // Item 6: renamed from fitsDate
-    private boolean fitsAlertDate(PackageRequestEntity p, CorridorAlertEntity alert) {
-        if (alert.getDateFrom() != null && p.getDesiredDate().isBefore(alert.getDateFrom())) {
+    private List<AnnouncementEntity> findMatchingTrips(CorridorAlertEntity alert) {
+        return announcementRepository
+                .findActiveByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
+                .stream()
+                .filter(a -> fitsAlertDate(a.getDepartureDate(), alert))
+                .toList();
+    }
+
+    private boolean fitsAlertDate(LocalDate date, CorridorAlertEntity alert) {
+        if (alert.getDateFrom() != null && date.isBefore(alert.getDateFrom())) {
             return false;
         }
-        return alert.getDateTo() == null || !p.getDesiredDate().isAfter(alert.getDateTo());
+        return alert.getDateTo() == null || !date.isAfter(alert.getDateTo());
+    }
+
+    private List<AlertTripMatchDto> toTripDtos(List<AnnouncementEntity> trips) {
+        List<UUID> travelerIds = trips.stream()
+                .map(AnnouncementEntity::getTravelerId).distinct().toList();
+        Map<UUID, UserEntity> travelerMap = userRepository.findAllById(travelerIds).stream()
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity()));
+        List<AlertTripMatchDto> result = new ArrayList<>();
+        for (AnnouncementEntity a : trips) {
+            UserEntity traveler = travelerMap.get(a.getTravelerId());
+            if (traveler == null) continue;
+            double rating = traveler.getAverageRating() != null
+                    ? traveler.getAverageRating().doubleValue() : 0.0;
+            result.add(new AlertTripMatchDto(
+                    a.getId(), a.getDepartureCity(), a.getArrivalCity(), a.getDepartureDate(),
+                    traveler.getId(), MatchingTextUtil.buildName(traveler),
+                    MatchingTextUtil.buildInitials(traveler), rating,
+                    a.getAvailableKg(), a.getPricePerKg(), a.getTransportMode(), null));
+        }
+        return result;
     }
 
     // Item 6: renamed from fitsWeight

@@ -5,6 +5,7 @@ import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.entity.PackageRequestStatus;
@@ -34,6 +35,7 @@ class AlertServiceMatchesTest {
     @Mock CorridorAlertRepository alertRepository;
     @Mock UserRepository userRepository;
     @Mock PackageRequestRepository packageRequestRepository;
+    @Mock AnnouncementRepository announcementRepository;
     @InjectMocks AlertService service;
 
     final String uid = "firebase-uid";
