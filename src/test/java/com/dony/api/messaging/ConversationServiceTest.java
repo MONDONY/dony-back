@@ -5,7 +5,10 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
+import com.dony.api.matching.BidStatus;
+import com.dony.api.auth.KycStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,6 +74,40 @@ class ConversationServiceTest {
 
         verifyNoInteractions(firestoreService);
         verify(conversationRepository, never()).save(any());
+    }
+
+    @Test
+    void toResponse_revealsPhone_whenDealActive_andHidesWhenNot() {
+        UserEntity traveler = mock(UserEntity.class);
+        when(traveler.getFirstName()).thenReturn("Bob");
+        when(traveler.getLastName()).thenReturn("Dupont");
+        lenient().when(traveler.getPhoneNumber()).thenReturn("+33612345678");
+        lenient().when(traveler.getKycStatus()).thenReturn(KycStatus.VERIFIED);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+
+        // Deal actif (ACCEPTED) → téléphone révélé + rôle "Voyageur".
+        BidEntity acceptedBid = mockBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(acceptedBid));
+        var active = service.toResponse(conv, senderId);
+        assertThat(active.otherParticipant().phone()).isEqualTo("+33612345678");
+        assertThat(active.otherParticipant().role()).isEqualTo("Voyageur");
+        assertThat(active.otherParticipant().kycVerified()).isTrue();
+
+        // Deal non actif (PENDING) → téléphone masqué.
+        BidEntity pendingBid = mockBid(BidStatus.PENDING);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(pendingBid));
+        var pending = service.toResponse(conv, senderId);
+        assertThat(pending.otherParticipant().phone()).isNull();
+    }
+
+    private BidEntity mockBid(BidStatus status) {
+        BidEntity b = mock(BidEntity.class);
+        when(b.getStatus()).thenReturn(status);
+        when(b.getWeightKg()).thenReturn(null);
+        when(b.getAnnouncementId()).thenReturn(UUID.randomUUID());
+        return b;
     }
 
     private UserEntity mockUser(UUID id, String first, String last, String uid) {
