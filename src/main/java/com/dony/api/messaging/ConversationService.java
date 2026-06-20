@@ -222,25 +222,31 @@ public class ConversationService {
         firestoreService.updateLastMessage(firestoreConversationId, preview, Instant.now().toString());
     }
 
+    private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
+            BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
+
     public ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId) {
         UUID otherUserId = conv.getSenderId().equals(currentUserId)
             ? conv.getTravelerId()
             : conv.getSenderId();
 
         UserEntity other = userRepository.findById(otherUserId).orElse(null);
-        ParticipantDTO otherParticipant = buildParticipant(otherUserId, other);
+        String role = otherUserId.equals(conv.getTravelerId()) ? "Voyageur" : "Expéditeur";
 
         String tripOrigin      = null;
         String tripDestination = null;
         String tripDate        = null;
         Double tripWeightKg    = null;
         String bidStatus       = null;
+        boolean revealPhone    = false;
 
         Optional<BidEntity> bidOpt = bidRepository.findById(conv.getBidId());
         if (bidOpt.isPresent()) {
             BidEntity bid = bidOpt.get();
             tripWeightKg = bid.getWeightKg() != null ? bid.getWeightKg().doubleValue() : null;
             bidStatus    = mapBidStatus(bid.getStatus());
+            // Téléphone révélé seulement quand le deal est actif (même règle que BidService).
+            revealPhone  = PHONE_VISIBLE_STATUSES.contains(bid.getStatus());
 
             Optional<AnnouncementEntity> annOpt = announcementRepository.findById(bid.getAnnouncementId());
             if (annOpt.isPresent()) {
@@ -250,6 +256,8 @@ public class ConversationService {
                 tripDate        = ann.getDepartureDate() != null ? ann.getDepartureDate().toString() : null;
             }
         }
+
+        ParticipantDTO otherParticipant = buildParticipant(otherUserId, other, revealPhone, role);
 
         return new ConversationResponse(
             conv.getId(),
@@ -269,14 +277,16 @@ public class ConversationService {
         );
     }
 
-    private ParticipantDTO buildParticipant(UUID userId, UserEntity user) {
+    private ParticipantDTO buildParticipant(UUID userId, UserEntity user, boolean revealPhone, String role) {
         if (user == null) {
-            return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null);
+            return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null, null, role, false);
         }
         String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
             + (user.getLastName() != null ? user.getLastName() : "")).strip();
+        String phone = revealPhone ? user.getPhoneNumber() : null;
+        boolean kyc = user.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
-                storageService.avatarUrl(user.getAvatarUrl()));
+                storageService.avatarUrl(user.getAvatarUrl()), phone, role, kyc);
     }
 
     private String mapBidStatus(BidStatus status) {
