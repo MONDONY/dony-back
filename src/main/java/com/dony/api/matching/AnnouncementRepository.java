@@ -178,4 +178,21 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
         @Param("departure") String departure,
         @Param("arrival") String arrival,
         org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Returns ACTIVE or FULL announcements on a corridor (departure→arrival), case-insensitive
+     * city match. Mirrors PackageRequestRepository.findOpenByCorridor for the SENDER_WANTS_TRIPS
+     * alert direction. No date filter (the caller applies the alert period window).
+     */
+    @Query("""
+        SELECT a FROM AnnouncementEntity a
+        WHERE LOWER(a.departureCity) = LOWER(:departureCity)
+          AND LOWER(a.arrivalCity)   = LOWER(:arrivalCity)
+          AND a.status IN (
+              com.dony.api.matching.AnnouncementStatus.ACTIVE,
+              com.dony.api.matching.AnnouncementStatus.FULL)
+    """)
+    List<AnnouncementEntity> findActiveByCorridor(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity);
 }
