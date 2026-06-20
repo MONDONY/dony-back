@@ -147,8 +147,14 @@ public class AlertService {
 
     @Transactional(readOnly = true)
     public List<CorridorAlertResponse> list(String firebaseUid) {
+        return list(firebaseUid, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CorridorAlertResponse> list(String firebaseUid, AlertDirection direction) {
         UUID oid = ownerId(firebaseUid);
         return alertRepository.findAllByOwnerId(oid).stream()
+                .filter(a -> direction == null || a.getDirection() == direction)
                 .map(a -> toResponse(a, countMatches(a)))
                 .toList();
     }
@@ -192,6 +198,15 @@ public class AlertService {
         UUID oid = ownerId(firebaseUid);
         CorridorAlertEntity alert = ownedAlert(oid, alertId);
         return toTripDtos(findMatchingTrips(alert));
+    }
+
+    @Transactional(readOnly = true)
+    public List<?> getMatchesForDirection(String firebaseUid, UUID alertId) {
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
+        return alert.getDirection() == AlertDirection.SENDER_WANTS_TRIPS
+                ? toTripDtos(findMatchingTrips(alert))
+                : toMatchingDtos(findMatchingPackages(alert));
     }
 
     private CorridorAlertEntity ownedAlert(UUID oid, UUID alertId) {

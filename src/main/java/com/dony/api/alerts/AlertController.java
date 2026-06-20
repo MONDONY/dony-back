@@ -2,7 +2,6 @@ package com.dony.api.alerts;
 
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
-import com.dony.api.matching.dto.MatchingRequestDto;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,13 +21,14 @@ public class AlertController {
     }
 
     @GetMapping("/me/corridor-alerts")
-    @PreAuthorize("hasRole('TRAVELER')")
-    public List<CorridorAlertResponse> list(@AuthenticationPrincipal String firebaseUid) {
-        return alertService.list(firebaseUid);
+    @PreAuthorize("hasAnyRole('TRAVELER','SENDER')")
+    public List<CorridorAlertResponse> list(@AuthenticationPrincipal String firebaseUid,
+                                            @RequestParam(required = false) AlertDirection direction) {
+        return alertService.list(firebaseUid, direction);
     }
 
     @PostMapping("/me/corridor-alerts")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('TRAVELER','SENDER')")
     @ResponseStatus(HttpStatus.CREATED)
     public CorridorAlertResponse create(@AuthenticationPrincipal String firebaseUid,
                                         @Valid @RequestBody CorridorAlertRequest request) {
@@ -36,7 +36,7 @@ public class AlertController {
     }
 
     @PutMapping("/me/corridor-alerts/{id}")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('TRAVELER','SENDER')")
     public CorridorAlertResponse update(@AuthenticationPrincipal String firebaseUid,
                                         @PathVariable UUID id,
                                         @Valid @RequestBody CorridorAlertRequest request) {
@@ -44,7 +44,7 @@ public class AlertController {
     }
 
     @DeleteMapping("/me/corridor-alerts/{id}")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('TRAVELER','SENDER')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal String firebaseUid,
                        @PathVariable UUID id) {
@@ -52,9 +52,9 @@ public class AlertController {
     }
 
     @GetMapping("/me/corridor-alerts/{id}/matches")
-    @PreAuthorize("hasRole('TRAVELER')")
-    public List<MatchingRequestDto> matches(@AuthenticationPrincipal String firebaseUid,
-                                            @PathVariable UUID id) {
-        return alertService.getMatches(firebaseUid, id);
+    @PreAuthorize("hasAnyRole('TRAVELER','SENDER')")
+    public List<?> matches(@AuthenticationPrincipal String firebaseUid,
+                           @PathVariable UUID id) {
+        return alertService.getMatchesForDirection(firebaseUid, id);
     }
 }
