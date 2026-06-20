@@ -2,9 +2,12 @@ package com.dony.api.alerts;
 
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
+import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.matching.dto.MatchingRequestDto;
+import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -101,6 +105,146 @@ public class AlertService {
         List<String> normA = a != null ? a : List.of();
         List<String> normB = b != null ? b : List.of();
         return new HashSet<>(normA).equals(new HashSet<>(normB));
+    }
+
+    @Transactional(readOnly = true)
+    public List<CorridorAlertResponse> list(String firebaseUid) {
+        UUID tid = travelerId(firebaseUid);
+        return alertRepository.findAllByTravelerId(tid).stream()
+                .map(a -> toResponse(a, countMatches(a)))
+                .toList();
+    }
+
+    public CorridorAlertResponse update(String firebaseUid, UUID alertId,
+                                        CorridorAlertRequest req, Boolean active) {
+        UUID tid = travelerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        entity.setDepartureCity(req.departureCity());
+        entity.setDepartureCountryCode(req.departureCountryCode());
+        entity.setArrivalCity(req.arrivalCity());
+        entity.setArrivalCountryCode(req.arrivalCountryCode());
+        entity.setDateFrom(req.dateFrom());
+        entity.setDateTo(req.dateTo());
+        entity.setMinWeightKg(req.minWeightKg());
+        entity.setContentCategories(req.contentCategories() != null
+                ? new ArrayList<>(req.contentCategories()) : new ArrayList<>());
+        if (active != null) {
+            entity.setActive(active);
+        }
+        CorridorAlertEntity saved = alertRepository.save(entity);
+        return toResponse(saved, countMatches(saved));
+    }
+
+    public void delete(String firebaseUid, UUID alertId) {
+        UUID tid = travelerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        entity.softDelete();
+        alertRepository.save(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MatchingRequestDto> getMatches(String firebaseUid, UUID alertId) {
+        UUID tid = travelerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(tid, alertId);
+        return findMatches(alert).stream()
+                .map(this::toMatchingDto)
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    private CorridorAlertEntity ownedAlert(UUID tid, UUID alertId) {
+        CorridorAlertEntity entity = alertRepository.findById(alertId)
+                .orElseThrow(() -> new DonyNotFoundException("Alert not found"));
+        if (!entity.getTravelerId().equals(tid)) {
+            throw new DonyNotFoundException("Alert not found");
+        }
+        return entity;
+    }
+
+    private long countMatches(CorridorAlertEntity alert) {
+        return findMatches(alert).size();
+    }
+
+    private List<PackageRequestEntity> findMatches(CorridorAlertEntity alert) {
+        return packageRequestRepository
+                .findOpenByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
+                .stream()
+                .filter(p -> fitsDate(p, alert))
+                .filter(p -> fitsWeight(p, alert))
+                .filter(p -> fitsCategory(p, alert))
+                .toList();
+    }
+
+    private boolean fitsDate(PackageRequestEntity p, CorridorAlertEntity alert) {
+        if (alert.getDateFrom() != null && p.getDesiredDate().isBefore(alert.getDateFrom())) {
+            return false;
+        }
+        return alert.getDateTo() == null || !p.getDesiredDate().isAfter(alert.getDateTo());
+    }
+
+    private boolean fitsWeight(PackageRequestEntity p, CorridorAlertEntity alert) {
+        return alert.getMinWeightKg() == null
+                || p.getWeightKg().compareTo(alert.getMinWeightKg()) >= 0;
+    }
+
+    private boolean fitsCategory(PackageRequestEntity p, CorridorAlertEntity alert) {
+        List<String> wanted = alert.getContentCategories();
+        if (wanted == null || wanted.isEmpty()) {
+            return true;
+        }
+        return wanted.stream().anyMatch(c -> c.equalsIgnoreCase(p.getContentCategory()));
+    }
+
+    private Optional<MatchingRequestDto> toMatchingDto(PackageRequestEntity p) {
+        Optional<UserEntity> senderOpt = userRepository.findById(p.getSenderId());
+        if (senderOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        UserEntity sender = senderOpt.get();
+        String corridor = p.getDepartureCity() + " → " + p.getArrivalCity();
+        String senderName = buildName(sender);
+        String senderInitials = buildInitials(sender);
+        double senderRating = sender.getAverageRating() != null
+                ? sender.getAverageRating().doubleValue() : 0.0;
+        return Optional.of(new MatchingRequestDto(
+                p.getId().toString(),
+                null,
+                corridor,
+                p.getDesiredDate().toString(),
+                0.0,
+                sender.getId() != null ? sender.getId().toString() : null,
+                senderName,
+                senderInitials,
+                senderRating,
+                sender.getTotalShipments(),
+                p.getWeightKg().doubleValue(),
+                p.getContentCategory(),
+                0.0,
+                p.getPhotoUrl(),
+                truncate(p.getDescription(), 100),
+                0,
+                p.getCreatedAt() != null ? p.getCreatedAt().toString() : null));
+    }
+
+    private String buildName(UserEntity u) {
+        String first = u.getFirstName() != null ? u.getFirstName() : "";
+        String last = u.getLastName() != null ? u.getLastName() : "";
+        String full = (first + " " + last).trim();
+        return full.isEmpty() ? "Expéditeur" : full;
+    }
+
+    private String buildInitials(UserEntity u) {
+        String first = u.getFirstName();
+        String last = u.getLastName();
+        StringBuilder sb = new StringBuilder();
+        if (first != null && !first.isBlank()) sb.append(Character.toUpperCase(first.charAt(0)));
+        if (last != null && !last.isBlank()) sb.append(Character.toUpperCase(last.charAt(0)));
+        return sb.length() == 0 ? "?" : sb.toString();
+    }
+
+    private String truncate(String s, int max) {
+        if (s == null) return null;
+        return s.length() <= max ? s : s.substring(0, max);
     }
 
     private CorridorAlertResponse toResponse(CorridorAlertEntity e, long matchCount) {
