@@ -131,10 +131,10 @@ public class TravelerStatsController {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "User Not Found", "Utilisateur introuvable"));
-        if (!user.getRoles().contains(Role.TRAVELER) || !user.isProAccount()) {
+        if (!user.getRoles().contains(Role.TRAVELER)) {
             throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN, "pro-required",
-                    "PRO account required", "Demandes compatibles réservées aux voyageurs PRO.");
+                    HttpStatus.FORBIDDEN, "traveler-required",
+                    "Traveler role required", "Réservé aux voyageurs.");
         }
         return ResponseEntity.ok(matchingService.findMatchingRequests(user.getId()));
     }
