@@ -80,7 +80,7 @@ class NotificationPrefsControllerTest {
 
     @Test
     void updatePreferences_authenticated_returns204AndCallsService() throws Exception {
-        NotificationPrefsDto dto = new NotificationPrefsDto(false, true, true, false, false);
+        NotificationPrefsDto dto = new NotificationPrefsDto(false, true, true, false, false, true);
         doNothing().when(notificationPrefsService).upsert(eq(FIREBASE_UID), any());
 
         mockMvc.perform(put("/notifications/preferences")
