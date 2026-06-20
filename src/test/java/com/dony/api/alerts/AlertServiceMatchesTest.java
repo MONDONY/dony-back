@@ -24,6 +24,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -82,6 +84,13 @@ class AlertServiceMatchesTest {
         return p;
     }
 
+    /** Creates a UserEntity with the given ID set via reflection. */
+    private UserEntity senderWithId(UUID id) {
+        UserEntity u = new UserEntity();
+        setId(u, id);
+        return u;
+    }
+
     @Test
     void getMatches_filtersByWeightDateAndCategory() {
         PackageRequestEntity match = pkg("Documents", new BigDecimal("3.00"), LocalDate.of(2026, 7, 10));
@@ -92,7 +101,9 @@ class AlertServiceMatchesTest {
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(alert(true)));
         when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
                 .thenReturn(List.of(match, tooLight, outOfWindow, wrongCategory));
-        when(userRepository.findById(any())).thenReturn(Optional.of(new UserEntity()));
+        // Item 5: service now calls findAllById — return a sender for the one matching package
+        when(userRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(senderWithId(match.getSenderId())));
 
         List<MatchingRequestDto> matches = service.getMatches(uid, alertId);
 
@@ -103,6 +114,7 @@ class AlertServiceMatchesTest {
 
     @Test
     void getMatches_noFilters_returnsAllOpen() {
+        PackageRequestEntity p = pkg("Anything", new BigDecimal("0.50"), LocalDate.of(2030, 1, 1));
         CorridorAlertEntity a = alert(true);
         a.setDateFrom(null);
         a.setDateTo(null);
@@ -110,8 +122,9 @@ class AlertServiceMatchesTest {
         a.setContentCategories(List.of());
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(a));
         when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
-                .thenReturn(List.of(pkg("Anything", new BigDecimal("0.50"), LocalDate.of(2030, 1, 1))));
-        when(userRepository.findById(any())).thenReturn(Optional.of(new UserEntity()));
+                .thenReturn(List.of(p));
+        when(userRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(senderWithId(p.getSenderId())));
 
         assertThat(service.getMatches(uid, alertId)).hasSize(1);
     }
@@ -146,7 +159,7 @@ class AlertServiceMatchesTest {
         when(packageRequestRepository.findOpenByCorridor(any(), any())).thenReturn(List.of());
 
         CorridorAlertRequest req = new CorridorAlertRequest("Lyon", "FR", "Dakar", "SN",
-                null, null, null, List.of());
+                null, null, null, List.of(), null);
         CorridorAlertResponse resp = service.update(uid, alertId, req, false);
 
         assertThat(existing.getDepartureCity()).isEqualTo("Lyon");
@@ -162,7 +175,7 @@ class AlertServiceMatchesTest {
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.update(uid, alertId,
-                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of()), null))
+                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of(), null), null))
                 .isInstanceOf(DonyNotFoundException.class);
     }
 

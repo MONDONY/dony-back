@@ -2,6 +2,7 @@ package com.dony.api.matching;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
@@ -69,15 +70,15 @@ public class MatchingService {
     private MatchingRequestDto toDto(PackageRequestEntity request,
                                      AnnouncementEntity announcement,
                                      UserEntity sender) {
-        String corridor = announcement.getDepartureCity() + " → " + announcement.getArrivalCity();
-        String senderName = buildName(sender);
-        String senderInitials = buildInitials(sender);
+        String corridor = MatchingTextUtil.corridorLabel(announcement.getDepartureCity(), announcement.getArrivalCity());
+        String senderName = MatchingTextUtil.buildName(sender);
+        String senderInitials = MatchingTextUtil.buildInitials(sender);
         double senderRating = sender.getAverageRating() != null
                 ? sender.getAverageRating().doubleValue() : 0.0;
 
         double budgetPerKg = computeBudgetPerKg(request);
         int matchScore = computeMatchScore(request, announcement, budgetPerKg);
-        String messageExcerpt = truncate(request.getDescription(), 100);
+        String messageExcerpt = MatchingTextUtil.truncate(request.getDescription(), 100);
 
         return new MatchingRequestDto(
                 request.getId().toString(),
@@ -141,23 +142,4 @@ public class MatchingService {
                 .doubleValue();
     }
 
-    private String buildName(UserEntity user) {
-        String first = user.getFirstName() != null ? user.getFirstName() : "";
-        String last = user.getLastName() != null ? user.getLastName() : "";
-        String name = (first + " " + last).trim();
-        return name.isEmpty() ? "Expéditeur" : name;
-    }
-
-    private String buildInitials(UserEntity user) {
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        char f = (first != null && !first.isEmpty()) ? Character.toUpperCase(first.charAt(0)) : '?';
-        char l = (last != null && !last.isEmpty()) ? Character.toUpperCase(last.charAt(0)) : '?';
-        return "" + f + l;
-    }
-
-    private String truncate(String text, int maxLen) {
-        if (text == null) return "";
-        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";
-    }
 }

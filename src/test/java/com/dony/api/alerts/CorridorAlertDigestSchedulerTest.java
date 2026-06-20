@@ -34,8 +34,17 @@ class CorridorAlertDigestSchedulerTest {
         scheduler = new CorridorAlertDigestScheduler(alertRepository, alertService, notificationDispatcher);
     }
 
+    private static void setId(Object target, UUID id) {
+        try {
+            var f = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+            f.setAccessible(true);
+            f.set(target, id);
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
     private CorridorAlertEntity alert(LocalDateTime lastNotifiedAt) {
         CorridorAlertEntity a = new CorridorAlertEntity();
+        setId(a, UUID.randomUUID());
         a.setTravelerId(travelerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");

@@ -31,7 +31,7 @@ class CorridorAlertRequestValidationTest {
     void validRequest_hasNoViolations() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "Paris", "FR", "Bamako", "ML",
-                null, null, null, List.of());
+                null, null, null, List.of(), null);
         assertThat(validator.validate(req)).isEmpty();
     }
 
@@ -39,7 +39,7 @@ class CorridorAlertRequestValidationTest {
     void blankDepartureCity_isViolation() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "  ", "FR", "Bamako", "ML",
-                null, null, null, List.of());
+                null, null, null, List.of(), null);
         assertThat(validator.validate(req))
                 .anyMatch(v -> v.getPropertyPath().toString().equals("departureCity"));
     }
@@ -48,7 +48,7 @@ class CorridorAlertRequestValidationTest {
     void blankArrivalCity_isViolation() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "Paris", "FR", "", "ML",
-                null, null, null, List.of());
+                null, null, null, List.of(), null);
         assertThat(validator.validate(req))
                 .anyMatch(v -> v.getPropertyPath().toString().equals("arrivalCity"));
     }

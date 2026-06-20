@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,13 +50,12 @@ class AlertServiceCreateTest {
 
     private CorridorAlertRequest req() {
         return new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
-                null, null, new BigDecimal("2.00"), List.of("Documents"));
+                null, null, new BigDecimal("2.00"), List.of("Documents"), null);
     }
 
     @Test
     void create_persistsAndReturnsResponse() {
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.countByTravelerId(travelerId)).thenReturn(0L);
         when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of());
         when(alertRepository.save(any(CorridorAlertEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -78,8 +78,18 @@ class AlertServiceCreateTest {
 
     @Test
     void create_atCap_throws422() {
+        // Item 4: cap check now uses findAllByTravelerId — return 20 items to trigger the limit
+        List<CorridorAlertEntity> fullList = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            CorridorAlertEntity e = new CorridorAlertEntity();
+            e.setTravelerId(travelerId);
+            e.setDepartureCity("City" + i);
+            e.setArrivalCity("Dest" + i);
+            e.setContentCategories(List.of());
+            fullList.add(e);
+        }
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.countByTravelerId(travelerId)).thenReturn(20L);
+        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(fullList);
 
         assertThatThrownBy(() -> service.create(uid, req()))
                 .isInstanceOf(DonyBusinessException.class)
@@ -98,7 +108,6 @@ class AlertServiceCreateTest {
         existing.setContentCategories(List.of("Documents"));
 
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.countByTravelerId(travelerId)).thenReturn(1L);
         when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of(existing));
 
         assertThatThrownBy(() -> service.create(uid, req()))
@@ -111,10 +120,9 @@ class AlertServiceCreateTest {
     @Test
     void create_nullContentCategories_doesNotNpe() {
         CorridorAlertRequest reqWithNullCategories = new CorridorAlertRequest(
-                "Paris", "FR", "Bamako", "ML", null, null, new BigDecimal("2.00"), null);
+                "Paris", "FR", "Bamako", "ML", null, null, new BigDecimal("2.00"), null, null);
 
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.countByTravelerId(travelerId)).thenReturn(0L);
         when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of());
         when(alertRepository.save(any(CorridorAlertEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));

@@ -1,5 +1,6 @@
 package com.dony.api.alerts;
 
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.notifications.NotificationDispatcher;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import org.slf4j.Logger;
@@ -52,12 +53,12 @@ public class CorridorAlertDigestScheduler {
                     continue;
                 }
 
-                String corridor = alert.getDepartureCity() + " → " + alert.getArrivalCity();
+                String corridor = MatchingTextUtil.corridorLabel(alert.getDepartureCity(), alert.getArrivalCity());
                 String title = "Nouveaux colis sur " + corridor;
                 String body = matches.size() + " colis correspondent à votre alerte";
                 Map<String, String> data = Map.of(
                         "type", "CORRIDOR_ALERT",
-                        "alertId", alert.getId() != null ? alert.getId().toString() : "",
+                        "alertId", alert.getId().toString(),
                         "corridor", corridor);
 
                 notificationDispatcher.notifyUser(alert.getTravelerId(), title, body, data);

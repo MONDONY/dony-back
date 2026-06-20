@@ -2,7 +2,6 @@ package com.dony.api.alerts;
 
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
-import com.dony.api.alerts.dto.CorridorAlertUpdateRequest;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -40,8 +39,8 @@ public class AlertController {
     @PreAuthorize("hasRole('TRAVELER')")
     public CorridorAlertResponse update(@AuthenticationPrincipal String firebaseUid,
                                         @PathVariable UUID id,
-                                        @Valid @RequestBody CorridorAlertUpdateRequest request) {
-        return alertService.update(firebaseUid, id, request.toCorridorAlertRequest(), request.active());
+                                        @Valid @RequestBody CorridorAlertRequest request) {
+        return alertService.update(firebaseUid, id, request, request.active());
     }
 
     @DeleteMapping("/me/corridor-alerts/{id}")

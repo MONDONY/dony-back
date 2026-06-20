@@ -6,6 +6,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
@@ -17,9 +18,12 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -45,10 +49,13 @@ public class AlertService {
                 .getId();
     }
 
+    // Item 4: single findAllByTravelerId call for both cap check and duplicate check
     public CorridorAlertResponse create(String firebaseUid, CorridorAlertRequest req) {
         UUID tid = travelerId(firebaseUid);
 
-        if (alertRepository.countByTravelerId(tid) >= MAX_ACTIVE_ALERTS) {
+        List<CorridorAlertEntity> existing = alertRepository.findAllByTravelerId(tid);
+
+        if (existing.size() >= MAX_ACTIVE_ALERTS) {
             throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "alert-limit-reached",
@@ -60,8 +67,8 @@ public class AlertService {
                 ? new ArrayList<>(req.contentCategories())
                 : new ArrayList<>();
 
-        boolean duplicate = alertRepository.findAllByTravelerId(tid).stream()
-                .anyMatch(existing -> isSameFilters(existing, req, categories));
+        boolean duplicate = existing.stream()
+                .anyMatch(e -> isSameFilters(e, req, categories));
         if (duplicate) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT,
@@ -146,10 +153,7 @@ public class AlertService {
     public List<MatchingRequestDto> getMatches(String firebaseUid, UUID alertId) {
         UUID tid = travelerId(firebaseUid);
         CorridorAlertEntity alert = ownedAlert(tid, alertId);
-        return findMatches(alert).stream()
-                .map(this::toMatchingDto)
-                .flatMap(Optional::stream)
-                .toList();
+        return toMatchingDtos(findMatches(alert));
     }
 
     private CorridorAlertEntity ownedAlert(UUID tid, UUID alertId) {
@@ -175,25 +179,28 @@ public class AlertService {
         return packageRequestRepository
                 .findOpenByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
                 .stream()
-                .filter(p -> fitsDate(p, alert))
-                .filter(p -> fitsWeight(p, alert))
-                .filter(p -> fitsCategory(p, alert))
+                .filter(p -> fitsAlertDate(p, alert))
+                .filter(p -> fitsAlertWeight(p, alert))
+                .filter(p -> fitsAlertCategory(p, alert))
                 .toList();
     }
 
-    private boolean fitsDate(PackageRequestEntity p, CorridorAlertEntity alert) {
+    // Item 6: renamed from fitsDate
+    private boolean fitsAlertDate(PackageRequestEntity p, CorridorAlertEntity alert) {
         if (alert.getDateFrom() != null && p.getDesiredDate().isBefore(alert.getDateFrom())) {
             return false;
         }
         return alert.getDateTo() == null || !p.getDesiredDate().isAfter(alert.getDateTo());
     }
 
-    private boolean fitsWeight(PackageRequestEntity p, CorridorAlertEntity alert) {
+    // Item 6: renamed from fitsWeight
+    private boolean fitsAlertWeight(PackageRequestEntity p, CorridorAlertEntity alert) {
         return alert.getMinWeightKg() == null
                 || p.getWeightKg().compareTo(alert.getMinWeightKg()) >= 0;
     }
 
-    private boolean fitsCategory(PackageRequestEntity p, CorridorAlertEntity alert) {
+    // Item 6: renamed from fitsCategory
+    private boolean fitsAlertCategory(PackageRequestEntity p, CorridorAlertEntity alert) {
         List<String> wanted = alert.getContentCategories();
         if (wanted == null || wanted.isEmpty()) {
             return true;
@@ -201,18 +208,36 @@ public class AlertService {
         return wanted.stream().anyMatch(c -> c.equalsIgnoreCase(p.getContentCategory()));
     }
 
-    private Optional<MatchingRequestDto> toMatchingDto(PackageRequestEntity p) {
-        Optional<UserEntity> senderOpt = userRepository.findById(p.getSenderId());
-        if (senderOpt.isEmpty()) {
-            return Optional.empty();
+    // Item 5: batch sender lookup — collect distinct sender IDs, single findAllById call
+    private List<MatchingRequestDto> toMatchingDtos(List<PackageRequestEntity> packages) {
+        List<UUID> senderIds = packages.stream()
+                .map(PackageRequestEntity::getSenderId)
+                .distinct()
+                .toList();
+
+        Map<UUID, UserEntity> senderMap = userRepository.findAllById(senderIds).stream()
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity()));
+
+        List<MatchingRequestDto> result = new ArrayList<>();
+        for (PackageRequestEntity p : packages) {
+            UserEntity sender = senderMap.get(p.getSenderId());
+            if (sender == null) {
+                // preserve existing "skip match if sender missing" behavior
+                continue;
+            }
+            result.add(toMatchingDto(p, sender));
         }
-        UserEntity sender = senderOpt.get();
-        String corridor = p.getDepartureCity() + " → " + p.getArrivalCity();
-        String senderName = buildName(sender);
-        String senderInitials = buildInitials(sender);
+        return result;
+    }
+
+    // Item 1: use MatchingTextUtil helpers (corridorLabel, buildName, buildInitials, truncate)
+    private MatchingRequestDto toMatchingDto(PackageRequestEntity p, UserEntity sender) {
+        String corridor = MatchingTextUtil.corridorLabel(p.getDepartureCity(), p.getArrivalCity());
+        String senderName = MatchingTextUtil.buildName(sender);
+        String senderInitials = MatchingTextUtil.buildInitials(sender);
         double senderRating = sender.getAverageRating() != null
                 ? sender.getAverageRating().doubleValue() : 0.0;
-        return Optional.of(new MatchingRequestDto(
+        return new MatchingRequestDto(
                 p.getId().toString(),
                 null,
                 corridor,
@@ -227,30 +252,9 @@ public class AlertService {
                 p.getContentCategory(),
                 0.0,
                 p.getPhotoUrl(),
-                truncate(p.getDescription(), 100),
+                MatchingTextUtil.truncate(p.getDescription(), 100),
                 0,
-                p.getCreatedAt() != null ? p.getCreatedAt().toString() : null));
-    }
-
-    private String buildName(UserEntity u) {
-        String first = u.getFirstName() != null ? u.getFirstName() : "";
-        String last = u.getLastName() != null ? u.getLastName() : "";
-        String full = (first + " " + last).trim();
-        return full.isEmpty() ? "Expéditeur" : full;
-    }
-
-    private String buildInitials(UserEntity u) {
-        String first = u.getFirstName();
-        String last = u.getLastName();
-        StringBuilder sb = new StringBuilder();
-        if (first != null && !first.isBlank()) sb.append(Character.toUpperCase(first.charAt(0)));
-        if (last != null && !last.isBlank()) sb.append(Character.toUpperCase(last.charAt(0)));
-        return sb.length() == 0 ? "?" : sb.toString();
-    }
-
-    private String truncate(String s, int max) {
-        if (s == null) return null;
-        return s.length() <= max ? s : s.substring(0, max);
+                p.getCreatedAt() != null ? p.getCreatedAt().toString() : null);
     }
 
     private CorridorAlertResponse toResponse(CorridorAlertEntity e, long matchCount) {

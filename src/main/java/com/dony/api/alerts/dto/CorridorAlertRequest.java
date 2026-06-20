@@ -14,5 +14,6 @@ public record CorridorAlertRequest(
         LocalDate dateFrom,
         LocalDate dateTo,
         BigDecimal minWeightKg,
-        List<String> contentCategories
+        List<String> contentCategories,
+        Boolean active
 ) {}
