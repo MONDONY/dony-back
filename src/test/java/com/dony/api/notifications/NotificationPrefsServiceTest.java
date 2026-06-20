@@ -57,7 +57,7 @@ class NotificationPrefsServiceTest {
     @Test
     void upsert_noRowExists_createsRow() {
         when(repository.findById(USER_ID)).thenReturn(Optional.empty());
-        service.upsert(FIREBASE_UID, new NotificationPrefsDto(false, true, true, false, true));
+        service.upsert(FIREBASE_UID, new NotificationPrefsDto(false, true, true, false, true, true));
         ArgumentCaptor<NotificationPrefsEntity> captor = ArgumentCaptor.forClass(NotificationPrefsEntity.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
@@ -69,7 +69,7 @@ class NotificationPrefsServiceTest {
     void upsert_rowExists_updatesRow() {
         NotificationPrefsEntity existing = buildEntity(true, true, true, true, false);
         when(repository.findById(USER_ID)).thenReturn(Optional.of(existing));
-        service.upsert(FIREBASE_UID, new NotificationPrefsDto(false, false, false, false, true));
+        service.upsert(FIREBASE_UID, new NotificationPrefsDto(false, false, false, false, true, true));
         ArgumentCaptor<NotificationPrefsEntity> captor = ArgumentCaptor.forClass(NotificationPrefsEntity.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().isPushActivityBids()).isFalse();

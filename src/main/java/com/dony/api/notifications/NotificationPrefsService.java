@@ -34,7 +34,8 @@ public class NotificationPrefsService {
             Map.entry("negotiation_expired",          "pushActivityNegotiations"),
             Map.entry("NEW_MESSAGE",                  "pushMessages"),
             Map.entry("TRIP_IN_PROGRESS",             "pushTripReminder"),
-            Map.entry("PROMO",                        "pushPromo")
+            Map.entry("PROMO",                        "pushPromo"),
+            Map.entry("CORRIDOR_ALERT",               "pushCorridorAlerts")
     );
 
     private final NotificationPrefsJpaRepository repository;
@@ -67,6 +68,7 @@ public class NotificationPrefsService {
         entity.setPushMessages(dto.pushMessages());
         entity.setPushTripReminder(dto.pushTripReminder());
         entity.setPushPromo(dto.pushPromo());
+        entity.setPushCorridorAlerts(dto.pushCorridorAlerts());
         repository.save(entity);
     }
 
@@ -88,6 +90,7 @@ public class NotificationPrefsService {
             case "pushMessages"             -> prefs.isPushMessages();
             case "pushTripReminder"         -> prefs.isPushTripReminder();
             case "pushPromo"                -> prefs.isPushPromo();
+            case "pushCorridorAlerts"       -> prefs.isPushCorridorAlerts();
             default                         -> true;
         };
     }
@@ -106,7 +109,8 @@ public class NotificationPrefsService {
                 e.isPushActivityNegotiations(),
                 e.isPushMessages(),
                 e.isPushTripReminder(),
-                e.isPushPromo()
+                e.isPushPromo(),
+                e.isPushCorridorAlerts()
         );
     }
 }

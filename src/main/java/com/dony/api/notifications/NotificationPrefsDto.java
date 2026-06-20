@@ -5,9 +5,10 @@ public record NotificationPrefsDto(
     boolean pushActivityNegotiations,
     boolean pushMessages,
     boolean pushTripReminder,
-    boolean pushPromo
+    boolean pushPromo,
+    boolean pushCorridorAlerts
 ) {
     public static NotificationPrefsDto defaults() {
-        return new NotificationPrefsDto(true, true, true, true, false);
+        return new NotificationPrefsDto(true, true, true, true, false, true);
     }
 }
