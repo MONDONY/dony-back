@@ -43,17 +43,17 @@ public class AlertService {
         this.packageRequestRepository = packageRequestRepository;
     }
 
-    private UUID travelerId(String firebaseUid) {
+    private UUID ownerId(String firebaseUid) {
         return userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyNotFoundException("Traveler not found"))
+                .orElseThrow(() -> new DonyNotFoundException("User not found"))
                 .getId();
     }
 
-    // Item 4: single findAllByTravelerId call for both cap check and duplicate check
+    // Item 4: single findAllByOwnerId call for both cap check and duplicate check
     public CorridorAlertResponse create(String firebaseUid, CorridorAlertRequest req) {
-        UUID tid = travelerId(firebaseUid);
+        UUID oid = ownerId(firebaseUid);
 
-        List<CorridorAlertEntity> existing = alertRepository.findAllByTravelerId(tid);
+        List<CorridorAlertEntity> existing = alertRepository.findAllByOwnerId(oid);
 
         if (existing.size() >= MAX_ACTIVE_ALERTS) {
             throw new DonyBusinessException(
@@ -78,7 +78,7 @@ public class AlertService {
         }
 
         CorridorAlertEntity entity = new CorridorAlertEntity();
-        entity.setTravelerId(tid);
+        entity.setOwnerId(oid);
         entity.setDepartureCity(req.departureCity());
         entity.setDepartureCountryCode(req.departureCountryCode());
         entity.setArrivalCity(req.arrivalCity());
@@ -88,6 +88,7 @@ public class AlertService {
         entity.setMinWeightKg(req.minWeightKg());
         entity.setContentCategories(categories);
         entity.setActive(true);
+        entity.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
 
         CorridorAlertEntity saved = alertRepository.save(entity);
         return toResponse(saved, 0L);
@@ -116,16 +117,16 @@ public class AlertService {
 
     @Transactional(readOnly = true)
     public List<CorridorAlertResponse> list(String firebaseUid) {
-        UUID tid = travelerId(firebaseUid);
-        return alertRepository.findAllByTravelerId(tid).stream()
+        UUID oid = ownerId(firebaseUid);
+        return alertRepository.findAllByOwnerId(oid).stream()
                 .map(a -> toResponse(a, countMatches(a)))
                 .toList();
     }
 
     public CorridorAlertResponse update(String firebaseUid, UUID alertId,
                                         CorridorAlertRequest req, Boolean active) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(oid, alertId);
         entity.setDepartureCity(req.departureCity());
         entity.setDepartureCountryCode(req.departureCountryCode());
         entity.setArrivalCity(req.arrivalCity());
@@ -143,23 +144,23 @@ public class AlertService {
     }
 
     public void delete(String firebaseUid, UUID alertId) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(oid, alertId);
         entity.softDelete();
         alertRepository.save(entity);
     }
 
     @Transactional(readOnly = true)
     public List<MatchingRequestDto> getMatches(String firebaseUid, UUID alertId) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity alert = ownedAlert(tid, alertId);
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
         return toMatchingDtos(findMatches(alert));
     }
 
-    private CorridorAlertEntity ownedAlert(UUID tid, UUID alertId) {
+    private CorridorAlertEntity ownedAlert(UUID oid, UUID alertId) {
         CorridorAlertEntity entity = alertRepository.findById(alertId)
                 .orElseThrow(() -> new DonyNotFoundException("Alert not found"));
-        if (!entity.getTravelerId().equals(tid)) {
+        if (!entity.getOwnerId().equals(oid)) {
             throw new DonyNotFoundException("Alert not found");
         }
         return entity;

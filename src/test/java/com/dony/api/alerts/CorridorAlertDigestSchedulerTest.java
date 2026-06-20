@@ -27,7 +27,7 @@ class CorridorAlertDigestSchedulerTest {
 
     CorridorAlertDigestScheduler scheduler;
 
-    final UUID travelerId = UUID.randomUUID();
+    final UUID ownerId = UUID.randomUUID();
 
     @BeforeEach
     void setup() {
@@ -45,7 +45,7 @@ class CorridorAlertDigestSchedulerTest {
     private CorridorAlertEntity alert(LocalDateTime lastNotifiedAt) {
         CorridorAlertEntity a = new CorridorAlertEntity();
         setId(a, UUID.randomUUID());
-        a.setTravelerId(travelerId);
+        a.setOwnerId(ownerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");
         a.setActive(true);
@@ -63,7 +63,7 @@ class CorridorAlertDigestSchedulerTest {
         scheduler.runDigest();
 
         ArgumentCaptor<Map<String, String>> dataCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationDispatcher).notifyUser(eq(travelerId), anyString(), anyString(), dataCaptor.capture());
+        verify(notificationDispatcher).notifyUser(eq(ownerId), anyString(), anyString(), dataCaptor.capture());
         assertThat(dataCaptor.getValue().get("type")).isEqualTo("CORRIDOR_ALERT");
         assertThat(a.getLastNotifiedAt()).isNotNull();
         verify(alertRepository).save(a);

@@ -23,6 +23,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.mockito.ArgumentCaptor;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -35,16 +37,16 @@ class AlertServiceCreateTest {
     @InjectMocks AlertService service;
 
     final String uid = "firebase-uid";
-    final UUID travelerId = UUID.randomUUID();
-    UserEntity traveler;
+    final UUID ownerId = UUID.randomUUID();
+    UserEntity owner;
 
     @BeforeEach
     void setup() {
-        traveler = new UserEntity();
+        owner = new UserEntity();
         try {
             var f = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
             f.setAccessible(true);
-            f.set(traveler, travelerId);
+            f.set(owner, ownerId);
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
@@ -55,8 +57,8 @@ class AlertServiceCreateTest {
 
     @Test
     void create_persistsAndReturnsResponse() {
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of());
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
         when(alertRepository.save(any(CorridorAlertEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -66,11 +68,14 @@ class AlertServiceCreateTest {
         assertThat(resp.arrivalCity()).isEqualTo("Bamako");
         assertThat(resp.active()).isTrue();
         assertThat(resp.matchCount()).isEqualTo(0L);
-        verify(alertRepository).save(any(CorridorAlertEntity.class));
+
+        ArgumentCaptor<CorridorAlertEntity> captor = ArgumentCaptor.forClass(CorridorAlertEntity.class);
+        verify(alertRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(AlertDirection.TRAVELER_WANTS_PACKAGES);
     }
 
     @Test
-    void create_unknownTraveler_throwsNotFound() {
+    void create_unknownUser_throwsNotFound() {
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.create(uid, req()))
                 .isInstanceOf(DonyNotFoundException.class);
@@ -78,18 +83,18 @@ class AlertServiceCreateTest {
 
     @Test
     void create_atCap_throws422() {
-        // Item 4: cap check now uses findAllByTravelerId — return 20 items to trigger the limit
+        // Item 4: cap check now uses findAllByOwnerId — return 20 items to trigger the limit
         List<CorridorAlertEntity> fullList = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
             CorridorAlertEntity e = new CorridorAlertEntity();
-            e.setTravelerId(travelerId);
+            e.setOwnerId(ownerId);
             e.setDepartureCity("City" + i);
             e.setArrivalCity("Dest" + i);
             e.setContentCategories(List.of());
             fullList.add(e);
         }
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(fullList);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(fullList);
 
         assertThatThrownBy(() -> service.create(uid, req()))
                 .isInstanceOf(DonyBusinessException.class)
@@ -101,14 +106,14 @@ class AlertServiceCreateTest {
     @Test
     void create_exactDuplicate_throws409() {
         CorridorAlertEntity existing = new CorridorAlertEntity();
-        existing.setTravelerId(travelerId);
+        existing.setOwnerId(ownerId);
         existing.setDepartureCity("Paris");
         existing.setArrivalCity("Bamako");
         existing.setMinWeightKg(new BigDecimal("2.00"));
         existing.setContentCategories(List.of("Documents"));
 
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of(existing));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(existing));
 
         assertThatThrownBy(() -> service.create(uid, req()))
                 .isInstanceOf(DonyBusinessException.class)
@@ -122,8 +127,8 @@ class AlertServiceCreateTest {
         CorridorAlertRequest reqWithNullCategories = new CorridorAlertRequest(
                 "Paris", "FR", "Bamako", "ML", null, null, new BigDecimal("2.00"), null, null);
 
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of());
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
         when(alertRepository.save(any(CorridorAlertEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 

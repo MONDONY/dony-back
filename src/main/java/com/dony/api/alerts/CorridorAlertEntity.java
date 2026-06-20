@@ -16,8 +16,12 @@ import java.util.UUID;
 @Where(clause = "deleted_at IS NULL")
 public class CorridorAlertEntity extends BaseEntity {
 
-    @Column(name = "traveler_id", nullable = false)
-    private UUID travelerId;
+    @Column(name = "owner_id", nullable = false)
+    private UUID ownerId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direction", nullable = false, length = 32)
+    private AlertDirection direction = AlertDirection.TRAVELER_WANTS_PACKAGES;
 
     @Column(name = "departure_city", nullable = false, length = 100)
     private String departureCity;
@@ -54,8 +58,11 @@ public class CorridorAlertEntity extends BaseEntity {
     @Column(name = "content_category", length = 100)
     private List<String> contentCategories = new ArrayList<>();
 
-    public UUID getTravelerId() { return travelerId; }
-    public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }
+    public UUID getOwnerId() { return ownerId; }
+    public void setOwnerId(UUID ownerId) { this.ownerId = ownerId; }
+
+    public AlertDirection getDirection() { return direction; }
+    public void setDirection(AlertDirection direction) { this.direction = direction; }
 
     public String getDepartureCity() { return departureCity; }
     public void setDepartureCity(String departureCity) { this.departureCity = departureCity; }

@@ -7,9 +7,9 @@ import java.util.UUID;
 
 public interface CorridorAlertRepository extends JpaRepository<CorridorAlertEntity, UUID> {
 
-    List<CorridorAlertEntity> findAllByTravelerId(UUID travelerId);
+    List<CorridorAlertEntity> findAllByOwnerId(UUID ownerId);
 
-    long countByTravelerId(UUID travelerId);
+    long countByOwnerId(UUID ownerId);
 
     List<CorridorAlertEntity> findAllByActiveTrue();
 }

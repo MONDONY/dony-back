@@ -61,7 +61,7 @@ public class CorridorAlertDigestScheduler {
                         "alertId", alert.getId().toString(),
                         "corridor", corridor);
 
-                notificationDispatcher.notifyUser(alert.getTravelerId(), title, body, data);
+                notificationDispatcher.notifyUser(alert.getOwnerId(), title, body, data);
 
                 alert.setLastNotifiedAt(now);
                 alertRepository.save(alert);

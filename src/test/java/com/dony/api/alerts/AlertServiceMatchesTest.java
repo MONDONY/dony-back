@@ -37,15 +37,15 @@ class AlertServiceMatchesTest {
     @InjectMocks AlertService service;
 
     final String uid = "firebase-uid";
-    final UUID travelerId = UUID.randomUUID();
+    final UUID ownerId = UUID.randomUUID();
     final UUID alertId = UUID.randomUUID();
-    UserEntity traveler;
+    UserEntity owner;
 
     @BeforeEach
     void setup() {
-        traveler = new UserEntity();
-        setId(traveler, travelerId);
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
+        owner = new UserEntity();
+        setId(owner, ownerId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
     }
 
     private static void setId(Object target, UUID id) {
@@ -59,7 +59,7 @@ class AlertServiceMatchesTest {
     private CorridorAlertEntity alert(boolean active) {
         CorridorAlertEntity a = new CorridorAlertEntity();
         setId(a, alertId);
-        a.setTravelerId(travelerId);
+        a.setOwnerId(ownerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");
         a.setDateFrom(LocalDate.of(2026, 7, 1));
@@ -132,7 +132,7 @@ class AlertServiceMatchesTest {
     @Test
     void getMatches_notOwner_throwsNotFound() {
         CorridorAlertEntity foreign = alert(true);
-        foreign.setTravelerId(UUID.randomUUID());
+        foreign.setOwnerId(UUID.randomUUID());
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.getMatches(uid, alertId))
@@ -141,7 +141,7 @@ class AlertServiceMatchesTest {
 
     @Test
     void list_returnsItemsWithMatchCount() {
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of(alert(true)));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(alert(true)));
         when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
                 .thenReturn(List.of(pkg("Documents", new BigDecimal("3.00"), LocalDate.of(2026, 7, 10))));
 
@@ -171,7 +171,7 @@ class AlertServiceMatchesTest {
     @Test
     void update_notOwner_throwsNotFound() {
         CorridorAlertEntity foreign = alert(true);
-        foreign.setTravelerId(UUID.randomUUID());
+        foreign.setOwnerId(UUID.randomUUID());
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.update(uid, alertId,
