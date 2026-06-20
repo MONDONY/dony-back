@@ -7,7 +7,13 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      # `create` (et pas `create-drop`) : avec une H2 in-memory PARTAGÉE
+      # (DB_CLOSE_DELAY=-1) et plusieurs contextes @SpringBootTest, le drop au
+      # shutdown d'un contexte évincé vidait la DB pour les contextes suivants
+      # (ex. addressbook IT → « table not found »). `create` recrée le schéma à
+      # chaque démarrage de contexte sans le dropper. L'isolation data reste
+      # assurée par les cleanDb()/deleteAll() de chaque test.
+      ddl-auto: create
     database-platform: org.hibernate.dialect.H2Dialect
     show-sql: false
 
