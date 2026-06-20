@@ -1,6 +1,8 @@
 package com.dony.api.alerts.dto;
 
+import com.dony.api.alerts.AlertDirection;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -15,5 +17,6 @@ public record CorridorAlertRequest(
         LocalDate dateTo,
         BigDecimal minWeightKg,
         List<String> contentCategories,
+        @NotNull AlertDirection direction,
         Boolean active
 ) {}

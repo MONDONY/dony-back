@@ -1,5 +1,6 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.AlertDirection;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.auth.UserEntity;
@@ -161,7 +162,7 @@ class AlertServiceMatchesTest {
         when(packageRequestRepository.findOpenByCorridor(any(), any())).thenReturn(List.of());
 
         CorridorAlertRequest req = new CorridorAlertRequest("Lyon", "FR", "Dakar", "SN",
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null);
         CorridorAlertResponse resp = service.update(uid, alertId, req, false);
 
         assertThat(existing.getDepartureCity()).isEqualTo("Lyon");
@@ -177,7 +178,7 @@ class AlertServiceMatchesTest {
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.update(uid, alertId,
-                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of(), null), null))
+                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null), null))
                 .isInstanceOf(DonyNotFoundException.class);
     }
 

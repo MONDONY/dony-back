@@ -3,6 +3,7 @@ package com.dony.api.alerts;
 import com.dony.api.alerts.dto.AlertTripMatchDto;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
+import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
@@ -58,7 +59,10 @@ public class AlertService {
 
     // Item 4: single findAllByOwnerId call for both cap check and duplicate check
     public CorridorAlertResponse create(String firebaseUid, CorridorAlertRequest req) {
-        UUID oid = ownerId(firebaseUid);
+        UserEntity owner = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyNotFoundException("User not found"));
+        UUID oid = owner.getId();
+        validateDirection(owner, req);
 
         List<CorridorAlertEntity> existing = alertRepository.findAllByOwnerId(oid);
 
@@ -95,7 +99,7 @@ public class AlertService {
         entity.setMinWeightKg(req.minWeightKg());
         entity.setContentCategories(categories);
         entity.setActive(true);
-        entity.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
+        entity.setDirection(req.direction());
 
         CorridorAlertEntity saved = alertRepository.save(entity);
         return toResponse(saved, 0L);
@@ -107,7 +111,26 @@ public class AlertService {
                 && Objects.equals(e.getDateFrom(), req.dateFrom())
                 && Objects.equals(e.getDateTo(), req.dateTo())
                 && sameWeight(e.getMinWeightKg(), req.minWeightKg())
-                && sameCategories(e.getContentCategories(), categories);
+                && sameCategories(e.getContentCategories(), categories)
+                && e.getDirection() == req.direction();
+    }
+
+    private void validateDirection(UserEntity owner, CorridorAlertRequest req) {
+        AlertDirection direction = req.direction();
+        boolean roleOk = (direction == AlertDirection.SENDER_WANTS_TRIPS && owner.getRoles().contains(Role.SENDER))
+                || (direction == AlertDirection.TRAVELER_WANTS_PACKAGES && owner.getRoles().contains(Role.TRAVELER));
+        if (!roleOk) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "alert-direction-not-allowed", "Alert Direction Not Allowed",
+                    "Votre rôle ne permet pas de créer ce type d'alerte.");
+        }
+        if (direction == AlertDirection.SENDER_WANTS_TRIPS
+                && (req.minWeightKg() != null
+                    || (req.contentCategories() != null && !req.contentCategories().isEmpty()))) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-trip-filters-unsupported", "Trip Alert Filters Unsupported",
+                    "Les filtres poids/catégories ne s'appliquent pas aux alertes trajet.");
+        }
     }
 
     private boolean sameWeight(BigDecimal a, BigDecimal b) {
@@ -318,6 +341,7 @@ public class AlertService {
                 e.getDateTo(),
                 e.getMinWeightKg(),
                 new ArrayList<>(e.getContentCategories()),
+                e.getDirection(),
                 e.isActive(),
                 matchCount,
                 e.getCreatedAt());

@@ -2,6 +2,7 @@ package com.dony.api.alerts;
 
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
+import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,11 +52,19 @@ class AlertServiceCreateTest {
             f.setAccessible(true);
             f.set(owner, ownerId);
         } catch (Exception e) { throw new RuntimeException(e); }
+        owner.setRoles(Set.of(Role.TRAVELER));
     }
 
     private CorridorAlertRequest req() {
         return new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
-                null, null, new BigDecimal("2.00"), List.of("Documents"), null);
+                null, null, new BigDecimal("2.00"), List.of("Documents"),
+                AlertDirection.TRAVELER_WANTS_PACKAGES, null);
+    }
+
+    private CorridorAlertRequest senderReq() {
+        return new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, null, null,
+                AlertDirection.SENDER_WANTS_TRIPS, null);
     }
 
     @Test
@@ -113,6 +123,7 @@ class AlertServiceCreateTest {
         existing.setArrivalCity("Bamako");
         existing.setMinWeightKg(new BigDecimal("2.00"));
         existing.setContentCategories(List.of("Documents"));
+        existing.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
 
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
         when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(existing));
@@ -127,7 +138,8 @@ class AlertServiceCreateTest {
     @Test
     void create_nullContentCategories_doesNotNpe() {
         CorridorAlertRequest reqWithNullCategories = new CorridorAlertRequest(
-                "Paris", "FR", "Bamako", "ML", null, null, new BigDecimal("2.00"), null, null);
+                "Paris", "FR", "Bamako", "ML", null, null, new BigDecimal("2.00"), null,
+                AlertDirection.TRAVELER_WANTS_PACKAGES, null);
 
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
         when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
@@ -138,5 +150,123 @@ class AlertServiceCreateTest {
 
         assertThat(resp.contentCategories()).isNotNull().isEmpty();
         verify(alertRepository).save(any(CorridorAlertEntity.class));
+    }
+
+    // --- New tests for Task 4 ---
+
+    @Test
+    void create_senderWantsTrips_withTravelerRole_throws403() {
+        // TRAVELER role + SENDER_WANTS_TRIPS direction → 403
+        owner.setRoles(Set.of(Role.TRAVELER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertRequest req = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, null, null,
+                AlertDirection.SENDER_WANTS_TRIPS, null);
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-direction-not-allowed");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_travelerWantsPackages_withSenderRole_throws403() {
+        // SENDER role + TRAVELER_WANTS_PACKAGES direction → 403
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        assertThatThrownBy(() -> service.create(uid, req()))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-direction-not-allowed");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_tripDirection_withWeightFilter_throws422() {
+        // SENDER_WANTS_TRIPS + minWeightKg set → 422
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertRequest req = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, new BigDecimal("5.00"), null,
+                AlertDirection.SENDER_WANTS_TRIPS, null);
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-trip-filters-unsupported");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_tripDirection_withCategoryFilter_throws422() {
+        // SENDER_WANTS_TRIPS + contentCategories non-empty → 422
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertRequest req = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, null, List.of("Documents"),
+                AlertDirection.SENDER_WANTS_TRIPS, null);
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-trip-filters-unsupported");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_duplicateSameCorridorDifferentDirection_isAllowed() {
+        // Same corridor but different direction → NOT a duplicate
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertEntity existing = new CorridorAlertEntity();
+        existing.setOwnerId(ownerId);
+        existing.setDepartureCity("Paris");
+        existing.setArrivalCity("Bamako");
+        existing.setMinWeightKg(null);
+        existing.setContentCategories(List.of());
+        existing.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
+
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(existing));
+        when(alertRepository.save(any(CorridorAlertEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // senderReq() uses SENDER_WANTS_TRIPS, no weight/categories
+        CorridorAlertResponse resp = service.create(uid, senderReq());
+
+        assertThat(resp.direction()).isEqualTo(AlertDirection.SENDER_WANTS_TRIPS);
+        verify(alertRepository).save(any(CorridorAlertEntity.class));
+    }
+
+    @Test
+    void create_senderWantsTrips_ok() {
+        // SENDER role + SENDER_WANTS_TRIPS direction + no filters → success
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
+        when(alertRepository.save(any(CorridorAlertEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CorridorAlertResponse resp = service.create(uid, senderReq());
+
+        assertThat(resp.direction()).isEqualTo(AlertDirection.SENDER_WANTS_TRIPS);
+        assertThat(resp.active()).isTrue();
+
+        ArgumentCaptor<CorridorAlertEntity> captor = ArgumentCaptor.forClass(CorridorAlertEntity.class);
+        verify(alertRepository).save(captor.capture());
+        assertThat(captor.getValue().getDirection()).isEqualTo(AlertDirection.SENDER_WANTS_TRIPS);
     }
 }

@@ -1,5 +1,7 @@
 package com.dony.api.alerts.dto;
 
+import com.dony.api.alerts.AlertDirection;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -16,6 +18,7 @@ public record CorridorAlertResponse(
         LocalDate dateTo,
         BigDecimal minWeightKg,
         List<String> contentCategories,
+        AlertDirection direction,
         boolean active,
         long matchCount,
         LocalDateTime createdAt

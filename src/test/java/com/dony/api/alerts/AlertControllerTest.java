@@ -1,5 +1,6 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.AlertDirection;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.common.DonyBusinessException;
@@ -52,7 +53,7 @@ class AlertControllerTest {
 
     private CorridorAlertResponse sampleResponse() {
         return new CorridorAlertResponse(UUID.randomUUID(), "Paris", "Bamako", "FR", "ML",
-                null, null, null, List.of(), true, 3L, java.time.LocalDateTime.now());
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, true, 3L, java.time.LocalDateTime.now());
     }
 
     @Test
