@@ -19,6 +19,12 @@ spring:
   jpa:
     show-sql: true
 
+  # Dev partage une seule DB entre branches feature : tolere les migrations appliquees
+  # par une branche soeur mais absentes de la branche courante (ex. V147 disputes admin).
+  # N'affecte QUE le profil dev - la prod garde la validation stricte.
+  flyway:
+    ignore-migration-patterns: "*:missing"
+
 # Sentry disabled in dev
 sentry:
   dsn: ""

@@ -34,6 +34,9 @@ public class NotificationPrefsEntity {
     @Column(name = "push_promo", nullable = false)
     private boolean pushPromo = false;
 
+    @Column(name = "push_corridor_alerts", nullable = false)
+    private boolean pushCorridorAlerts = true;
+
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
@@ -55,5 +58,7 @@ public class NotificationPrefsEntity {
     public void setPushTripReminder(boolean v) { this.pushTripReminder = v; }
     public boolean isPushPromo() { return pushPromo; }
     public void setPushPromo(boolean v) { this.pushPromo = v; }
+    public boolean isPushCorridorAlerts() { return pushCorridorAlerts; }
+    public void setPushCorridorAlerts(boolean v) { this.pushCorridorAlerts = v; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }
