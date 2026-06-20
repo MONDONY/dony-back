@@ -165,6 +165,12 @@ public class AlertService {
         return findMatches(alert).size();
     }
 
+    public List<PackageRequestEntity> findRecentMatches(CorridorAlertEntity alert, java.time.LocalDateTime since) {
+        return findMatches(alert).stream()
+                .filter(p -> p.getCreatedAt() != null && p.getCreatedAt().isAfter(since))
+                .toList();
+    }
+
     private List<PackageRequestEntity> findMatches(CorridorAlertEntity alert) {
         return packageRequestRepository
                 .findOpenByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
