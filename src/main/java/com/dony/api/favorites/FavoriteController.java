@@ -27,7 +27,7 @@ public class FavoriteController {
      * Add a favorite (toggle-on).
      * trip      → SENDER or TRAVELER
      * package-request → TRAVELER only (SENDER → 403 via AccessDeniedException)
-     * unknown type  → 400 via GlobalExceptionHandler (IllegalArgumentException)
+     * unknown type  → 400 via DonyBusinessException thrown by FavoriteTargetType.fromPath
      */
     @PutMapping("/{type}/{targetId}")
     @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")

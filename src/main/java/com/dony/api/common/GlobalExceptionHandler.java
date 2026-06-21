@@ -122,15 +122,6 @@ public class GlobalExceptionHandler {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, ex.getMessage());
-        problem.setType(URI.create(BASE_TYPE + "bad-request"));
-        problem.setTitle("Bad Request");
-        return ResponseEntity.badRequest().body(problem);
-    }
-
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ProblemDetail> handleNotReadable(HttpMessageNotReadableException ex) {
         log.error("HttpMessageNotReadableException: {}", ex.getMessage(), ex);
