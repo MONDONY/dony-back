@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -76,7 +77,8 @@ class CorridorAlertTripMatchListenerTest {
         listener.onAnnouncementCreated(event());
 
         verify(notificationDispatcher).notifyUser(
-                eq(alert.getOwnerId()), contains("Nouveau trajet"), any(), anyMap());
+                eq(alert.getOwnerId()), contains("Nouveau trajet"), any(),
+                argThat(d -> tripId.toString().equals(d.get("announcementId"))));
         assertThat(alert.getLastNotifiedAt()).isNotNull();
         verify(alertRepository).save(alert);
     }

@@ -83,6 +83,7 @@ public class CorridorAlertTripMatchListener {
                         Map.of(
                                 "type", "CORRIDOR_ALERT",
                                 "alertId", alert.getId().toString(),
+                                "announcementId", trip.getId().toString(),
                                 "corridor", corridor,
                                 "direction", alert.getDirection().name()));
                 alert.setLastNotifiedAt(now);
