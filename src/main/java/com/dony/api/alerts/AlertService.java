@@ -35,6 +35,8 @@ import java.util.stream.Collectors;
 public class AlertService {
 
     private static final int MAX_ACTIVE_ALERTS = 20;
+    private static final int MIN_ZONE_RADIUS_KM = 5;
+    private static final int MAX_ZONE_RADIUS_KM = 300;
 
     private final CorridorAlertRepository alertRepository;
     private final UserRepository userRepository;
@@ -100,9 +102,18 @@ public class AlertService {
         entity.setContentCategories(categories);
         entity.setActive(true);
         entity.setDirection(req.direction());
+        applyZone(entity, req);
 
         CorridorAlertEntity saved = alertRepository.save(entity);
         return toResponse(saved, 0L);
+    }
+
+    /** Recopie la zone de remise (centre + rayon + label) du payload vers l'entité. */
+    private void applyZone(CorridorAlertEntity entity, CorridorAlertRequest req) {
+        entity.setCenterLat(req.centerLat());
+        entity.setCenterLng(req.centerLng());
+        entity.setRadiusKm(req.radiusKm());
+        entity.setCenterLabel(req.centerLabel());
     }
 
     private boolean isSameFilters(CorridorAlertEntity e, CorridorAlertRequest req, List<String> categories) {
@@ -112,7 +123,10 @@ public class AlertService {
                 && Objects.equals(e.getDateTo(), req.dateTo())
                 && sameWeight(e.getMinWeightKg(), req.minWeightKg())
                 && sameCategories(e.getContentCategories(), categories)
-                && e.getDirection() == req.direction();
+                && e.getDirection() == req.direction()
+                && sameWeight(e.getCenterLat(), req.centerLat())
+                && sameWeight(e.getCenterLng(), req.centerLng())
+                && Objects.equals(e.getRadiusKm(), req.radiusKm());
     }
 
     private void validateDirection(UserEntity owner, CorridorAlertRequest req) {
@@ -130,6 +144,35 @@ public class AlertService {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "alert-trip-filters-unsupported", "Trip Alert Filters Unsupported",
                     "Les filtres poids/catégories ne s'appliquent pas aux alertes trajet.");
+        }
+        validateZone(req.direction(), req.centerLat(), req.centerLng(), req.radiusKm());
+    }
+
+    /**
+     * Zone de remise (centre + rayon) : optionnelle, réservée aux alertes trajet
+     * (SENDER_WANTS_TRIPS). Tout-ou-rien (centre lat/lng + rayon), rayon borné
+     * [{@value MIN_ZONE_RADIUS_KM}, {@value MAX_ZONE_RADIUS_KM}] km.
+     */
+    private void validateZone(AlertDirection direction, BigDecimal centerLat,
+                              BigDecimal centerLng, Integer radiusKm) {
+        boolean anyZone = centerLat != null || centerLng != null || radiusKm != null;
+        if (!anyZone) {
+            return;
+        }
+        if (direction != AlertDirection.SENDER_WANTS_TRIPS) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-not-allowed", "Pickup Zone Not Allowed",
+                    "La zone de remise ne s'applique qu'aux alertes trajet.");
+        }
+        if (centerLat == null || centerLng == null || radiusKm == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-incomplete", "Pickup Zone Incomplete",
+                    "La zone de remise exige un centre (lat/lng) et un rayon.");
+        }
+        if (radiusKm < MIN_ZONE_RADIUS_KM || radiusKm > MAX_ZONE_RADIUS_KM) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-radius-invalid", "Pickup Zone Radius Invalid",
+                    "Le rayon doit être entre " + MIN_ZONE_RADIUS_KM + " et " + MAX_ZONE_RADIUS_KM + " km.");
         }
     }
 
@@ -172,6 +215,8 @@ public class AlertService {
         entity.setMinWeightKg(req.minWeightKg());
         entity.setContentCategories(req.contentCategories() != null
                 ? new ArrayList<>(req.contentCategories()) : new ArrayList<>());
+        validateZone(entity.getDirection(), req.centerLat(), req.centerLng(), req.radiusKm());
+        applyZone(entity, req);
         if (active != null) {
             entity.setActive(active);
         }
@@ -247,9 +292,16 @@ public class AlertService {
     }
 
     private List<AnnouncementEntity> findMatchingTrips(CorridorAlertEntity alert) {
-        return announcementRepository
-                .findActiveByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
-                .stream()
+        // Zone de remise : on restreint en SQL aux trajets dont le pickup est
+        // dans le cercle ; sinon corridor pur (ville→ville).
+        List<AnnouncementEntity> candidates = alert.hasPickupZone()
+                ? announcementRepository.findActiveByCorridorWithinPickupRadius(
+                        alert.getDepartureCity(), alert.getArrivalCity(),
+                        alert.getCenterLat().doubleValue(), alert.getCenterLng().doubleValue(),
+                        alert.getRadiusKm())
+                : announcementRepository.findActiveByCorridor(
+                        alert.getDepartureCity(), alert.getArrivalCity());
+        return candidates.stream()
                 .filter(a -> fitsAlertDate(a.getDepartureDate(), alert))
                 .toList();
     }
@@ -359,6 +411,10 @@ public class AlertService {
                 e.getDirection(),
                 e.isActive(),
                 matchCount,
-                e.getCreatedAt());
+                e.getCreatedAt(),
+                e.getCenterLat(),
+                e.getCenterLng(),
+                e.getRadiusKm(),
+                e.getCenterLabel());
     }
 }

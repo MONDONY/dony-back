@@ -18,5 +18,21 @@ public record CorridorAlertRequest(
         BigDecimal minWeightKg,
         List<String> contentCategories,
         @NotNull AlertDirection direction,
-        Boolean active
-) {}
+        Boolean active,
+        // ── Zone de remise optionnelle (SENDER_WANTS_TRIPS) ─────────────────
+        BigDecimal centerLat,
+        BigDecimal centerLng,
+        Integer radiusKm,
+        String centerLabel
+) {
+    /** Constructeur de compat (sans zone de remise) — délègue avec une zone nulle. */
+    public CorridorAlertRequest(
+            String departureCity, String departureCountryCode,
+            String arrivalCity, String arrivalCountryCode,
+            LocalDate dateFrom, LocalDate dateTo, BigDecimal minWeightKg,
+            List<String> contentCategories, AlertDirection direction, Boolean active) {
+        this(departureCity, departureCountryCode, arrivalCity, arrivalCountryCode,
+                dateFrom, dateTo, minWeightKg, contentCategories, direction, active,
+                null, null, null, null);
+    }
+}

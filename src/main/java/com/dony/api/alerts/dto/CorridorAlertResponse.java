@@ -21,5 +21,22 @@ public record CorridorAlertResponse(
         AlertDirection direction,
         boolean active,
         long matchCount,
-        LocalDateTime createdAt
-) {}
+        LocalDateTime createdAt,
+        // ── Zone de remise optionnelle (SENDER_WANTS_TRIPS) ─────────────────
+        BigDecimal centerLat,
+        BigDecimal centerLng,
+        Integer radiusKm,
+        String centerLabel
+) {
+    /** Constructeur de compat (sans zone de remise) — délègue avec une zone nulle. */
+    public CorridorAlertResponse(
+            UUID id, String departureCity, String arrivalCity,
+            String departureCountryCode, String arrivalCountryCode,
+            LocalDate dateFrom, LocalDate dateTo, BigDecimal minWeightKg,
+            List<String> contentCategories, AlertDirection direction,
+            boolean active, long matchCount, LocalDateTime createdAt) {
+        this(id, departureCity, arrivalCity, departureCountryCode, arrivalCountryCode,
+                dateFrom, dateTo, minWeightKg, contentCategories, direction,
+                active, matchCount, createdAt, null, null, null, null);
+    }
+}

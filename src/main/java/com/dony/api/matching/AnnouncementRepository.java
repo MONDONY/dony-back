@@ -195,4 +195,34 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
     List<AnnouncementEntity> findActiveByCorridor(
             @Param("departureCity") String departureCity,
             @Param("arrivalCity") String arrivalCity);
+
+    /**
+     * Variante « zone de remise » de {@link #findActiveByCorridor} : ACTIVE/FULL
+     * sur le corridor (ville→ville, insensible à la casse) ET dont le point de
+     * remise (pickup) est à ≤ {@code radiusKm} du centre (haversine, rayon Terre
+     * 6371 km). Requête native (acos/radians) — calque
+     * {@link #findIdsWithinPickupRadius}.
+     */
+    @Query(value = """
+        SELECT a.* FROM announcements a
+        WHERE a.deleted_at IS NULL
+          AND LOWER(a.departure_city) = LOWER(:departureCity)
+          AND LOWER(a.arrival_city)   = LOWER(:arrivalCity)
+          AND a.status IN ('ACTIVE', 'FULL')
+          AND a.pickup_lat IS NOT NULL
+          AND a.pickup_lng IS NOT NULL
+          AND (
+            6371 * acos(
+              cos(radians(:lat)) * cos(radians(a.pickup_lat))
+              * cos(radians(a.pickup_lng) - radians(:lng))
+              + sin(radians(:lat)) * sin(radians(a.pickup_lat))
+            )
+          ) <= :radiusKm
+        """, nativeQuery = true)
+    List<AnnouncementEntity> findActiveByCorridorWithinPickupRadius(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity,
+            @Param("lat") double lat,
+            @Param("lng") double lng,
+            @Param("radiusKm") int radiusKm);
 }

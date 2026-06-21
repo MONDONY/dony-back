@@ -269,4 +269,86 @@ class AlertServiceCreateTest {
         verify(alertRepository).save(captor.capture());
         assertThat(captor.getValue().getDirection()).isEqualTo(AlertDirection.SENDER_WANTS_TRIPS);
     }
+
+    // --- Zone de remise (option SENDER_WANTS_TRIPS) ---
+
+    private CorridorAlertRequest senderZoneReq(BigDecimal lat, BigDecimal lng, Integer radiusKm) {
+        return new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, null, null,
+                AlertDirection.SENDER_WANTS_TRIPS, null,
+                lat, lng, radiusKm, "Châtelet, Paris");
+    }
+
+    @Test
+    void create_zone_withTravelerDirection_throws422NotAllowed() {
+        owner.setRoles(Set.of(Role.TRAVELER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertRequest req = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, null, null,
+                AlertDirection.TRAVELER_WANTS_PACKAGES, null,
+                new BigDecimal("48.85"), new BigDecimal("2.35"), 20, "Paris");
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-zone-not-allowed");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_zone_incomplete_throws422() {
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        // centre posé mais rayon manquant
+        CorridorAlertRequest req = senderZoneReq(new BigDecimal("48.85"), new BigDecimal("2.35"), null);
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-zone-incomplete");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_zone_radiusTooLarge_throws422() {
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+
+        CorridorAlertRequest req = senderZoneReq(new BigDecimal("48.85"), new BigDecimal("2.35"), 400);
+
+        assertThatThrownBy(() -> service.create(uid, req))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("alert-zone-radius-invalid");
+                });
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void create_zone_valid_persistsZone() {
+        owner.setRoles(Set.of(Role.SENDER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
+        when(alertRepository.save(any(CorridorAlertEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CorridorAlertResponse resp = service.create(uid,
+                senderZoneReq(new BigDecimal("48.856600"), new BigDecimal("2.352200"), 20));
+
+        assertThat(resp.radiusKm()).isEqualTo(20);
+        assertThat(resp.centerLabel()).isEqualTo("Châtelet, Paris");
+        assertThat(resp.centerLat()).isEqualByComparingTo(new BigDecimal("48.856600"));
+
+        ArgumentCaptor<CorridorAlertEntity> captor = ArgumentCaptor.forClass(CorridorAlertEntity.class);
+        verify(alertRepository).save(captor.capture());
+        assertThat(captor.getValue().hasPickupZone()).isTrue();
+        assertThat(captor.getValue().getRadiusKm()).isEqualTo(20);
+    }
 }

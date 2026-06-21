@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -195,5 +196,57 @@ class AlertServiceTripMatchesTest {
         assertThat(list.get(0).matchCount()).isEqualTo(1L);
         verify(announcementRepository).findActiveByCorridor("Paris", "Bamako");
         verifyNoInteractions(packageRequestRepository);
+    }
+
+    private CorridorAlertEntity senderZoneAlert() {
+        CorridorAlertEntity a = senderAlert();
+        a.setCenterLat(new BigDecimal("48.856600"));
+        a.setCenterLng(new BigDecimal("2.352200"));
+        a.setRadiusKm(20);
+        a.setCenterLabel("Châtelet, Paris");
+        return a;
+    }
+
+    @Test
+    void getTripMatches_zoneAlert_usesPickupRadiusQuery() {
+        UUID travelerId = UUID.randomUUID();
+        AnnouncementEntity inZone = trip(travelerId, LocalDate.of(2026, 7, 10),
+                new BigDecimal("15.00"), new BigDecimal("8.50"));
+        UserEntity travelerEntity = traveler(travelerId, "Moussa", "Diallo", new BigDecimal("4.7"));
+
+        when(alertRepository.findById(alertId)).thenReturn(Optional.of(senderZoneAlert()));
+        when(announcementRepository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20))
+                .thenReturn(List.of(inZone));
+        when(userRepository.findAllById(anyCollection())).thenReturn(List.of(travelerEntity));
+
+        List<AlertTripMatchDto> matches = service.getTripMatches(uid, alertId);
+
+        assertThat(matches).hasSize(1);
+        verify(announcementRepository).findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+        verify(announcementRepository, never()).findActiveByCorridor(anyString(), anyString());
+    }
+
+    @Test
+    void countMatches_senderZone_usesPickupRadiusQueryAndMapsZone() {
+        AnnouncementEntity inZone = trip(UUID.randomUUID(), LocalDate.of(2026, 7, 10),
+                new BigDecimal("15.00"), new BigDecimal("8.50"));
+
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(senderZoneAlert()));
+        when(announcementRepository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20))
+                .thenReturn(List.of(inZone));
+
+        List<com.dony.api.alerts.dto.CorridorAlertResponse> list = service.list(uid);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).matchCount()).isEqualTo(1L);
+        assertThat(list.get(0).radiusKm()).isEqualTo(20);
+        assertThat(list.get(0).centerLabel()).isEqualTo("Châtelet, Paris");
+        assertThat(list.get(0).centerLat()).isEqualByComparingTo(new BigDecimal("48.856600"));
+        verify(announcementRepository).findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+        verify(announcementRepository, never()).findActiveByCorridor(anyString(), anyString());
     }
 }

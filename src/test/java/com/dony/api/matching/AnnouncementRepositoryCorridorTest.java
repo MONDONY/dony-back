@@ -95,4 +95,50 @@ class AnnouncementRepositoryCorridorTest {
 
         assertThat(result).isEmpty();
     }
+
+    // ── Zone de remise (haversine sur le pickup) ─────────────────────────────
+    // Le pickup des annonces de test est Gare du Nord (48.880756, 2.354987).
+
+    @Test
+    void withinPickupRadius_insideZone_matches() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE));
+
+        // Centre = Châtelet (~2,7 km du pickup), rayon 20 km → dans la zone.
+        List<AnnouncementEntity> result = repository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void withinPickupRadius_outsideZone_excluded() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE));
+
+        // Centre = Lyon (~390 km du pickup parisien), rayon 20 km → hors zone.
+        List<AnnouncementEntity> result = repository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 45.7640, 4.8357, 20);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void withinPickupRadius_differentCorridor_excluded() {
+        // Même pickup (dans la zone) mais corridor Lyon→Dakar ≠ Paris→Bamako.
+        repository.saveAndFlush(newAnnouncement("Lyon", "Dakar", AnnouncementStatus.ACTIVE));
+
+        List<AnnouncementEntity> result = repository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void withinPickupRadius_cancelled_excluded() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.CANCELLED));
+
+        List<AnnouncementEntity> result = repository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+
+        assertThat(result).isEmpty();
+    }
 }
