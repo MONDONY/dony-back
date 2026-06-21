@@ -49,7 +49,7 @@ class PackageRequestServiceTest {
     @Mock private StorageService storageService;
     @Mock private PackageRequestPhotoService photoService;
     @Mock private FavoriteRepository favoriteRepository;
-    @InjectMocks private PackageRequestService service;
+    private PackageRequestService service;
 
     private UserEntity sender;
     private final UUID SENDER_ID = UUID.randomUUID();
@@ -85,6 +85,13 @@ class PackageRequestServiceTest {
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Aucune photo par défaut (les mappers appellent activePhotos)
         lenient().when(photoService.activePhotos(any())).thenReturn(List.of());
+        // Real mapper wired to the same mocks so SearchTests assertions remain valid
+        PackageRequestSearchMapper realMapper = new PackageRequestSearchMapper(
+                userRepository, cityRepository, storageService, photoService);
+        service = new PackageRequestService(
+                repository, userRepository, eventPublisher, auditService, config,
+                threadRepository, cityRepository, commissionProperties,
+                storageService, photoService, favoriteRepository, realMapper);
     }
 
     // ========== Task 12: create() tests ==========

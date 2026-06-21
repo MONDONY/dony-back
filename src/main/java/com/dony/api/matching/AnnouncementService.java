@@ -88,6 +88,7 @@ public class AnnouncementService {
     private final com.dony.api.country.FlagService flagService;
     private final StorageService storageService;
     private final FavoriteRepository favoriteRepository;
+    private final AnnouncementSearchMapper announcementSearchMapper;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -105,7 +106,8 @@ public class AnnouncementService {
             PriceGridService priceGridService,
             com.dony.api.country.FlagService flagService,
             StorageService storageService,
-            FavoriteRepository favoriteRepository
+            FavoriteRepository favoriteRepository,
+            AnnouncementSearchMapper announcementSearchMapper
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -117,6 +119,7 @@ public class AnnouncementService {
         this.flagService = flagService;
         this.storageService = storageService;
         this.favoriteRepository = favoriteRepository;
+        this.announcementSearchMapper = announcementSearchMapper;
     }
 
     @Transactional(readOnly = true)
@@ -230,50 +233,11 @@ public class AnnouncementService {
     /**
      * Reusable mapper: converts an {@link AnnouncementEntity} to an {@link AnnouncementSearchResponse}.
      * The {@code isFavorite} flag is supplied by the caller so this method remains pure and testable.
-     * B4 (favorites list) and B7 (package-request feed) call this directly.
+     * Delegates to {@link AnnouncementSearchMapper} so that external packages can also call
+     * the mapper directly without injecting this service.
      */
     public AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity, boolean isFavorite) {
-        UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
-        boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
-        TravelerProfileDto profile = traveler != null
-                ? new TravelerProfileDto(
-                        traveler.getId(),
-                        buildDisplayName(traveler),
-                        traveler.getAverageRating() != null ? traveler.getAverageRating().doubleValue() : null,
-                        traveler.getTotalTrips(),
-                        traveler.isKiloPro(),
-                        traveler.isProAccount(),
-                        kycVerified,
-                        storageService.avatarUrl(traveler.getAvatarUrl()))
-                : null;
-        long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
-        List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
-                entity.getPricingMode() == PricingMode.MIXED
-                        ? priceGridService.getAnnouncementGridItems(entity.getId(), entity.getTravelerId())
-                        : List.of();
-        return new AnnouncementSearchResponse(
-                entity.getId(), entity.getTravelerId(),
-                entity.getDepartureCity(), entity.getArrivalCity(),
-                entity.getDepartureDate(),
-                entity.getDepartureTime(), entity.getArrivalTime(),
-                new com.dony.api.matching.dto.AddressDto(entity.getPickupAddressLabel(), entity.getPickupLat().doubleValue(), entity.getPickupLng().doubleValue()),
-                new com.dony.api.matching.dto.AddressDto(entity.getDeliveryAddressLabel(), entity.getDeliveryLat().doubleValue(), entity.getDeliveryLng().doubleValue()),
-                entity.getAvailableKg(), entity.getTotalKg(), entity.getPricePerKg(),
-                pricePerKgDisplay(entity.getPricePerKg(), entity.getTravelerId()),
-                entity.getTransportMode(),
-                entity.getStatus().name(), bidsCount, profile,
-                entity.getDescription(),
-                entity.getAcceptedContentTypes(),
-                entity.getRefusedTypes(),
-                entity.getAcceptedPaymentMethods().stream().map(Enum::name).toList(),
-                entity.getCapacityUnit(),
-                entity.getCreatedAt(), entity.getUpdatedAt(),
-                entity.getPricingMode(),
-                gridItems,
-                entity.getHandoverWindowStart(),
-                entity.getHandoverWindowEnd(),
-                isFavorite
-        );
+        return announcementSearchMapper.toSearchResponse(entity, isFavorite);
     }
 
     private String buildDisplayName(UserEntity user) {

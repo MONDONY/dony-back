@@ -49,6 +49,7 @@ public class PackageRequestService {
     private final StorageService storageService;
     private final PackageRequestPhotoService photoService;
     private final FavoriteRepository favoriteRepository;
+    private final PackageRequestSearchMapper packageRequestSearchMapper;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -60,7 +61,8 @@ public class PackageRequestService {
                                   CommissionProperties commissionProperties,
                                   StorageService storageService,
                                   PackageRequestPhotoService photoService,
-                                  FavoriteRepository favoriteRepository) {
+                                  FavoriteRepository favoriteRepository,
+                                  PackageRequestSearchMapper packageRequestSearchMapper) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -72,6 +74,7 @@ public class PackageRequestService {
         this.storageService = storageService;
         this.photoService = photoService;
         this.favoriteRepository = favoriteRepository;
+        this.packageRequestSearchMapper = packageRequestSearchMapper;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -477,39 +480,11 @@ public class PackageRequestService {
     /**
      * Reusable mapper: converts a {@link PackageRequestEntity} to a {@link PackageRequestSearchResponse}.
      * The {@code isFavorite} flag is supplied by the caller so this method remains pure and testable.
-     * B4 (favorites list) calls this directly.
+     * Delegates to {@link PackageRequestSearchMapper} so that external packages can also call
+     * the mapper directly without injecting this service.
      */
     public PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e, boolean isFavorite) {
-        UserEntity sender = userRepository.findById(e.getSenderId()).orElse(null);
-        String displayName = buildSenderDisplayName(sender);
-        double averageRating = sender != null && sender.getAverageRating() != null
-                ? sender.getAverageRating().doubleValue() : 0.0;
-        int totalRatings = sender != null ? sender.getRatingCount() : 0;
-        boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
-        var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified,
-            storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null)
-        );
-        var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
-        var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
-        List<PackageRequestPhotoResponse> photos = photoService.activePhotos(e.getId());
-        String photoUrl = photos.isEmpty() ? e.getPhotoUrl() : photos.get(0).url();
-        return new PackageRequestSearchResponse(
-            e.getId(), e.getDepartureCity(), e.getArrivalCity(),
-            depCity != null ? depCity.getLatitude() : null,
-            depCity != null ? depCity.getLongitude() : null,
-            arrCity != null ? arrCity.getLatitude() : null,
-            arrCity != null ? arrCity.getLongitude() : null,
-            e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
-            e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
-            e.getContentCategory(),
-            e.getTargetPriceEur(), e.isNegotiable(), photoUrl,
-            e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            senderProfile,
-            e.getAcceptedPaymentMethods(),
-            photos,
-            isFavorite
-        );
+        return packageRequestSearchMapper.toSearchResponse(e, isFavorite);
     }
 
     private String buildSenderDisplayName(UserEntity user) {

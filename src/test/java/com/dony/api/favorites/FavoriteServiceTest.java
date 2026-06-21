@@ -7,8 +7,14 @@ import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.favorites.dto.FavoriteIdsResponse;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementSearchMapper;
+import com.dony.api.matching.AnnouncementStatus;
+import com.dony.api.matching.dto.AnnouncementSearchResponse;
+import com.dony.api.requests.dto.PackageRequestSearchResponse;
 import com.dony.api.requests.entity.PackageRequestEntity;
+import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
+import com.dony.api.requests.service.PackageRequestSearchMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
@@ -16,6 +22,7 @@ import org.mockito.*;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class FavoriteServiceTest {
@@ -24,6 +31,8 @@ class FavoriteServiceTest {
     @Mock UserRepository userRepository;
     @Mock AnnouncementRepository announcementRepository;
     @Mock PackageRequestRepository packageRequestRepository;
+    @Mock AnnouncementSearchMapper announcementSearchMapper;
+    @Mock PackageRequestSearchMapper packageRequestSearchMapper;
 
     FavoriteService service;
 
@@ -35,7 +44,8 @@ class FavoriteServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         service = new FavoriteService(favoriteRepository, userRepository,
-                announcementRepository, packageRequestRepository);
+                announcementRepository, packageRequestRepository,
+                announcementSearchMapper, packageRequestSearchMapper);
         userId = UUID.randomUUID();
         tripId = UUID.randomUUID();
 
@@ -185,5 +195,124 @@ class FavoriteServiceTest {
 
         assertThat(res.trips()).isEmpty();
         assertThat(res.packageRequests()).isEmpty();
+    }
+
+    // --- getFavoriteTrips tests ---
+
+    @Test
+    void getFavoriteTrips_emptyIds_returnsEmptyList() {
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP)).thenReturn(List.of());
+
+        var res = service.getFavoriteTrips(UID);
+
+        assertThat(res).isEmpty();
+        verify(announcementRepository, never()).findAllById(any());
+    }
+
+    @Test
+    void getFavoriteTrips_skipsCancelledAndMissing() {
+        UUID t1 = UUID.randomUUID(); // active — should be kept
+        UUID t2 = UUID.randomUUID(); // cancelled — should be filtered out
+        UUID t3 = UUID.randomUUID(); // soft-deleted (absent from findAllById result)
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP))
+                .thenReturn(List.of(t1, t2, t3));
+
+        AnnouncementEntity a1 = mock(AnnouncementEntity.class);
+        when(a1.getId()).thenReturn(t1);
+        when(a1.getStatus()).thenReturn(AnnouncementStatus.ACTIVE);
+
+        AnnouncementEntity a2 = mock(AnnouncementEntity.class);
+        when(a2.getId()).thenReturn(t2);
+        when(a2.getStatus()).thenReturn(AnnouncementStatus.CANCELLED);
+
+        // t3 is absent (soft-deleted — @Where excludes it)
+        when(announcementRepository.findAllById(anyCollection())).thenReturn(List.of(a1, a2));
+
+        AnnouncementSearchResponse dto = mock(AnnouncementSearchResponse.class);
+        when(announcementSearchMapper.toSearchResponse(a1, true)).thenReturn(dto);
+
+        var res = service.getFavoriteTrips(UID);
+
+        assertThat(res).hasSize(1);
+        assertThat(res.get(0)).isSameAs(dto);
+        verify(announcementSearchMapper).toSearchResponse(a1, true);
+        verify(announcementSearchMapper, never()).toSearchResponse(a2, true);
+    }
+
+    @Test
+    void getFavoriteTrips_isFavoriteTruePassedToMapper() {
+        UUID t1 = UUID.randomUUID();
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP))
+                .thenReturn(List.of(t1));
+
+        AnnouncementEntity a1 = mock(AnnouncementEntity.class);
+        when(a1.getStatus()).thenReturn(AnnouncementStatus.FULL);
+        when(announcementRepository.findAllById(anyCollection())).thenReturn(List.of(a1));
+        AnnouncementSearchResponse dto = mock(AnnouncementSearchResponse.class);
+        when(announcementSearchMapper.toSearchResponse(a1, true)).thenReturn(dto);
+
+        service.getFavoriteTrips(UID);
+
+        verify(announcementSearchMapper).toSearchResponse(a1, true);
+    }
+
+    // --- getFavoritePackageRequests tests ---
+
+    @Test
+    void getFavoritePackageRequests_emptyIds_returnsEmptyList() {
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of());
+
+        var res = service.getFavoritePackageRequests(UID);
+
+        assertThat(res).isEmpty();
+        verify(packageRequestRepository, never()).findAllById(any());
+    }
+
+    @Test
+    void getFavoritePackageRequests_skipsCancelledAndMissing() {
+        UUID p1 = UUID.randomUUID(); // OPEN — should be kept
+        UUID p2 = UUID.randomUUID(); // CANCELLED — should be filtered out
+        UUID p3 = UUID.randomUUID(); // soft-deleted (absent from findAllById result)
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of(p1, p2, p3));
+
+        PackageRequestEntity pr1 = mock(PackageRequestEntity.class);
+        when(pr1.getId()).thenReturn(p1);
+        when(pr1.getStatus()).thenReturn(PackageRequestStatus.OPEN);
+
+        PackageRequestEntity pr2 = mock(PackageRequestEntity.class);
+        when(pr2.getId()).thenReturn(p2);
+        when(pr2.getStatus()).thenReturn(PackageRequestStatus.CANCELLED);
+
+        // p3 absent (soft-deleted)
+        when(packageRequestRepository.findAllById(anyCollection())).thenReturn(List.of(pr1, pr2));
+
+        PackageRequestSearchResponse dto = mock(PackageRequestSearchResponse.class);
+        when(packageRequestSearchMapper.toSearchResponse(pr1, true)).thenReturn(dto);
+
+        var res = service.getFavoritePackageRequests(UID);
+
+        assertThat(res).hasSize(1);
+        assertThat(res.get(0)).isSameAs(dto);
+        verify(packageRequestSearchMapper).toSearchResponse(pr1, true);
+        verify(packageRequestSearchMapper, never()).toSearchResponse(pr2, true);
+    }
+
+    @Test
+    void getFavoritePackageRequests_isFavoriteTruePassedToMapper() {
+        UUID p1 = UUID.randomUUID();
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of(p1));
+
+        PackageRequestEntity pr1 = mock(PackageRequestEntity.class);
+        when(pr1.getStatus()).thenReturn(PackageRequestStatus.NEGOTIATING);
+        when(packageRequestRepository.findAllById(anyCollection())).thenReturn(List.of(pr1));
+        PackageRequestSearchResponse dto = mock(PackageRequestSearchResponse.class);
+        when(packageRequestSearchMapper.toSearchResponse(pr1, true)).thenReturn(dto);
+
+        service.getFavoritePackageRequests(UID);
+
+        verify(packageRequestSearchMapper).toSearchResponse(pr1, true);
     }
 }

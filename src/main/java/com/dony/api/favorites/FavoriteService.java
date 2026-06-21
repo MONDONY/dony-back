@@ -6,12 +6,19 @@ import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.favorites.dto.FavoriteIdsResponse;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementSearchMapper;
+import com.dony.api.matching.AnnouncementStatus;
+import com.dony.api.matching.dto.AnnouncementSearchResponse;
+import com.dony.api.requests.dto.PackageRequestSearchResponse;
+import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
+import com.dony.api.requests.service.PackageRequestSearchMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -24,15 +31,21 @@ public class FavoriteService {
     private final UserRepository userRepository;
     private final AnnouncementRepository announcementRepository;
     private final PackageRequestRepository packageRequestRepository;
+    private final AnnouncementSearchMapper announcementSearchMapper;
+    private final PackageRequestSearchMapper packageRequestSearchMapper;
 
     public FavoriteService(FavoriteRepository favoriteRepository,
                            UserRepository userRepository,
                            AnnouncementRepository announcementRepository,
-                           PackageRequestRepository packageRequestRepository) {
+                           PackageRequestRepository packageRequestRepository,
+                           AnnouncementSearchMapper announcementSearchMapper,
+                           PackageRequestSearchMapper packageRequestSearchMapper) {
         this.favoriteRepository = favoriteRepository;
         this.userRepository = userRepository;
         this.announcementRepository = announcementRepository;
         this.packageRequestRepository = packageRequestRepository;
+        this.announcementSearchMapper = announcementSearchMapper;
+        this.packageRequestSearchMapper = packageRequestSearchMapper;
     }
 
     /**
@@ -84,6 +97,37 @@ public class FavoriteService {
         Set<UUID> packageRequests = new HashSet<>(
                 favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST));
         return new FavoriteIdsResponse(trips, packageRequests);
+    }
+
+    /**
+     * Returns the caller's favorite trips as enriched DTOs, with {@code isFavorite=true}.
+     * Soft-deleted announcements are automatically excluded (via {@code @Where} on the entity).
+     * Announcements with status {@code CANCELLED} are also filtered out.
+     */
+    @Transactional(readOnly = true)
+    public List<AnnouncementSearchResponse> getFavoriteTrips(String firebaseUid) {
+        UUID userId = resolveUserId(firebaseUid);
+        List<UUID> ids = favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP);
+        if (ids.isEmpty()) return List.of();
+        return announcementRepository.findAllById(ids).stream()
+                .filter(a -> a.getStatus() != AnnouncementStatus.CANCELLED)
+                .map(a -> announcementSearchMapper.toSearchResponse(a, true))
+                .toList();
+    }
+
+    /**
+     * Returns the caller's favorite package-requests as enriched DTOs, with {@code isFavorite=true}.
+     * Soft-deleted or cancelled package-requests are excluded.
+     */
+    @Transactional(readOnly = true)
+    public List<PackageRequestSearchResponse> getFavoritePackageRequests(String firebaseUid) {
+        UUID userId = resolveUserId(firebaseUid);
+        List<UUID> ids = favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST);
+        if (ids.isEmpty()) return List.of();
+        return packageRequestRepository.findAllById(ids).stream()
+                .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED)
+                .map(pr -> packageRequestSearchMapper.toSearchResponse(pr, true))
+                .toList();
     }
 
     // --- private helpers ---

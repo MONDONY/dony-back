@@ -70,10 +70,13 @@ class AnnouncementServiceTest {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
         // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Real mapper wired to the same mocks so SearchTests assertions remain valid
+        AnnouncementSearchMapper realMapper = new AnnouncementSearchMapper(
+                userRepository, bidRepository, priceGridService, storageService);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
-                storageService, favoriteRepository);
+                storageService, favoriteRepository, realMapper);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
