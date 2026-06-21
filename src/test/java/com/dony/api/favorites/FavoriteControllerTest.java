@@ -27,6 +27,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -112,6 +113,42 @@ class FavoriteControllerTest {
         mockMvc.perform(delete("/favorites/trip/" + TARGET_ID)
                         .with(authentication(asTraveler())))
                 .andExpect(status().isNoContent());
+    }
+
+    // ── DELETE /favorites/package-request/{id} ───────────────────────────────
+
+    @Test
+    void deletePackageRequest_asTraveler_returns204() throws Exception {
+        doNothing().when(favoriteService)
+                .removeFavorite(eq(TRAVELER_UID), eq(FavoriteTargetType.PACKAGE_REQUEST), eq(TARGET_ID));
+
+        mockMvc.perform(delete("/favorites/package-request/" + TARGET_ID)
+                        .with(authentication(asTraveler())))
+                .andExpect(status().isNoContent());
+
+        verify(favoriteService).removeFavorite(TRAVELER_UID, FavoriteTargetType.PACKAGE_REQUEST, TARGET_ID);
+    }
+
+    // ── RFC 7807 ProblemDetail assertions ────────────────────────────────────
+
+    @Test
+    void putUnknownType_returns400_withProblemDetail() throws Exception {
+        mockMvc.perform(put("/favorites/bogus/" + TARGET_ID)
+                        .with(authentication(asSender())))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.type").exists())
+                .andExpect(jsonPath("$.title").exists());
+    }
+
+    @Test
+    void putPackageRequest_asSender_returns403_withProblemDetail() throws Exception {
+        mockMvc.perform(put("/favorites/package-request/" + TARGET_ID)
+                        .with(authentication(asSender())))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.type").exists())
+                .andExpect(jsonPath("$.title").exists());
     }
 
     // ── GET /favorites/trips ──────────────────────────────────────────────────
