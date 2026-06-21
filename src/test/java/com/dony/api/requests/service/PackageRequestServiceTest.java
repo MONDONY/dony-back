@@ -5,6 +5,8 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
+import com.dony.api.favorites.FavoriteRepository;
+import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.matching.TransportMode;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
@@ -46,6 +48,7 @@ class PackageRequestServiceTest {
     @Mock private com.dony.api.payments.cash.CommissionProperties commissionProperties;
     @Mock private StorageService storageService;
     @Mock private PackageRequestPhotoService photoService;
+    @Mock private FavoriteRepository favoriteRepository;
     @InjectMocks private PackageRequestService service;
 
     private UserEntity sender;
@@ -596,11 +599,14 @@ class PackageRequestServiceTest {
             when(cityRepository.findFirstByNameIgnoreCase("Marseille")).thenReturn(Optional.of(cityMarseille));
             when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
 
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
             var result = service.searchNearMe(
                 org.springframework.data.jpa.domain.Specification.where(null),
                 org.springframework.data.domain.PageRequest.of(0, 20),
                 new BigDecimal("48.8566"), new BigDecimal("2.3522"),
-                600.0
+                600.0,
+                UUID.randomUUID()
             );
 
             assertThat(result.getContent()).hasSize(2);
@@ -619,12 +625,14 @@ class PackageRequestServiceTest {
             when(cityRepository.findFirstByNameIgnoreCase("Lyon"))
                 .thenReturn(Optional.of(cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"))));
             when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.searchNearMe(
                 org.springframework.data.jpa.domain.Specification.where(null),
                 org.springframework.data.domain.PageRequest.of(0, 20),
                 new BigDecimal("48.8566"), new BigDecimal("2.3522"),
-                10.0
+                10.0,
+                UUID.randomUUID()
             );
             assertThat(result.getContent()).isEmpty();
         }
@@ -650,10 +658,12 @@ class PackageRequestServiceTest {
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
                 org.springframework.data.jpa.domain.Specification.where(null),
-                org.springframework.data.domain.PageRequest.of(0, 20)
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
             );
 
             var sp = result.getContent().get(0).sender();
@@ -674,10 +684,12 @@ class PackageRequestServiceTest {
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
                 org.springframework.data.jpa.domain.Specification.where(null),
-                org.springframework.data.domain.PageRequest.of(0, 20)
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
             );
 
             assertThat(result.getContent().get(0).negotiable()).isFalse();
@@ -695,16 +707,70 @@ class PackageRequestServiceTest {
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
                 org.springframework.data.jpa.domain.Specification.where(null),
-                org.springframework.data.domain.PageRequest.of(0, 20)
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
             );
 
             assertThat(result.getContent().get(0).acceptedPaymentMethods())
                 .containsExactlyInAnyOrder(
                     com.dony.api.payments.cash.PaymentMethod.STRIPE,
                     com.dony.api.payments.cash.PaymentMethod.CASH);
+        }
+    }
+
+    @Nested @DisplayName("search() — isFavorite flag")
+    class SearchIsFavoriteTests {
+
+        private PackageRequestEntity prepareEntity() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findAll(
+                    org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
+                    org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+            return entity;
+        }
+
+        @Test @DisplayName("voyageur authentifié — demande en favori → isFavorite=true")
+        void search_travelerWithFavorite_returnsTrueFlag() {
+            PackageRequestEntity entity = prepareEntity();
+            UUID travelerId = UUID.randomUUID();
+            when(favoriteRepository.findTargetIds(travelerId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of(entity.getId()));
+
+            var result = service.search(null,
+                org.springframework.data.domain.PageRequest.of(0, 20), travelerId);
+
+            assertThat(result.getContent().get(0).isFavorite()).isTrue();
+        }
+
+        @Test @DisplayName("voyageur authentifié — demande non mise en favori → isFavorite=false")
+        void search_travelerWithoutFavorite_returnsFalseFlag() {
+            prepareEntity();
+            UUID travelerId = UUID.randomUUID();
+            when(favoriteRepository.findTargetIds(travelerId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of());
+
+            var result = service.search(null,
+                org.springframework.data.domain.PageRequest.of(0, 20), travelerId);
+
+            assertThat(result.getContent().get(0).isFavorite()).isFalse();
+        }
+
+        @Test @DisplayName("appelant anonyme (callerId=null) → isFavorite=false, findTargetIds jamais appelé")
+        void search_anonymousCaller_returnsFalseFlagWithoutDbCall() {
+            prepareEntity();
+
+            var result = service.search(null,
+                org.springframework.data.domain.PageRequest.of(0, 20), null);
+
+            assertThat(result.getContent().get(0).isFavorite()).isFalse();
+            verify(favoriteRepository, never()).findTargetIds(any(), any());
         }
     }
 
@@ -783,8 +849,9 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
-            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);
 
             var result = page.getContent().get(0);
             assertThat(result.sender().avatarUrl()).isEqualTo("https://cdn.example.com/sender.jpg");
@@ -800,8 +867,9 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
-            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);
 
             var result = page.getContent().get(0);
             assertThat(result.sender().avatarUrl()).isNull();
@@ -816,8 +884,9 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
-            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10));
+            var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);
 
             var result = page.getContent().get(0);
             assertThat(result.sender().avatarUrl()).isNull();

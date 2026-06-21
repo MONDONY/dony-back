@@ -23,7 +23,9 @@ public record PackageRequestSearchResponse(
     SenderPublicProfile sender,
     Set<PaymentMethod> acceptedPaymentMethods,
     /** Photos colis présignées (max 4, ordonnées). photoUrl = 1ère pour rétro-compat. */
-    List<PackageRequestPhotoResponse> photos
+    List<PackageRequestPhotoResponse> photos,
+    /** True si le voyageur authentifié a mis cette demande en favori. False pour les appelants anonymes ou non-voyageurs. */
+    boolean isFavorite
 ) {
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
 }

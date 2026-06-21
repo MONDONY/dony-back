@@ -183,9 +183,9 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), false);
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
-        when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
+        when(service.search(any(), any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
         mockMvc.perform(get("/package-requests")
                 .param("departure", "Paris")
@@ -211,9 +211,9 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), false);
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
-        when(service.search(any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
+        when(service.search(any(), any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
         mockMvc.perform(get("/package-requests")
                 .param("departure", "Paris")
@@ -364,7 +364,7 @@ class PackageRequestControllerIT {
     @Test
     void get_search_withLocationParams_returnsPage() throws Exception {
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
-        when(service.searchNearMe(any(), any(), any(), any(), anyDouble()))
+        when(service.searchNearMe(any(), any(), any(), any(), anyDouble(), any()))
             .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(), pageable, 0));
 
         mockMvc.perform(get("/package-requests")
