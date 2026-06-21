@@ -128,6 +128,54 @@ class NotificationPrefsServiceTest {
         assertThat(service.isAllowed(USER_ID, "TRIP_IN_PROGRESS")).isFalse();
     }
 
+    @Test
+    void getPackageMatchAlert_noRow_returnsTrueByDefault() {
+        when(repository.findById(USER_ID)).thenReturn(Optional.empty());
+        assertThat(service.getPackageMatchAlert(FIREBASE_UID)).isTrue();
+    }
+
+    @Test
+    void getPackageMatchAlert_rowDisabled_returnsFalse() {
+        NotificationPrefsEntity e = buildEntity(true, true, true, true, false);
+        e.setPushTripPackageMatch(false);
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(e));
+        assertThat(service.getPackageMatchAlert(FIREBASE_UID)).isFalse();
+    }
+
+    @Test
+    void setPackageMatchAlert_noRow_createsRowWithValue() {
+        when(repository.findById(USER_ID)).thenReturn(Optional.empty());
+        service.setPackageMatchAlert(FIREBASE_UID, false);
+        ArgumentCaptor<NotificationPrefsEntity> captor = ArgumentCaptor.forClass(NotificationPrefsEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
+        assertThat(captor.getValue().isPushTripPackageMatch()).isFalse();
+    }
+
+    @Test
+    void setPackageMatchAlert_rowExists_updatesFlag() {
+        NotificationPrefsEntity existing = buildEntity(true, true, true, true, false);
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(existing));
+        service.setPackageMatchAlert(FIREBASE_UID, false);
+        ArgumentCaptor<NotificationPrefsEntity> captor = ArgumentCaptor.forClass(NotificationPrefsEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().isPushTripPackageMatch()).isFalse();
+    }
+
+    @Test
+    void isPackageMatchEnabled_noRow_returnsTrueByDefault() {
+        when(repository.findById(USER_ID)).thenReturn(Optional.empty());
+        assertThat(service.isPackageMatchEnabled(USER_ID)).isTrue();
+    }
+
+    @Test
+    void isPackageMatchEnabled_rowDisabled_returnsFalse() {
+        NotificationPrefsEntity e = buildEntity(true, true, true, true, false);
+        e.setPushTripPackageMatch(false);
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(e));
+        assertThat(service.isPackageMatchEnabled(USER_ID)).isFalse();
+    }
+
     private NotificationPrefsEntity buildEntity(boolean bids, boolean negs, boolean msgs, boolean reminder, boolean promo) {
         NotificationPrefsEntity e = new NotificationPrefsEntity();
         e.setUserId(USER_ID);

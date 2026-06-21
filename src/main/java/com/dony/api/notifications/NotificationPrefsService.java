@@ -72,6 +72,39 @@ public class NotificationPrefsService {
         repository.save(entity);
     }
 
+    /**
+     * Cloche « Colis sur mes trajets » : l'état du toggle pour le voyageur courant.
+     * Défaut {@code true} si aucune ligne de préférence n'existe encore.
+     */
+    @Transactional(readOnly = true)
+    public boolean getPackageMatchAlert(String firebaseUid) {
+        UUID userId = resolveUserId(firebaseUid);
+        return repository.findById(userId)
+                .map(NotificationPrefsEntity::isPushTripPackageMatch)
+                .orElse(true);
+    }
+
+    /** Active/coupe la notif temps réel « un colis matche un de mes trajets ». */
+    public void setPackageMatchAlert(String firebaseUid, boolean enabled) {
+        UUID userId = resolveUserId(firebaseUid);
+        NotificationPrefsEntity entity = repository.findById(userId)
+                .orElseGet(() -> {
+                    NotificationPrefsEntity e = new NotificationPrefsEntity();
+                    e.setUserId(userId);
+                    return e;
+                });
+        entity.setPushTripPackageMatch(enabled);
+        repository.save(entity);
+    }
+
+    /** Gate côté listener (par UUID interne) : le voyageur veut-il les matchs colis ? */
+    @Transactional(readOnly = true)
+    public boolean isPackageMatchEnabled(UUID userId) {
+        return repository.findById(userId)
+                .map(NotificationPrefsEntity::isPushTripPackageMatch)
+                .orElse(true);
+    }
+
     @Transactional(readOnly = true)
     public boolean isAllowed(UUID userId, String notificationType) {
         if (notificationType == null) return true;

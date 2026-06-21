@@ -23,9 +23,8 @@ public class RequestEventsListener {
     @EventListener
     @Async
     public void onPackageRequestCreated(PackageRequestCreatedEvent e) {
-        // TODO(matching-travelers): pull travelers with announcement matching corridor + date,
-        //   send batch FCM. For now, just audit-log the creation. The notify-traveler logic
-        //   is a separate feature requiring a corridor-matching query.
+        // La notif temps réel « un colis matche un de mes trajets » est gérée par
+        // PackageMatchTravelerNotifyListener (package matching). Ici, trace audit uniquement.
         log.info("PackageRequestCreated event: requestId={} corridor={}->{}",
             e.requestId(), e.departureCity(), e.arrivalCity());
     }

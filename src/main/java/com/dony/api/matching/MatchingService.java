@@ -5,6 +5,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
+import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import org.springframework.stereotype.Service;
 
@@ -55,6 +56,27 @@ public class MatchingService {
 
         results.sort((a, b) -> Integer.compare(b.matchScore(), a.matchScore()));
         return results;
+    }
+
+    /**
+     * Inverse de {@link #findMatchingRequests} : pour une demande de colis donnée,
+     * retourne les ids des voyageurs dont au moins un trajet ACTIVE/FULL matche
+     * (même règle corridor + poids + fenêtre de date). Utilisé par la notification
+     * temps réel à la création d'une demande. Une demande non OPEN ne matche rien.
+     */
+    public List<UUID> findTravelersMatchingPackage(UUID requestId) {
+        PackageRequestEntity request = packageRequestRepository.findById(requestId).orElse(null);
+        if (request == null || request.getStatus() != PackageRequestStatus.OPEN) {
+            return List.of();
+        }
+        return announcementRepository
+                .findActiveByCorridor(request.getDepartureCity(), request.getArrivalCity())
+                .stream()
+                .filter(a -> fitsWeight(request, a))
+                .filter(a -> fitsDate(request, a))
+                .map(AnnouncementEntity::getTravelerId)
+                .distinct()
+                .toList();
     }
 
     private boolean fitsWeight(PackageRequestEntity request, AnnouncementEntity announcement) {
