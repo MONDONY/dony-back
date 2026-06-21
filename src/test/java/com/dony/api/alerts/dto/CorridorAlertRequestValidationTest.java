@@ -1,5 +1,6 @@
 package com.dony.api.alerts.dto;
 
+import com.dony.api.alerts.AlertDirection;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
@@ -31,7 +32,7 @@ class CorridorAlertRequestValidationTest {
     void validRequest_hasNoViolations() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "Paris", "FR", "Bamako", "ML",
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null);
         assertThat(validator.validate(req)).isEmpty();
     }
 
@@ -39,7 +40,7 @@ class CorridorAlertRequestValidationTest {
     void blankDepartureCity_isViolation() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "  ", "FR", "Bamako", "ML",
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null);
         assertThat(validator.validate(req))
                 .anyMatch(v -> v.getPropertyPath().toString().equals("departureCity"));
     }
@@ -48,8 +49,17 @@ class CorridorAlertRequestValidationTest {
     void blankArrivalCity_isViolation() {
         CorridorAlertRequest req = new CorridorAlertRequest(
                 "Paris", "FR", "", "ML",
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null);
         assertThat(validator.validate(req))
                 .anyMatch(v -> v.getPropertyPath().toString().equals("arrivalCity"));
+    }
+
+    @Test
+    void nullDirection_isViolation() {
+        CorridorAlertRequest req = new CorridorAlertRequest(
+                "Paris", "FR", "Bamako", "ML",
+                null, null, null, List.of(), null, null);
+        assertThat(validator.validate(req))
+                .anyMatch(v -> v.getPropertyPath().toString().equals("direction"));
     }
 }

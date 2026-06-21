@@ -1,12 +1,17 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.dto.AlertTripMatchDto;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
+import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.common.MatchingTextUtil;
+import com.dony.api.matching.AnnouncementEntity;
+import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
@@ -15,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -30,30 +36,38 @@ import java.util.stream.Collectors;
 public class AlertService {
 
     private static final int MAX_ACTIVE_ALERTS = 20;
+    private static final int MIN_ZONE_RADIUS_KM = 5;
+    private static final int MAX_ZONE_RADIUS_KM = 300;
 
     private final CorridorAlertRepository alertRepository;
     private final UserRepository userRepository;
     private final PackageRequestRepository packageRequestRepository;
+    private final AnnouncementRepository announcementRepository;
 
     public AlertService(CorridorAlertRepository alertRepository,
                         UserRepository userRepository,
-                        PackageRequestRepository packageRequestRepository) {
+                        PackageRequestRepository packageRequestRepository,
+                        AnnouncementRepository announcementRepository) {
         this.alertRepository = alertRepository;
         this.userRepository = userRepository;
         this.packageRequestRepository = packageRequestRepository;
+        this.announcementRepository = announcementRepository;
     }
 
-    private UUID travelerId(String firebaseUid) {
+    private UUID ownerId(String firebaseUid) {
         return userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyNotFoundException("Traveler not found"))
+                .orElseThrow(() -> new DonyNotFoundException("User not found"))
                 .getId();
     }
 
-    // Item 4: single findAllByTravelerId call for both cap check and duplicate check
+    // Item 4: single findAllByOwnerId call for both cap check and duplicate check
     public CorridorAlertResponse create(String firebaseUid, CorridorAlertRequest req) {
-        UUID tid = travelerId(firebaseUid);
+        UserEntity owner = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyNotFoundException("User not found"));
+        UUID oid = owner.getId();
+        validateDirection(owner, req);
 
-        List<CorridorAlertEntity> existing = alertRepository.findAllByTravelerId(tid);
+        List<CorridorAlertEntity> existing = alertRepository.findAllByOwnerId(oid);
 
         if (existing.size() >= MAX_ACTIVE_ALERTS) {
             throw new DonyBusinessException(
@@ -78,7 +92,7 @@ public class AlertService {
         }
 
         CorridorAlertEntity entity = new CorridorAlertEntity();
-        entity.setTravelerId(tid);
+        entity.setOwnerId(oid);
         entity.setDepartureCity(req.departureCity());
         entity.setDepartureCountryCode(req.departureCountryCode());
         entity.setArrivalCity(req.arrivalCity());
@@ -88,9 +102,19 @@ public class AlertService {
         entity.setMinWeightKg(req.minWeightKg());
         entity.setContentCategories(categories);
         entity.setActive(true);
+        entity.setDirection(req.direction());
+        applyZone(entity, req);
 
         CorridorAlertEntity saved = alertRepository.save(entity);
         return toResponse(saved, 0L);
+    }
+
+    /** Recopie la zone de remise (centre + rayon + label) du payload vers l'entité. */
+    private void applyZone(CorridorAlertEntity entity, CorridorAlertRequest req) {
+        entity.setCenterLat(req.centerLat());
+        entity.setCenterLng(req.centerLng());
+        entity.setRadiusKm(req.radiusKm());
+        entity.setCenterLabel(req.centerLabel());
     }
 
     private boolean isSameFilters(CorridorAlertEntity e, CorridorAlertRequest req, List<String> categories) {
@@ -99,7 +123,58 @@ public class AlertService {
                 && Objects.equals(e.getDateFrom(), req.dateFrom())
                 && Objects.equals(e.getDateTo(), req.dateTo())
                 && sameWeight(e.getMinWeightKg(), req.minWeightKg())
-                && sameCategories(e.getContentCategories(), categories);
+                && sameCategories(e.getContentCategories(), categories)
+                && e.getDirection() == req.direction()
+                && sameWeight(e.getCenterLat(), req.centerLat())
+                && sameWeight(e.getCenterLng(), req.centerLng())
+                && Objects.equals(e.getRadiusKm(), req.radiusKm());
+    }
+
+    private void validateDirection(UserEntity owner, CorridorAlertRequest req) {
+        AlertDirection direction = req.direction();
+        boolean roleOk = (direction == AlertDirection.SENDER_WANTS_TRIPS && owner.getRoles().contains(Role.SENDER))
+                || (direction == AlertDirection.TRAVELER_WANTS_PACKAGES && owner.getRoles().contains(Role.TRAVELER));
+        if (!roleOk) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "alert-direction-not-allowed", "Alert Direction Not Allowed",
+                    "Votre rôle ne permet pas de créer ce type d'alerte.");
+        }
+        if (direction == AlertDirection.SENDER_WANTS_TRIPS
+                && (req.minWeightKg() != null
+                    || (req.contentCategories() != null && !req.contentCategories().isEmpty()))) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-trip-filters-unsupported", "Trip Alert Filters Unsupported",
+                    "Les filtres poids/catégories ne s'appliquent pas aux alertes trajet.");
+        }
+        validateZone(req.direction(), req.centerLat(), req.centerLng(), req.radiusKm());
+    }
+
+    /**
+     * Zone de remise (centre + rayon) : optionnelle, réservée aux alertes trajet
+     * (SENDER_WANTS_TRIPS). Tout-ou-rien (centre lat/lng + rayon), rayon borné
+     * [{@value MIN_ZONE_RADIUS_KM}, {@value MAX_ZONE_RADIUS_KM}] km.
+     */
+    private void validateZone(AlertDirection direction, BigDecimal centerLat,
+                              BigDecimal centerLng, Integer radiusKm) {
+        boolean anyZone = centerLat != null || centerLng != null || radiusKm != null;
+        if (!anyZone) {
+            return;
+        }
+        if (direction != AlertDirection.SENDER_WANTS_TRIPS) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-not-allowed", "Pickup Zone Not Allowed",
+                    "La zone de remise ne s'applique qu'aux alertes trajet.");
+        }
+        if (centerLat == null || centerLng == null || radiusKm == null) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-incomplete", "Pickup Zone Incomplete",
+                    "La zone de remise exige un centre (lat/lng) et un rayon.");
+        }
+        if (radiusKm < MIN_ZONE_RADIUS_KM || radiusKm > MAX_ZONE_RADIUS_KM) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "alert-zone-radius-invalid", "Pickup Zone Radius Invalid",
+                    "Le rayon doit être entre " + MIN_ZONE_RADIUS_KM + " et " + MAX_ZONE_RADIUS_KM + " km.");
+        }
     }
 
     private boolean sameWeight(BigDecimal a, BigDecimal b) {
@@ -116,16 +191,22 @@ public class AlertService {
 
     @Transactional(readOnly = true)
     public List<CorridorAlertResponse> list(String firebaseUid) {
-        UUID tid = travelerId(firebaseUid);
-        return alertRepository.findAllByTravelerId(tid).stream()
+        return list(firebaseUid, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CorridorAlertResponse> list(String firebaseUid, AlertDirection direction) {
+        UUID oid = ownerId(firebaseUid);
+        return alertRepository.findAllByOwnerId(oid).stream()
+                .filter(a -> direction == null || a.getDirection() == direction)
                 .map(a -> toResponse(a, countMatches(a)))
                 .toList();
     }
 
     public CorridorAlertResponse update(String firebaseUid, UUID alertId,
                                         CorridorAlertRequest req, Boolean active) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(oid, alertId);
         entity.setDepartureCity(req.departureCity());
         entity.setDepartureCountryCode(req.departureCountryCode());
         entity.setArrivalCity(req.arrivalCity());
@@ -135,6 +216,8 @@ public class AlertService {
         entity.setMinWeightKg(req.minWeightKg());
         entity.setContentCategories(req.contentCategories() != null
                 ? new ArrayList<>(req.contentCategories()) : new ArrayList<>());
+        validateZone(entity.getDirection(), req.centerLat(), req.centerLng(), req.radiusKm());
+        applyZone(entity, req);
         if (active != null) {
             entity.setActive(active);
         }
@@ -143,54 +226,159 @@ public class AlertService {
     }
 
     public void delete(String firebaseUid, UUID alertId) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity entity = ownedAlert(tid, alertId);
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity entity = ownedAlert(oid, alertId);
         entity.softDelete();
         alertRepository.save(entity);
     }
 
     @Transactional(readOnly = true)
     public List<MatchingRequestDto> getMatches(String firebaseUid, UUID alertId) {
-        UUID tid = travelerId(firebaseUid);
-        CorridorAlertEntity alert = ownedAlert(tid, alertId);
-        return toMatchingDtos(findMatches(alert));
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
+        return toMatchingDtos(findMatchingPackages(alert));
     }
 
-    private CorridorAlertEntity ownedAlert(UUID tid, UUID alertId) {
+    @Transactional(readOnly = true)
+    public List<AlertTripMatchDto> getTripMatches(String firebaseUid, UUID alertId) {
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
+        return toTripDtos(findMatchingTrips(alert));
+    }
+
+    @Transactional(readOnly = true)
+    public List<?> getMatchesForDirection(String firebaseUid, UUID alertId) {
+        UUID oid = ownerId(firebaseUid);
+        CorridorAlertEntity alert = ownedAlert(oid, alertId);
+        return alert.getDirection() == AlertDirection.SENDER_WANTS_TRIPS
+                ? toTripDtos(findMatchingTrips(alert))
+                : toMatchingDtos(findMatchingPackages(alert));
+    }
+
+    private CorridorAlertEntity ownedAlert(UUID oid, UUID alertId) {
         CorridorAlertEntity entity = alertRepository.findById(alertId)
                 .orElseThrow(() -> new DonyNotFoundException("Alert not found"));
-        if (!entity.getTravelerId().equals(tid)) {
+        if (!entity.getOwnerId().equals(oid)) {
             throw new DonyNotFoundException("Alert not found");
         }
         return entity;
     }
 
     private long countMatches(CorridorAlertEntity alert) {
-        return findMatches(alert).size();
+        return alert.getDirection() == AlertDirection.SENDER_WANTS_TRIPS
+                ? findMatchingTrips(alert).size()
+                : findMatchingPackages(alert).size();
     }
 
     public List<PackageRequestEntity> findRecentMatches(CorridorAlertEntity alert, java.time.LocalDateTime since) {
-        return findMatches(alert).stream()
+        return findMatchingPackages(alert).stream()
                 .filter(p -> p.getCreatedAt() != null && p.getCreatedAt().isAfter(since))
                 .toList();
     }
 
-    private List<PackageRequestEntity> findMatches(CorridorAlertEntity alert) {
+    public List<AnnouncementEntity> findRecentTripMatches(CorridorAlertEntity alert, java.time.LocalDateTime since) {
+        return findMatchingTrips(alert).stream()
+                .filter(a -> a.getCreatedAt() != null && a.getCreatedAt().isAfter(since))
+                .toList();
+    }
+
+    private List<PackageRequestEntity> findMatchingPackages(CorridorAlertEntity alert) {
         return packageRequestRepository
                 .findOpenByCorridor(alert.getDepartureCity(), alert.getArrivalCity())
                 .stream()
-                .filter(p -> fitsAlertDate(p, alert))
+                .filter(p -> fitsAlertDate(p.getDesiredDate(), alert))
                 .filter(p -> fitsAlertWeight(p, alert))
                 .filter(p -> fitsAlertCategory(p, alert))
                 .toList();
     }
 
-    // Item 6: renamed from fitsDate
-    private boolean fitsAlertDate(PackageRequestEntity p, CorridorAlertEntity alert) {
-        if (alert.getDateFrom() != null && p.getDesiredDate().isBefore(alert.getDateFrom())) {
+    private List<AnnouncementEntity> findMatchingTrips(CorridorAlertEntity alert) {
+        // Zone de remise : on restreint en SQL aux trajets dont le pickup est
+        // dans le cercle ; sinon corridor pur (ville→ville).
+        List<AnnouncementEntity> candidates = alert.hasPickupZone()
+                ? announcementRepository.findActiveByCorridorWithinPickupRadius(
+                        alert.getDepartureCity(), alert.getArrivalCity(),
+                        alert.getCenterLat().doubleValue(), alert.getCenterLng().doubleValue(),
+                        alert.getRadiusKm())
+                : announcementRepository.findActiveByCorridor(
+                        alert.getDepartureCity(), alert.getArrivalCity());
+        return candidates.stream()
+                .filter(a -> fitsAlertDate(a.getDepartureDate(), alert))
+                .toList();
+    }
+
+    private boolean fitsAlertDate(LocalDate date, CorridorAlertEntity alert) {
+        if (alert.getDateFrom() != null && date.isBefore(alert.getDateFrom())) {
             return false;
         }
-        return alert.getDateTo() == null || !p.getDesiredDate().isAfter(alert.getDateTo());
+        return alert.getDateTo() == null || !date.isAfter(alert.getDateTo());
+    }
+
+    /**
+     * Inverse de {@link #findMatchingTrips} : pour un trajet donné (qui vient
+     * d'être créé), renvoie les alertes trajet (SENDER_WANTS_TRIPS) actives qui
+     * matchent — corridor (ville→ville, insensible casse) + fenêtre de dates +
+     * zone de remise (pickup dans le cercle si l'alerte en a une). Utilisé par le
+     * matching temps réel (listener AnnouncementCreatedEvent).
+     */
+    @Transactional(readOnly = true)
+    public List<CorridorAlertEntity> findSenderAlertsMatchingTrip(AnnouncementEntity trip) {
+        if (trip.getStatus() != AnnouncementStatus.ACTIVE
+                && trip.getStatus() != AnnouncementStatus.FULL) {
+            return List.of();
+        }
+        return alertRepository
+                .findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS)
+                .stream()
+                .filter(a -> a.getDepartureCity().equalsIgnoreCase(trip.getDepartureCity())
+                        && a.getArrivalCity().equalsIgnoreCase(trip.getArrivalCity()))
+                .filter(a -> fitsAlertDate(trip.getDepartureDate(), a))
+                .filter(a -> zoneContainsPickup(a, trip))
+                .toList();
+    }
+
+    /** True si l'alerte n'a pas de zone, ou si le pickup du trajet est dans le cercle. */
+    private boolean zoneContainsPickup(CorridorAlertEntity alert, AnnouncementEntity trip) {
+        if (!alert.hasPickupZone()) {
+            return true;
+        }
+        double distanceKm = haversineKm(
+                alert.getCenterLat(), alert.getCenterLng(),
+                trip.getPickupLat(), trip.getPickupLng());
+        return distanceKm <= alert.getRadiusKm();
+    }
+
+    /** Distance haversine (km, rayon Terre 6371) entre deux points. */
+    private static double haversineKm(BigDecimal lat1, BigDecimal lng1,
+                                      BigDecimal lat2, BigDecimal lng2) {
+        double radLat1 = Math.toRadians(lat1.doubleValue());
+        double radLat2 = Math.toRadians(lat2.doubleValue());
+        double dLat = Math.toRadians(lat2.doubleValue() - lat1.doubleValue());
+        double dLng = Math.toRadians(lng2.doubleValue() - lng1.doubleValue());
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(radLat1) * Math.cos(radLat2)
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    private List<AlertTripMatchDto> toTripDtos(List<AnnouncementEntity> trips) {
+        List<UUID> travelerIds = trips.stream()
+                .map(AnnouncementEntity::getTravelerId).distinct().toList();
+        Map<UUID, UserEntity> travelerMap = userRepository.findAllById(travelerIds).stream()
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity()));
+        List<AlertTripMatchDto> result = new ArrayList<>();
+        for (AnnouncementEntity a : trips) {
+            UserEntity traveler = travelerMap.get(a.getTravelerId());
+            if (traveler == null) continue;
+            double rating = traveler.getAverageRating() != null
+                    ? traveler.getAverageRating().doubleValue() : 0.0;
+            result.add(new AlertTripMatchDto(
+                    a.getId(), a.getDepartureCity(), a.getArrivalCity(), a.getDepartureDate(),
+                    traveler.getId(), MatchingTextUtil.buildName(traveler),
+                    MatchingTextUtil.buildInitials(traveler), rating,
+                    a.getAvailableKg(), a.getPricePerKg(), a.getTransportMode(), null));
+        }
+        return result;
     }
 
     // Item 6: renamed from fitsWeight
@@ -268,8 +456,13 @@ public class AlertService {
                 e.getDateTo(),
                 e.getMinWeightKg(),
                 new ArrayList<>(e.getContentCategories()),
+                e.getDirection(),
                 e.isActive(),
                 matchCount,
-                e.getCreatedAt());
+                e.getCreatedAt(),
+                e.getCenterLat(),
+                e.getCenterLng(),
+                e.getRadiusKm(),
+                e.getCenterLabel());
     }
 }

@@ -20,9 +20,9 @@ class CorridorAlertRepositoryTest {
 
     @Autowired CorridorAlertRepository repository;
 
-    private CorridorAlertEntity newAlert(UUID travelerId, boolean active) {
+    private CorridorAlertEntity newAlert(UUID ownerId, boolean active) {
         CorridorAlertEntity a = new CorridorAlertEntity();
-        a.setTravelerId(travelerId);
+        a.setOwnerId(ownerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");
         a.setDateFrom(LocalDate.of(2026, 7, 1));
@@ -42,28 +42,29 @@ class CorridorAlertRepositoryTest {
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(saved.isActive()).isTrue();
         assertThat(saved.getContentCategories()).containsExactlyInAnyOrder("Vêtements", "Documents");
+        assertThat(saved.getDirection()).isEqualTo(AlertDirection.TRAVELER_WANTS_PACKAGES);
     }
 
     @Test
-    void findAllByTravelerId_scopesToOwner() {
+    void findAllByOwnerId_scopesToOwner() {
         UUID owner = UUID.randomUUID();
         UUID other = UUID.randomUUID();
         repository.saveAndFlush(newAlert(owner, true));
         repository.saveAndFlush(newAlert(other, true));
 
-        List<CorridorAlertEntity> mine = repository.findAllByTravelerId(owner);
+        List<CorridorAlertEntity> mine = repository.findAllByOwnerId(owner);
 
         assertThat(mine).hasSize(1);
-        assertThat(mine.get(0).getTravelerId()).isEqualTo(owner);
+        assertThat(mine.get(0).getOwnerId()).isEqualTo(owner);
     }
 
     @Test
-    void countByTravelerId_countsRows() {
+    void countByOwnerId_countsRows() {
         UUID owner = UUID.randomUUID();
         repository.saveAndFlush(newAlert(owner, true));
         repository.saveAndFlush(newAlert(owner, false));
 
-        assertThat(repository.countByTravelerId(owner)).isEqualTo(2L);
+        assertThat(repository.countByOwnerId(owner)).isEqualTo(2L);
     }
 
     @Test
@@ -82,6 +83,6 @@ class CorridorAlertRepositoryTest {
         a.softDelete();
         repository.saveAndFlush(a);
 
-        assertThat(repository.findAllByTravelerId(owner)).isEmpty();
+        assertThat(repository.findAllByOwnerId(owner)).isEmpty();
     }
 }

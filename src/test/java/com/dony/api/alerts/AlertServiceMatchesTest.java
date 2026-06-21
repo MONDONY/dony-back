@@ -1,10 +1,12 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.AlertDirection;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.entity.PackageRequestStatus;
@@ -34,18 +36,19 @@ class AlertServiceMatchesTest {
     @Mock CorridorAlertRepository alertRepository;
     @Mock UserRepository userRepository;
     @Mock PackageRequestRepository packageRequestRepository;
+    @Mock AnnouncementRepository announcementRepository;
     @InjectMocks AlertService service;
 
     final String uid = "firebase-uid";
-    final UUID travelerId = UUID.randomUUID();
+    final UUID ownerId = UUID.randomUUID();
     final UUID alertId = UUID.randomUUID();
-    UserEntity traveler;
+    UserEntity owner;
 
     @BeforeEach
     void setup() {
-        traveler = new UserEntity();
-        setId(traveler, travelerId);
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(traveler));
+        owner = new UserEntity();
+        setId(owner, ownerId);
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
     }
 
     private static void setId(Object target, UUID id) {
@@ -59,7 +62,7 @@ class AlertServiceMatchesTest {
     private CorridorAlertEntity alert(boolean active) {
         CorridorAlertEntity a = new CorridorAlertEntity();
         setId(a, alertId);
-        a.setTravelerId(travelerId);
+        a.setOwnerId(ownerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");
         a.setDateFrom(LocalDate.of(2026, 7, 1));
@@ -132,7 +135,7 @@ class AlertServiceMatchesTest {
     @Test
     void getMatches_notOwner_throwsNotFound() {
         CorridorAlertEntity foreign = alert(true);
-        foreign.setTravelerId(UUID.randomUUID());
+        foreign.setOwnerId(UUID.randomUUID());
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.getMatches(uid, alertId))
@@ -141,7 +144,7 @@ class AlertServiceMatchesTest {
 
     @Test
     void list_returnsItemsWithMatchCount() {
-        when(alertRepository.findAllByTravelerId(travelerId)).thenReturn(List.of(alert(true)));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(alert(true)));
         when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
                 .thenReturn(List.of(pkg("Documents", new BigDecimal("3.00"), LocalDate.of(2026, 7, 10))));
 
@@ -159,7 +162,7 @@ class AlertServiceMatchesTest {
         when(packageRequestRepository.findOpenByCorridor(any(), any())).thenReturn(List.of());
 
         CorridorAlertRequest req = new CorridorAlertRequest("Lyon", "FR", "Dakar", "SN",
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null);
         CorridorAlertResponse resp = service.update(uid, alertId, req, false);
 
         assertThat(existing.getDepartureCity()).isEqualTo("Lyon");
@@ -171,11 +174,11 @@ class AlertServiceMatchesTest {
     @Test
     void update_notOwner_throwsNotFound() {
         CorridorAlertEntity foreign = alert(true);
-        foreign.setTravelerId(UUID.randomUUID());
+        foreign.setOwnerId(UUID.randomUUID());
         when(alertRepository.findById(alertId)).thenReturn(Optional.of(foreign));
 
         assertThatThrownBy(() -> service.update(uid, alertId,
-                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of(), null), null))
+                new CorridorAlertRequest("A", null, "B", null, null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, null), null))
                 .isInstanceOf(DonyNotFoundException.class);
     }
 

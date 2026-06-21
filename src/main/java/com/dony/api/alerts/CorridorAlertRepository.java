@@ -7,9 +7,12 @@ import java.util.UUID;
 
 public interface CorridorAlertRepository extends JpaRepository<CorridorAlertEntity, UUID> {
 
-    List<CorridorAlertEntity> findAllByTravelerId(UUID travelerId);
+    List<CorridorAlertEntity> findAllByOwnerId(UUID ownerId);
 
-    long countByTravelerId(UUID travelerId);
+    long countByOwnerId(UUID ownerId);
 
     List<CorridorAlertEntity> findAllByActiveTrue();
+
+    /** Alertes actives d'une direction donnée (ex. SENDER_WANTS_TRIPS pour le matching temps réel d'un trajet). */
+    List<CorridorAlertEntity> findAllByActiveTrueAndDirection(AlertDirection direction);
 }

@@ -1,5 +1,6 @@
 package com.dony.api.alerts;
 
+import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.notifications.NotificationDispatcher;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ class CorridorAlertDigestSchedulerTest {
 
     CorridorAlertDigestScheduler scheduler;
 
-    final UUID travelerId = UUID.randomUUID();
+    final UUID ownerId = UUID.randomUUID();
 
     @BeforeEach
     void setup() {
@@ -45,11 +46,12 @@ class CorridorAlertDigestSchedulerTest {
     private CorridorAlertEntity alert(LocalDateTime lastNotifiedAt) {
         CorridorAlertEntity a = new CorridorAlertEntity();
         setId(a, UUID.randomUUID());
-        a.setTravelerId(travelerId);
+        a.setOwnerId(ownerId);
         a.setDepartureCity("Paris");
         a.setArrivalCity("Bamako");
         a.setActive(true);
         a.setLastNotifiedAt(lastNotifiedAt);
+        a.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
         return a;
     }
 
@@ -63,7 +65,7 @@ class CorridorAlertDigestSchedulerTest {
         scheduler.runDigest();
 
         ArgumentCaptor<Map<String, String>> dataCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationDispatcher).notifyUser(eq(travelerId), anyString(), anyString(), dataCaptor.capture());
+        verify(notificationDispatcher).notifyUser(eq(ownerId), anyString(), anyString(), dataCaptor.capture());
         assertThat(dataCaptor.getValue().get("type")).isEqualTo("CORRIDOR_ALERT");
         assertThat(a.getLastNotifiedAt()).isNotNull();
         verify(alertRepository).save(a);
@@ -91,5 +93,40 @@ class CorridorAlertDigestSchedulerTest {
         scheduler.runDigest();
 
         verify(alertService).findRecentMatches(a, last);
+    }
+
+    @Test
+    void tripDirection_usesTripWordingAndTripRecentMatches() {
+        CorridorAlertEntity a = alert(null);
+        a.setDirection(AlertDirection.SENDER_WANTS_TRIPS);
+        when(alertRepository.findAllByActiveTrue()).thenReturn(List.of(a));
+        when(alertService.findRecentTripMatches(eq(a), any()))
+                .thenReturn(List.of(new AnnouncementEntity(), new AnnouncementEntity()));
+
+        scheduler.runDigest();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Map<String, String>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationDispatcher).notifyUser(eq(ownerId), anyString(), bodyCaptor.capture(), dataCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("trajets");
+        assertThat(dataCaptor.getValue().get("direction")).isEqualTo("SENDER_WANTS_TRIPS");
+        assertThat(dataCaptor.getValue().get("type")).isEqualTo("CORRIDOR_ALERT");
+    }
+
+    @Test
+    void packageDirection_usesPackageWording() {
+        CorridorAlertEntity a = alert(null);
+        a.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
+        when(alertRepository.findAllByActiveTrue()).thenReturn(List.of(a));
+        when(alertService.findRecentMatches(eq(a), any()))
+                .thenReturn(List.of(new PackageRequestEntity()));
+
+        scheduler.runDigest();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Map<String, String>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationDispatcher).notifyUser(eq(ownerId), anyString(), bodyCaptor.capture(), dataCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("colis");
+        assertThat(dataCaptor.getValue().get("direction")).isEqualTo("TRAVELER_WANTS_PACKAGES");
     }
 }

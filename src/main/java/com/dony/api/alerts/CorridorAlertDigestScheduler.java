@@ -2,7 +2,6 @@ package com.dony.api.alerts;
 
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.notifications.NotificationDispatcher;
-import com.dony.api.requests.entity.PackageRequestEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -48,20 +47,26 @@ public class CorridorAlertDigestScheduler {
                         ? alert.getLastNotifiedAt()
                         : now.minusHours(24);
 
-                List<PackageRequestEntity> matches = alertService.findRecentMatches(alert, since);
-                if (matches.isEmpty()) {
+                boolean isTrips = alert.getDirection() == AlertDirection.SENDER_WANTS_TRIPS;
+                int count = isTrips
+                        ? alertService.findRecentTripMatches(alert, since).size()
+                        : alertService.findRecentMatches(alert, since).size();
+                if (count == 0) {
                     continue;
                 }
 
                 String corridor = MatchingTextUtil.corridorLabel(alert.getDepartureCity(), alert.getArrivalCity());
-                String title = "Nouveaux colis sur " + corridor;
-                String body = matches.size() + " colis correspondent à votre alerte";
+                String title = isTrips ? "Nouveaux trajets sur " + corridor
+                                       : "Nouveaux colis sur " + corridor;
+                String body = isTrips ? count + " trajets correspondent à votre alerte"
+                                      : count + " colis correspondent à votre alerte";
                 Map<String, String> data = Map.of(
                         "type", "CORRIDOR_ALERT",
                         "alertId", alert.getId().toString(),
-                        "corridor", corridor);
+                        "corridor", corridor,
+                        "direction", alert.getDirection().name());
 
-                notificationDispatcher.notifyUser(alert.getTravelerId(), title, body, data);
+                notificationDispatcher.notifyUser(alert.getOwnerId(), title, body, data);
 
                 alert.setLastNotifiedAt(now);
                 alertRepository.save(alert);

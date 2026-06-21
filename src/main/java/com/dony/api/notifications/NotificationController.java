@@ -82,6 +82,19 @@ public class NotificationController {
         return ResponseEntity.noContent().build();
     }
 
+    // Cloche « Colis sur mes trajets » : toggle de la notif temps réel match colis.
+    @GetMapping("/package-match-alert")
+    public ResponseEntity<PackageMatchAlertDto> getPackageMatchAlert() {
+        return ResponseEntity.ok(
+                new PackageMatchAlertDto(notificationPrefsService.getPackageMatchAlert(requireUid())));
+    }
+
+    @PutMapping("/package-match-alert")
+    public ResponseEntity<Void> updatePackageMatchAlert(@RequestBody PackageMatchAlertDto dto) {
+        notificationPrefsService.setPackageMatchAlert(requireUid(), dto.enabled());
+        return ResponseEntity.noContent().build();
+    }
+
     private String requireUid() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {

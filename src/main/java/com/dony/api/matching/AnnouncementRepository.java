@@ -178,4 +178,51 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
         @Param("departure") String departure,
         @Param("arrival") String arrival,
         org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Returns ACTIVE or FULL announcements on a corridor (departure→arrival), case-insensitive
+     * city match. Mirrors PackageRequestRepository.findOpenByCorridor for the SENDER_WANTS_TRIPS
+     * alert direction. No date filter (the caller applies the alert period window).
+     */
+    @Query("""
+        SELECT a FROM AnnouncementEntity a
+        WHERE LOWER(a.departureCity) = LOWER(:departureCity)
+          AND LOWER(a.arrivalCity)   = LOWER(:arrivalCity)
+          AND a.status IN (
+              com.dony.api.matching.AnnouncementStatus.ACTIVE,
+              com.dony.api.matching.AnnouncementStatus.FULL)
+    """)
+    List<AnnouncementEntity> findActiveByCorridor(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity);
+
+    /**
+     * Variante « zone de remise » de {@link #findActiveByCorridor} : ACTIVE/FULL
+     * sur le corridor (ville→ville, insensible à la casse) ET dont le point de
+     * remise (pickup) est à ≤ {@code radiusKm} du centre (haversine, rayon Terre
+     * 6371 km). Requête native (acos/radians) — calque
+     * {@link #findIdsWithinPickupRadius}.
+     */
+    @Query(value = """
+        SELECT a.* FROM announcements a
+        WHERE a.deleted_at IS NULL
+          AND LOWER(a.departure_city) = LOWER(:departureCity)
+          AND LOWER(a.arrival_city)   = LOWER(:arrivalCity)
+          AND a.status IN ('ACTIVE', 'FULL')
+          AND a.pickup_lat IS NOT NULL
+          AND a.pickup_lng IS NOT NULL
+          AND (
+            6371 * acos(
+              cos(radians(:lat)) * cos(radians(a.pickup_lat))
+              * cos(radians(a.pickup_lng) - radians(:lng))
+              + sin(radians(:lat)) * sin(radians(a.pickup_lat))
+            )
+          ) <= :radiusKm
+        """, nativeQuery = true)
+    List<AnnouncementEntity> findActiveByCorridorWithinPickupRadius(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity,
+            @Param("lat") double lat,
+            @Param("lng") double lng,
+            @Param("radiusKm") int radiusKm);
 }

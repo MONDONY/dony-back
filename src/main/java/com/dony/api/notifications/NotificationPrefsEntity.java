@@ -37,6 +37,10 @@ public class NotificationPrefsEntity {
     @Column(name = "push_corridor_alerts", nullable = false)
     private boolean pushCorridorAlerts = true;
 
+    /** Notif temps réel « un colis matche un de mes trajets » (côté voyageur). */
+    @Column(name = "push_trip_package_match", nullable = false)
+    private boolean pushTripPackageMatch = true;
+
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
@@ -60,5 +64,7 @@ public class NotificationPrefsEntity {
     public void setPushPromo(boolean v) { this.pushPromo = v; }
     public boolean isPushCorridorAlerts() { return pushCorridorAlerts; }
     public void setPushCorridorAlerts(boolean v) { this.pushCorridorAlerts = v; }
+    public boolean isPushTripPackageMatch() { return pushTripPackageMatch; }
+    public void setPushTripPackageMatch(boolean v) { this.pushTripPackageMatch = v; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

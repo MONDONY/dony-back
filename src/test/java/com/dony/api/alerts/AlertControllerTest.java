@@ -1,9 +1,12 @@
 package com.dony.api.alerts;
 
+import com.dony.api.alerts.AlertDirection;
+import com.dony.api.alerts.dto.AlertTripMatchDto;
 import com.dony.api.alerts.dto.CorridorAlertRequest;
 import com.dony.api.alerts.dto.CorridorAlertResponse;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.matching.TransportMode;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -18,12 +21,15 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -52,12 +58,12 @@ class AlertControllerTest {
 
     private CorridorAlertResponse sampleResponse() {
         return new CorridorAlertResponse(UUID.randomUUID(), "Paris", "Bamako", "FR", "ML",
-                null, null, null, List.of(), true, 3L, java.time.LocalDateTime.now());
+                null, null, null, List.of(), AlertDirection.TRAVELER_WANTS_PACKAGES, true, 3L, java.time.LocalDateTime.now());
     }
 
     @Test
     void list_asTraveler_returns200() throws Exception {
-        when(alertService.list(FIREBASE_UID)).thenReturn(List.of(sampleResponse()));
+        when(alertService.list(eq(FIREBASE_UID), isNull())).thenReturn(List.of(sampleResponse()));
 
         mockMvc.perform(get("/me/corridor-alerts").with(authentication(asTraveler())))
                 .andExpect(status().isOk())
@@ -66,9 +72,26 @@ class AlertControllerTest {
     }
 
     @Test
-    void list_asSender_returns403() throws Exception {
+    void list_asSender_returns200() throws Exception {
+        when(alertService.list(eq(FIREBASE_UID), isNull())).thenReturn(List.of(sampleResponse()));
+
         mockMvc.perform(get("/me/corridor-alerts").with(authentication(asSender())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void list_withDirectionFilter_passesEnum() throws Exception {
+        // stub direction is mocked; routing is the assertion
+        when(alertService.list(eq(FIREBASE_UID), eq(AlertDirection.SENDER_WANTS_TRIPS)))
+                .thenReturn(List.of(sampleResponse()));
+
+        mockMvc.perform(get("/me/corridor-alerts")
+                        .param("direction", "SENDER_WANTS_TRIPS")
+                        .with(authentication(asSender())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].departureCity").value("Paris"));
+
+        verify(alertService).list(FIREBASE_UID, AlertDirection.SENDER_WANTS_TRIPS);
     }
 
     @Test
@@ -86,9 +109,45 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako"))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako",
+                                "direction", "TRAVELER_WANTS_PACKAGES"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.departureCity").value("Paris"));
+    }
+
+    @Test
+    void create_asSender_tripDirection_returns201() throws Exception {
+        CorridorAlertResponse tripResp = new CorridorAlertResponse(UUID.randomUUID(), "Paris", "Dakar", "FR", "SN",
+                null, null, null, List.of(), AlertDirection.SENDER_WANTS_TRIPS, true, 0L, java.time.LocalDateTime.now());
+        when(alertService.create(eq(FIREBASE_UID), any(CorridorAlertRequest.class)))
+                .thenReturn(tripResp);
+
+        mockMvc.perform(post("/me/corridor-alerts")
+                        .with(authentication(asSender()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "departureCity", "Paris", "arrivalCity", "Dakar",
+                                "direction", "SENDER_WANTS_TRIPS"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.direction").value("SENDER_WANTS_TRIPS"));
+    }
+
+    @Test
+    void create_directionNotAllowed_returns403() throws Exception {
+        when(alertService.create(eq(FIREBASE_UID), any(CorridorAlertRequest.class)))
+                .thenThrow(new DonyBusinessException(HttpStatus.FORBIDDEN,
+                        "alert-direction-not-allowed", "Alert Direction Not Allowed",
+                        "Votre rôle ne permet pas de créer ce type d'alerte."));
+
+        mockMvc.perform(post("/me/corridor-alerts")
+                        .with(authentication(asSender()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "departureCity", "Paris", "arrivalCity", "Dakar",
+                                "direction", "TRAVELER_WANTS_PACKAGES"))))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.code").value("alert-direction-not-allowed"));
     }
 
     @Test
@@ -113,7 +172,8 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako"))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako",
+                                "direction", "TRAVELER_WANTS_PACKAGES"))))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(content().contentType("application/problem+json"))
                 .andExpect(jsonPath("$.status").value(422))
@@ -130,7 +190,8 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako"))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako",
+                                "direction", "TRAVELER_WANTS_PACKAGES"))))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentType("application/problem+json"))
                 .andExpect(jsonPath("$.status").value(409))
@@ -147,7 +208,8 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako", "active", false))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako",
+                                "direction", "TRAVELER_WANTS_PACKAGES", "active", false))))
                 .andExpect(status().isOk());
     }
 
@@ -161,7 +223,8 @@ class AlertControllerTest {
                         .with(authentication(asTraveler()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "departureCity", "Paris", "arrivalCity", "Bamako", "active", true))))
+                                "departureCity", "Paris", "arrivalCity", "Bamako",
+                                "direction", "TRAVELER_WANTS_PACKAGES", "active", true))))
                 .andExpect(status().isNotFound());
     }
 
@@ -195,11 +258,28 @@ class AlertControllerTest {
                 UUID.randomUUID().toString(), null, "Paris → Bamako", "2026-07-10", 0.0,
                 UUID.randomUUID().toString(), "Awa K", "AK", 4.5, 3,
                 3.0, "Documents", 0.0, null, "excerpt", 0, "2026-06-20T10:00:00");
-        when(alertService.getMatches(FIREBASE_UID, id)).thenReturn(List.of(dto));
+        doReturn(List.of(dto)).when(alertService).getMatchesForDirection(FIREBASE_UID, id);
 
         mockMvc.perform(get("/me/corridor-alerts/{id}/matches", id)
                         .with(authentication(asTraveler())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].contentType").value("Documents"));
+                .andExpect(jsonPath("$[0].contentType").value("Documents"))
+                .andExpect(jsonPath("$[0].tripCorridor").value("Paris → Bamako"));
+    }
+
+    @Test
+    void matches_tripDirection_returnsTripDtos() throws Exception {
+        UUID id = UUID.randomUUID();
+        AlertTripMatchDto tripDto = new AlertTripMatchDto(
+                UUID.randomUUID(), "Paris", "Dakar", LocalDate.of(2026, 8, 10),
+                UUID.randomUUID(), "Mamadou D", "MD", 4.8,
+                BigDecimal.valueOf(15), BigDecimal.valueOf(8), TransportMode.PLANE, null);
+        doReturn(List.of(tripDto)).when(alertService).getMatchesForDirection(FIREBASE_UID, id);
+
+        mockMvc.perform(get("/me/corridor-alerts/{id}/matches", id)
+                        .with(authentication(asSender())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].availableKg").value(15))
+                .andExpect(jsonPath("$[0].travelerName").value("Mamadou D"));
     }
 }

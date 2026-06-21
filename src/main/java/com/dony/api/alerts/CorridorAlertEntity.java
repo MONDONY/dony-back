@@ -16,8 +16,12 @@ import java.util.UUID;
 @Where(clause = "deleted_at IS NULL")
 public class CorridorAlertEntity extends BaseEntity {
 
-    @Column(name = "traveler_id", nullable = false)
-    private UUID travelerId;
+    @Column(name = "owner_id", nullable = false)
+    private UUID ownerId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direction", nullable = false, length = 32)
+    private AlertDirection direction = AlertDirection.TRAVELER_WANTS_PACKAGES;
 
     @Column(name = "departure_city", nullable = false, length = 100)
     private String departureCity;
@@ -54,8 +58,26 @@ public class CorridorAlertEntity extends BaseEntity {
     @Column(name = "content_category", length = 100)
     private List<String> contentCategories = new ArrayList<>();
 
-    public UUID getTravelerId() { return travelerId; }
-    public void setTravelerId(UUID travelerId) { this.travelerId = travelerId; }
+    // ── Zone de remise (option en plus du corridor, SENDER_WANTS_TRIPS) ──────
+    // Quand center_lat/lng/radius_km sont présents, le matching ne garde que les
+    // trajets dont le point de remise (pickup) est à ≤ radius_km du centre.
+    @Column(name = "center_lat", precision = 9, scale = 6)
+    private BigDecimal centerLat;
+
+    @Column(name = "center_lng", precision = 9, scale = 6)
+    private BigDecimal centerLng;
+
+    @Column(name = "radius_km")
+    private Integer radiusKm;
+
+    @Column(name = "center_label", length = 160)
+    private String centerLabel;
+
+    public UUID getOwnerId() { return ownerId; }
+    public void setOwnerId(UUID ownerId) { this.ownerId = ownerId; }
+
+    public AlertDirection getDirection() { return direction; }
+    public void setDirection(AlertDirection direction) { this.direction = direction; }
 
     public String getDepartureCity() { return departureCity; }
     public void setDepartureCity(String departureCity) { this.departureCity = departureCity; }
@@ -87,5 +109,22 @@ public class CorridorAlertEntity extends BaseEntity {
     public List<String> getContentCategories() { return contentCategories; }
     public void setContentCategories(List<String> contentCategories) {
         this.contentCategories = contentCategories != null ? new ArrayList<>(contentCategories) : new ArrayList<>();
+    }
+
+    public BigDecimal getCenterLat() { return centerLat; }
+    public void setCenterLat(BigDecimal centerLat) { this.centerLat = centerLat; }
+
+    public BigDecimal getCenterLng() { return centerLng; }
+    public void setCenterLng(BigDecimal centerLng) { this.centerLng = centerLng; }
+
+    public Integer getRadiusKm() { return radiusKm; }
+    public void setRadiusKm(Integer radiusKm) { this.radiusKm = radiusKm; }
+
+    public String getCenterLabel() { return centerLabel; }
+    public void setCenterLabel(String centerLabel) { this.centerLabel = centerLabel; }
+
+    /** True si l'alerte porte une zone de remise complète (centre + rayon). */
+    public boolean hasPickupZone() {
+        return centerLat != null && centerLng != null && radiusKm != null;
     }
 }

@@ -184,6 +184,80 @@ class MatchingServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("findTravelersMatchingPackage")
+    class FindTravelersMatchingPackage {
+
+        @Test
+        void returnsTravelerId_whenCorridorWeightDateMatch() throws Exception {
+            PackageRequestEntity request = buildRequest(5, LocalDate.now().plusDays(10), 3);
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepository.findActiveByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(activeAnnouncement));
+
+            List<UUID> travelers = matchingService.findTravelersMatchingPackage(REQUEST_ID);
+
+            assertThat(travelers).containsExactly(TRAVELER_ID);
+        }
+
+        @Test
+        void returnsEmpty_whenRequestNotFound() {
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.empty());
+
+            assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID)).isEmpty();
+        }
+
+        @Test
+        void returnsEmpty_whenRequestNotOpen() throws Exception {
+            PackageRequestEntity request = buildRequest(5, LocalDate.now().plusDays(10), 3);
+            setField(request, "status", PackageRequestStatus.NEGOTIATING);
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID)).isEmpty();
+        }
+
+        @Test
+        void excludesTrip_whenWeightExceedsAvailableKg() throws Exception {
+            PackageRequestEntity request = buildRequest(25, LocalDate.now().plusDays(10), 3);
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepository.findActiveByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(activeAnnouncement));
+
+            assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID)).isEmpty();
+        }
+
+        @Test
+        void excludesTrip_whenDateOutsideTolerance() throws Exception {
+            PackageRequestEntity request = buildRequest(5, LocalDate.now().plusDays(30), 3);
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepository.findActiveByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(activeAnnouncement));
+
+            assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID)).isEmpty();
+        }
+
+        @Test
+        void deduplicatesTraveler_whenMultipleTripsMatch() throws Exception {
+            AnnouncementEntity secondTrip = new AnnouncementEntity();
+            setField(secondTrip, "id", UUID.randomUUID());
+            secondTrip.setTravelerId(TRAVELER_ID); // même voyageur, 2e trajet
+            secondTrip.setDepartureCity("Paris");
+            secondTrip.setArrivalCity("Dakar");
+            secondTrip.setDepartureDate(LocalDate.now().plusDays(11));
+            secondTrip.setAvailableKg(BigDecimal.valueOf(20));
+            secondTrip.setPricePerKg(BigDecimal.valueOf(5));
+            secondTrip.setStatus(AnnouncementStatus.FULL);
+
+            PackageRequestEntity request = buildRequest(5, LocalDate.now().plusDays(10), 3);
+            when(packageRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(announcementRepository.findActiveByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(activeAnnouncement, secondTrip));
+
+            assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID))
+                    .containsExactly(TRAVELER_ID);
+        }
+    }
+
     // ---- Helpers ----
 
     private PackageRequestEntity buildRequest(int weightKg, LocalDate desiredDate, int toleranceDays)
