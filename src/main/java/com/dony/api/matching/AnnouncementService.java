@@ -6,6 +6,8 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserProStatusChangedEvent;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.favorites.FavoriteRepository;
+import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
 import com.dony.api.common.AuditService;
@@ -46,6 +48,7 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -84,6 +87,7 @@ public class AnnouncementService {
     private final PriceGridService priceGridService;
     private final com.dony.api.country.FlagService flagService;
     private final StorageService storageService;
+    private final FavoriteRepository favoriteRepository;
 
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -100,7 +104,8 @@ public class AnnouncementService {
             DonyConfigProperties config,
             PriceGridService priceGridService,
             com.dony.api.country.FlagService flagService,
-            StorageService storageService
+            StorageService storageService,
+            FavoriteRepository favoriteRepository
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -111,6 +116,7 @@ public class AnnouncementService {
         this.priceGridService = priceGridService;
         this.flagService = flagService;
         this.storageService = storageService;
+        this.favoriteRepository = favoriteRepository;
     }
 
     @Transactional(readOnly = true)
@@ -189,8 +195,17 @@ public class AnnouncementService {
         Sort sort = buildSort(sortBy, sortDir);
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
 
+        // Batch-load favorite trip IDs for the caller (single query, no N+1).
+        // Anonymous callers (viewerId == null) get isFavorite=false for all results.
+        final Set<UUID> favIds;
+        if (viewerId != null) {
+            favIds = new HashSet<>(favoriteRepository.findTargetIds(viewerId, FavoriteTargetType.TRIP));
+        } else {
+            favIds = Set.of();
+        }
+
         return announcementRepository.findAll(spec, sortedPageable)
-                .map(this::toSearchResponse);
+                .map(a -> toSearchResponse(a, favIds.contains(a.getId())));
     }
 
     private Sort buildSort(String sortBy, String sortDir) {
@@ -212,7 +227,12 @@ public class AnnouncementService {
         return net == null ? null : priceGridService.displayPrice(net, travelerId);
     }
 
-    private AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity) {
+    /**
+     * Reusable mapper: converts an {@link AnnouncementEntity} to an {@link AnnouncementSearchResponse}.
+     * The {@code isFavorite} flag is supplied by the caller so this method remains pure and testable.
+     * B4 (favorites list) and B7 (package-request feed) call this directly.
+     */
+    public AnnouncementSearchResponse toSearchResponse(AnnouncementEntity entity, boolean isFavorite) {
         UserEntity traveler = userRepository.findById(entity.getTravelerId()).orElse(null);
         boolean kycVerified = traveler != null && traveler.getKycStatus() == KycStatus.VERIFIED;
         TravelerProfileDto profile = traveler != null
@@ -251,7 +271,8 @@ public class AnnouncementService {
                 entity.getPricingMode(),
                 gridItems,
                 entity.getHandoverWindowStart(),
-                entity.getHandoverWindowEnd()
+                entity.getHandoverWindowEnd(),
+                isFavorite
         );
     }
 

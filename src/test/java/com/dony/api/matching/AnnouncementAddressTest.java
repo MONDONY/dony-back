@@ -80,7 +80,8 @@ class AnnouncementServiceAddressTest {
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, cfg, priceGridService, flagService,
-                mock(com.dony.api.common.StorageService.class));
+                mock(com.dony.api.common.StorageService.class),
+                mock(com.dony.api.favorites.FavoriteRepository.class));
     }
 
     private static final String TRAVELER_UID = "firebase-uid-123";
