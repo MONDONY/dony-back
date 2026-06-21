@@ -12,4 +12,7 @@ public interface CorridorAlertRepository extends JpaRepository<CorridorAlertEnti
     long countByOwnerId(UUID ownerId);
 
     List<CorridorAlertEntity> findAllByActiveTrue();
+
+    /** Alertes actives d'une direction donnée (ex. SENDER_WANTS_TRIPS pour le matching temps réel d'un trajet). */
+    List<CorridorAlertEntity> findAllByActiveTrueAndDirection(AlertDirection direction);
 }

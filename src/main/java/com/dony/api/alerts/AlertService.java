@@ -11,6 +11,7 @@ import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.dto.MatchingRequestDto;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.repository.PackageRequestRepository;
@@ -311,6 +312,53 @@ public class AlertService {
             return false;
         }
         return alert.getDateTo() == null || !date.isAfter(alert.getDateTo());
+    }
+
+    /**
+     * Inverse de {@link #findMatchingTrips} : pour un trajet donné (qui vient
+     * d'être créé), renvoie les alertes trajet (SENDER_WANTS_TRIPS) actives qui
+     * matchent — corridor (ville→ville, insensible casse) + fenêtre de dates +
+     * zone de remise (pickup dans le cercle si l'alerte en a une). Utilisé par le
+     * matching temps réel (listener AnnouncementCreatedEvent).
+     */
+    @Transactional(readOnly = true)
+    public List<CorridorAlertEntity> findSenderAlertsMatchingTrip(AnnouncementEntity trip) {
+        if (trip.getStatus() != AnnouncementStatus.ACTIVE
+                && trip.getStatus() != AnnouncementStatus.FULL) {
+            return List.of();
+        }
+        return alertRepository
+                .findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS)
+                .stream()
+                .filter(a -> a.getDepartureCity().equalsIgnoreCase(trip.getDepartureCity())
+                        && a.getArrivalCity().equalsIgnoreCase(trip.getArrivalCity()))
+                .filter(a -> fitsAlertDate(trip.getDepartureDate(), a))
+                .filter(a -> zoneContainsPickup(a, trip))
+                .toList();
+    }
+
+    /** True si l'alerte n'a pas de zone, ou si le pickup du trajet est dans le cercle. */
+    private boolean zoneContainsPickup(CorridorAlertEntity alert, AnnouncementEntity trip) {
+        if (!alert.hasPickupZone()) {
+            return true;
+        }
+        double distanceKm = haversineKm(
+                alert.getCenterLat(), alert.getCenterLng(),
+                trip.getPickupLat(), trip.getPickupLng());
+        return distanceKm <= alert.getRadiusKm();
+    }
+
+    /** Distance haversine (km, rayon Terre 6371) entre deux points. */
+    private static double haversineKm(BigDecimal lat1, BigDecimal lng1,
+                                      BigDecimal lat2, BigDecimal lng2) {
+        double radLat1 = Math.toRadians(lat1.doubleValue());
+        double radLat2 = Math.toRadians(lat2.doubleValue());
+        double dLat = Math.toRadians(lat2.doubleValue() - lat1.doubleValue());
+        double dLng = Math.toRadians(lng2.doubleValue() - lng1.doubleValue());
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(radLat1) * Math.cos(radLat2)
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private List<AlertTripMatchDto> toTripDtos(List<AnnouncementEntity> trips) {

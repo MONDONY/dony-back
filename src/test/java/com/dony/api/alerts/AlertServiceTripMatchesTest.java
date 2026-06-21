@@ -7,6 +7,7 @@ import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.AnnouncementStatus;
 import com.dony.api.matching.TransportMode;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +48,7 @@ class AlertServiceTripMatchesTest {
     void setup() {
         owner = new UserEntity();
         setId(owner, ownerId);
-        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        lenient().when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
     }
 
     private static void setId(Object target, UUID id) {
@@ -248,5 +249,100 @@ class AlertServiceTripMatchesTest {
         verify(announcementRepository).findActiveByCorridorWithinPickupRadius(
                 "Paris", "Bamako", 48.8566, 2.3522, 20);
         verify(announcementRepository, never()).findActiveByCorridor(anyString(), anyString());
+    }
+
+    // ── findSenderAlertsMatchingTrip (matching temps réel, inverse) ──────────
+
+    private AnnouncementEntity tripAt(String dep, String arr, LocalDate date,
+                                      BigDecimal pickupLat, BigDecimal pickupLng,
+                                      AnnouncementStatus status) {
+        AnnouncementEntity a = new AnnouncementEntity();
+        setId(a, UUID.randomUUID());
+        a.setTravelerId(UUID.randomUUID());
+        a.setDepartureCity(dep);
+        a.setArrivalCity(arr);
+        a.setDepartureDate(date);
+        a.setAvailableKg(new BigDecimal("10.00"));
+        a.setPricePerKg(new BigDecimal("8.00"));
+        a.setTransportMode(TransportMode.PLANE);
+        a.setPickupAddressLabel("Addr");
+        a.setPickupLat(pickupLat);
+        a.setPickupLng(pickupLng);
+        a.setDeliveryAddressLabel("Dest");
+        a.setDeliveryLat(BigDecimal.ONE);
+        a.setDeliveryLng(BigDecimal.ONE);
+        a.setTotalKg(new BigDecimal("10.00"));
+        a.setStatus(status);
+        return a;
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_corridorAndDateMatch_returnsAlert() {
+        when(alertRepository.findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS))
+                .thenReturn(List.of(senderAlert()));
+        AnnouncementEntity trip = tripAt("Paris", "Bamako", LocalDate.of(2026, 7, 10),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.ACTIVE);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).hasSize(1);
+        verify(alertRepository).findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS);
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_wrongCorridor_excluded() {
+        when(alertRepository.findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS))
+                .thenReturn(List.of(senderAlert()));
+        AnnouncementEntity trip = tripAt("Lyon", "Dakar", LocalDate.of(2026, 7, 10),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.ACTIVE);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).isEmpty();
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_outOfDateWindow_excluded() {
+        when(alertRepository.findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS))
+                .thenReturn(List.of(senderAlert()));
+        AnnouncementEntity trip = tripAt("Paris", "Bamako", LocalDate.of(2026, 8, 15),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.ACTIVE);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).isEmpty();
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_zoneInside_matches() {
+        CorridorAlertEntity zoneAlert = senderAlert();
+        zoneAlert.setCenterLat(BigDecimal.ONE);
+        zoneAlert.setCenterLng(BigDecimal.ONE);
+        zoneAlert.setRadiusKm(20);
+        when(alertRepository.findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS))
+                .thenReturn(List.of(zoneAlert));
+        // pickup (1,1) = centre → distance 0 → dans la zone
+        AnnouncementEntity trip = tripAt("Paris", "Bamako", LocalDate.of(2026, 7, 10),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.ACTIVE);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).hasSize(1);
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_zoneOutside_excluded() {
+        CorridorAlertEntity zoneAlert = senderAlert();
+        zoneAlert.setCenterLat(new BigDecimal("48.8566"));
+        zoneAlert.setCenterLng(new BigDecimal("2.3522"));
+        zoneAlert.setRadiusKm(20);
+        when(alertRepository.findAllByActiveTrueAndDirection(AlertDirection.SENDER_WANTS_TRIPS))
+                .thenReturn(List.of(zoneAlert));
+        // pickup (1,1) très loin de Paris → hors zone 20 km
+        AnnouncementEntity trip = tripAt("Paris", "Bamako", LocalDate.of(2026, 7, 10),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.ACTIVE);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).isEmpty();
+    }
+
+    @Test
+    void findSenderAlertsMatchingTrip_nonActiveTrip_emptyWithoutQuery() {
+        AnnouncementEntity trip = tripAt("Paris", "Bamako", LocalDate.of(2026, 7, 10),
+                BigDecimal.ONE, BigDecimal.ONE, AnnouncementStatus.CANCELLED);
+
+        assertThat(service.findSenderAlertsMatchingTrip(trip)).isEmpty();
+        verifyNoInteractions(alertRepository);
     }
 }
