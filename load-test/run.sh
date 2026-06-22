@@ -32,6 +32,11 @@ for scenario in "${SCENARIOS[@]}"; do
   echo ""
   echo "==> Running scenario: ${scenario}"
   k6 run \
+    --env BASE_URL="${BASE_URL}" \
+    --env FIREBASE_API_KEY="${FIREBASE_API_KEY:-}" \
+    --env K6_TEST_EMAIL="${K6_TEST_EMAIL:-}" \
+    --env K6_TEST_PASSWORD="${K6_TEST_PASSWORD:-}" \
+    --env FAV_TRIP_ID="${FAV_TRIP_ID:-}" \
     --summary-export="${REPORTS_DIR}/${scenario}.json" \
     "${SCRIPT_DIR}/scenarios/${scenario}.js"
 done
@@ -98,7 +103,7 @@ else
   # Fallback: concatenate raw JSON with a note
   {
     echo ""
-    echo "> Note: `jq` and `node` not found — raw JSON summaries below."
+    echo '> Note: `jq` and `node` not found — raw JSON summaries below.'
     echo ""
     for scenario in "${SCENARIOS[@]}"; do
       JSON="${REPORTS_DIR}/${scenario}.json"

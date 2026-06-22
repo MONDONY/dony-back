@@ -13,8 +13,8 @@ const BASE = __ENV.BASE_URL; // staging/dev only — NEVER prod
 // Timeline:
 //   smoke  : 0s     → 30s
 //   load   : 31s    → ~9m31s  (ramp 5min + steady 3min + ramp-down 1min = 9min)
-//   stress : 10m    → ~15m    (ramp 5min)
-//   soak   : 15m30s → 30m30s  (constant 50 VUs for 15min)
+//   stress : 10m    → ~15m30s (ramp 5min + ramp-down 30s)
+//   soak   : 16m    → 31m     (constant 50 VUs for 15min)
 export const options = {
   thresholds,
   scenarios: {
@@ -35,11 +35,12 @@ export const options = {
       startTime: '31s',
     },
     stress: {
-      // Ramp up to 200 VUs over 5 minutes to find the breaking point
+      // Ramp up to 200 VUs over 5 minutes to find the breaking point, then ramp down
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
         { duration: '5m', target: 200 },
+        { duration: '30s', target: 0 },
       ],
       startTime: '10m',
     },
@@ -48,7 +49,7 @@ export const options = {
       executor: 'constant-vus',
       vus: 50,
       duration: '15m',
-      startTime: '15m30s',
+      startTime: '16m',
     },
   },
 };
@@ -72,7 +73,7 @@ export default function (data) {
   // (idempotent, non-destructive, safe to repeat).
   if (__ENV.FAV_TRIP_ID) {
     const putRes = http.put(`${BASE}/favorites/trip/${__ENV.FAV_TRIP_ID}`, null, h);
-    check(putRes, { 'PUT favorite 200/201': (r) => r.status === 200 || r.status === 201 });
+    check(putRes, { 'PUT favorite 200': (r) => r.status === 200 });
 
     const delRes = http.del(`${BASE}/favorites/trip/${__ENV.FAV_TRIP_ID}`, null, h);
     check(delRes, { 'DELETE favorite 204': (r) => r.status === 204 });
