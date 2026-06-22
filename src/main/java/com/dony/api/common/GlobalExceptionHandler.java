@@ -15,10 +15,17 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.HttpMethod;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.net.URI;
 import java.util.Map;
@@ -180,6 +187,80 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create(BASE_TYPE + "concurrent-update"));
         problem.setTitle("Concurrent Update");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
+    /**
+     * Client supplied a path/query param of the wrong type (e.g. a non-UUID where a
+     * UUID is expected, or text where a number is expected). Client error → 400, not
+     * a fall-through to the catch-all 500. Logged at WARN (no Sentry): it is a bad
+     * request, not a server bug.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        log.warn("Type mismatch on parameter '{}': {}", ex.getName(), ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
+        problem.setType(URI.create(BASE_TYPE + "bad-parameter"));
+        problem.setTitle("Bad Request");
+        problem.setProperty("parameter", ex.getName());
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    /**
+     * Required request header or query parameter missing. Client error → 400, not 500.
+     */
+    @ExceptionHandler({MissingRequestHeaderException.class, MissingServletRequestParameterException.class})
+    public ResponseEntity<ProblemDetail> handleMissingInput(Exception ex) {
+        log.warn("Missing required input: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setType(URI.create(BASE_TYPE + "bad-request"));
+        problem.setTitle("Bad Request");
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    /**
+     * HTTP method not supported by the matched route (e.g. DELETE on a GET-only
+     * endpoint). Client error → 405 with an {@code Allow} header, not 500.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ProblemDetail> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not supported: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.METHOD_NOT_ALLOWED, ex.getMessage());
+        problem.setType(URI.create(BASE_TYPE + "method-not-allowed"));
+        problem.setTitle("Method Not Allowed");
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (ex.getSupportedHttpMethods() != null) {
+            builder.allow(ex.getSupportedHttpMethods().toArray(new HttpMethod[0]));
+        }
+        return builder.body(problem);
+    }
+
+    /**
+     * Request Content-Type not supported by the endpoint. Client error → 415, not 500.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ProblemDetail> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
+        log.warn("Unsupported media type: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage());
+        problem.setType(URI.create(BASE_TYPE + "unsupported-media-type"));
+        problem.setTitle("Unsupported Media Type");
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(problem);
+    }
+
+    /**
+     * No handler/static resource matched the request path. Client error → 404, not a
+     * fall-through to the catch-all 500. Not logged: unknown paths are noise.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ProblemDetail> handleNoResourceFound(NoResourceFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND, "No endpoint matches this path");
+        problem.setType(URI.create(BASE_TYPE + "not-found"));
+        problem.setTitle("Not Found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
     @ExceptionHandler(Exception.class)

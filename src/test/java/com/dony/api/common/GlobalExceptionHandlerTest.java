@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +16,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 import java.util.Set;
@@ -258,6 +265,122 @@ class GlobalExceptionHandlerTest {
 
                 assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("handleTypeMismatch() — erreurs client Spring MVC (régression back-monkey)")
+    class TypeMismatchTests {
+
+        @Test
+        @DisplayName("MethodArgumentTypeMismatchException → 400 avec le nom du paramètre")
+        void handleTypeMismatch_returns400WithParameter() {
+            MethodArgumentTypeMismatchException ex = mock(MethodArgumentTypeMismatchException.class);
+            when(ex.getName()).thenReturn("id");
+            when(ex.getMessage()).thenReturn("Failed to convert 'abc' to UUID");
+
+            ResponseEntity<ProblemDetail> response = handler.handleTypeMismatch(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            ProblemDetail body = response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.getTitle()).isEqualTo("Bad Request");
+            assertThat(body.getType().toString()).contains("bad-parameter");
+            assertThat(body.getDetail()).contains("id");
+            assertThat(body.getProperties().get("parameter")).isEqualTo("id");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleMissingInput()")
+    class MissingInputTests {
+
+        @Test
+        @DisplayName("MissingServletRequestParameterException → 400")
+        void handleMissingParameter_returns400() {
+            MissingServletRequestParameterException ex =
+                    new MissingServletRequestParameterException("page", "int");
+
+            ResponseEntity<ProblemDetail> response = handler.handleMissingInput(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getType().toString()).contains("bad-request");
+        }
+
+        @Test
+        @DisplayName("MissingRequestHeaderException → 400")
+        void handleMissingHeader_returns400() {
+            MissingRequestHeaderException ex = mock(MissingRequestHeaderException.class);
+            when(ex.getMessage()).thenReturn("Required header 'Authorization' is not present");
+
+            ResponseEntity<ProblemDetail> response = handler.handleMissingInput(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody().getTitle()).isEqualTo("Bad Request");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleMethodNotSupported()")
+    class MethodNotSupportedTests {
+
+        @Test
+        @DisplayName("HttpRequestMethodNotSupportedException → 405 + en-tête Allow")
+        void handleMethodNotSupported_returns405WithAllow() {
+            HttpRequestMethodNotSupportedException ex =
+                    new HttpRequestMethodNotSupportedException("DELETE", List.of("GET", "POST"));
+
+            ResponseEntity<ProblemDetail> response = handler.handleMethodNotSupported(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+            assertThat(response.getBody().getType().toString()).contains("method-not-allowed");
+            assertThat(response.getHeaders().getAllow()).contains(HttpMethod.GET, HttpMethod.POST);
+        }
+
+        @Test
+        @DisplayName("sans méthodes supportées → 405 sans Allow")
+        void handleMethodNotSupported_noSupported_returns405() {
+            HttpRequestMethodNotSupportedException ex =
+                    new HttpRequestMethodNotSupportedException("DELETE");
+
+            ResponseEntity<ProblemDetail> response = handler.handleMethodNotSupported(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        }
+    }
+
+    @Nested
+    @DisplayName("handleMediaTypeNotSupported()")
+    class MediaTypeNotSupportedTests {
+
+        @Test
+        @DisplayName("HttpMediaTypeNotSupportedException → 415")
+        void handleMediaTypeNotSupported_returns415() {
+            HttpMediaTypeNotSupportedException ex =
+                    new HttpMediaTypeNotSupportedException("Content type 'text/plain' not supported");
+
+            ResponseEntity<ProblemDetail> response = handler.handleMediaTypeNotSupported(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+            assertThat(response.getBody().getType().toString()).contains("unsupported-media-type");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleNoResourceFound()")
+    class NoResourceFoundTests {
+
+        @Test
+        @DisplayName("NoResourceFoundException → 404")
+        void handleNoResourceFound_returns404() {
+            NoResourceFoundException ex = new NoResourceFoundException(HttpMethod.GET, "/garbage/path");
+
+            ResponseEntity<ProblemDetail> response = handler.handleNoResourceFound(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody().getTitle()).isEqualTo("Not Found");
+            assertThat(response.getBody().getType().toString()).contains("not-found");
         }
     }
 }
