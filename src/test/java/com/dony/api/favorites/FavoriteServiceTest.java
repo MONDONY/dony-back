@@ -229,14 +229,15 @@ class FavoriteServiceTest {
         when(announcementRepository.findAllById(anyCollection())).thenReturn(List.of(a1, a2));
 
         AnnouncementSearchResponse dto = mock(AnnouncementSearchResponse.class);
-        when(announcementSearchMapper.toSearchResponse(a1, true)).thenReturn(dto);
+        // Service now calls toSearchResponseList with the filtered active list (a1 only)
+        when(announcementSearchMapper.toSearchResponseList(eq(List.of(a1)), anySet())).thenReturn(List.of(dto));
 
         var res = service.getFavoriteTrips(UID);
 
         assertThat(res).hasSize(1);
         assertThat(res.get(0)).isSameAs(dto);
-        verify(announcementSearchMapper).toSearchResponse(a1, true);
-        verify(announcementSearchMapper, never()).toSearchResponse(a2, true);
+        verify(announcementSearchMapper).toSearchResponseList(eq(List.of(a1)), anySet());
+        verify(announcementSearchMapper, never()).toSearchResponse(any(AnnouncementEntity.class), anyBoolean());
     }
 
     @Test
@@ -246,14 +247,16 @@ class FavoriteServiceTest {
                 .thenReturn(List.of(t1));
 
         AnnouncementEntity a1 = mock(AnnouncementEntity.class);
+        when(a1.getId()).thenReturn(t1);
         when(a1.getStatus()).thenReturn(AnnouncementStatus.FULL);
         when(announcementRepository.findAllById(anyCollection())).thenReturn(List.of(a1));
         AnnouncementSearchResponse dto = mock(AnnouncementSearchResponse.class);
-        when(announcementSearchMapper.toSearchResponse(a1, true)).thenReturn(dto);
+        when(announcementSearchMapper.toSearchResponseList(anyList(), anySet())).thenReturn(List.of(dto));
 
         service.getFavoriteTrips(UID);
 
-        verify(announcementSearchMapper).toSearchResponse(a1, true);
+        // Verify batch method called with favIdSet containing t1 (all are favorites)
+        verify(announcementSearchMapper).toSearchResponseList(anyList(), argThat(s -> s.contains(t1)));
     }
 
     // --- getFavoritePackageRequests tests ---
@@ -289,14 +292,15 @@ class FavoriteServiceTest {
         when(packageRequestRepository.findAllById(anyCollection())).thenReturn(List.of(pr1, pr2));
 
         PackageRequestSearchResponse dto = mock(PackageRequestSearchResponse.class);
-        when(packageRequestSearchMapper.toSearchResponse(pr1, true)).thenReturn(dto);
+        // Service now calls toSearchResponseList with filtered active list (pr1 only)
+        when(packageRequestSearchMapper.toSearchResponseList(eq(List.of(pr1)), anySet())).thenReturn(List.of(dto));
 
         var res = service.getFavoritePackageRequests(UID);
 
         assertThat(res).hasSize(1);
         assertThat(res.get(0)).isSameAs(dto);
-        verify(packageRequestSearchMapper).toSearchResponse(pr1, true);
-        verify(packageRequestSearchMapper, never()).toSearchResponse(pr2, true);
+        verify(packageRequestSearchMapper).toSearchResponseList(eq(List.of(pr1)), anySet());
+        verify(packageRequestSearchMapper, never()).toSearchResponse(any(PackageRequestEntity.class), anyBoolean());
     }
 
     @Test
@@ -306,13 +310,15 @@ class FavoriteServiceTest {
                 .thenReturn(List.of(p1));
 
         PackageRequestEntity pr1 = mock(PackageRequestEntity.class);
+        when(pr1.getId()).thenReturn(p1);
         when(pr1.getStatus()).thenReturn(PackageRequestStatus.NEGOTIATING);
         when(packageRequestRepository.findAllById(anyCollection())).thenReturn(List.of(pr1));
         PackageRequestSearchResponse dto = mock(PackageRequestSearchResponse.class);
-        when(packageRequestSearchMapper.toSearchResponse(pr1, true)).thenReturn(dto);
+        when(packageRequestSearchMapper.toSearchResponseList(anyList(), anySet())).thenReturn(List.of(dto));
 
         service.getFavoritePackageRequests(UID);
 
-        verify(packageRequestSearchMapper).toSearchResponse(pr1, true);
+        // Verify batch method called with favIdSet containing p1 (all are favorites)
+        verify(packageRequestSearchMapper).toSearchResponseList(anyList(), argThat(s -> s.contains(p1)));
     }
 }

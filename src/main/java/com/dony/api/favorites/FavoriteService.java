@@ -103,31 +103,38 @@ public class FavoriteService {
      * Returns the caller's favorite trips as enriched DTOs, with {@code isFavorite=true}.
      * Soft-deleted announcements are automatically excluded (via {@code @Where} on the entity).
      * Announcements with status {@code CANCELLED} are also filtered out.
+     * Batch-loads users, bid counts, and grid items in 3 queries total (no N+1).
      */
     @Transactional(readOnly = true)
     public List<AnnouncementSearchResponse> getFavoriteTrips(String firebaseUid) {
         UUID userId = resolveUserId(firebaseUid);
         List<UUID> ids = favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP);
         if (ids.isEmpty()) return List.of();
-        return announcementRepository.findAllById(ids).stream()
+        List<AnnouncementEntity> active = announcementRepository.findAllById(ids).stream()
                 .filter(a -> a.getStatus() != AnnouncementStatus.CANCELLED)
-                .map(a -> announcementSearchMapper.toSearchResponse(a, true))
                 .toList();
+        if (active.isEmpty()) return List.of();
+        Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
+        return announcementSearchMapper.toSearchResponseList(active, favIdSet);
     }
 
     /**
      * Returns the caller's favorite package-requests as enriched DTOs, with {@code isFavorite=true}.
      * Soft-deleted or cancelled package-requests are excluded.
+     * Batch-loads users, cities, and photos in 3 queries total (no N+1).
      */
     @Transactional(readOnly = true)
     public List<PackageRequestSearchResponse> getFavoritePackageRequests(String firebaseUid) {
         UUID userId = resolveUserId(firebaseUid);
         List<UUID> ids = favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST);
         if (ids.isEmpty()) return List.of();
-        return packageRequestRepository.findAllById(ids).stream()
-                .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED)
-                .map(pr -> packageRequestSearchMapper.toSearchResponse(pr, true))
-                .toList();
+        List<com.dony.api.requests.entity.PackageRequestEntity> active =
+                packageRequestRepository.findAllById(ids).stream()
+                        .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED)
+                        .toList();
+        if (active.isEmpty()) return List.of();
+        Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
+        return packageRequestSearchMapper.toSearchResponseList(active, favIdSet);
     }
 
     // --- private helpers ---

@@ -1,6 +1,7 @@
 package com.dony.api.payments.mobilemoney;
 
 import com.dony.api.auth.UserEntity;
+import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,9 +37,14 @@ class MobileMoneyPaymentControllerIT {
 
     @Autowired private MockMvc mockMvc;
     @MockBean  private MobileMoneyPaymentService paymentService;
+    @MockBean  private UserRepository userRepository;
 
     private static final UUID SENDER_ID = UUID.randomUUID();
     private static final UUID BID_ID    = UUID.randomUUID();
+    // Le principal Spring Security est l'UID Firebase (String), comme en prod
+    // (FirebaseTokenFilter). Le contrôleur résout l'utilisateur via findByFirebaseUid.
+    private static final String SENDER_UID   = "sender-firebase-uid";
+    private static final String TRAVELER_UID = "traveler-firebase-uid";
 
     private UserEntity senderEntity;
 
@@ -48,23 +54,18 @@ class MobileMoneyPaymentControllerIT {
         var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
         idField.setAccessible(true);
         idField.set(senderEntity, SENDER_ID);
+        when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(senderEntity));
     }
 
     private UsernamePasswordAuthenticationToken senderAuth() {
         return new UsernamePasswordAuthenticationToken(
-                senderEntity, null,
+                SENDER_UID, null,
                 List.of(new SimpleGrantedAuthority("ROLE_SENDER")));
     }
 
     private UsernamePasswordAuthenticationToken travelerAuth() {
-        UserEntity traveler = new UserEntity();
-        try {
-            var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
-            idField.setAccessible(true);
-            idField.set(traveler, UUID.randomUUID());
-        } catch (Exception e) { throw new RuntimeException(e); }
         return new UsernamePasswordAuthenticationToken(
-                traveler, null,
+                TRAVELER_UID, null,
                 List.of(new SimpleGrantedAuthority("ROLE_TRAVELER")));
     }
 
@@ -135,6 +136,20 @@ class MobileMoneyPaymentControllerIT {
     void getStatus_unauthenticated_returns403() throws Exception {
         mockMvc.perform(get("/bids/{bidId}/mobile-money/status", BID_ID))
                 .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void getStatus_callerNotInDb_returns401_notServerError() throws Exception {
+        // Régression : le principal est un UID String ; si l'utilisateur n'est pas
+        // résolu en base, on renvoie 401 — jamais 500 (l'ancien cast brut
+        // `(UserEntity) getPrincipal()` levait une ClassCastException → 500).
+        when(userRepository.findByFirebaseUid("unknown-uid")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/bids/{bidId}/mobile-money/status", BID_ID)
+                        .with(authentication(new UsernamePasswordAuthenticationToken(
+                                "unknown-uid", null,
+                                List.of(new SimpleGrantedAuthority("ROLE_SENDER"))))))
+                .andExpect(status().isUnauthorized());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

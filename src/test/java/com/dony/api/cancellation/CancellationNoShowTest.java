@@ -2,6 +2,7 @@ package com.dony.api.cancellation;
 
 import com.dony.api.cancellation.events.CancellationConfirmedEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.BidEntity;
@@ -18,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -192,6 +194,20 @@ class CancellationNoShowTest {
 
             verify(cancellationRepository, never()).save(any());
             verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        void throws404WhenNoCancellation_notNoSuchElement() {
+            // Régression : un bid sans annulation en attente levait
+            // NoSuchElementException (orElseThrow sans argument) → 500. Doit
+            // désormais être une DonyBusinessException 404 (détecté par le load
+            // test all-endpoints).
+            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.confirmSenderNoShow(BID_ID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
         }
 
         @Test

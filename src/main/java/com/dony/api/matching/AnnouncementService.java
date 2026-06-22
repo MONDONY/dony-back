@@ -15,6 +15,7 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.StorageService;
 import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
+import com.dony.api.matching.dto.AnnouncementPriceGridItemResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
 import com.dony.api.matching.dto.AnnouncementSearchResponse;
@@ -48,11 +49,13 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class AnnouncementService {
@@ -207,8 +210,34 @@ public class AnnouncementService {
             favIds = Set.of();
         }
 
-        return announcementRepository.findAll(spec, sortedPageable)
-                .map(a -> toSearchResponse(a, favIds.contains(a.getId())));
+        Page<AnnouncementEntity> page = announcementRepository.findAll(spec, sortedPageable);
+
+        // Batch-load all related data for the page to eliminate N+1 queries.
+        List<UUID> announcementIds = page.getContent().stream().map(AnnouncementEntity::getId).toList();
+        List<UUID> travelerIds = page.getContent().stream().map(AnnouncementEntity::getTravelerId).distinct().toList();
+
+        Map<UUID, UserEntity> userMap = userRepository.findAllById(travelerIds).stream()
+                .collect(Collectors.toMap(UserEntity::getId, u -> u, (a2, b2) -> a2));
+
+        Map<UUID, Long> bidCountMap = announcementIds.isEmpty() ? Map.of() :
+                bidRepository.countVisibleByAnnouncementIds(announcementIds).stream()
+                        .collect(Collectors.toMap(
+                                row -> (UUID) row[0],
+                                row -> (Long) row[1],
+                                (a2, b2) -> a2));
+
+        // Batch grid items only for MIXED-priced announcements (avoids calling priceGridService per row).
+        // priceGridService does not expose a batch API yet; left per-row only for MIXED announcements.
+        // Non-MIXED rows get an empty list directly in the mapper.
+        Map<UUID, List<AnnouncementPriceGridItemResponse>> gridItemMap = new HashMap<>();
+        for (AnnouncementEntity a : page.getContent()) {
+            if (a.getPricingMode() == PricingMode.MIXED) {
+                gridItemMap.put(a.getId(), priceGridService.getAnnouncementGridItems(a.getId(), a.getTravelerId()));
+            }
+        }
+
+        return page.map(a -> announcementSearchMapper.toSearchResponse(
+                a, favIds.contains(a.getId()), userMap, bidCountMap, gridItemMap));
     }
 
     private Sort buildSort(String sortBy, String sortDir) {

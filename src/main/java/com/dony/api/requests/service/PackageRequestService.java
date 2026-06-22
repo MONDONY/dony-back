@@ -23,17 +23,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.dony.api.city.CityEntity;
 import com.dony.api.payments.PriceBreakdown;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class PackageRequestService {
@@ -384,8 +388,10 @@ public class PackageRequestService {
                                                       Pageable pageable,
                                                       UUID callerId) {
         Set<UUID> favIds = loadFavIds(callerId);
-        return repository.findAll(spec, pageable)
-                .map(e -> toSearchResponse(e, favIds.contains(e.getId())));
+        Page<PackageRequestEntity> page = repository.findAll(spec, pageable);
+        BatchMaps batch = buildBatchMaps(page.getContent());
+        return page.map(e -> packageRequestSearchMapper.toSearchResponse(
+                e, favIds.contains(e.getId()), batch.userMap, batch.cityMap, batch.photoMap));
     }
 
     /**
@@ -410,8 +416,10 @@ public class PackageRequestService {
                                                             double radiusKm,
                                                             UUID callerId) {
         Set<UUID> favIds = loadFavIds(callerId);
-        Page<PackageRequestSearchResponse> mapped = repository.findAll(spec, pageable)
-                .map(e -> toSearchResponse(e, favIds.contains(e.getId())));
+        Page<PackageRequestEntity> rawPage = repository.findAll(spec, pageable);
+        BatchMaps batch = buildBatchMaps(rawPage.getContent());
+        Page<PackageRequestSearchResponse> mapped = rawPage.map(e -> packageRequestSearchMapper.toSearchResponse(
+                e, favIds.contains(e.getId()), batch.userMap, batch.cityMap, batch.photoMap));
         double latD = lat.doubleValue();
         double lngD = lng.doubleValue();
         List<PackageRequestSearchResponse> filtered = mapped.getContent().stream()
@@ -422,6 +430,36 @@ public class PackageRequestService {
             .map(Map.Entry::getKey)
             .toList();
         return new org.springframework.data.domain.PageImpl<>(filtered, pageable, mapped.getTotalElements());
+    }
+
+    /** Immutable value object carrying the three batch-loaded maps for search mapping. */
+    private record BatchMaps(Map<UUID, UserEntity> userMap,
+                              Map<String, CityEntity> cityMap,
+                              Map<UUID, List<PackageRequestPhotoResponse>> photoMap) {}
+
+    /**
+     * Batch-loads users, cities, and photos for a list of package-request entities in 3 queries
+     * (one per resource type) instead of N×3 queries.
+     */
+    private BatchMaps buildBatchMaps(List<PackageRequestEntity> entities) {
+        if (entities.isEmpty()) {
+            return new BatchMaps(Map.of(), Map.of(), Map.of());
+        }
+        List<UUID> senderIds = entities.stream().map(PackageRequestEntity::getSenderId).distinct().toList();
+        Map<UUID, UserEntity> userMap = userRepository.findAllById(senderIds).stream()
+                .collect(Collectors.toMap(UserEntity::getId, u -> u, (a, b) -> a));
+
+        Set<String> cityNames = new HashSet<>();
+        for (PackageRequestEntity e : entities) {
+            if (e.getDepartureCity() != null) cityNames.add(e.getDepartureCity());
+            if (e.getArrivalCity() != null) cityNames.add(e.getArrivalCity());
+        }
+        Map<String, CityEntity> cityMap = cityRepository.findByNamesIgnoreCaseBatch(cityNames);
+
+        List<UUID> requestIds = entities.stream().map(PackageRequestEntity::getId).toList();
+        Map<UUID, List<PackageRequestPhotoResponse>> photoMap = photoService.activePhotosBatch(requestIds);
+
+        return new BatchMaps(userMap, cityMap, photoMap);
     }
 
     /**
