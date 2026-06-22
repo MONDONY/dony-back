@@ -122,12 +122,13 @@ public class PackageRequestController {
                 .and(PackageRequestSpecifications.dateRange(dateFrom, dateTo))
                 .and(PackageRequestSpecifications.maxWeight(maxWeight))
                 .and(PackageRequestSpecifications.parcelSize(parcelSize));
+        UUID callerId = requireUserId();
         Pageable pageable = PageRequest.of(page, size);
         if (lat != null && lng != null) {
             double radius = radiusKm != null ? radiusKm : 50.0;
-            return service.searchNearMe(spec, pageable, lat, lng, radius);
+            return service.searchNearMe(spec, pageable, lat, lng, radius, callerId);
         }
-        return service.search(spec, pageable);
+        return service.search(spec, pageable, callerId);
     }
 
     /** Signale une demande (modération). Tout utilisateur authentifié, sauf le propriétaire. */

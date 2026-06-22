@@ -36,5 +36,6 @@ public record AnnouncementSearchResponse(
         com.dony.api.matching.PricingMode pricingMode,
         List<AnnouncementPriceGridItemResponse> priceGridItems,
         LocalDateTime handoverWindowStart,
-        LocalDateTime handoverWindowEnd
+        LocalDateTime handoverWindowEnd,
+        boolean isFavorite
 ) {}

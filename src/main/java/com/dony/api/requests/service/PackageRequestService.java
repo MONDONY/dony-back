@@ -5,6 +5,8 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
+import com.dony.api.favorites.FavoriteRepository;
+import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
@@ -27,8 +29,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -44,6 +48,8 @@ public class PackageRequestService {
     private final CommissionProperties commissionProperties;
     private final StorageService storageService;
     private final PackageRequestPhotoService photoService;
+    private final FavoriteRepository favoriteRepository;
+    private final PackageRequestSearchMapper packageRequestSearchMapper;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -54,7 +60,9 @@ public class PackageRequestService {
                                   com.dony.api.city.CityRepository cityRepository,
                                   CommissionProperties commissionProperties,
                                   StorageService storageService,
-                                  PackageRequestPhotoService photoService) {
+                                  PackageRequestPhotoService photoService,
+                                  FavoriteRepository favoriteRepository,
+                                  PackageRequestSearchMapper packageRequestSearchMapper) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -65,6 +73,8 @@ public class PackageRequestService {
         this.commissionProperties = commissionProperties;
         this.storageService = storageService;
         this.photoService = photoService;
+        this.favoriteRepository = favoriteRepository;
+        this.packageRequestSearchMapper = packageRequestSearchMapper;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -371,8 +381,11 @@ public class PackageRequestService {
 
     @Transactional(readOnly = true)
     public Page<PackageRequestSearchResponse> search(Specification<PackageRequestEntity> spec,
-                                                      Pageable pageable) {
-        return repository.findAll(spec, pageable).map(this::toSearchResponse);
+                                                      Pageable pageable,
+                                                      UUID callerId) {
+        Set<UUID> favIds = loadFavIds(callerId);
+        return repository.findAll(spec, pageable)
+                .map(e -> toSearchResponse(e, favIds.contains(e.getId())));
     }
 
     /**
@@ -394,8 +407,11 @@ public class PackageRequestService {
                                                             Pageable pageable,
                                                             java.math.BigDecimal lat,
                                                             java.math.BigDecimal lng,
-                                                            double radiusKm) {
-        Page<PackageRequestSearchResponse> mapped = repository.findAll(spec, pageable).map(this::toSearchResponse);
+                                                            double radiusKm,
+                                                            UUID callerId) {
+        Set<UUID> favIds = loadFavIds(callerId);
+        Page<PackageRequestSearchResponse> mapped = repository.findAll(spec, pageable)
+                .map(e -> toSearchResponse(e, favIds.contains(e.getId())));
         double latD = lat.doubleValue();
         double lngD = lng.doubleValue();
         List<PackageRequestSearchResponse> filtered = mapped.getContent().stream()
@@ -406,6 +422,17 @@ public class PackageRequestService {
             .map(Map.Entry::getKey)
             .toList();
         return new org.springframework.data.domain.PageImpl<>(filtered, pageable, mapped.getTotalElements());
+    }
+
+    /**
+     * Batch-loads the set of package-request IDs favorited by the given traveler.
+     * Returns an empty set when {@code callerId} is null (anonymous or non-traveler).
+     */
+    private Set<UUID> loadFavIds(UUID callerId) {
+        if (callerId == null) {
+            return Set.of();
+        }
+        return new HashSet<>(favoriteRepository.findTargetIds(callerId, FavoriteTargetType.PACKAGE_REQUEST));
     }
 
     private static double haversineKm(double lat1, double lon1, double lat2, double lon2) {
@@ -450,36 +477,14 @@ public class PackageRequestService {
         );
     }
 
-    private PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e) {
-        UserEntity sender = userRepository.findById(e.getSenderId()).orElse(null);
-        String displayName = buildSenderDisplayName(sender);
-        double averageRating = sender != null && sender.getAverageRating() != null
-                ? sender.getAverageRating().doubleValue() : 0.0;
-        int totalRatings = sender != null ? sender.getRatingCount() : 0;
-        boolean kycVerified = sender != null && sender.getKycStatus() == KycStatus.VERIFIED;
-        var senderProfile = new PackageRequestSearchResponse.SenderPublicProfile(
-            e.getSenderId(), displayName, averageRating, totalRatings, kycVerified,
-            storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null)
-        );
-        var depCity = cityRepository.findFirstByNameIgnoreCase(e.getDepartureCity()).orElse(null);
-        var arrCity = cityRepository.findFirstByNameIgnoreCase(e.getArrivalCity()).orElse(null);
-        List<PackageRequestPhotoResponse> photos = photoService.activePhotos(e.getId());
-        String photoUrl = photos.isEmpty() ? e.getPhotoUrl() : photos.get(0).url();
-        return new PackageRequestSearchResponse(
-            e.getId(), e.getDepartureCity(), e.getArrivalCity(),
-            depCity != null ? depCity.getLatitude() : null,
-            depCity != null ? depCity.getLongitude() : null,
-            arrCity != null ? arrCity.getLatitude() : null,
-            arrCity != null ? arrCity.getLongitude() : null,
-            e.getDesiredDate(), e.getDateToleranceDays() != null ? e.getDateToleranceDays().intValue() : 0,
-            e.getWeightKg(), e.getParcelSize(), e.getTransportMode(),
-            e.getContentCategory(),
-            e.getTargetPriceEur(), e.isNegotiable(), photoUrl,
-            e.getPickupNeighborhood(), e.getDeliveryNeighborhood(),
-            senderProfile,
-            e.getAcceptedPaymentMethods(),
-            photos
-        );
+    /**
+     * Reusable mapper: converts a {@link PackageRequestEntity} to a {@link PackageRequestSearchResponse}.
+     * The {@code isFavorite} flag is supplied by the caller so this method remains pure and testable.
+     * Delegates to {@link PackageRequestSearchMapper} so that external packages can also call
+     * the mapper directly without injecting this service.
+     */
+    public PackageRequestSearchResponse toSearchResponse(PackageRequestEntity e, boolean isFavorite) {
+        return packageRequestSearchMapper.toSearchResponse(e, isFavorite);
     }
 
     private String buildSenderDisplayName(UserEntity user) {

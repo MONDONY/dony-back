@@ -9,6 +9,8 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.config.DonyConfigProperties;
+import com.dony.api.favorites.FavoriteRepository;
+import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.matching.dto.AddressDto;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
@@ -59,6 +61,7 @@ class AnnouncementServiceTest {
     @Mock private PriceGridService priceGridService;
     @Mock private com.dony.api.country.FlagService flagService;
     @Mock private com.dony.api.common.StorageService storageService;
+    @Mock private FavoriteRepository favoriteRepository;
 
     private AnnouncementService announcementService;
 
@@ -67,10 +70,13 @@ class AnnouncementServiceTest {
         DonyConfigProperties config = new DonyConfigProperties(null, null, null);
         // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Real mapper wired to the same mocks so SearchTests assertions remain valid
+        AnnouncementSearchMapper realMapper = new AnnouncementSearchMapper(
+                userRepository, bidRepository, priceGridService, storageService);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
-                storageService);
+                storageService, favoriteRepository, realMapper);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -1048,6 +1054,78 @@ class AnnouncementServiceTest {
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.traveler()).isNotNull();
             assertThat(response.traveler().avatarUrl()).isNull();
+        }
+
+        // ─── isFavorite flag ──────────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("trajet en favori du caller → isFavorite=true")
+        void search_favoritedTrip_isFavoriteTrue() {
+            UserEntity viewer = buildTraveler();
+            UUID viewerId = UUID.randomUUID();
+            setId(viewer, viewerId);
+
+            UserEntity tripOwner = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(tripOwner);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(userRepository.findByFirebaseUid("viewer-uid")).thenReturn(Optional.of(viewer));
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            when(favoriteRepository.findTargetIds(viewerId, FavoriteTargetType.TRIP))
+                    .thenReturn(List.of(ANNOUNCEMENT_ID));
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid");
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.isFavorite()).isTrue();
+        }
+
+        @Test
+        @DisplayName("trajet non en favori du caller → isFavorite=false")
+        void search_nonFavoritedTrip_isFavoriteFalse() {
+            UserEntity viewer = buildTraveler();
+            UUID viewerId = UUID.randomUUID();
+            setId(viewer, viewerId);
+
+            UserEntity tripOwner = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(tripOwner);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(userRepository.findByFirebaseUid("viewer-uid")).thenReturn(Optional.of(viewer));
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            when(favoriteRepository.findTargetIds(viewerId, FavoriteTargetType.TRIP))
+                    .thenReturn(List.of()); // no favorites
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid");
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.isFavorite()).isFalse();
+        }
+
+        @Test
+        @DisplayName("caller anonyme (viewerFirebaseUid null) → isFavorite=false, pas d'appel FavoriteRepository")
+        void search_anonymousCaller_isFavoriteFalse() {
+            UserEntity tripOwner = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(tripOwner);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            // viewerFirebaseUid = null → anonymous caller
+
+            Page<?> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
+            assertThat(response.isFavorite()).isFalse();
+            verify(favoriteRepository, never()).findTargetIds(any(), any());
         }
     }
 
