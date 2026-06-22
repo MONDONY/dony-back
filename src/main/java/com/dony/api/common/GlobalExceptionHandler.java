@@ -213,9 +213,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler({MissingRequestHeaderException.class, MissingServletRequestParameterException.class})
     public ResponseEntity<ProblemDetail> handleMissingInput(Exception ex) {
+        // Le message complet (qui peut nommer l'en-tête Authorization) reste côté
+        // log ; le corps renvoyé au client reste générique pour ne rien divulguer.
         log.warn("Missing required input: {}", ex.getMessage());
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, ex.getMessage());
+                HttpStatus.BAD_REQUEST, "Paramètre ou en-tête de requête requis manquant");
         problem.setType(URI.create(BASE_TYPE + "bad-request"));
         problem.setTitle("Bad Request");
         return ResponseEntity.badRequest().body(problem);
