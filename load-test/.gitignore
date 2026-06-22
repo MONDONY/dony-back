@@ -1,0 +1,4 @@
+# Artefacts générés par gen_inventory.py / run_all.sh / k6 — non versionnés
+endpoints.json
+reports/
+*-raw.json
