@@ -479,7 +479,10 @@ public class CancellationService {
 
     @Transactional
     public void confirmSenderNoShow(UUID bidId) {
-        CancellationEntity c = cancellationRepository.findByBidId(bidId).orElseThrow();
+        CancellationEntity c = cancellationRepository.findByBidId(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "cancellation-not-found", "Not Found",
+                        "Aucune annulation en attente pour ce bid"));
         if (c.getNoShowStatus() != CancellationStatus.PENDING_CONFIRMATION) return;
 
         c.setNoShowStatus(CancellationStatus.CONFIRMED);
