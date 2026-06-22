@@ -63,10 +63,16 @@ export default function (data) {
 
   // READ: favorites lists
   const tripsRes = http.get(`${BASE}/favorites/trips`, h);
-  check(tripsRes, { 'favorites/trips 200': (r) => r.status === 200 });
+  check(tripsRes, {
+    'GET /favorites/trips 200': (r) => r.status === 200,
+    'GET /favorites/trips not 403 (role ok)': (r) => r.status !== 403,
+  });
 
   const pkgRes = http.get(`${BASE}/favorites/package-requests`, h);
-  check(pkgRes, { 'favorites/package-requests 200': (r) => r.status === 200 });
+  check(pkgRes, {
+    'GET /favorites/package-requests 200': (r) => r.status === 200,
+    'GET /favorites/package-requests not 403 (role ok)': (r) => r.status !== 403,
+  });
 
   // WRITE CYCLE (idempotent): only runs when FAV_TRIP_ID is provided.
   // PUT adds the trip to favorites; DELETE removes it — net effect is zero

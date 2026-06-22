@@ -36,7 +36,13 @@ export K6_TEST_EMAIL="loadtest@dony-staging.example.com"
 export K6_TEST_PASSWORD="..."
 
 # Optional — enables the idempotent write cycle in favorites.js
-# Set to a trip ID that exists in the staging database
+# Set to a trip ID that exists in the staging database.
+# WARNING: FAV_TRIP_ID must NOT be owned by the test account.
+# FavoriteService rejects favoriting your own trip with 422 — if the test
+# account is the traveler who created this trip, PUT /favorites/trip/{id}
+# returns 422, the 'PUT favorite 200' check fails, and the
+# http_req_failed threshold is breached (whole run fails).
+# Use a trip created by a different account in staging.
 export FAV_TRIP_ID="some-uuid-here"
 ```
 
@@ -80,7 +86,7 @@ k6 run --env BASE_URL="${BASE_URL}" \
 
 ### Single profile within a scenario
 
-k6 does not natively filter scenarios by name from the CLI, but you can override `options.scenarios` at runtime using the `--config` flag or by temporarily commenting out unwanted scenario blocks. The four profiles in `favorites.js` are designed to run sequentially via `startTime` offsets — to isolate one profile, run the scenario file directly and interrupt (`Ctrl+C`) after the desired phase.
+To run a single profile, comment out the other scenario blocks in the file (e.g. keep only `smoke` and remove `load`, `stress`, `soak`). Alternatively, run the smoke-only `read_endpoints.js` to validate endpoints without the full profile suite.
 
 ---
 
@@ -92,7 +98,7 @@ Exercises the main read-only endpoints:
 
 | Endpoint | Notes |
 |----------|-------|
-| `GET /announcements?departureCity=Paris&arrivalCity=Dakar` | Public search |
+| `GET /announcements?departureCity=Paris&arrivalCity=Dakar` | Auth required (Bearer token sent) |
 | `GET /favorites/ids` | Auth required |
 | `GET /package-requests` | `ROLE_TRAVELER` required |
 | `GET /auth/me` | Any authenticated user |
@@ -119,7 +125,7 @@ The PUT+DELETE pair is **idempotent and non-destructive** — it adds then immed
 | smoke   | 0 s   | 1   | 30 s     | Baseline — confirm endpoints respond |
 | load    | 31 s  | 0→50 | ~9 min  | Normal traffic simulation |
 | stress  | 10 min | 0→200 | 5 min | Find breaking point |
-| soak    | 15 min 30 s | 50 | 15 min | Detect memory leaks / degradation |
+| soak    | 16 min | 50 | 15 min | Detect memory leaks / degradation |
 
 ---
 
