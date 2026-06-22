@@ -25,7 +25,17 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap.add_argument("--raw", default=os.path.join(here, "reports", "all-endpoints-raw.json"))
     ap.add_argument("--out", default=os.path.join(here, "reports", "all-endpoints-report.md"))
+    ap.add_argument("--inventory", default=os.path.join(here, "endpoints.json"))
     args = ap.parse_args()
+
+    # Inventaire complet (pour mesurer la couverture : touchés vs total).
+    inventory = []
+    try:
+        with open(args.inventory, encoding="utf-8") as f:
+            inventory = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        inventory = []
+    inv_tags = {f"{e['method']} {e['path'].replace('/api/v1', '', 1)}": e for e in inventory}
 
     lat = defaultdict(list)        # endpoint -> [durations]
     errs = defaultdict(int)        # endpoint -> 5xx count
@@ -71,9 +81,15 @@ def main():
     offenders = sorted([r for r in rows if r["errs"] > 0], key=lambda r: r["errs"], reverse=True)
 
     o = sorted(overall)
+    touched = set(lat.keys())
+    total_inv = len(inv_tags)
+    untouched = sorted(set(inv_tags.keys()) - touched) if inv_tags else []
     lines = []
     lines.append("# All-Endpoints Load Test — Rapport")
     lines.append("")
+    if total_inv:
+        cov = 100.0 * len(touched & set(inv_tags.keys())) / total_inv
+        lines.append(f"- **Couverture : {len(touched & set(inv_tags.keys()))}/{total_inv} endpoints ({cov:.0f}%)**")
     lines.append(f"- Endpoints touchés : **{len(rows)}**  ·  requêtes totales : **{total_reqs}**")
     if o:
         lines.append(f"- Latence globale : p50 {pct(o,0.5):.0f}ms · p95 {pct(o,0.95):.0f}ms · "
@@ -81,6 +97,17 @@ def main():
     verdict = "✅ aucune erreur serveur 5xx" if total_5xx == 0 else f"❌ {total_5xx} erreur(s) serveur 5xx"
     lines.append(f"- **Verdict : {verdict}**")
     lines.append("")
+
+    if total_inv:
+        if untouched:
+            lines.append(f"## ⚠️ Endpoints NON couverts ({len(untouched)})")
+            lines.append("")
+            for tag in untouched:
+                lines.append(f"- `{tag}`")
+            lines.append("")
+        else:
+            lines.append("## ✅ Couverture complète — les 242 endpoints ont reçu au moins une requête")
+            lines.append("")
 
     if offenders:
         lines.append("## ❌ Endpoints renvoyant des 5xx (à corriger)")
