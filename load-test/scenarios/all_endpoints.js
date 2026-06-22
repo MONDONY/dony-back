@@ -76,17 +76,30 @@ const QUERY = {
 const serverErrors = new Counter('server_errors');
 const latency = new Trend('endpoint_latency', true);
 
+// Paliers de charge. Par défaut : ramp → plateau READ_VUS → ramp down.
+// READ_STAGES permet un ramp multi-paliers pour trouver le point de rupture,
+// ex. READ_STAGES="200:1m,1000:2m,3000:2m,5000:3m,8000:3m" (cible:durée).
+function readStages() {
+  if (__ENV.READ_STAGES) {
+    return __ENV.READ_STAGES.split(',').map((s) => {
+      const [target, duration] = s.split(':');
+      return { duration: duration.trim(), target: parseInt(target, 10) };
+    });
+  }
+  return [
+    { duration: '15s', target: READ_VUS },
+    { duration: READ_DURATION, target: READ_VUS },
+    { duration: '10s', target: 0 },
+  ];
+}
+
 export const options = {
   scenarios: {
     reads_load: {
       executor: 'ramping-vus',
       exec: 'readLoad',
       startVUs: 0,
-      stages: [
-        { duration: '15s', target: READ_VUS },
-        { duration: READ_DURATION, target: READ_VUS },
-        { duration: '10s', target: 0 },
-      ],
+      stages: readStages(),
       tags: { scenario: 'reads_load' },
     },
     writes_smoke: {

@@ -2,3 +2,7 @@
 endpoints.json
 reports/
 *-raw.json
+
+# Config staging (contient le token)
+staging.env
+staging-raw.json
