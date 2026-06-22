@@ -69,6 +69,23 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
            "AND b.deletedByTraveler = false")
     long countVisibleByAnnouncementId(@Param("announcementId") UUID announcementId);
 
+    /**
+     * Batch variant of {@link #countVisibleByAnnouncementId}: returns one row per
+     * announcement ID in {@code ids} with its visible-bid count.
+     * Uses the same visibility filter (PENDING | PAYMENT_ESCROWED, not deleted by traveler).
+     * Announcement IDs with zero visible bids are NOT returned (GROUP BY omits them);
+     * callers must default absent keys to 0.
+     *
+     * @return list of Object[] where [0]=announcementId (UUID), [1]=count (Long)
+     */
+    @Query("SELECT b.announcementId, COUNT(b) FROM BidEntity b " +
+           "WHERE b.announcementId IN :ids " +
+           "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
+           "                 com.dony.api.matching.BidStatus.PAYMENT_ESCROWED) " +
+           "AND b.deletedByTraveler = false " +
+           "GROUP BY b.announcementId")
+    List<Object[]> countVisibleByAnnouncementIds(@Param("ids") java.util.Collection<UUID> ids);
+
     List<BidEntity> findByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);
 
     long countByAnnouncementIdAndStatusIn(UUID announcementId, List<BidStatus> statuses);

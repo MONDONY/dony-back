@@ -11,7 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -94,5 +97,25 @@ public class PackageRequestPhotoService {
         return photoRepository.findFirstByPackageRequestIdOrderByPositionAsc(packageRequestId)
                 .map(p -> storageService.generatePresignedUrl(p.getObjectKey(), PRESIGN_TTL))
                 .orElse(null);
+    }
+
+    /**
+     * Batch variant of {@link #activePhotos}: fetches photos for all given request IDs
+     * in a single query and returns a map from packageRequestId to its list of photo responses.
+     * IDs with no photos are absent from the map (callers may default to {@code List.of()}).
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, List<PackageRequestPhotoResponse>> activePhotosBatch(Collection<UUID> requestIds) {
+        if (requestIds == null || requestIds.isEmpty()) return Map.of();
+        List<PackageRequestPhotoEntity> all =
+                photoRepository.findByPackageRequestIdInOrderByPositionAsc(new ArrayList<>(requestIds));
+        Map<UUID, List<PackageRequestPhotoResponse>> result = new HashMap<>();
+        for (PackageRequestPhotoEntity p : all) {
+            result.computeIfAbsent(p.getPackageRequestId(), id -> new ArrayList<>())
+                  .add(new PackageRequestPhotoResponse(
+                          p.getId(), p.getObjectKey(),
+                          storageService.generatePresignedUrl(p.getObjectKey(), PRESIGN_TTL)));
+        }
+        return result;
     }
 }

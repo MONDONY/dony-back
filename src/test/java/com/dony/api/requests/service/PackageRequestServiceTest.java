@@ -83,8 +83,12 @@ class PackageRequestServiceTest {
         lenient().when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
         // Pass-through for presigned avatar URLs
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
-        // Aucune photo par défaut (les mappers appellent activePhotos)
+        // Aucune photo par défaut (les mappers appellent activePhotos ou activePhotosBatch)
         lenient().when(photoService.activePhotos(any())).thenReturn(List.of());
+        lenient().when(photoService.activePhotosBatch(any())).thenReturn(java.util.Map.of());
+        // Default batch stubs for search (batch API used by search/searchNearMe)
+        lenient().when(userRepository.findAllById(any())).thenReturn(List.of(sender));
+        lenient().when(cityRepository.findByNamesIgnoreCaseBatch(any())).thenReturn(java.util.Map.of());
         // Real mapper wired to the same mocks so SearchTests assertions remain valid
         PackageRequestSearchMapper realMapper = new PackageRequestSearchMapper(
                 userRepository, cityRepository, storageService, photoService);
@@ -599,12 +603,14 @@ class PackageRequestServiceTest {
                 .thenReturn(page);
 
             com.dony.api.city.CityEntity cityParis = cityWith(new BigDecimal("48.8566"), new BigDecimal("2.3522"));
+            cityParis.setName("Paris");
             com.dony.api.city.CityEntity cityLyon = cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"));
+            cityLyon.setName("Lyon");
             com.dony.api.city.CityEntity cityMarseille = cityWith(new BigDecimal("43.2965"), new BigDecimal("5.3698"));
-            when(cityRepository.findFirstByNameIgnoreCase("Paris")).thenReturn(Optional.of(cityParis));
-            when(cityRepository.findFirstByNameIgnoreCase("Lyon")).thenReturn(Optional.of(cityLyon));
-            when(cityRepository.findFirstByNameIgnoreCase("Marseille")).thenReturn(Optional.of(cityMarseille));
-            when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
+            cityMarseille.setName("Marseille");
+            // Batch version used by searchNearMe now
+            when(cityRepository.findByNamesIgnoreCaseBatch(any())).thenReturn(
+                    java.util.Map.of("paris", cityParis, "lyon", cityLyon, "marseille", cityMarseille));
 
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
@@ -629,9 +635,10 @@ class PackageRequestServiceTest {
             when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(page);
-            when(cityRepository.findFirstByNameIgnoreCase("Lyon"))
-                .thenReturn(Optional.of(cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"))));
-            when(cityRepository.findFirstByNameIgnoreCase("Dakar")).thenReturn(Optional.empty());
+            com.dony.api.city.CityEntity cityLyon = cityWith(new BigDecimal("45.7640"), new BigDecimal("4.8357"));
+            cityLyon.setName("Lyon");
+            when(cityRepository.findByNamesIgnoreCaseBatch(any()))
+                .thenReturn(java.util.Map.of("lyon", cityLyon));
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.searchNearMe(
@@ -658,13 +665,13 @@ class PackageRequestServiceTest {
         void search_propagatesSenderRatingCount() {
             sender.setRatingCount(7);
             sender.setAverageRating(new java.math.BigDecimal("4.30"));
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            // Batch API used by search()
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
 
             PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
             when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
@@ -683,14 +690,13 @@ class PackageRequestServiceTest {
 
         @Test @DisplayName("negotiable=false (demande à prix ferme) est propagé dans le SearchResponse")
         void search_propagatesFirmPriceNegotiableFalse() {
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
 
             PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
             entity.setNegotiable(false);
             when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
@@ -704,7 +710,7 @@ class PackageRequestServiceTest {
 
         @Test @DisplayName("acceptedPaymentMethods est propagé dans le SearchResponse")
         void search_propagatesAcceptedPaymentMethods() {
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
 
             PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
             entity.setAcceptedPaymentMethods(java.util.Set.of(
@@ -713,7 +719,6 @@ class PackageRequestServiceTest {
             when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
                                     any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var result = service.search(
@@ -727,6 +732,54 @@ class PackageRequestServiceTest {
                     com.dony.api.payments.cash.PaymentMethod.STRIPE,
                     com.dony.api.payments.cash.PaymentMethod.CASH);
         }
+
+        @Test @DisplayName("N résultats → userRepository.findAllById appelé 1 fois, findById jamais")
+        void search_nResults_onlyOneBatchUserQuery() {
+            // Note: findAllById lenient default stub set in @BeforeEach
+            PackageRequestEntity e1 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            PackageRequestEntity e2 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(e1, e2)));
+
+            service.search(org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20), null);
+
+            verify(userRepository, times(1)).findAllById(anyCollection());
+            verify(userRepository, never()).findById(any());
+        }
+
+        @Test @DisplayName("N résultats → cityRepository.findByNamesIgnoreCaseBatch appelé 1 fois")
+        void search_nResults_onlyOneBatchCityQuery() {
+            // Note: findByNamesIgnoreCaseBatch lenient default stub set in @BeforeEach
+            PackageRequestEntity e1 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            PackageRequestEntity e2 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(e1, e2)));
+
+            service.search(org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20), null);
+
+            verify(cityRepository, times(1)).findByNamesIgnoreCaseBatch(anyCollection());
+            verify(cityRepository, never()).findFirstByNameIgnoreCase(anyString());
+        }
+
+        @Test @DisplayName("N résultats → photoService.activePhotosBatch appelé 1 fois, activePhotos jamais")
+        void search_nResults_onlyOneBatchPhotoQuery() {
+            // Note: activePhotosBatch lenient default stub set in @BeforeEach
+            PackageRequestEntity e1 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            PackageRequestEntity e2 = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(e1, e2)));
+
+            service.search(org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20), null);
+
+            verify(photoService, times(1)).activePhotosBatch(anyCollection());
+            verify(photoService, never()).activePhotos(any());
+        }
     }
 
     @Nested @DisplayName("search() — isFavorite flag")
@@ -738,8 +791,8 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
-            when(cityRepository.findFirstByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+            // Batch API used by search()
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
             return entity;
         }
 
@@ -855,7 +908,7 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);
@@ -873,7 +926,7 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(userRepository.findAllById(any())).thenReturn(List.of(sender));
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);
@@ -890,7 +943,8 @@ class PackageRequestServiceTest {
                     org.mockito.ArgumentMatchers.<org.springframework.data.jpa.domain.Specification<PackageRequestEntity>>any(),
                     org.mockito.ArgumentMatchers.<org.springframework.data.domain.Pageable>any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
-            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            // Batch returns empty — sender not found
+            when(userRepository.findAllById(any())).thenReturn(List.of());
             when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
 
             var page = service.search(null, org.springframework.data.domain.PageRequest.of(0, 10), SENDER_ID);

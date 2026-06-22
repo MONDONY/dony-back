@@ -921,6 +921,14 @@ class AnnouncementServiceTest {
     @DisplayName("searchAnnouncements()")
     class SearchTests {
 
+        /** Helper: stub the batch queries used by searchAnnouncements for a single page. */
+        private void stubBatchSearch(UserEntity traveler, long bidCount) {
+            when(userRepository.findAllById(anyCollection())).thenReturn(List.of(traveler));
+            java.util.List<Object[]> bidCounts = new java.util.ArrayList<>();
+            bidCounts.add(new Object[]{ANNOUNCEMENT_ID, bidCount});
+            when(bidRepository.countVisibleByAnnouncementIds(anyCollection())).thenReturn(bidCounts);
+        }
+
         @Test
         @DisplayName("sans filtre + tri par date ASC → retourne la page")
         void search_noFilters_sortByDate_returnsPage() {
@@ -931,8 +939,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(3L);
+            stubBatchSearch(traveler, 3L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
@@ -950,8 +957,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(1L);
+            stubBatchSearch(traveler, 1L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", "Dakar",
@@ -971,8 +977,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "asc", PageRequest.of(0, 10), null);
@@ -988,8 +993,9 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            // Empty result from findAllById simulates missing traveler
+            when(userRepository.findAllById(anyCollection())).thenReturn(List.of());
+            when(bidRepository.countVisibleByAnnouncementIds(anyCollection())).thenReturn(List.of());
 
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "desc", PageRequest.of(0, 10), null);
@@ -1007,8 +1013,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(traveler, 0L);
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
                     null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10), null));
@@ -1024,8 +1029,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
@@ -1045,8 +1049,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(traveler));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
@@ -1071,8 +1074,7 @@ class AnnouncementServiceTest {
 
             when(userRepository.findByFirebaseUid("viewer-uid")).thenReturn(Optional.of(viewer));
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(tripOwner, 0L);
             when(favoriteRepository.findTargetIds(viewerId, FavoriteTargetType.TRIP))
                     .thenReturn(List.of(ANNOUNCEMENT_ID));
 
@@ -1096,8 +1098,7 @@ class AnnouncementServiceTest {
 
             when(userRepository.findByFirebaseUid("viewer-uid")).thenReturn(Optional.of(viewer));
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(tripOwner, 0L);
             when(favoriteRepository.findTargetIds(viewerId, FavoriteTargetType.TRIP))
                     .thenReturn(List.of()); // no favorites
 
@@ -1116,8 +1117,7 @@ class AnnouncementServiceTest {
             Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
 
             when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
-            when(userRepository.findById(USER_ID)).thenReturn(Optional.of(tripOwner));
-            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+            stubBatchSearch(tripOwner, 0L);
             // viewerFirebaseUid = null → anonymous caller
 
             Page<?> result = announcementService.searchAnnouncements(
@@ -1126,6 +1126,54 @@ class AnnouncementServiceTest {
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.isFavorite()).isFalse();
             verify(favoriteRepository, never()).findTargetIds(any(), any());
+        }
+
+        // ─── N+1 batch verification ────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("recherche N résultats → userRepository.findAllById appelé 1 fois (pas N), findById jamais")
+        void search_nResults_onlyOneUserBatchQuery() {
+            UserEntity traveler = buildTraveler();
+            traveler.setFirstName("Amara");
+            // Build two announcements with the same traveler
+            AnnouncementEntity ann1 = buildAnnouncement(traveler);
+            AnnouncementEntity ann2 = buildAnnouncement(traveler);
+            UUID id2 = UUID.randomUUID();
+            setId(ann2, id2);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann1, ann2));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findAllById(anyCollection())).thenReturn(List.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementIds(anyCollection()))
+                    .thenReturn(List.of(new Object[]{ANNOUNCEMENT_ID, 0L}, new Object[]{id2, 1L}));
+
+            announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            // Batch call made once for both rows
+            verify(userRepository, times(1)).findAllById(anyCollection());
+            // Per-row call never used
+            verify(userRepository, never()).findById(any());
+        }
+
+        @Test
+        @DisplayName("recherche N résultats → bidRepository.countVisibleByAnnouncementIds appelé 1 fois, countVisibleByAnnouncementId jamais")
+        void search_nResults_onlyOneBidCountBatchQuery() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity ann1 = buildAnnouncement(traveler);
+            AnnouncementEntity ann2 = buildAnnouncement(traveler);
+            setId(ann2, UUID.randomUUID());
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann1, ann2));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            when(userRepository.findAllById(anyCollection())).thenReturn(List.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementIds(anyCollection())).thenReturn(List.of());
+
+            announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+
+            verify(bidRepository, times(1)).countVisibleByAnnouncementIds(anyCollection());
+            verify(bidRepository, never()).countVisibleByAnnouncementId(any());
         }
     }
 
