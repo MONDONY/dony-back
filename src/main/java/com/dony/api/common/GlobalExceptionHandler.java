@@ -24,6 +24,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -261,6 +263,20 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create(BASE_TYPE + "not-found"));
         problem.setTitle("Not Found");
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+
+    /**
+     * Requête multipart invalide : Content-Type non multipart sur un endpoint
+     * d'upload, ou part de fichier requise absente. Erreur client → 400, pas 500.
+     */
+    @ExceptionHandler({MultipartException.class, MissingServletRequestPartException.class})
+    public ResponseEntity<ProblemDetail> handleMultipart(Exception ex) {
+        log.warn("Multipart/upload invalide: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Requête multipart invalide ou fichier manquant");
+        problem.setType(URI.create(BASE_TYPE + "bad-multipart"));
+        problem.setTitle("Bad Request");
+        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(Exception.class)

@@ -22,6 +22,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -381,6 +382,25 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
             assertThat(response.getBody().getTitle()).isEqualTo("Not Found");
             assertThat(response.getBody().getType().toString()).contains("not-found");
+        }
+    }
+
+    @Nested
+    @DisplayName("handleMultipart()")
+    class MultipartTests {
+
+        @Test
+        @DisplayName("MultipartException (upload non multipart) → 400")
+        void handleMultipart_returns400() {
+            MultipartException ex = new MultipartException(
+                    "Current request is not a multipart request");
+
+            ResponseEntity<ProblemDetail> response = handler.handleMultipart(ex);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getTitle()).isEqualTo("Bad Request");
+            assertThat(response.getBody().getType().toString()).contains("bad-multipart");
         }
     }
 }
