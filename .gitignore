@@ -54,3 +54,6 @@ CLAUDE.md
 # JVM fatal error / replay dumps (crashs de fork de test)
 hs_err_pid*.log
 replay_pid*.log
+
+# Claude Code scratch (worktrees, état local outillage)
+.claude/
