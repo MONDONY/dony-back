@@ -54,4 +54,6 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
     @Query("SELECT c FROM ConversationEntity c WHERE c.bidId = :bidId AND (c.senderId = :userId OR c.travelerId = :userId)")
     Optional<ConversationEntity> findByBidIdAndParticipantIgnoreDeleted(
             @Param("bidId") UUID bidId, @Param("userId") UUID userId);
+
+    Page<ConversationEntity> findAllByDeletedAtIsNull(Pageable pageable);
 }

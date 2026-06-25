@@ -7,7 +7,9 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -104,6 +106,30 @@ public class FirestoreService {
                      .update("deletedAt", Instant.now().toString()).get();
         } catch (Exception e) {
             log.warn("Firestore markConversationDeleted failed: {}", e.getMessage());
+        }
+    }
+
+    public List<Map<String, Object>> getMessages(String conversationId) {
+        if (firestore == null) {
+            log.warn("Firestore disabled — skipping getMessages");
+            return List.of();
+        }
+        try {
+            var snapshot = firestore.collection("conversations")
+                    .document(conversationId)
+                    .collection("messages")
+                    .orderBy("sentAt")
+                    .get().get();
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (var doc : snapshot.getDocuments()) {
+                Map<String, Object> data = new HashMap<>(doc.getData());
+                data.put("id", doc.getId());
+                result.add(data);
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Firestore getMessages failed for {}: {}", conversationId, e.getMessage());
+            return List.of();
         }
     }
 
