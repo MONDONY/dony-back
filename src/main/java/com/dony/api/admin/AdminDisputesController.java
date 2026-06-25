@@ -11,6 +11,7 @@ import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.disputes.DisputeEntity;
 import com.dony.api.disputes.DisputeRepository;
 import org.springframework.data.domain.Page;
@@ -28,6 +29,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -104,8 +106,8 @@ public class AdminDisputesController {
         disputeRepo.save(entity);
 
         auditService.log("DISPUTE", entity.getId(), "RESOLVE", null,
-                Map.of("resolution", request.resolution() != null ? request.resolution() : "",
-                       "note", request.note() != null ? request.note() : ""));
+                Map.of("resolution", Objects.toString(request.resolution(), ""),
+                       "note", Objects.toString(request.note(), "")));
 
         Set<UUID> resolveIds = new HashSet<>();
         if (entity.getSenderId() != null) resolveIds.add(entity.getSenderId());
@@ -132,8 +134,8 @@ public class AdminDisputesController {
 
         auditService.log("DISPUTE", entity.getId(), "GUARANTEE_FUND", null,
                 Map.of("amountCents", request.amountCents(),
-                       "beneficiaryUserId", request.beneficiaryUserId() != null ? request.beneficiaryUserId().toString() : "",
-                       "reason", request.reason() != null ? request.reason() : ""));
+                       "beneficiaryUserId", Objects.toString(request.beneficiaryUserId() != null ? request.beneficiaryUserId().toString() : null, ""),
+                       "reason", Objects.toString(request.reason(), "")));
 
         Set<UUID> gfIds = new HashSet<>();
         if (entity.getSenderId() != null) gfIds.add(entity.getSenderId());
@@ -150,23 +152,12 @@ public class AdminDisputesController {
 
     @GetMapping("/admin/cancellations")
     public ResponseEntity<Page<AdminCancellationResponse>> listCancellations(
-            @RequestParam(required = false) String noShowStatus,
+            @RequestParam(required = false) CancellationStatus noShowStatus,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        CancellationStatus statusEnum = null;
-        if (noShowStatus != null) {
-            try {
-                statusEnum = CancellationStatus.valueOf(noShowStatus.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new DonyBusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "INVALID_STATUS", "Statut invalide", "Valeur noShowStatus inconnue: " + noShowStatus);
-            }
-        }
-
         Page<AdminCancellationResponse> result = cancellationRepo
-                .findAdminFiltered(statusEnum, PageRequest.of(page, size, Sort.by("createdAt").descending()))
+                .findAdminFiltered(noShowStatus, PageRequest.of(page, size, Sort.by("createdAt").descending()))
                 .map(this::toCancellationResponse);
         return ResponseEntity.ok(result);
     }
@@ -185,7 +176,7 @@ public class AdminDisputesController {
         if (userId == null) return null;
         UserEntity u = users.get(userId);
         if (u == null) return null;
-        return u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "");
+        return MatchingTextUtil.buildName(u);
     }
 
     private AdminDisputeListItemResponse toDisputeListItem(DisputeEntity d, Map<UUID, UserEntity> users) {

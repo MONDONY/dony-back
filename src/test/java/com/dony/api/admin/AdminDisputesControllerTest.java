@@ -180,15 +180,22 @@ class AdminDisputesControllerTest {
                 .thenReturn(page);
 
         ResponseEntity<Page<AdminCancellationResponse>> resp =
-                controller().listCancellations("CONTESTED", 0, 20);
+                controller().listCancellations(CancellationStatus.CONTESTED, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(cancellationRepo).findAdminFiltered(eq(CancellationStatus.CONTESTED), any(Pageable.class));
     }
 
     @Test
-    void listCancellations_withInvalidStatus_throwsBadRequest() {
-        assertThrows(DonyBusinessException.class,
-                () -> controller().listCancellations("INVALID_STATUS", 0, 20));
+    void listCancellations_withNullStatus_returnsOk() {
+        Page<CancellationEntity> page = new PageImpl<>(List.of());
+        when(cancellationRepo.findAdminFiltered(eq(null), any(Pageable.class)))
+                .thenReturn(page);
+
+        ResponseEntity<Page<AdminCancellationResponse>> resp =
+                controller().listCancellations(null, 0, 20);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(cancellationRepo).findAdminFiltered(eq(null), any(Pageable.class));
     }
 }

@@ -4,6 +4,7 @@ import com.dony.api.admin.dto.AdminAuditEntryResponse;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditLogRepository;
+import com.dony.api.common.MatchingTextUtil;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -58,7 +59,7 @@ public class AdminAuditController {
         Map<UUID, String> actorNames = userRepo.findAllById(actorIds).stream()
             .collect(Collectors.toMap(
                 UserEntity::getId,
-                u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "")
+                MatchingTextUtil::buildName
             ));
 
         Page<AdminAuditEntryResponse> result = auditPage.map(e ->

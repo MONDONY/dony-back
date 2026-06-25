@@ -4,6 +4,7 @@ import com.dony.api.admin.dto.*;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.matching.*;
 import com.dony.api.tracking.TrackingEventEntity;
 import com.dony.api.tracking.TrackingEventRepository;
@@ -37,24 +38,14 @@ public class AdminBidsController {
 
     @GetMapping("/admin/bids")
     public ResponseEntity<Page<AdminBidListItemResponse>> listBids(
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) BidStatus status,
             @RequestParam(required = false) UUID announcementId,
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        BidStatus bidStatus = null;
-        if (status != null) {
-            try {
-                bidStatus = BidStatus.valueOf(status.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new com.dony.api.common.DonyBusinessException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST,
-                    "INVALID_BID_STATUS", "Statut invalide", "Valeur status inconnue: " + status);
-            }
-        }
         Page<BidEntity> bidsPage = bidRepo.findAdminFiltered(
-                bidStatus, announcementId, query,
+                status, announcementId, query,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));
 
         // Batch load announcements to avoid N+1
@@ -146,7 +137,7 @@ public class AdminBidsController {
         String travelerName = ann != null && ann.getTravelerId() != null
                 ? userNames.get(ann.getTravelerId()) : null;
         String corridor = ann != null
-                ? ann.getDepartureCity() + " → " + ann.getArrivalCity() : "";
+                ? MatchingTextUtil.corridorLabel(ann.getDepartureCity(), ann.getArrivalCity()) : "";
         String paymentMethod = b.getPaymentMethod() != null ? b.getPaymentMethod().name() : null;
         return new AdminBidListItemResponse(
                 b.getId(), b.getStatus().name(), b.getAnnouncementId(),
@@ -169,7 +160,7 @@ public class AdminBidsController {
     private AdminAnnouncementListItemResponse toAnnouncementListItem(AnnouncementEntity a,
             Map<UUID, String> userNames) {
         String travelerName = a.getTravelerId() != null ? userNames.get(a.getTravelerId()) : null;
-        String corridor = a.getDepartureCity() + " → " + a.getArrivalCity();
+        String corridor = MatchingTextUtil.corridorLabel(a.getDepartureCity(), a.getArrivalCity());
         return new AdminAnnouncementListItemResponse(
                 a.getId(), a.getStatus().name(), travelerName,
                 corridor, a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg());
@@ -180,8 +171,6 @@ public class AdminBidsController {
         return userRepo.findAllById(userIds).stream()
                 .collect(Collectors.toMap(
                         UserEntity::getId,
-                        u -> u.getFirstName() != null
-                                ? u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "")
-                                : (u.getLastName() != null ? u.getLastName() : "")));
+                        MatchingTextUtil::buildName));
     }
 }

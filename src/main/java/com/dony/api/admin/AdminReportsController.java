@@ -6,6 +6,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.signalements.ReportEntity;
 import com.dony.api.signalements.ReportRepository;
 import com.dony.api.signalements.ReportStatus;
@@ -122,6 +123,6 @@ public class AdminReportsController {
         if (reporterId == null) return null;
         UserEntity u = users.get(reporterId);
         if (u == null) return null;
-        return u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "");
+        return MatchingTextUtil.buildName(u);
     }
 }

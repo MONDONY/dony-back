@@ -18,7 +18,6 @@ public interface AdminAlertRepository extends JpaRepository<AdminAlertEntity, UU
             WHERE (:type IS NULL OR a.type = :type)
               AND (:severity IS NULL OR a.severity = :severity)
               AND (:resolved IS NULL OR a.resolved = :resolved)
-            ORDER BY a.createdAt DESC
             """)
     Page<AdminAlertEntity> findFiltered(
             @Param("type") String type,

@@ -1,6 +1,7 @@
 package com.dony.api.admin.dto;
 
 import com.dony.api.auth.UserEntity;
+import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.ratings.RatingEntity;
 
 import java.time.LocalDateTime;
@@ -38,6 +39,6 @@ public record AdminRatingResponse(
         if (userId == null) return null;
         UserEntity u = users.get(userId);
         if (u == null) return null;
-        return u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "");
+        return MatchingTextUtil.buildName(u);
     }
 }
