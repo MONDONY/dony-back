@@ -11,11 +11,13 @@ import com.dony.api.tracking.TrackingEventRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,6 +43,8 @@ public class AdminBidsController {
             @RequestParam(required = false) BidStatus status,
             @RequestParam(required = false) UUID announcementId,
             @RequestParam(required = false) String query,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
@@ -48,6 +52,8 @@ public class AdminBidsController {
                 status != null ? status.name() : null,
                 announcementId != null ? announcementId.toString() : null,
                 query,
+                dateFrom,
+                dateTo,
                 PageRequest.of(page, size));
 
         // Batch load announcements to avoid N+1

@@ -33,6 +33,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -91,9 +92,11 @@ public class AdminPaymentController {
     @GetMapping
     public ResponseEntity<Page<AdminPaymentListItemResponse>> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, PageRequest.of(page, size));
+        Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, dateFrom, dateTo, PageRequest.of(page, size));
         return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
     }
 

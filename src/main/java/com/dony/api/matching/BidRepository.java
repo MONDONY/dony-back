@@ -275,6 +275,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
           AND (CAST(:status AS VARCHAR) IS NULL OR b.status = :status)
           AND (CAST(:announcementId AS VARCHAR) IS NULL OR b.announcement_id = CAST(:announcementId AS UUID))
           AND (CAST(:q AS VARCHAR) IS NULL OR b.tracking_number ILIKE '%' || :q || '%')
+          AND (CAST(:from AS TIMESTAMP) IS NULL OR b.created_at >= CAST(:from AS TIMESTAMP))
+          AND (CAST(:to AS TIMESTAMP) IS NULL OR b.created_at <= CAST(:to AS TIMESTAMP))
         ORDER BY b.created_at DESC
         """,
         countQuery = """
@@ -283,11 +285,15 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
           AND (CAST(:status AS VARCHAR) IS NULL OR b.status = :status)
           AND (CAST(:announcementId AS VARCHAR) IS NULL OR b.announcement_id = CAST(:announcementId AS UUID))
           AND (CAST(:q AS VARCHAR) IS NULL OR b.tracking_number ILIKE '%' || :q || '%')
+          AND (CAST(:from AS TIMESTAMP) IS NULL OR b.created_at >= CAST(:from AS TIMESTAMP))
+          AND (CAST(:to AS TIMESTAMP) IS NULL OR b.created_at <= CAST(:to AS TIMESTAMP))
         """,
         nativeQuery = true)
     Page<BidEntity> findAdminFiltered(
             @Param("status") String status,
             @Param("announcementId") String announcementId,
             @Param("q") String q,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to,
             Pageable pageable);
 }
