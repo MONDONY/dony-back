@@ -1,6 +1,7 @@
 package com.dony.api.admin;
 
 import com.dony.api.admin.dto.AdminRatingResponse;
+import com.dony.api.admin.dto.ExcludeRatingRequest;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -120,10 +121,32 @@ class AdminRatingsControllerTest {
         when(ratingRepo.save(rating)).thenReturn(rating);
         when(userRepo.findAllById(any())).thenReturn(List.of());
 
-        ResponseEntity<AdminRatingResponse> resp = controller().excludeRating(id);
+        ResponseEntity<AdminRatingResponse> resp = controller().excludeRating(id,
+                new ExcludeRatingRequest(true, "farming détecté"));
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(rating.isFlagged()).isTrue();
+        verify(ratingRepo).save(rating);
+        verify(auditService).log(eq("RATING"), eq(id), eq("RATING_EXCLUDED"), isNull(), anyMap());
+    }
+
+    @Test
+    void exclude_setsExcludedAndAudits() {
+        UUID id = UUID.randomUUID();
+        RatingEntity rating = new RatingEntity();
+        assertThat(rating.isFlagged()).isFalse();
+
+        when(ratingRepo.findById(id)).thenReturn(Optional.of(rating));
+        when(ratingRepo.save(rating)).thenReturn(rating);
+        when(userRepo.findAllById(any())).thenReturn(List.of());
+
+        ResponseEntity<AdminRatingResponse> resp = controller().excludeRating(id,
+                new ExcludeRatingRequest(true, "farming détecté"));
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(rating.isFlagged()).isTrue();
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().excluded()).isTrue();
         verify(ratingRepo).save(rating);
         verify(auditService).log(eq("RATING"), eq(id), eq("RATING_EXCLUDED"), isNull(), anyMap());
     }
@@ -134,7 +157,7 @@ class AdminRatingsControllerTest {
         when(ratingRepo.findById(id)).thenReturn(Optional.empty());
 
         DonyBusinessException ex = assertThrows(DonyBusinessException.class,
-                () -> controller().excludeRating(id));
+                () -> controller().excludeRating(id, new ExcludeRatingRequest(true, null)));
         assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 

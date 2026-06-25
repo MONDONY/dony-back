@@ -1,6 +1,7 @@
 package com.dony.api.admin;
 
 import com.dony.api.admin.dto.AdminRatingResponse;
+import com.dony.api.admin.dto.ExcludeRatingRequest;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -71,11 +72,13 @@ public class AdminRatingsController {
 
     @PostMapping("/admin/ratings/{id}/exclude")
     @Transactional
-    public ResponseEntity<AdminRatingResponse> excludeRating(@PathVariable UUID id) {
+    public ResponseEntity<AdminRatingResponse> excludeRating(@PathVariable UUID id,
+                                                              @RequestBody ExcludeRatingRequest request) {
         RatingEntity rating = findRatingOrThrow(id);
-        rating.setFlagged(true);
+        rating.setFlagged(request.excluded());
         ratingRepo.save(rating);
-        auditService.log("RATING", id, "RATING_EXCLUDED", null, Map.of("ratingId", id.toString()));
+        auditService.log("RATING", id, "RATING_EXCLUDED", null,
+                Map.of("ratingId", id.toString(), "reason", request.reason() != null ? request.reason() : ""));
 
         Map<UUID, UserEntity> usersById = buildUsersMap(rating);
         return ResponseEntity.ok(AdminRatingResponse.from(rating, usersById));

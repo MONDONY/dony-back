@@ -10,25 +10,27 @@ import java.util.UUID;
 public record AdminRatingResponse(
         UUID id,
         UUID bidId,
+        String raterName,
+        String ratedName,
         int score,
         String comment,
-        String fromUserName,
-        String toUserName,
         boolean flagged,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        boolean excluded,
+        String excludedReason,
+        LocalDateTime createdAt
 ) {
     public static AdminRatingResponse from(RatingEntity e, Map<UUID, UserEntity> users) {
         return new AdminRatingResponse(
                 e.getId(),
                 e.getBidId(),
-                e.getStars(),
-                e.getComment(),
                 userName(e.getRaterId(), users),
                 userName(e.getRatedUserId(), users),
+                e.getStars(),
+                e.getComment(),
                 e.isFlagged(),
-                e.getCreatedAt(),
-                e.getUpdatedAt()
+                e.isFlagged(),
+                null,
+                e.getCreatedAt()
         );
     }
 
