@@ -48,7 +48,7 @@ public class AdminBidsController {
                 status != null ? status.name() : null,
                 announcementId != null ? announcementId.toString() : null,
                 query,
-                PageRequest.of(page, size, Sort.by("createdAt").descending()));
+                PageRequest.of(page, size));
 
         // Batch load announcements to avoid N+1
         Set<UUID> annIds = bidsPage.stream()

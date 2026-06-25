@@ -47,7 +47,7 @@ public class AdminAuditController {
 
         Page<com.dony.api.common.AuditLogEntity> auditPage = auditRepo
             .findFiltered(action, entityType, actorId, from, to,
-                PageRequest.of(page, size, Sort.by("createdAt").descending()));
+                PageRequest.of(page, size));
 
         // Batch-load all actor names in a single query — avoids N+1
         Set<UUID> actorIds = auditPage.getContent().stream()
