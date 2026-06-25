@@ -22,10 +22,16 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import com.dony.api.auth.UserEntity;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @PreAuthorize("hasRole('ADMIN')")
@@ -56,16 +62,32 @@ public class AdminDisputesController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Page<AdminDisputeListItemResponse> result = disputeRepo
-                .findAdminFiltered(status, PageRequest.of(page, size, Sort.by("createdAt").descending()))
-                .map(this::toDisputeListItem);
+        Page<DisputeEntity> disputes = disputeRepo
+                .findAdminFiltered(status, PageRequest.of(page, size, Sort.by("createdAt").descending()));
+
+        Set<UUID> userIds = new HashSet<>();
+        for (DisputeEntity d : disputes.getContent()) {
+            if (d.getSenderId() != null) userIds.add(d.getSenderId());
+            if (d.getTravelerId() != null) userIds.add(d.getTravelerId());
+        }
+        Map<UUID, UserEntity> usersById = userRepo.findAllById(userIds).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+
+        Page<AdminDisputeListItemResponse> result = disputes.map(d -> toDisputeListItem(d, usersById));
         return ResponseEntity.ok(result);
     }
 
     @GetMapping("/admin/disputes/{id}")
     public ResponseEntity<AdminDisputeDetailResponse> getDispute(@PathVariable UUID id) {
         DisputeEntity entity = findDisputeOrThrow(id);
-        return ResponseEntity.ok(toDisputeDetail(entity));
+        Set<UUID> ids = new HashSet<>();
+        if (entity.getSenderId() != null) ids.add(entity.getSenderId());
+        if (entity.getTravelerId() != null) ids.add(entity.getTravelerId());
+        Map<UUID, UserEntity> usersById = userRepo.findAllById(ids).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+        return ResponseEntity.ok(toDisputeDetail(entity, usersById));
     }
 
     @PostMapping("/admin/disputes/{id}/resolve")
@@ -85,7 +107,13 @@ public class AdminDisputesController {
                 Map.of("resolution", String.valueOf(request.resolution()),
                        "note", String.valueOf(request.note())));
 
-        return ResponseEntity.ok(toDisputeDetail(entity));
+        Set<UUID> resolveIds = new HashSet<>();
+        if (entity.getSenderId() != null) resolveIds.add(entity.getSenderId());
+        if (entity.getTravelerId() != null) resolveIds.add(entity.getTravelerId());
+        Map<UUID, UserEntity> resolveUsers = userRepo.findAllById(resolveIds).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+        return ResponseEntity.ok(toDisputeDetail(entity, resolveUsers));
     }
 
     @PostMapping("/admin/disputes/{id}/guarantee-fund")
@@ -107,7 +135,13 @@ public class AdminDisputesController {
                        "beneficiaryUserId", String.valueOf(request.beneficiaryUserId()),
                        "reason", String.valueOf(request.reason())));
 
-        return ResponseEntity.ok(toDisputeDetail(entity));
+        Set<UUID> gfIds = new HashSet<>();
+        if (entity.getSenderId() != null) gfIds.add(entity.getSenderId());
+        if (entity.getTravelerId() != null) gfIds.add(entity.getTravelerId());
+        Map<UUID, UserEntity> gfUsers = userRepo.findAllById(gfIds).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+        return ResponseEntity.ok(toDisputeDetail(entity, gfUsers));
     }
 
     // -------------------------------------------------------------------------
@@ -147,33 +181,33 @@ public class AdminDisputesController {
                         HttpStatus.NOT_FOUND, "dispute-not-found", "Not Found", "Litige introuvable"));
     }
 
-    private String userName(UUID userId) {
+    private String userName(UUID userId, Map<UUID, UserEntity> users) {
         if (userId == null) return null;
-        return userRepo.findById(userId)
-                .map(u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : ""))
-                .orElse(null);
+        UserEntity u = users.get(userId);
+        if (u == null) return null;
+        return u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "");
     }
 
-    private AdminDisputeListItemResponse toDisputeListItem(DisputeEntity d) {
+    private AdminDisputeListItemResponse toDisputeListItem(DisputeEntity d, Map<UUID, UserEntity> users) {
         return new AdminDisputeListItemResponse(
                 d.getId(),
                 d.getBidId(),
                 d.getType(),
                 d.getStatus(),
-                userName(d.getSenderId()),
-                userName(d.getTravelerId()),
+                userName(d.getSenderId(), users),
+                userName(d.getTravelerId(), users),
                 d.isRefundFrozen(),
                 d.getCreatedAt());
     }
 
-    private AdminDisputeDetailResponse toDisputeDetail(DisputeEntity d) {
+    private AdminDisputeDetailResponse toDisputeDetail(DisputeEntity d, Map<UUID, UserEntity> users) {
         return new AdminDisputeDetailResponse(
                 d.getId(),
                 d.getBidId(),
                 d.getType(),
                 d.getStatus(),
-                userName(d.getSenderId()),
-                userName(d.getTravelerId()),
+                userName(d.getSenderId(), users),
+                userName(d.getTravelerId(), users),
                 d.isRefundFrozen(),
                 d.getCreatedAt(),
                 d.getResolutionType(),

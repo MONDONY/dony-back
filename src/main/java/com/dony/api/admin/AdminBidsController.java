@@ -43,7 +43,16 @@ public class AdminBidsController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        BidStatus bidStatus = status != null ? BidStatus.valueOf(status) : null;
+        BidStatus bidStatus = null;
+        if (status != null) {
+            try {
+                bidStatus = BidStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new com.dony.api.common.DonyBusinessException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "INVALID_BID_STATUS", "Statut invalide", "Valeur status inconnue: " + status);
+            }
+        }
         Page<BidEntity> bidsPage = bidRepo.findAdminFiltered(
                 bidStatus, announcementId, query,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));

@@ -22,7 +22,11 @@ import org.springframework.web.bind.annotation.*;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @PreAuthorize("hasRole('ADMIN')")
@@ -47,11 +51,19 @@ public class AdminReportsController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Page<ReportEntity> entities = reportRepo.findFiltered(
+        Page<ReportEntity> reports = reportRepo.findFiltered(
                 status, targetType,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));
 
-        Page<AdminReportResponse> result = entities.map(this::toResponse);
+        Set<UUID> reporterIds = reports.getContent().stream()
+                .map(ReportEntity::getReporterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, UserEntity> usersById = userRepo.findAllById(reporterIds).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+
+        Page<AdminReportResponse> result = reports.map(r -> toResponse(r, usersById));
         return ResponseEntity.ok(result);
     }
 
@@ -78,15 +90,19 @@ public class AdminReportsController {
                         "note", request.note() != null ? request.note() : ""
                 ));
 
-        return ResponseEntity.ok(toResponse(report));
+        Map<UUID, UserEntity> singleUser = userRepo.findAllById(
+                report.getReporterId() != null ? Set.of(report.getReporterId()) : Set.of()).stream()
+                .filter(u -> u.getId() != null)
+                .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
+        return ResponseEntity.ok(toResponse(report, singleUser));
     }
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private AdminReportResponse toResponse(ReportEntity r) {
-        String reporterName = resolveReporterName(r.getReporterId());
+    private AdminReportResponse toResponse(ReportEntity r, Map<UUID, UserEntity> users) {
+        String reporterName = resolveReporterName(r.getReporterId(), users);
         return new AdminReportResponse(
                 r.getId(),
                 r.getTargetType() != null ? r.getTargetType().name() : null,
@@ -102,10 +118,10 @@ public class AdminReportsController {
         );
     }
 
-    private String resolveReporterName(UUID reporterId) {
+    private String resolveReporterName(UUID reporterId, Map<UUID, UserEntity> users) {
         if (reporterId == null) return null;
-        return userRepo.findById(reporterId)
-                .map(u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : ""))
-                .orElse(null);
+        UserEntity u = users.get(reporterId);
+        if (u == null) return null;
+        return u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "");
     }
 }

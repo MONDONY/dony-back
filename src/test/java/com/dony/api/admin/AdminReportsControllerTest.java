@@ -24,6 +24,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+
+import org.springframework.test.util.ReflectionTestUtils;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
@@ -88,9 +91,10 @@ class AdminReportsControllerTest {
         reporter.setFirstName("Jean");
         reporter.setLastName("Dupont");
 
+        ReflectionTestUtils.setField(reporter, "id", reporterId);
         Page<ReportEntity> page = new PageImpl<>(List.of(report));
         when(reportRepo.findFiltered(isNull(), isNull(), any(Pageable.class))).thenReturn(page);
-        when(userRepo.findById(reporterId)).thenReturn(Optional.of(reporter));
+        when(userRepo.findAllById(anyCollection())).thenReturn(List.of(reporter));
 
         ResponseEntity<Page<AdminReportResponse>> resp =
                 controller().listReports(null, null, 0, 20);
@@ -110,7 +114,6 @@ class AdminReportsControllerTest {
 
         when(reportRepo.findById(id)).thenReturn(Optional.of(report));
         when(reportRepo.save(report)).thenReturn(report);
-        when(userRepo.findById(reporterId)).thenReturn(Optional.empty());
 
         ResolveReportRequest request = new ResolveReportRequest("WARN_USER", "Contenu inapproprié");
         ResponseEntity<AdminReportResponse> resp = controller().resolveReport(id, request);
@@ -142,7 +145,6 @@ class AdminReportsControllerTest {
 
         when(reportRepo.findById(id)).thenReturn(Optional.of(report));
         when(reportRepo.save(report)).thenReturn(report);
-        when(userRepo.findById(reporterId)).thenReturn(Optional.empty());
 
         ResolveReportRequest request = new ResolveReportRequest("BAN_USER", "Récidiviste");
         ResponseEntity<AdminReportResponse> resp = controller().resolveReport(id, request);
