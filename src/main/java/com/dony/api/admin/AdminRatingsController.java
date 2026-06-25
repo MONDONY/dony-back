@@ -75,7 +75,7 @@ public class AdminRatingsController {
     public ResponseEntity<AdminRatingResponse> excludeRating(@PathVariable UUID id,
                                                               @RequestBody ExcludeRatingRequest request) {
         RatingEntity rating = findRatingOrThrow(id);
-        rating.setFlagged(request.excluded());
+        rating.setExcludedFromAverage(request.excluded());
         ratingRepo.save(rating);
         auditService.log("RATING", id, "RATING_EXCLUDED", null,
                 Map.of("ratingId", id.toString(), "reason", request.reason() != null ? request.reason() : ""));

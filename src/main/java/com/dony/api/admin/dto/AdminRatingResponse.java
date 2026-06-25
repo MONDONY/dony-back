@@ -28,7 +28,7 @@ public record AdminRatingResponse(
                 e.getStars(),
                 e.getComment(),
                 e.isFlagged(),
-                e.isFlagged(),
+                e.isExcludedFromAverage(),
                 null,
                 e.getCreatedAt()
         );

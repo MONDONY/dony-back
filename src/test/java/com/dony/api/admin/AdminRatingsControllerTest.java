@@ -125,7 +125,7 @@ class AdminRatingsControllerTest {
                 new ExcludeRatingRequest(true, "farming détecté"));
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(rating.isFlagged()).isTrue();
+        assertThat(rating.isExcludedFromAverage()).isTrue();
         verify(ratingRepo).save(rating);
         verify(auditService).log(eq("RATING"), eq(id), eq("RATING_EXCLUDED"), isNull(), anyMap());
     }
@@ -134,7 +134,7 @@ class AdminRatingsControllerTest {
     void exclude_setsExcludedAndAudits() {
         UUID id = UUID.randomUUID();
         RatingEntity rating = new RatingEntity();
-        assertThat(rating.isFlagged()).isFalse();
+        assertThat(rating.isExcludedFromAverage()).isFalse();
 
         when(ratingRepo.findById(id)).thenReturn(Optional.of(rating));
         when(ratingRepo.save(rating)).thenReturn(rating);
@@ -144,7 +144,7 @@ class AdminRatingsControllerTest {
                 new ExcludeRatingRequest(true, "farming détecté"));
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(rating.isFlagged()).isTrue();
+        assertThat(rating.isExcludedFromAverage()).isTrue();
         assertThat(resp.getBody()).isNotNull();
         assertThat(resp.getBody().excluded()).isTrue();
         verify(ratingRepo).save(rating);
