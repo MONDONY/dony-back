@@ -20,6 +20,6 @@ public interface CancellationRepository extends JpaRepository<CancellationEntity
            "AND c.contestationDeadline < :now")
     List<CancellationEntity> findExpiredPending(@Param("now") OffsetDateTime now);
 
-    @Query("SELECT c FROM CancellationEntity c WHERE (:noShowStatus IS NULL OR c.noShowStatus = :noShowStatus) ORDER BY c.createdAt DESC")
+    @Query("SELECT c FROM CancellationEntity c WHERE (:noShowStatus IS NULL OR c.noShowStatus = :noShowStatus)")
     Page<CancellationEntity> findAdminFiltered(@Param("noShowStatus") CancellationStatus noShowStatus, Pageable pageable);
 }

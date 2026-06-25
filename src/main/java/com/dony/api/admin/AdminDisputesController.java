@@ -104,8 +104,8 @@ public class AdminDisputesController {
         disputeRepo.save(entity);
 
         auditService.log("DISPUTE", entity.getId(), "RESOLVE", null,
-                Map.of("resolution", String.valueOf(request.resolution()),
-                       "note", String.valueOf(request.note())));
+                Map.of("resolution", request.resolution() != null ? request.resolution() : "",
+                       "note", request.note() != null ? request.note() : ""));
 
         Set<UUID> resolveIds = new HashSet<>();
         if (entity.getSenderId() != null) resolveIds.add(entity.getSenderId());
@@ -132,8 +132,8 @@ public class AdminDisputesController {
 
         auditService.log("DISPUTE", entity.getId(), "GUARANTEE_FUND", null,
                 Map.of("amountCents", request.amountCents(),
-                       "beneficiaryUserId", String.valueOf(request.beneficiaryUserId()),
-                       "reason", String.valueOf(request.reason())));
+                       "beneficiaryUserId", request.beneficiaryUserId() != null ? request.beneficiaryUserId().toString() : "",
+                       "reason", request.reason() != null ? request.reason() : ""));
 
         Set<UUID> gfIds = new HashSet<>();
         if (entity.getSenderId() != null) gfIds.add(entity.getSenderId());
