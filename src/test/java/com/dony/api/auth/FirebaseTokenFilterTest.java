@@ -51,7 +51,7 @@ class FirebaseTokenFilterTest {
         when(adminAuthService.resolve(any())).thenReturn(Optional.empty());
         // Default: request is not an admin route
         when(request.getRequestURI()).thenReturn("/api/some-path");
-        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService);
+        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService, false);
     }
 
     private UserEntity makeUser(UserStatus status) {

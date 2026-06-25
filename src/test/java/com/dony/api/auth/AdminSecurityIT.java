@@ -73,7 +73,7 @@ class AdminSecurityIT {
     // -------------------------------------------------------------------------
 
     private FirebaseTokenFilter buildFilter() {
-        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService);
+        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService, false);
     }
 
     /**

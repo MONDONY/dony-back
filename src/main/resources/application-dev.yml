@@ -79,6 +79,8 @@ dony:
   admin:
     bootstrap:
       secret: ${ADMIN_BOOTSTRAP_SECRET:dony-admin-bootstrap-dev}
+  dev:
+    auth-bypass: true
   commission:
     rate: 0.12
 

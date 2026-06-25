@@ -2,7 +2,9 @@ package com.dony.api.auth;
 
 import com.dony.api.admin.account.AdminAuthService;
 import com.dony.api.admin.account.AdminAuthorities;
+import com.dony.api.admin.account.AdminPermission;
 import com.dony.api.admin.account.AdminPrincipal;
+import com.dony.api.admin.account.AdminRole;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -14,10 +16,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -25,25 +29,35 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 public class FirebaseTokenFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseTokenFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String DEV_BYPASS_TOKEN = "dev-super-admin";
+    private static final UUID DEV_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final UserLinkerService userLinkerService;
     private final ObjectMapper objectMapper;
     private final AdminAuthService adminAuthService;
+    private final boolean devAuthBypassEnabled;
 
     public FirebaseTokenFilter(UserLinkerService userLinkerService,
                                ObjectMapper objectMapper,
-                               AdminAuthService adminAuthService) {
+                               AdminAuthService adminAuthService,
+                               @Value("${dony.dev.auth-bypass:false}") boolean devAuthBypassEnabled) {
         this.userLinkerService = userLinkerService;
         this.objectMapper = objectMapper;
         this.adminAuthService = adminAuthService;
+        this.devAuthBypassEnabled = devAuthBypassEnabled;
     }
 
     @Override
@@ -66,6 +80,11 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
      *         false to continue
      */
     private boolean authenticateToken(String token, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (devAuthBypassEnabled && DEV_BYPASS_TOKEN.equals(token)) {
+            injectDevSuperAdmin();
+            return false;
+        }
+
         if (!isFirebaseReady()) return false;
 
         FirebaseToken decoded;
@@ -125,6 +144,19 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         }
 
         return false;
+    }
+
+    private void injectDevSuperAdmin() {
+        Set<GrantedAuthority> authorities = EnumSet.allOf(AdminPermission.class).stream()
+                .map(p -> (GrantedAuthority) new SimpleGrantedAuthority(p.name()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        authorities.add(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"));
+
+        AdminPrincipal principal = new AdminPrincipal(DEV_ADMIN_ID, "dev-admin", AdminRole.SUPER_ADMIN, false, "dev-uid");
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
     private void setAuthentication(String uid, FirebaseToken decoded,

@@ -190,18 +190,46 @@ public class UserService {
         return saved;
     }
 
+    @Transactional
+    public UserEntity suspendUser(UUID userId, String reason) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+        user.setStatus(UserStatus.SUSPENDED);
+        UserEntity saved = userRepository.save(user);
+        auditService.log("USER", userId, "USER_SUSPENDED_BY_ADMIN", userId,
+                Map.of("reason", reason != null ? reason : ""));
+        eventPublisher.publishEvent(new UserSuspendedEvent(userId, user.getPhoneNumber(), user.getEmail(), reason));
+        log.info("User {} suspended by admin", userId);
+        return saved;
+    }
+
+    @Transactional
+    public UserEntity banUser(UUID userId, String reason) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+        user.setStatus(UserStatus.BANNED);
+        UserEntity saved = userRepository.save(user);
+        auditService.log("USER", userId, "USER_BANNED_BY_ADMIN", userId,
+                Map.of("reason", reason != null ? reason : ""));
+        log.info("User {} banned by admin", userId);
+        return saved;
+    }
+
     // Story 9.5 — Admin unsuspend
     @Transactional
-    public void unsuspendUser(UUID userId) {
+    public UserEntity unsuspendUser(UUID userId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         user.setStatus(UserStatus.ACTIVE);
-        userRepository.save(user);
+        UserEntity saved = userRepository.save(user);
 
         auditService.log("USER", userId, "USER_UNSUSPENDED", userId, Map.of());
         log.info("User {} unsuspended by admin", userId);
+        return saved;
     }
 
     /**

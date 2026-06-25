@@ -1,6 +1,8 @@
 package com.dony.api.auth;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -80,4 +82,46 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
            "(u.commissionCardExpYear < :year OR " +
            "(u.commissionCardExpYear = :year AND u.commissionCardExpMonth <= :month))")
     List<UserEntity> findUsersWithCardExpiringBefore(@Param("year") int year, @Param("month") int month);
+
+    @Query(value = """
+            SELECT u.* FROM users u
+            WHERE u.deleted_at IS NULL
+            AND (CAST(:status AS VARCHAR) IS NULL OR u.status = :status)
+            AND (CAST(:kycStatus AS VARCHAR) IS NULL OR u.kyc_status = :kycStatus)
+            AND (:pro IS NULL OR u.is_pro_account = :pro)
+            AND (CAST(:city AS VARCHAR) IS NULL OR u.city ILIKE :city)
+            AND (CAST(:queryLike AS VARCHAR) IS NULL
+                 OR u.first_name ILIKE :queryLike
+                 OR u.last_name  ILIKE :queryLike
+                 OR u.phone_number ILIKE :queryLike
+                 OR u.email ILIKE :queryLike)
+            AND (CAST(:role AS VARCHAR) IS NULL OR EXISTS (
+                 SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = :role))
+            ORDER BY u.created_at DESC
+            """,
+           countQuery = """
+            SELECT COUNT(*) FROM users u
+            WHERE u.deleted_at IS NULL
+            AND (CAST(:status AS VARCHAR) IS NULL OR u.status = :status)
+            AND (CAST(:kycStatus AS VARCHAR) IS NULL OR u.kyc_status = :kycStatus)
+            AND (:pro IS NULL OR u.is_pro_account = :pro)
+            AND (CAST(:city AS VARCHAR) IS NULL OR u.city ILIKE :city)
+            AND (CAST(:queryLike AS VARCHAR) IS NULL
+                 OR u.first_name ILIKE :queryLike
+                 OR u.last_name  ILIKE :queryLike
+                 OR u.phone_number ILIKE :queryLike
+                 OR u.email ILIKE :queryLike)
+            AND (CAST(:role AS VARCHAR) IS NULL OR EXISTS (
+                 SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = :role))
+            """,
+           nativeQuery = true)
+    Page<UserEntity> findAdminFiltered(
+            @Param("status") String status,
+            @Param("kycStatus") String kycStatus,
+            @Param("pro") Boolean pro,
+            @Param("city") String city,
+            @Param("query") String query,
+            @Param("queryLike") String queryLike,
+            @Param("role") String role,
+            Pageable pageable);
 }
