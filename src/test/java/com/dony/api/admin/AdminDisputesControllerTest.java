@@ -79,7 +79,6 @@ class AdminDisputesControllerTest {
         DisputeEntity entity = new DisputeEntity();
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
-        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().getDispute(id);
 
@@ -105,7 +104,6 @@ class AdminDisputesControllerTest {
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
         when(disputeRepo.save(entity)).thenReturn(entity);
-        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         AdminResolveDisputeRequest request = new AdminResolveDisputeRequest("REFUND_SENDER", "note");
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().resolveDispute(id, request);
@@ -138,7 +136,6 @@ class AdminDisputesControllerTest {
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
         when(disputeRepo.save(entity)).thenReturn(entity);
-        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         AdminGuaranteeFundRequest request = new AdminGuaranteeFundRequest(5000, beneficiary, "paiement fonds de garantie");
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().payGuaranteeFund(id, request);
@@ -187,5 +184,11 @@ class AdminDisputesControllerTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(cancellationRepo).findAdminFiltered(eq(CancellationStatus.CONTESTED), any(Pageable.class));
+    }
+
+    @Test
+    void listCancellations_withInvalidStatus_throwsBadRequest() {
+        assertThrows(DonyBusinessException.class,
+                () -> controller().listCancellations("INVALID_STATUS", 0, 20));
     }
 }

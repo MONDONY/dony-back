@@ -120,8 +120,16 @@ public class AdminDisputesController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        CancellationStatus statusEnum = noShowStatus != null
-                ? CancellationStatus.valueOf(noShowStatus) : null;
+        CancellationStatus statusEnum = null;
+        if (noShowStatus != null) {
+            try {
+                statusEnum = CancellationStatus.valueOf(noShowStatus.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new DonyBusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_STATUS", "Statut invalide", "Valeur noShowStatus inconnue: " + noShowStatus);
+            }
+        }
 
         Page<AdminCancellationResponse> result = cancellationRepo
                 .findAdminFiltered(statusEnum, PageRequest.of(page, size, Sort.by("createdAt").descending()))
@@ -140,6 +148,7 @@ public class AdminDisputesController {
     }
 
     private String userName(UUID userId) {
+        if (userId == null) return null;
         return userRepo.findById(userId)
                 .map(u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : ""))
                 .orElse(null);
