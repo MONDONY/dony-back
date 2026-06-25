@@ -269,16 +269,25 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("userB") UUID userB,
             @Param("activeStatuses") List<BidStatus> activeStatuses);
 
-    @Query("""
-        SELECT b FROM BidEntity b
-        WHERE (:status IS NULL OR b.status = :status)
-          AND (:announcementId IS NULL OR b.announcementId = :announcementId)
-          AND (:q IS NULL OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', :q, '%')))
-        ORDER BY b.createdAt DESC
-        """)
+    @Query(value = """
+        SELECT b.* FROM bids b
+        WHERE b.deleted_at IS NULL
+          AND (CAST(:status AS VARCHAR) IS NULL OR b.status = :status)
+          AND (CAST(:announcementId AS VARCHAR) IS NULL OR b.announcement_id = CAST(:announcementId AS UUID))
+          AND (CAST(:q AS VARCHAR) IS NULL OR b.tracking_number ILIKE '%' || :q || '%')
+        ORDER BY b.created_at DESC
+        """,
+        countQuery = """
+        SELECT COUNT(*) FROM bids b
+        WHERE b.deleted_at IS NULL
+          AND (CAST(:status AS VARCHAR) IS NULL OR b.status = :status)
+          AND (CAST(:announcementId AS VARCHAR) IS NULL OR b.announcement_id = CAST(:announcementId AS UUID))
+          AND (CAST(:q AS VARCHAR) IS NULL OR b.tracking_number ILIKE '%' || :q || '%')
+        """,
+        nativeQuery = true)
     Page<BidEntity> findAdminFiltered(
-            @Param("status") BidStatus status,
-            @Param("announcementId") UUID announcementId,
+            @Param("status") String status,
+            @Param("announcementId") String announcementId,
             @Param("q") String q,
             Pageable pageable);
 }

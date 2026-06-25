@@ -45,7 +45,9 @@ public class AdminBidsController {
             @RequestParam(defaultValue = "20") int size) {
 
         Page<BidEntity> bidsPage = bidRepo.findAdminFiltered(
-                status, announcementId, query,
+                status != null ? status.name() : null,
+                announcementId != null ? announcementId.toString() : null,
+                query,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));
 
         // Batch load announcements to avoid N+1

@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -46,9 +45,8 @@ public class AdminAuditController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        UUID actorUuid = actorId != null ? UUID.fromString(actorId) : null;
         Page<com.dony.api.common.AuditLogEntity> auditPage = auditRepo
-            .findFiltered(action, entityType, actorUuid, from, to,
+            .findFiltered(action, entityType, actorId, from, to,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));
 
         // Batch-load all actor names in a single query — avoids N+1
