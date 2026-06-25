@@ -1,5 +1,8 @@
 package com.dony.api.admin;
 
+import com.dony.api.admin.dto.AdminChargebackResponse;
+import com.dony.api.admin.dto.AdminPaymentDetailResponse;
+import com.dony.api.admin.dto.AdminPaymentListItemResponse;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -12,6 +15,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
+import com.dony.api.payments.chargeback.ChargebackRepository;
 import com.dony.api.payments.dto.PaymentResponse;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.stripe.exception.StripeException;
@@ -23,13 +27,17 @@ import com.stripe.param.TransferCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -60,6 +68,7 @@ public class AdminPaymentController {
     private final AnnouncementRepository announcementRepository;
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ChargebackRepository chargebackRepository;
 
     public AdminPaymentController(PaymentRepository paymentRepository,
                                   AdminAlertRepository adminAlertRepository,
@@ -67,7 +76,8 @@ public class AdminPaymentController {
                                   BidRepository bidRepository,
                                   AnnouncementRepository announcementRepository,
                                   UserRepository userRepository,
-                                  ApplicationEventPublisher eventPublisher) {
+                                  ApplicationEventPublisher eventPublisher,
+                                  ChargebackRepository chargebackRepository) {
         this.paymentRepository = paymentRepository;
         this.adminAlertRepository = adminAlertRepository;
         this.auditService = auditService;
@@ -75,6 +85,24 @@ public class AdminPaymentController {
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.chargebackRepository = chargebackRepository;
+    }
+
+    @GetMapping
+    public ResponseEntity<Page<AdminPaymentListItemResponse>> list(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, PageRequest.of(page, size));
+        return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<AdminPaymentDetailResponse> getById(@PathVariable UUID id) {
+        PaymentEntity p = paymentRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "payment-not-found", "Not Found", "Paiement introuvable"));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(p));
     }
 
     /**

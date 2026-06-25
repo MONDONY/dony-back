@@ -1,5 +1,7 @@
 package com.dony.api.payments;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -133,4 +135,20 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
             @Param("travelerId") UUID travelerId,
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
+
+    @Query(value = """
+            SELECT p.* FROM payments p
+            WHERE p.deleted_at IS NULL
+            AND (CAST(:status AS VARCHAR) IS NULL OR p.status = :status)
+            ORDER BY p.created_at DESC
+            """,
+           countQuery = """
+            SELECT COUNT(*) FROM payments p
+            WHERE p.deleted_at IS NULL
+            AND (CAST(:status AS VARCHAR) IS NULL OR p.status = :status)
+            """,
+           nativeQuery = true)
+    Page<PaymentEntity> findAdminFiltered(
+            @Param("status") String status,
+            Pageable pageable);
 }
