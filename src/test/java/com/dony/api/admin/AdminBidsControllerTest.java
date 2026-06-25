@@ -36,8 +36,11 @@ class AdminBidsControllerTest {
     void listBids_returnsPage() {
         Page<BidEntity> page = new PageImpl<>(List.of());
         when(bidRepo.findAdminFiltered(isNull(), isNull(), isNull(), any())).thenReturn(page);
+        // empty page → annIds is empty → findAllById called with empty collection
+        when(announcementRepo.findAllById(any())).thenReturn(List.of());
         ResponseEntity<?> resp = controller().listBids(null, null, null, 0, 20);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).isNotNull();
     }
 
     @Test
@@ -65,7 +68,9 @@ class AdminBidsControllerTest {
     void listAnnouncements_returnsPage() {
         Page<AnnouncementEntity> page = new PageImpl<>(List.of());
         when(announcementRepo.findAll(any(Pageable.class))).thenReturn(page);
+        // empty page → travelerIds empty → loadUserNames short-circuits, no repo call needed
         ResponseEntity<?> resp = controller().listAnnouncements(0, 20);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).isNotNull();
     }
 }

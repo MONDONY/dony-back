@@ -273,9 +273,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
         SELECT b FROM BidEntity b
         WHERE (:status IS NULL OR b.status = :status)
           AND (:announcementId IS NULL OR b.announcementId = :announcementId)
-          AND (:q IS NULL
-               OR UPPER(CAST(b.id AS string)) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%'))
-               OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%')))
+          AND (:q IS NULL OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', :q, '%')))
         ORDER BY b.createdAt DESC
         """)
     Page<BidEntity> findAdminFiltered(
