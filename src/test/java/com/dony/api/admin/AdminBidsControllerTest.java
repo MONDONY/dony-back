@@ -38,6 +38,7 @@ class AdminBidsControllerTest {
         when(bidRepo.findAdminFiltered(isNull(), isNull(), isNull(), any())).thenReturn(page);
         // empty page → annIds is empty → findAllById called with empty collection
         when(announcementRepo.findAllById(any())).thenReturn(List.of());
+        // userRepo.findAllById not called — empty page → no userIds to resolve
         ResponseEntity<?> resp = controller().listBids(null, null, null, 0, 20);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();
