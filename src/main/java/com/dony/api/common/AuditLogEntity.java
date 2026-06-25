@@ -41,6 +41,9 @@ public class AuditLogEntity {
     @Column(name = "payload", columnDefinition = "jsonb")
     private Map<String, Object> payload;
 
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -60,5 +63,6 @@ public class AuditLogEntity {
     public void setActorId(UUID actorId) { this.actorId = actorId; }
     public Map<String, Object> getPayload() { return payload; }
     public void setPayload(Map<String, Object> payload) { this.payload = payload; }
+    public String getIpAddress() { return ipAddress; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

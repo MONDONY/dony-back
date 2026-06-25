@@ -34,6 +34,9 @@ public class RatingEntity extends BaseEntity {
     @Column(name = "excluded_from_average", nullable = false)
     private boolean excludedFromAverage = false;
 
+    @Column(name = "flagged", nullable = false)
+    private boolean flagged = false;
+
     public UUID getRaterId() { return raterId; }
     public void setRaterId(UUID raterId) { this.raterId = raterId; }
 
@@ -54,4 +57,7 @@ public class RatingEntity extends BaseEntity {
 
     public boolean isExcludedFromAverage() { return excludedFromAverage; }
     public void setExcludedFromAverage(boolean excludedFromAverage) { this.excludedFromAverage = excludedFromAverage; }
+
+    public boolean isFlagged() { return flagged; }
+    public void setFlagged(boolean flagged) { this.flagged = flagged; }
 }

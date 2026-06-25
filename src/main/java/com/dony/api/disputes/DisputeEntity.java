@@ -6,6 +6,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -31,6 +33,21 @@ public class DisputeEntity extends BaseEntity {
     @Column(name = "refund_frozen", nullable = false)
     private boolean refundFrozen = false;
 
+    @Column(name = "resolution_type", length = 40)
+    private String resolutionType;
+
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
+    @Column(name = "resolution_note", columnDefinition = "TEXT")
+    private String resolutionNote;
+
+    @Column(name = "declared_value_eur", precision = 10, scale = 2)
+    private BigDecimal declaredValueEur;
+
+    @Column(name = "beneficiary_user_id")
+    private UUID beneficiaryUserId;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -48,4 +65,19 @@ public class DisputeEntity extends BaseEntity {
 
     public boolean isRefundFrozen() { return refundFrozen; }
     public void setRefundFrozen(boolean refundFrozen) { this.refundFrozen = refundFrozen; }
+
+    public String getResolutionType() { return resolutionType; }
+    public void setResolutionType(String resolutionType) { this.resolutionType = resolutionType; }
+
+    public LocalDateTime getResolvedAt() { return resolvedAt; }
+    public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+
+    public String getResolutionNote() { return resolutionNote; }
+    public void setResolutionNote(String resolutionNote) { this.resolutionNote = resolutionNote; }
+
+    public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
+    public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
+
+    public UUID getBeneficiaryUserId() { return beneficiaryUserId; }
+    public void setBeneficiaryUserId(UUID beneficiaryUserId) { this.beneficiaryUserId = beneficiaryUserId; }
 }
