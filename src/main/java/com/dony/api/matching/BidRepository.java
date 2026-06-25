@@ -268,4 +268,19 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("userA") UUID userA,
             @Param("userB") UUID userB,
             @Param("activeStatuses") List<BidStatus> activeStatuses);
+
+    @Query("""
+        SELECT b FROM BidEntity b
+        WHERE (:status IS NULL OR b.status = :status)
+          AND (:announcementId IS NULL OR b.announcementId = :announcementId)
+          AND (:q IS NULL
+               OR UPPER(CAST(b.id AS string)) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%'))
+               OR UPPER(b.trackingNumber) LIKE UPPER(CONCAT('%', CAST(:q AS string), '%')))
+        ORDER BY b.createdAt DESC
+        """)
+    Page<BidEntity> findAdminFiltered(
+            @Param("status") BidStatus status,
+            @Param("announcementId") UUID announcementId,
+            @Param("q") String q,
+            Pageable pageable);
 }
