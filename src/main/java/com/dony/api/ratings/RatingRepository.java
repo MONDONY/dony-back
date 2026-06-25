@@ -37,4 +37,17 @@ public interface RatingRepository extends JpaRepository<RatingEntity, UUID> {
     boolean existsByBidIdAndRaterId(UUID bidId, UUID raterId);
 
     boolean existsByBidIdAndTrackingToken(UUID bidId, String trackingToken);
+
+    @Query("""
+            SELECT r FROM RatingEntity r
+            WHERE (:flagged IS NULL OR r.flagged = :flagged)
+              AND (:minScore IS NULL OR r.stars >= :minScore)
+              AND (:maxScore IS NULL OR r.stars <= :maxScore)
+            ORDER BY r.createdAt DESC
+            """)
+    Page<RatingEntity> findAdminFiltered(
+            @Param("flagged") Boolean flagged,
+            @Param("minScore") Integer minScore,
+            @Param("maxScore") Integer maxScore,
+            Pageable pageable);
 }

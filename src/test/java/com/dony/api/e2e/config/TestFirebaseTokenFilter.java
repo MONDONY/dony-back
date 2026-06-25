@@ -38,7 +38,7 @@ public class TestFirebaseTokenFilter extends FirebaseTokenFilter {
     public TestFirebaseTokenFilter(UserLinkerService userLinkerService,
                                    ObjectMapper objectMapper,
                                    AdminAuthService adminAuthService) {
-        super(userLinkerService, objectMapper, adminAuthService);
+        super(userLinkerService, objectMapper, adminAuthService, false);
     }
 
     @Override

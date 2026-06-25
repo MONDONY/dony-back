@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
@@ -40,6 +41,12 @@ public class AdminAlertEntity {
     @Column(name = "resolved", nullable = false)
     private boolean resolved = false;
 
+    @Column(name = "severity", nullable = false, length = 10)
+    private String severity = "INFO";
+
+    @Column(name = "resolved_at")
+    private OffsetDateTime resolvedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -60,6 +67,12 @@ public class AdminAlertEntity {
 
     public boolean isResolved() { return resolved; }
     public void setResolved(boolean resolved) { this.resolved = resolved; }
+
+    public String getSeverity() { return severity; }
+    public void setSeverity(String severity) { this.severity = severity; }
+
+    public OffsetDateTime getResolvedAt() { return resolvedAt; }
+    public void setResolvedAt(OffsetDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
 }
