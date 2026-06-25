@@ -16,6 +16,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +40,7 @@ class AdminAuditControllerTest {
         ResponseEntity<?> resp = controller().list(null, null, null, null, null, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody()).isNotNull();
     }
 
     @Test
@@ -51,6 +54,25 @@ class AdminAuditControllerTest {
         com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
         user.setFirstName("Alice");
         user.setLastName("D.");
+        when(userRepo.findAllById(anyIterable())).thenReturn(List.of(user));
+
+        ResponseEntity<?> resp = controller().list(null, null, actorId.toString(), null, null, 0, 20);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(userRepo, times(1)).findAllById(any());
+    }
+
+    @Test
+    void list_withActorHavingNullLastName_doesNotThrow() {
+        UUID actorId = UUID.randomUUID();
+        AuditLogEntity entity = new AuditLogEntity();
+        entity.setActorId(actorId);
+        Page<AuditLogEntity> page = new PageImpl<>(List.of(entity));
+        when(auditRepo.findFiltered(isNull(), isNull(), eq(actorId), isNull(), isNull(), any()))
+            .thenReturn(page);
+        com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
+        user.setFirstName("Alice");
+        user.setLastName(null);
         when(userRepo.findAllById(anyIterable())).thenReturn(List.of(user));
 
         ResponseEntity<?> resp = controller().list(null, null, actorId.toString(), null, null, 0, 20);
