@@ -12,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,7 +51,7 @@ class AdminAuditControllerTest {
         com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
         user.setFirstName("Alice");
         user.setLastName("D.");
-        when(userRepo.findById(actorId)).thenReturn(Optional.of(user));
+        when(userRepo.findAllById(anyIterable())).thenReturn(List.of(user));
 
         ResponseEntity<?> resp = controller().list(null, null, actorId.toString(), null, null, 0, 20);
 

@@ -1,6 +1,7 @@
 package com.dony.api.admin;
 
 import com.dony.api.admin.dto.AdminAuditEntryResponse;
+import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditLogRepository;
 import org.springframework.data.domain.Page;
@@ -15,7 +16,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/admin/audit-log")
@@ -41,18 +46,24 @@ public class AdminAuditController {
             @RequestParam(defaultValue = "20") int size) {
 
         UUID actorUuid = actorId != null ? UUID.fromString(actorId) : null;
-        Page<AdminAuditEntryResponse> result = auditRepo
+        Page<com.dony.api.common.AuditLogEntity> auditPage = auditRepo
             .findFiltered(action, entityType, actorUuid, from, to,
-                PageRequest.of(page, size, Sort.by("createdAt").descending()))
-            .map(e -> {
-                String name = null;
-                if (e.getActorId() != null) {
-                    name = userRepo.findById(e.getActorId())
-                        .map(u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : ""))
-                        .orElse(null);
-                }
-                return AdminAuditEntryResponse.from(e, name);
-            });
+                PageRequest.of(page, size, Sort.by("createdAt").descending()));
+
+        // Batch-load all actor names in a single query — avoids N+1
+        Set<UUID> actorIds = auditPage.getContent().stream()
+            .map(com.dony.api.common.AuditLogEntity::getActorId)
+            .filter(id -> id != null)
+            .collect(Collectors.toSet());
+        Map<UUID, String> actorNames = userRepo.findAllById(actorIds).stream()
+            .collect(Collectors.toMap(
+                UserEntity::getId,
+                u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : "")
+            ));
+
+        Page<AdminAuditEntryResponse> result = auditPage.map(e ->
+            AdminAuditEntryResponse.from(e, actorNames.get(e.getActorId()))
+        );
         return ResponseEntity.ok(result);
     }
 }
