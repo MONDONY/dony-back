@@ -19,6 +19,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.model.Transfer;
 import com.stripe.param.RefundCreateParams;
+import com.dony.api.payments.chargeback.ChargebackRepository;
 import com.stripe.param.TransferCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,7 @@ class AdminPaymentControllerTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private UserRepository userRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private ChargebackRepository chargebackRepository;
 
     private AdminPaymentController controller;
 
@@ -64,7 +66,7 @@ class AdminPaymentControllerTest {
     @BeforeEach
     void setUp() {
         controller = new AdminPaymentController(paymentRepository, adminAlertRepository, auditService,
-                bidRepository, announcementRepository, userRepository, eventPublisher);
+                bidRepository, announcementRepository, userRepository, eventPublisher, chargebackRepository);
     }
 
     private PaymentEntity threadPayment(PaymentStatus status, boolean legacy, String chargeId) {

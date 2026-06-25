@@ -1,5 +1,6 @@
 package com.dony.api.admin;
 
+import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.UserService;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -21,12 +22,13 @@ import static org.mockito.Mockito.verify;
 class AdminUserControllerTest {
 
     @Mock UserService userService;
+    @Mock UserRepository userRepository;
 
     // ── Délégation du contrôleur ────────────────────────────────────────────
 
     @Test
     void setCommissionRate_delegatesToService_andReturns204() {
-        AdminUserController controller = new AdminUserController(userService);
+        AdminUserController controller = new AdminUserController(userService, userRepository);
         UUID userId = UUID.randomUUID();
         BigDecimal rate = new BigDecimal("0.08");
 
@@ -39,7 +41,7 @@ class AdminUserControllerTest {
 
     @Test
     void setCommissionRate_nullRate_delegatesNull_forGlobalReset() {
-        AdminUserController controller = new AdminUserController(userService);
+        AdminUserController controller = new AdminUserController(userService, userRepository);
         UUID userId = UUID.randomUUID();
 
         controller.setCommissionRate(userId, new CommissionRateOverrideRequest(null));
