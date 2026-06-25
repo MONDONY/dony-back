@@ -4,7 +4,7 @@ import com.dony.api.common.BaseEntity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.Where;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -39,7 +39,7 @@ public class ReportEntity extends BaseEntity {
     private String resolutionNote;
 
     @Column(name = "resolved_at")
-    private LocalDateTime resolvedAt;
+    private OffsetDateTime resolvedAt;
 
     public ReportTargetType getTargetType() { return targetType; }
     public void setTargetType(ReportTargetType targetType) { this.targetType = targetType; }
@@ -65,6 +65,6 @@ public class ReportEntity extends BaseEntity {
     public String getResolutionNote() { return resolutionNote; }
     public void setResolutionNote(String resolutionNote) { this.resolutionNote = resolutionNote; }
 
-    public LocalDateTime getResolvedAt() { return resolvedAt; }
-    public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+    public OffsetDateTime getResolvedAt() { return resolvedAt; }
+    public void setResolvedAt(OffsetDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
 }
