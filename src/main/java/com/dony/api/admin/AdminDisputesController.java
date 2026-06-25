@@ -5,6 +5,7 @@ import com.dony.api.admin.dto.AdminDisputeDetailResponse;
 import com.dony.api.admin.dto.AdminDisputeListItemResponse;
 import com.dony.api.admin.dto.AdminGuaranteeFundRequest;
 import com.dony.api.admin.dto.AdminResolveDisputeRequest;
+import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationStatus;
@@ -33,13 +34,16 @@ public class AdminDisputesController {
     private final DisputeRepository disputeRepo;
     private final CancellationRepository cancellationRepo;
     private final AuditService auditService;
+    private final UserRepository userRepo;
 
     public AdminDisputesController(DisputeRepository disputeRepo,
                                    CancellationRepository cancellationRepo,
-                                   AuditService auditService) {
+                                   AuditService auditService,
+                                   UserRepository userRepo) {
         this.disputeRepo = disputeRepo;
         this.cancellationRepo = cancellationRepo;
         this.auditService = auditService;
+        this.userRepo = userRepo;
     }
 
     // -------------------------------------------------------------------------
@@ -54,14 +58,14 @@ public class AdminDisputesController {
 
         Page<AdminDisputeListItemResponse> result = disputeRepo
                 .findAdminFiltered(status, PageRequest.of(page, size, Sort.by("createdAt").descending()))
-                .map(this::toListItem);
+                .map(this::toDisputeListItem);
         return ResponseEntity.ok(result);
     }
 
     @GetMapping("/admin/disputes/{id}")
     public ResponseEntity<AdminDisputeDetailResponse> getDispute(@PathVariable UUID id) {
         DisputeEntity entity = findDisputeOrThrow(id);
-        return ResponseEntity.ok(toDetail(entity));
+        return ResponseEntity.ok(toDisputeDetail(entity));
     }
 
     @PostMapping("/admin/disputes/{id}/resolve")
@@ -81,7 +85,7 @@ public class AdminDisputesController {
                 Map.of("resolution", String.valueOf(request.resolution()),
                        "note", String.valueOf(request.note())));
 
-        return ResponseEntity.ok(toDetail(entity));
+        return ResponseEntity.ok(toDisputeDetail(entity));
     }
 
     @PostMapping("/admin/disputes/{id}/guarantee-fund")
@@ -103,7 +107,7 @@ public class AdminDisputesController {
                        "beneficiaryUserId", String.valueOf(request.beneficiaryUserId()),
                        "reason", String.valueOf(request.reason())));
 
-        return ResponseEntity.ok(toDetail(entity));
+        return ResponseEntity.ok(toDisputeDetail(entity));
     }
 
     // -------------------------------------------------------------------------
@@ -135,34 +139,39 @@ public class AdminDisputesController {
                         HttpStatus.NOT_FOUND, "dispute-not-found", "Not Found", "Litige introuvable"));
     }
 
-    private AdminDisputeListItemResponse toListItem(DisputeEntity e) {
-        return new AdminDisputeListItemResponse(
-                e.getId(),
-                e.getBidId(),
-                e.getSenderId(),
-                e.getTravelerId(),
-                e.getType(),
-                e.getStatus(),
-                e.isRefundFrozen(),
-                e.getDeclaredValueEur(),
-                e.getCreatedAt());
+    private String userName(UUID userId) {
+        return userRepo.findById(userId)
+                .map(u -> u.getFirstName() + (u.getLastName() != null ? " " + u.getLastName() : ""))
+                .orElse(null);
     }
 
-    private AdminDisputeDetailResponse toDetail(DisputeEntity e) {
+    private AdminDisputeListItemResponse toDisputeListItem(DisputeEntity d) {
+        return new AdminDisputeListItemResponse(
+                d.getId(),
+                d.getBidId(),
+                d.getType(),
+                d.getStatus(),
+                userName(d.getSenderId()),
+                userName(d.getTravelerId()),
+                d.isRefundFrozen(),
+                d.getCreatedAt());
+    }
+
+    private AdminDisputeDetailResponse toDisputeDetail(DisputeEntity d) {
         return new AdminDisputeDetailResponse(
-                e.getId(),
-                e.getBidId(),
-                e.getSenderId(),
-                e.getTravelerId(),
-                e.getType(),
-                e.getStatus(),
-                e.isRefundFrozen(),
-                e.getResolutionType(),
-                e.getResolvedAt(),
-                e.getResolutionNote(),
-                e.getDeclaredValueEur(),
-                e.getBeneficiaryUserId(),
-                e.getCreatedAt());
+                d.getId(),
+                d.getBidId(),
+                d.getType(),
+                d.getStatus(),
+                userName(d.getSenderId()),
+                userName(d.getTravelerId()),
+                d.isRefundFrozen(),
+                d.getCreatedAt(),
+                d.getResolutionType(),
+                d.getResolvedAt(),
+                d.getResolutionNote(),
+                d.getDeclaredValueEur(),
+                d.getBeneficiaryUserId());
     }
 
     private AdminCancellationResponse toCancellationResponse(CancellationEntity e) {
@@ -171,8 +180,6 @@ public class AdminDisputesController {
                 e.getBidId(),
                 e.getCancelledBy(),
                 e.getReason(),
-                e.getRefundStatus(),
-                e.getRematchStatus(),
                 e.getNoShowStatus() != null ? e.getNoShowStatus().name() : null,
                 e.getContestationDeadline(),
                 e.getCreatedAt());

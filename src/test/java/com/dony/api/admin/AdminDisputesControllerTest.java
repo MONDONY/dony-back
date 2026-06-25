@@ -5,6 +5,7 @@ import com.dony.api.admin.dto.AdminDisputeDetailResponse;
 import com.dony.api.admin.dto.AdminDisputeListItemResponse;
 import com.dony.api.admin.dto.AdminGuaranteeFundRequest;
 import com.dony.api.admin.dto.AdminResolveDisputeRequest;
+import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationStatus;
@@ -37,9 +38,10 @@ class AdminDisputesControllerTest {
     @Mock DisputeRepository disputeRepo;
     @Mock CancellationRepository cancellationRepo;
     @Mock AuditService auditService;
+    @Mock UserRepository userRepo;
 
     private AdminDisputesController controller() {
-        return new AdminDisputesController(disputeRepo, cancellationRepo, auditService);
+        return new AdminDisputesController(disputeRepo, cancellationRepo, auditService, userRepo);
     }
 
     // ---- listDisputes ----
@@ -77,6 +79,7 @@ class AdminDisputesControllerTest {
         DisputeEntity entity = new DisputeEntity();
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().getDispute(id);
 
@@ -102,6 +105,7 @@ class AdminDisputesControllerTest {
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
         when(disputeRepo.save(entity)).thenReturn(entity);
+        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         AdminResolveDisputeRequest request = new AdminResolveDisputeRequest("REFUND_SENDER", "note");
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().resolveDispute(id, request);
@@ -134,6 +138,7 @@ class AdminDisputesControllerTest {
         entity.setStatus("OPEN");
         when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
         when(disputeRepo.save(entity)).thenReturn(entity);
+        when(userRepo.findById(any())).thenReturn(Optional.empty());
 
         AdminGuaranteeFundRequest request = new AdminGuaranteeFundRequest(5000, beneficiary, "paiement fonds de garantie");
         ResponseEntity<AdminDisputeDetailResponse> resp = controller().payGuaranteeFund(id, request);
