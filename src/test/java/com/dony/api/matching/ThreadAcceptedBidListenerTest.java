@@ -268,6 +268,70 @@ class ThreadAcceptedBidListenerTest {
         }
 
         @Test
+        @DisplayName("annonce non-KgFree → availableKg décrémenté du poids du bid")
+        void decrementsAvailableKgOnAcceptance() {
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setCapacityUnit(CapacityUnit.SUITCASE_23KG);
+            ann.setAvailableKg(BigDecimal.valueOf(32));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent()); // weightKg = 5
+
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            verify(announcementRepository).save(captor.capture());
+            assertThat(captor.getValue().getAvailableKg())
+                    .isEqualByComparingTo(BigDecimal.valueOf(27));
+        }
+
+        @Test
+        @DisplayName("annonce KgFree → availableKg inchangé")
+        void kgFreeAnnouncementSkipsDecrement() {
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setCapacityUnit(CapacityUnit.KG_FREE);
+            ann.setAvailableKg(BigDecimal.valueOf(32));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent());
+
+            verify(announcementRepository).save(any()); // saved but kg unchanged
+            assertThat(ann.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(32));
+        }
+
+        @Test
+        @DisplayName("availableKg ≤ 0 après décrémentation → status FULL")
+        void setsFullWhenCapacityExhausted() {
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setCapacityUnit(CapacityUnit.SUITCASE_23KG);
+            ann.setAvailableKg(BigDecimal.valueOf(5)); // exactement le poids du bid
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent()); // weightKg = 5
+
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            verify(announcementRepository).save(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo(AnnouncementStatus.FULL);
+        }
+
+        @Test
+        @DisplayName("trajet dédié (linkedPackageRequestId != null) → availableKg non décrémenté")
+        void dedicatedTripSkipsKgDecrement() {
+            AnnouncementEntity ann = new AnnouncementEntity();
+            ann.setCapacityUnit(CapacityUnit.SUITCASE_23KG);
+            ann.setAvailableKg(BigDecimal.ZERO); // intentionnellement 0 sur un trajet dédié
+            ann.setLinkedPackageRequestId(UUID.randomUUID());
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(ann));
+
+            listener.onPackageRequestAccepted(buildEvent()); // weightKg = 5
+
+            // Annonce sauvegardée (pour applyHandoverFrom) mais kg non touché
+            verify(announcementRepository).save(any());
+            assertThat(ann.getAvailableKg()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(ann.getStatus()).isNotEqualTo(AnnouncementStatus.FULL);
+            // Bid bien créé malgré le skip kg
+            verify(bidRepository).save(any(BidEntity.class));
+        }
+
+        @Test
         @DisplayName("annonce trouvée → bid hérite fenêtre de remise + lieu de pickup")
         void copiesHandoverWindowFromAnnouncement() {
             LocalDateTime start = LocalDate.now().plusDays(5).atTime(16, 0);

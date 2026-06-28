@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -110,8 +111,22 @@ public class ThreadAcceptedBidListener {
             bid.setCommissionStatus(com.dony.api.payments.cash.CommissionStatus.CHARGED);
         }
 
-        announcementRepository.findById(e.travelerAnnouncementId())
-                .ifPresent(bid::applyHandoverFrom);
+        announcementRepository.findById(e.travelerAnnouncementId()).ifPresent(announcement -> {
+            bid.applyHandoverFrom(announcement);
+            boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+            // Dedicated trips (linkedPackageRequestId != null) intentionally start with
+            // availableKg = 0 — the full capacity is reserved for the sender. Subtracting
+            // weightKg would produce a negative value and violate the DB constraint.
+            // Surplus capacity is managed separately via openSurplus().
+            boolean isDedicatedTrip = announcement.getLinkedPackageRequestId() != null;
+            if (!isKgFree && !isDedicatedTrip && bid.getWeightKg() != null && announcement.getAvailableKg() != null) {
+                announcement.setAvailableKg(announcement.getAvailableKg().subtract(bid.getWeightKg()));
+                if (announcement.getAvailableKg().compareTo(BigDecimal.ZERO) <= 0) {
+                    announcement.setStatus(AnnouncementStatus.FULL);
+                }
+            }
+            announcementRepository.save(announcement);
+        });
         BidEntity saved = bidRepository.save(bid);
 
         // Les photos colis de la demande (package_requests/…) sont copiées vers bids/ pour
