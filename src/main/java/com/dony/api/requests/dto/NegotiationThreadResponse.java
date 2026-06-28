@@ -36,5 +36,8 @@ public record NegotiationThreadResponse(
     PaymentMethod paymentMethod,
     // Bid matérialisé après acceptation (null tant que non matérialisé) — permet
     // au mobile d'ouvrir le détail du bid (suivi, no-show…) depuis le thread
-    UUID materializedBidId
+    UUID materializedBidId,
+    // Vrai si le voyageur peut payer la commission Dony en cash (wallet suffisant ou carte enregistrée).
+    // Sert à masquer l'option CASH côté sender et traveler si elle n'est pas viable.
+    boolean cashCommissionAvailable
 ) {}

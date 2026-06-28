@@ -1100,6 +1100,14 @@ public class NegotiationService {
                 .map(com.dony.api.auth.UserEntity::getAvatarUrl)
                 .orElse(null));
 
+        boolean cashCommissionAvailable = false;
+        if (t.getCurrentPriceEur() != null) {
+            BigDecimal commission = PriceBreakdown.fromNet(
+                t.getCurrentPriceEur(), commissionProperties.rate()).commission();
+            cashCommissionAvailable = cashGatePort.hasSufficientFunds(t.getTravelerId(), commission)
+                || cashGatePort.hasCommissionCard(t.getTravelerId());
+        }
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1116,7 +1124,8 @@ public class NegotiationService {
             linkedTrip,
             gross,
             t.getPaymentMethod(),
-            t.getMaterializedBidId()
+            t.getMaterializedBidId(),
+            cashCommissionAvailable
         );
     }
 
