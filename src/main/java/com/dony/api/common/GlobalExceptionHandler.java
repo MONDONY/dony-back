@@ -113,6 +113,7 @@ public class GlobalExceptionHandler {
         if (reason != null && reason.contains("/")) {
             // Structured error code like "request/expired" or "negotiation/duplicate-thread"
             problem.setType(URI.create(BASE_TYPE + reason));
+            problem.setProperty("code", reason);
             String[] parts = reason.split("/", 2);
             String title = parts.length > 1
                     ? capitalize(parts[1].replace("-", " "))
@@ -157,6 +158,7 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         pd.setType(URI.create(BASE_TYPE + "commission-method-missing"));
         pd.setTitle("Méthode de commission requise");
+        pd.setProperty("code", "commission-method-missing");
         return pd;
     }
 
@@ -165,14 +167,16 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         pd.setType(URI.create(BASE_TYPE + "invalid-payment-method-for-announcement"));
         pd.setTitle("Mode de paiement non autorisé");
+        pd.setProperty("code", "invalid-payment-method-for-announcement");
         return pd;
     }
 
     @ExceptionHandler(CommissionChargeFailedException.class)
     public ProblemDetail handleCommissionChargeFailed(CommissionChargeFailedException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
-        pd.setType(URI.create(BASE_TYPE + "commission-charge-failed"));
+        pd.setType(URI.create(BASE_TYPE + "negotiation/commission-charge-failed"));
         pd.setTitle("Débit de la commission refusé");
+        pd.setProperty("code", "negotiation/commission-charge-failed");
         return pd;
     }
 
