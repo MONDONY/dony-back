@@ -173,10 +173,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CommissionChargeFailedException.class)
     public ProblemDetail handleCommissionChargeFailed(CommissionChargeFailedException ex) {
+        // Distinct code from "negotiation/commission-charge-failed" (thrown by
+        // NegotiationService.finalizeInternal for the negotiation checkout flow) —
+        // this one covers the classic bid flow's async commission retry failures.
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
-        pd.setType(URI.create(BASE_TYPE + "negotiation/commission-charge-failed"));
+        pd.setType(URI.create(BASE_TYPE + "commission-charge-failed"));
         pd.setTitle("Débit de la commission refusé");
-        pd.setProperty("code", "negotiation/commission-charge-failed");
+        pd.setProperty("code", "commission-charge-failed");
         return pd;
     }
 

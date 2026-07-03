@@ -720,6 +720,75 @@ class NegotiationServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not-thread-participant");
         }
+
+        private NegotiationThreadEntity threadFor(UUID threadId) {
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return thread;
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = true — solde wallet suffisant")
+        void getById_cashCommissionAvailable_trueWhenWalletSufficient() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isTrue();
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = false — pas de solde ni de carte")
+        void getById_cashCommissionAvailable_falseWhenNoWalletAndNoCard() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(false);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isFalse();
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = true — solde insuffisant mais carte enregistrée")
+        void getById_cashCommissionAvailable_trueWhenCardEvenIfWalletInsufficient() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(true);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isTrue();
+        }
     }
 
     @Nested

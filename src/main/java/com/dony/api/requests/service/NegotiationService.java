@@ -975,7 +975,7 @@ public class NegotiationService {
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
-        return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn);
+        return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn, true);
     }
 
     @Transactional(readOnly = true)
@@ -1008,7 +1008,7 @@ public class NegotiationService {
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
                     ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
-                return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn));
+                return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn, true));
             })
             .toList();
     }
@@ -1046,7 +1046,7 @@ public class NegotiationService {
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
                     ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
-                return toResponse(t, messages, null, lt_traveler, request, callerId, senderName, linkedAnn);
+                return toResponse(t, messages, null, lt_traveler, request, callerId, senderName, linkedAnn, true);
             })
             .toList();
     }
@@ -1059,6 +1059,27 @@ public class NegotiationService {
                                           UUID callerId,
                                           String senderName,
                                           com.dony.api.matching.AnnouncementEntity linkedAnn) {
+        return toResponse(t, messages, paymentIntentClientSecret, traveler, request, callerId,
+            senderName, linkedAnn, false);
+    }
+
+    /**
+     * @param checkCashAvailability whether to consult {@link CashGatePort} to compute
+     *        {@code cashCommissionAvailable}. Only the read paths that actually feed the
+     *        mobile payment-method picker ({@code getById}/{@code listMine}/{@code
+     *        listForRequest}) need this — action methods (start/accept/counter/submitTrip/
+     *        finalize…) skip it to avoid an extra wallet/card lookup on every write, and to
+     *        keep the existing "cash gate untouched for non-cash flows" test invariants.
+     */
+    NegotiationThreadResponse toResponse(NegotiationThreadEntity t,
+                                          List<NegotiationMessageResponse> messages,
+                                          String paymentIntentClientSecret,
+                                          UserEntity traveler,
+                                          PackageRequestEntity request,
+                                          UUID callerId,
+                                          String senderName,
+                                          com.dony.api.matching.AnnouncementEntity linkedAnn,
+                                          boolean checkCashAvailability) {
         boolean isMyTurn = false;
         boolean canAccept = false;
         boolean canCounter = false;
@@ -1100,8 +1121,11 @@ public class NegotiationService {
                 .map(com.dony.api.auth.UserEntity::getAvatarUrl)
                 .orElse(null));
 
-        boolean cashCommissionAvailable = false;
-        if (t.getCurrentPriceEur() != null) {
+        // Default true (non-blocking) when unchecked: action responses aren't used to
+        // render the payment-method picker, so we don't want a stale "false" here to
+        // ever be mistaken for an authoritative "cash unavailable".
+        boolean cashCommissionAvailable = true;
+        if (checkCashAvailability && t.getCurrentPriceEur() != null) {
             BigDecimal commission = PriceBreakdown.fromNet(
                 t.getCurrentPriceEur(), commissionProperties.rate()).commission();
             cashCommissionAvailable = cashGatePort.hasSufficientFunds(t.getTravelerId(), commission)
