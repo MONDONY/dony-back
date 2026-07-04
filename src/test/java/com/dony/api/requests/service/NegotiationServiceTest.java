@@ -815,12 +815,17 @@ class NegotiationServiceTest {
             thread.setRoundsCount((short) 2);
             thread.setLastActivityAt(java.time.LocalDateTime.now());
 
+            // Trajet lié via submitTrip() (existant, pas dédié) — pas de
+            // linkedPackageRequestId, donc ne doit PAS être soft-delete.
+            com.dony.api.matching.AnnouncementEntity existingAnn = new com.dony.api.matching.AnnouncementEntity();
+
             when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
             when(config.maxNegotiationRounds()).thenReturn(5);
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(existingAnn));
 
             NegotiationThreadResponse resp = service.refuseTrip(SENDER_ID, threadId, "Trajet non adapté");
 
@@ -831,6 +836,55 @@ class NegotiationServiceTest {
             verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(threadId), eq("TRIP_REFUSED"), eq(SENDER_ID), any());
             verify(eventPublisher).publishEvent(any(NegotiationAwaitingTripEvent.class));
             verify(threadRepo).save(thread);
+            assertThat(existingAnn.getDeletedAt()).isNull();
+            verify(announcementRepo, never()).save(any());
+        }
+
+        @Test
+        void refuseTrip_dedicatedTrip_softDeletesOrphanedAnnouncement() {
+            UUID threadId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setTravelerAnnouncementId(announcementId);
+            thread.setTravelerTravelDate(java.time.LocalDate.now());
+            thread.setTravelerAvailableKg(new BigDecimal("5"));
+            thread.setCurrentPriceEur(new BigDecimal("45"));
+            thread.setRoundsCount((short) 2);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+
+            // Trajet DÉDIÉ créé exclusivement pour cette demande (createDedicatedTrip) —
+            // n'a plus aucune utilité une fois détaché, doit être soft-delete.
+            com.dony.api.matching.AnnouncementEntity dedicatedAnn = new com.dony.api.matching.AnnouncementEntity();
+            dedicatedAnn.setLinkedPackageRequestId(REQUEST_ID);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(dedicatedAnn, announcementId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(dedicatedAnn));
+
+            service.refuseTrip(SENDER_ID, threadId, "Trajet non adapté");
+
+            assertThat(dedicatedAnn.getDeletedAt()).isNotNull();
+            verify(announcementRepo).save(dedicatedAnn);
+            verify(auditService).log(eq("ANNOUNCEMENT"), eq(announcementId),
+                eq("DEDICATED_TRIP_ORPHANED_ON_REFUSAL"), eq(SENDER_ID), any());
         }
 
         @Test

@@ -915,12 +915,28 @@ public class NegotiationService {
         if (thread.getTravelerAnnouncementId() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/no-trip-linked");
         }
+        UUID oldAnnouncementId = thread.getTravelerAnnouncementId();
 
         // Effacer le trajet lié et repasser en AWAITING_TRIP
         thread.setTravelerAnnouncementId(null);
         thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+
+        // Si le trajet détaché est un trajet DÉDIÉ créé exclusivement pour cette
+        // demande (via createDedicatedTrip — linkedPackageRequestId == request.id ;
+        // jamais le cas pour un trajet existant lié via submitTrip), il n'a plus
+        // aucune utilité une fois détaché : availableKg=0 pour toujours, personne
+        // ne pourra jamais le réserver. Sans ce nettoyage il reste ACTIVE pour
+        // toujours, orphelin dans « Mes trajets » du voyageur avec reservedKg figé.
+        announcementRepo.findById(oldAnnouncementId).ifPresent(ann -> {
+            if (request.getId().equals(ann.getLinkedPackageRequestId())) {
+                ann.softDelete();
+                announcementRepo.save(ann);
+                auditService.log("ANNOUNCEMENT", ann.getId(), "DEDICATED_TRIP_ORPHANED_ON_REFUSAL", callerId,
+                    Map.of("threadId", threadId.toString()));
+            }
+        });
 
         // Persister la raison du refus comme message visible dans le thread
         if (reason != null && !reason.isBlank()) {
