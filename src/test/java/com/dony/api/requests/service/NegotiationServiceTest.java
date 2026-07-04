@@ -1454,8 +1454,13 @@ class NegotiationServiceTest {
             request.setWeightKg(new BigDecimal("5"));
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            // Simule le comportement réel de CashCommissionService.chargeNegotiationCommission :
+            // stamper commissionChargedVia sur le thread en même temps que le charge réussi.
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
-                .thenReturn(true);
+                .thenAnswer(inv -> {
+                    thread.setCommissionChargedVia("WALLET");
+                    return true;
+                });
             when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
             when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -1474,6 +1479,9 @@ class NegotiationServiceTest {
             verify(eventPublisher).publishEvent(captor.capture());
             assertThat(captor.getValue().paymentMethod())
                 .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
+            // Sans cette propagation, le bid matérialisé (ThreadAcceptedBidListener) ne
+            // saurait pas comment rembourser la commission si annulé avant remise.
+            assertThat(captor.getValue().commissionChargedVia()).isEqualTo("WALLET");
         }
 
         @Test

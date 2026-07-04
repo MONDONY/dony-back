@@ -808,7 +808,8 @@ public class NegotiationService {
             request.getDisclaimerSignedAt(),
             request.getDisclaimerSignedIp(),
             thread.getPaymentMethod(),
-            photoService.objectKeys(request.getId())
+            photoService.objectKeys(request.getId()),
+            thread.getCommissionChargedVia()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),

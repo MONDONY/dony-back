@@ -109,6 +109,15 @@ public class ThreadAcceptedBidListener {
             // Commission for cash negotiations is charged on the thread at finalize;
             // mark the bid so the classic cash flow never re-charges and the UI shows "réglée".
             bid.setCommissionStatus(com.dony.api.payments.cash.CommissionStatus.CHARGED);
+            // Carry over HOW it was charged (WALLET/CARD, stamped on the thread by
+            // CashCommissionService.chargeNegotiationCommission) — without this,
+            // BidCancelledCommissionRefundListener sees commissionChargedVia=null on
+            // the materialised bid and silently skips the refund if this bid is later
+            // cancelled before handover, leaving the traveler's commission un-refunded.
+            if (e.commissionChargedVia() != null) {
+                bid.setCommissionChargedVia(
+                    com.dony.api.payments.cash.CommissionChargedVia.valueOf(e.commissionChargedVia()));
+            }
         }
 
         announcementRepository.findById(e.travelerAnnouncementId()).ifPresent(announcement -> {

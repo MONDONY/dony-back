@@ -52,6 +52,11 @@ class ThreadAcceptedBidListenerTest {
     }
 
     private PackageRequestAcceptedEvent buildEvent(com.dony.api.payments.cash.PaymentMethod paymentMethod) {
+        return buildEvent(paymentMethod, null);
+    }
+
+    private PackageRequestAcceptedEvent buildEvent(
+            com.dony.api.payments.cash.PaymentMethod paymentMethod, String commissionChargedVia) {
         return new PackageRequestAcceptedEvent(
                 THREAD_ID, PACKAGE_REQUEST_ID,
                 SENDER_ID, TRAVELER_ID,
@@ -62,7 +67,7 @@ class ThreadAcceptedBidListenerTest {
                 "Fatou Diop", "+221771234567",
                 BigDecimal.valueOf(120),
                 DISCLAIMER_AT, "1.2.3.4",
-                paymentMethod, java.util.List.of());
+                paymentMethod, java.util.List.of(), commissionChargedVia);
     }
 
     @Nested
@@ -106,7 +111,7 @@ class ThreadAcceptedBidListenerTest {
                     "Vêtements", "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567", BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.dony.api.payments.cash.PaymentMethod.STRIPE, keys);
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, keys, null);
         }
 
         private void saveSetsId(UUID bidId) {
@@ -209,7 +214,7 @@ class ThreadAcceptedBidListenerTest {
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of());
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
 
             listener.onPackageRequestAccepted(event);
 
@@ -229,7 +234,7 @@ class ThreadAcceptedBidListenerTest {
                     "Fatou Diop", "+221771234567",
                     BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of());
+                    com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
 
             listener.onPackageRequestAccepted(event);
 
@@ -239,10 +244,10 @@ class ThreadAcceptedBidListenerTest {
         }
 
         @Test
-        @DisplayName("event CASH → bid avec paymentMethod CASH et commission déjà CHARGED")
+        @DisplayName("event CASH via WALLET → bid avec commission CHARGED et commissionChargedVia=WALLET")
         void cashEventMarksBidCashAndCommissionCharged() {
             listener.onPackageRequestAccepted(
-                    buildEvent(com.dony.api.payments.cash.PaymentMethod.CASH));
+                    buildEvent(com.dony.api.payments.cash.PaymentMethod.CASH, "WALLET"));
 
             ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
             verify(bidRepository).save(captor.capture());
@@ -251,6 +256,22 @@ class ThreadAcceptedBidListenerTest {
                     .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
             assertThat(saved.getCommissionStatus())
                     .isEqualTo(com.dony.api.payments.cash.CommissionStatus.CHARGED);
+            // Sans cette propagation, BidCancelledCommissionRefundListener ne peut pas
+            // rembourser la commission si ce bid est annulé avant remise (via=null).
+            assertThat(saved.getCommissionChargedVia())
+                    .isEqualTo(com.dony.api.payments.cash.CommissionChargedVia.WALLET);
+        }
+
+        @Test
+        @DisplayName("event CASH via CARD → bid avec commissionChargedVia=CARD")
+        void cashEventViaCard_setsCommissionChargedViaCard() {
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.dony.api.payments.cash.PaymentMethod.CASH, "CARD"));
+
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository).save(captor.capture());
+            assertThat(captor.getValue().getCommissionChargedVia())
+                    .isEqualTo(com.dony.api.payments.cash.CommissionChargedVia.CARD);
         }
 
         @Test
