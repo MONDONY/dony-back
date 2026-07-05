@@ -42,22 +42,44 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseTokenFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String DEV_BYPASS_TOKEN = "dev-super-admin";
     private static final UUID DEV_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final UserLinkerService userLinkerService;
     private final ObjectMapper objectMapper;
     private final AdminAuthService adminAuthService;
     private final boolean devAuthBypassEnabled;
+    /** Jeton de bypass — fourni via secret, aucune valeur par défaut. Vide = bypass inerte. */
+    private final String devBypassToken;
+    private final String activeProfile;
 
     public FirebaseTokenFilter(UserLinkerService userLinkerService,
                                ObjectMapper objectMapper,
                                AdminAuthService adminAuthService,
-                               @Value("${dony.dev.auth-bypass:false}") boolean devAuthBypassEnabled) {
+                               @Value("${dony.dev.auth-bypass:false}") boolean devAuthBypassEnabled,
+                               @Value("${dony.dev.bypass-token:}") String devBypassToken,
+                               @Value("${spring.profiles.active:}") String activeProfile) {
         this.userLinkerService = userLinkerService;
         this.objectMapper = objectMapper;
         this.adminAuthService = adminAuthService;
-        this.devAuthBypassEnabled = devAuthBypassEnabled;
+        this.devBypassToken = devBypassToken != null ? devBypassToken.trim() : "";
+        this.activeProfile = activeProfile != null ? activeProfile.trim() : "";
+        // Fail-closed : le bypass n'est réellement actif que hors prod ET avec un jeton non vide.
+        // Un profil prod avec le flag activé refuse de démarrer plutôt que d'exposer un backdoor.
+        if (devAuthBypassEnabled && isProdProfile(this.activeProfile)) {
+            throw new IllegalStateException(
+                    "dony.dev.auth-bypass=true est interdit en profil prod — backdoor d'authentification");
+        }
+        this.devAuthBypassEnabled = devAuthBypassEnabled && !isProdProfile(this.activeProfile);
+        if (this.devAuthBypassEnabled && this.devBypassToken.isEmpty()) {
+            log.warn("dony.dev.auth-bypass=true mais dony.dev.bypass-token vide — bypass inerte (fail-closed)");
+        }
+    }
+
+    private static boolean isProdProfile(String profile) {
+        for (String p : profile.split(",")) {
+            if ("prod".equalsIgnoreCase(p.trim())) return true;
+        }
+        return false;
     }
 
     @Override
@@ -80,7 +102,10 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
      *         false to continue
      */
     private boolean authenticateToken(String token, HttpServletRequest request, HttpServletResponse response) throws IOException {
-        if (devAuthBypassEnabled && DEV_BYPASS_TOKEN.equals(token)) {
+        // Bypass dev : uniquement si activé (hors prod), jeton non vide correspondant,
+        // ET requête provenant de la loopback — jamais exploitable à distance.
+        if (devAuthBypassEnabled && !devBypassToken.isEmpty()
+                && devBypassToken.equals(token) && isLoopback(request)) {
             injectDevSuperAdmin();
             return false;
         }
@@ -144,6 +169,15 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         }
 
         return false;
+    }
+
+    /** Vrai si la requête provient de la boucle locale (127.0.0.0/8, ::1). */
+    private static boolean isLoopback(HttpServletRequest request) {
+        try {
+            return java.net.InetAddress.getByName(request.getRemoteAddr()).isLoopbackAddress();
+        } catch (java.net.UnknownHostException e) {
+            return false;
+        }
     }
 
     private void injectDevSuperAdmin() {

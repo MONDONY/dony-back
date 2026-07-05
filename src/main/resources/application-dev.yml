@@ -81,6 +81,9 @@ dony:
       secret: ${ADMIN_BOOTSTRAP_SECRET:dony-admin-bootstrap-dev}
   dev:
     auth-bypass: true
+    # Jeton du bypass dev — surchargeable via env DONY_DEV_BYPASS_TOKEN.
+    # Actif uniquement hors prod ET depuis la loopback (voir FirebaseTokenFilter).
+    bypass-token: ${DONY_DEV_BYPASS_TOKEN:dev-super-admin}
   commission:
     rate: 0.12
 
