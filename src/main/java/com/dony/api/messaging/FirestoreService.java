@@ -54,6 +54,49 @@ public class FirestoreService {
         }
     }
 
+    /** Messages d'une conversation, ordonnés par date d'envoi (lecture admin). */
+    public java.util.List<Map<String, Object>> listMessages(String conversationId) {
+        if (firestore == null) {
+            log.warn("Firestore disabled — listMessages returns empty");
+            return java.util.List.of();
+        }
+        try {
+            var docs = firestore.collection("conversations").document(conversationId)
+                    .collection("messages").orderBy("sentAt").get().get().getDocuments();
+            java.util.List<Map<String, Object>> result = new java.util.ArrayList<>(docs.size());
+            for (var doc : docs) {
+                Map<String, Object> data = new HashMap<>(doc.getData());
+                data.put("id", doc.getId());
+                result.add(data);
+            }
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Firestore listMessages failed", e);
+        }
+    }
+
+    /** lastMessageAt/lastMessagePreview par conversation, en un seul getAll. */
+    public Map<String, Map<String, Object>> getConversationMeta(java.util.List<String> conversationIds) {
+        if (firestore == null || conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            var refs = conversationIds.stream()
+                    .map(id -> firestore.collection("conversations").document(id))
+                    .toArray(com.google.cloud.firestore.DocumentReference[]::new);
+            Map<String, Map<String, Object>> result = new HashMap<>();
+            for (var snap : firestore.getAll(refs).get()) {
+                if (snap.exists() && snap.getData() != null) {
+                    result.put(snap.getId(), snap.getData());
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Firestore getConversationMeta failed: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
     public void updateLastMessage(String conversationId, String preview, String sentAt) {
         if (firestore == null) {
             log.warn("Firestore disabled — skipping updateLastMessage");

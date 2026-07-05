@@ -51,7 +51,7 @@ class FirebaseTokenFilterTest {
         when(adminAuthService.resolve(any())).thenReturn(Optional.empty());
         // Default: request is not an admin route
         when(request.getRequestURI()).thenReturn("/api/some-path");
-        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService);
+        return new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService, false, "", "test");
     }
 
     private UserEntity makeUser(UserStatus status) {
@@ -189,5 +189,64 @@ class FirebaseTokenFilterTest {
         verify(response).sendError(eq(503), anyString());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(filterChain, never()).doFilter(any(), any());
+    }
+
+    // ── Bypass dev — durcissement sécurité ──────────────────────────────────
+
+    @Test
+    @DisplayName("bypass activé en profil prod → refuse de démarrer (backdoor interdit)")
+    void bypassInProd_failsFast() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () ->
+                new FirebaseTokenFilter(userLinkerService, new ObjectMapper(), adminAuthService,
+                        true, "some-token", "prod"));
+    }
+
+    @Test
+    @DisplayName("bypass activé (dev) + jeton + loopback → super-admin injecté")
+    void bypass_loopbackWithToken_injectsSuperAdmin() throws Exception {
+        when(request.getHeader("Authorization")).thenReturn("Bearer secret-dev-token");
+        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+
+        var filter = new FirebaseTokenFilter(userLinkerService, new ObjectMapper(),
+                adminAuthService, true, "secret-dev-token", "dev");
+        filter.doFilterInternal(request, response, filterChain);
+
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        assertThat(auth.getAuthorities())
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN"));
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    @DisplayName("bypass depuis une IP distante → ignoré (pas d'injection)")
+    void bypass_remoteAddr_ignored() throws Exception {
+        when(request.getHeader("Authorization")).thenReturn("Bearer secret-dev-token");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.5");
+
+        var filter = new FirebaseTokenFilter(userLinkerService, new ObjectMapper(),
+                adminAuthService, true, "secret-dev-token", "dev");
+        try (MockedStatic<FirebaseApp> staticApp = mockStatic(FirebaseApp.class)) {
+            staticApp.when(FirebaseApp::getApps).thenReturn(List.of());
+            filter.doFilterInternal(request, response, filterChain);
+        }
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    @DisplayName("bypass activé mais jeton vide → inerte (fail-closed)")
+    void bypass_emptyToken_inert() throws Exception {
+        when(request.getHeader("Authorization")).thenReturn("Bearer whatever");
+
+        var filter = new FirebaseTokenFilter(userLinkerService, new ObjectMapper(),
+                adminAuthService, true, "", "dev");
+        try (MockedStatic<FirebaseApp> staticApp = mockStatic(FirebaseApp.class)) {
+            staticApp.when(FirebaseApp::getApps).thenReturn(List.of());
+            filter.doFilterInternal(request, response, filterChain);
+        }
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }

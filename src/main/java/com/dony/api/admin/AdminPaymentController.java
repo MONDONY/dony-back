@@ -1,5 +1,8 @@
 package com.dony.api.admin;
 
+import com.dony.api.admin.dto.AdminChargebackResponse;
+import com.dony.api.admin.dto.AdminPaymentDetailResponse;
+import com.dony.api.admin.dto.AdminPaymentListItemResponse;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -12,7 +15,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
-import com.dony.api.payments.dto.PaymentResponse;
+import com.dony.api.payments.chargeback.ChargebackRepository;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -23,13 +26,18 @@ import com.stripe.param.TransferCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -37,6 +45,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -50,6 +59,10 @@ public class AdminPaymentController {
 
     /** Manual-capture PaymentIntent state where the card is authorized and funds are held. */
     private static final String STATUS_REQUIRES_CAPTURE = "requires_capture";
+    /** PaymentIntent state après annulation d'un hold (autorisation levée). */
+    private static final String STATUS_CANCELED = "canceled";
+    /** Codes d'erreur Stripe signifiant que le renversement a déjà eu lieu — traités comme succès. */
+    private static final Set<String> ALREADY_REVERSED_CODES = Set.of("charge_already_refunded");
 
     private static final Logger log = LoggerFactory.getLogger(AdminPaymentController.class);
 
@@ -60,6 +73,7 @@ public class AdminPaymentController {
     private final AnnouncementRepository announcementRepository;
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ChargebackRepository chargebackRepository;
 
     public AdminPaymentController(PaymentRepository paymentRepository,
                                   AdminAlertRepository adminAlertRepository,
@@ -67,7 +81,8 @@ public class AdminPaymentController {
                                   BidRepository bidRepository,
                                   AnnouncementRepository announcementRepository,
                                   UserRepository userRepository,
-                                  ApplicationEventPublisher eventPublisher) {
+                                  ApplicationEventPublisher eventPublisher,
+                                  ChargebackRepository chargebackRepository) {
         this.paymentRepository = paymentRepository;
         this.adminAlertRepository = adminAlertRepository;
         this.auditService = auditService;
@@ -75,6 +90,32 @@ public class AdminPaymentController {
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.chargebackRepository = chargebackRepository;
+    }
+
+    @GetMapping
+    public ResponseEntity<Page<AdminPaymentListItemResponse>> list(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String method,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        // La table payments ne contient que l'escrow Stripe (CASH/mobile money ne créent
+        // pas de ligne payments) — un filtre method ≠ STRIPE ne peut rien retourner.
+        if (method != null && !method.isBlank() && !"STRIPE".equalsIgnoreCase(method)) {
+            return ResponseEntity.ok(Page.empty(PageRequest.of(page, size)));
+        }
+        Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, dateFrom, dateTo, PageRequest.of(page, size));
+        return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<AdminPaymentDetailResponse> getById(@PathVariable UUID id) {
+        PaymentEntity p = paymentRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "payment-not-found", "Not Found", "Paiement introuvable"));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(p));
     }
 
     /**
@@ -101,7 +142,7 @@ public class AdminPaymentController {
      */
     @PostMapping("/{id}/force-release")
     @Transactional
-    public ResponseEntity<PaymentResponse> forceRelease(@PathVariable UUID id) {
+    public ResponseEntity<AdminPaymentDetailResponse> forceRelease(@PathVariable UUID id) {
         PaymentEntity payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found",
@@ -220,19 +261,24 @@ public class AdminPaymentController {
         log.info("Admin force-released escrow for payment {} (bid={}, PI={})",
                 id, bidId, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(toResponse(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
     }
 
     /**
      * POST /admin/payments/{id}/refund
-     * Manually refunds the sender (Stripe {@code Refund}) for an escrowed payment — the
-     * counterpart to force-release. Used when a paid trip is cancelled / parcel refused /
-     * dispute resolved for the sender and the automatic refund did not run.
-     * Only allowed when status is ESCROW.
+     * Rend les fonds à l'expéditeur pour un paiement en escrow — contrepartie du
+     * force-release. Utilisé quand un trajet payé est annulé / colis refusé / litige
+     * résolu pour l'expéditeur et que le remboursement automatique n'a pas tourné.
+     * Uniquement en statut ESCROW.
+     *
+     * <p>L'escrow est un PaymentIntent {@code capture_method: manual} : tant que les fonds
+     * ne sont pas capturés (statut {@code requires_capture}), il faut ANNULER le
+     * PaymentIntent pour lever l'autorisation — {@code Refund.create} est réservé aux
+     * charges déjà capturées et échoue sur un hold. On distingue donc les deux cas.
      */
     @PostMapping("/{id}/refund")
     @Transactional
-    public ResponseEntity<PaymentResponse> refund(@PathVariable UUID id) {
+    public ResponseEntity<AdminPaymentDetailResponse> refund(@PathVariable UUID id) {
         PaymentEntity payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found",
@@ -248,16 +294,35 @@ public class AdminPaymentController {
         }
 
         try {
-            Refund.create(RefundCreateParams.builder()
-                    .setPaymentIntent(payment.getStripePaymentIntentId())
-                    .build());
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            String piStatus = pi.getStatus();
+            if (STATUS_CANCELED.equals(piStatus)) {
+                // Déjà annulé côté Stripe (hold levé) → rien à faire, on synchronise juste la DB.
+                log.info("Admin refund: PI {} déjà annulé — synchronisation DB uniquement", pi.getId());
+            } else if (STATUS_REQUIRES_CAPTURE.equals(piStatus)) {
+                // Fonds encore bloqués (non capturés) → annuler le PaymentIntent lève le hold.
+                pi.cancel();
+            } else {
+                // Fonds déjà capturés → remboursement classique.
+                Refund.create(RefundCreateParams.builder()
+                        .setPaymentIntent(payment.getStripePaymentIntentId())
+                        .build());
+            }
         } catch (StripeException e) {
-            log.error("Admin refund: Stripe refund failed for payment {} (PI={}): {}",
-                    id, payment.getStripePaymentIntentId(), e.getMessage(), e);
-            throw new DonyBusinessException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "stripe-refund-failed",
-                    "Stripe Error",
-                    "Impossible de rembourser le paiement Stripe. Veuillez réessayer.");
+            // Idempotence : si Stripe indique que le renversement a déjà eu lieu (charge déjà
+            // remboursée / PI déjà annulé), l'argent est déjà revenu à l'expéditeur — on considère
+            // l'opération réussie et on met simplement la DB à jour plutôt que d'échouer.
+            if (isAlreadyReversed(e)) {
+                log.info("Admin refund: renversement déjà effectué côté Stripe pour {} (PI={}, code={}) — DB synchronisée",
+                        id, payment.getStripePaymentIntentId(), e.getCode());
+            } else {
+                log.error("Admin refund: Stripe refund failed for payment {} (PI={}): {}",
+                        id, payment.getStripePaymentIntentId(), e.getMessage(), e);
+                throw new DonyBusinessException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "stripe-refund-failed",
+                        "Stripe Error",
+                        "Impossible de rembourser le paiement Stripe. Veuillez réessayer.");
+            }
         }
 
         // Reflect the committed DB transition on the managed entity for the response.
@@ -280,7 +345,7 @@ public class AdminPaymentController {
 
         log.info("Admin refunded escrow for payment {} (PI={})", id, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(toResponse(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -301,6 +366,11 @@ public class AdminPaymentController {
         return null;
     }
 
+    /** Vrai si l'erreur Stripe signifie que le paiement a déjà été remboursé/annulé (idempotence). */
+    private static boolean isAlreadyReversed(StripeException e) {
+        return e.getCode() != null && ALREADY_REVERSED_CODES.contains(e.getCode());
+    }
+
     private void resolveRelatedAlerts(UUID paymentId) {
         String paymentIdStr = paymentId.toString();
         List<AdminAlertEntity> alerts =
@@ -314,14 +384,4 @@ public class AdminPaymentController {
                 });
     }
 
-    private PaymentResponse toResponse(PaymentEntity payment) {
-        return new PaymentResponse(
-                payment.getId(),
-                payment.getBidId(),
-                null,
-                payment.getAmount(),
-                payment.getCommissionAmount(),
-                payment.getStatus().name()
-        );
-    }
 }

@@ -1,5 +1,7 @@
-package com.dony.api.payments.chargeback;
+package com.dony.api.admin;
 
+import com.dony.api.admin.dto.AdminChargebackResponse;
+import com.dony.api.payments.chargeback.ChargebackRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -12,18 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/admin/chargebacks")
 @PreAuthorize("hasRole('ADMIN')")
-public class ChargebackController {
+public class AdminChargebackController {
 
-    private final ChargebackService service;
+    private final ChargebackRepository chargebackRepository;
 
-    public ChargebackController(ChargebackService service) {
-        this.service = service;
+    public AdminChargebackController(ChargebackRepository chargebackRepository) {
+        this.chargebackRepository = chargebackRepository;
     }
 
     @GetMapping
-    public ResponseEntity<Page<ChargebackDto>> list(
+    public ResponseEntity<Page<AdminChargebackResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(service.listAll(PageRequest.of(page, size)));
+        return ResponseEntity.ok(
+                chargebackRepository.findAllByOrderByOpenedAtDesc(PageRequest.of(page, size))
+                        .map(AdminChargebackResponse::from));
     }
 }

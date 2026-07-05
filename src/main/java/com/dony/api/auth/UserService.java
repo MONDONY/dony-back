@@ -114,7 +114,7 @@ public class UserService {
 
     // Admin — override du taux de commission Dony d'un utilisateur (null = retour au taux global).
     @Transactional
-    public void setCommissionRateOverride(UUID userId, java.math.BigDecimal rate) {
+    public UserEntity setCommissionRateOverride(UUID userId, java.math.BigDecimal rate) {
         if (rate != null && (rate.signum() < 0 || rate.compareTo(java.math.BigDecimal.ONE) >= 0)) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "invalid-commission-rate",
                     "Invalid Commission Rate", "Le taux doit être dans [0, 1[ ou null (taux global)");
@@ -126,6 +126,7 @@ public class UserService {
         userRepository.save(user);
         auditService.log("USER", user.getId(), "USER_COMMISSION_RATE_OVERRIDE_SET", user.getId(),
                 Map.of("rate", rate == null ? "global" : rate.toPlainString()));
+        return user;
     }
 
     // Story 9.8 — Finalisation RGPD à J+30 (appelé par le scheduler)
@@ -190,18 +191,46 @@ public class UserService {
         return saved;
     }
 
+    @Transactional
+    public UserEntity suspendUser(UUID userId, String reason) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+        user.setStatus(UserStatus.SUSPENDED);
+        UserEntity saved = userRepository.save(user);
+        auditService.log("USER", userId, "USER_SUSPENDED_BY_ADMIN", userId,
+                Map.of("reason", reason != null ? reason : ""));
+        eventPublisher.publishEvent(new UserSuspendedEvent(userId, user.getPhoneNumber(), user.getEmail(), reason));
+        log.info("User {} suspended by admin", userId);
+        return saved;
+    }
+
+    @Transactional
+    public UserEntity banUser(UUID userId, String reason) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+        user.setStatus(UserStatus.BANNED);
+        UserEntity saved = userRepository.save(user);
+        auditService.log("USER", userId, "USER_BANNED_BY_ADMIN", userId,
+                Map.of("reason", reason != null ? reason : ""));
+        log.info("User {} banned by admin", userId);
+        return saved;
+    }
+
     // Story 9.5 — Admin unsuspend
     @Transactional
-    public void unsuspendUser(UUID userId) {
+    public UserEntity unsuspendUser(UUID userId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         user.setStatus(UserStatus.ACTIVE);
-        userRepository.save(user);
+        UserEntity saved = userRepository.save(user);
 
         auditService.log("USER", userId, "USER_UNSUSPENDED", userId, Map.of());
         log.info("User {} unsuspended by admin", userId);
+        return saved;
     }
 
     /**
