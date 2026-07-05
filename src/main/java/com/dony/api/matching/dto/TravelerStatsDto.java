@@ -10,7 +10,13 @@ public record TravelerStatsDto(
         long monthlyParcelsDelivered,
         double acceptanceRate,
         BigDecimal averageRating,
-        List<DestinationStat> topDestinations
+        List<DestinationStat> topDestinations,
+        // ── Vue d'ensemble tout-temps (cockpit) ──
+        long totalTripsCompleted,
+        long activeTrips,
+        long totalParcelsDelivered,
+        long parcelsInTransit,
+        int ratingCount
 ) {
     public record DestinationStat(String from, String to, long count) {}
 }

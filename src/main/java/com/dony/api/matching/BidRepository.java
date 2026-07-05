@@ -36,6 +36,15 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("""
         SELECT COUNT(b) FROM BidEntity b
         JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status IN :statuses
+    """)
+    long countByAnnouncementTravelerIdAndStatusIn(
+            @Param("travelerId") UUID travelerId,
+            @Param("statuses") java.util.Collection<BidStatus> statuses);
+
+    @Query("""
+        SELECT COUNT(b) FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
         WHERE a.travelerId = :travelerId AND b.status = :status
           AND b.createdAt BETWEEN :from AND :to
     """)

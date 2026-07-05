@@ -18,9 +18,13 @@ class MatchingDtoTest {
         TravelerStatsDto dto = new TravelerStatsDto(
                 BigDecimal.valueOf(500), BigDecimal.valueOf(2000),
                 3, 12, 0.95, BigDecimal.valueOf(4.8),
-                List.of(dest));
+                List.of(dest),
+                8, 2, 40, 3, 15);
         assertThat(dto.totalRevenue()).isEqualTo(BigDecimal.valueOf(2000));
         assertThat(dto.topDestinations()).hasSize(1);
+        assertThat(dto.totalTripsCompleted()).isEqualTo(8);
+        assertThat(dto.activeTrips()).isEqualTo(2);
+        assertThat(dto.ratingCount()).isEqualTo(15);
         assertThat(dest.from()).isEqualTo("Paris");
     }
 

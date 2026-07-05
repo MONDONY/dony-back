@@ -50,11 +50,20 @@ public class TravelerStatsService {
         long deliveredBids = bidRepository
                 .countDeliveredBidsForTraveler(userId, BidStatus.COMPLETED, monthStart, monthEnd);
 
-        long accepted = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.ACCEPTED);
+        // Taux d'acceptation : un bid accepté puis livré n'est plus en statut ACCEPTED,
+        // on compte donc tout bid ayant dépassé le stade de l'acceptation.
+        long accepted = bidRepository.countByAnnouncementTravelerIdAndStatusIn(userId, BidStatus.ACCEPTED_OR_BEYOND);
         long rejected = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.REJECTED);
         double acceptanceRate = (accepted + rejected) == 0 ? 0.0
                 : BigDecimal.valueOf((double) accepted / (accepted + rejected))
                         .setScale(2, RoundingMode.HALF_UP).doubleValue();
+
+        // ── Agrégats tout-temps pour la vue d'ensemble du cockpit ──
+        long totalTripsCompleted = announcementRepository.countByTravelerIdAndStatus(userId, AnnouncementStatus.COMPLETED);
+        long activeTrips = announcementRepository.countByTravelerIdAndStatusIn(
+                userId, List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL));
+        long totalParcelsDelivered = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.COMPLETED);
+        long parcelsInTransit = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.IN_TRANSIT);
 
         List<TravelerStatsDto.DestinationStat> topDestinations = announcementRepository
                 .findTopDestinationsForTraveler(userId, PageRequest.of(0, 3));
@@ -66,7 +75,12 @@ public class TravelerStatsService {
                 deliveredBids,
                 acceptanceRate,
                 traveler.getAverageRating() != null ? traveler.getAverageRating() : BigDecimal.ZERO,
-                topDestinations
+                topDestinations,
+                totalTripsCompleted,
+                activeTrips,
+                totalParcelsDelivered,
+                parcelsInTransit,
+                traveler.getRatingCount()
         );
     }
 }

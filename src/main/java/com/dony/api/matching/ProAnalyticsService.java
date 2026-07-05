@@ -61,8 +61,9 @@ public class ProAnalyticsService {
         // Parcels delivered
         long parcels = bidRepository.countDeliveredBidsForTraveler(userId, BidStatus.COMPLETED, from, to);
 
-        // Acceptance rate
-        long accepted = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.ACCEPTED);
+        // Acceptance rate — un bid accepté puis livré n'est plus en statut ACCEPTED :
+        // on compte tout bid ayant dépassé le stade de l'acceptation (ACCEPTED_OR_BEYOND).
+        long accepted = bidRepository.countByAnnouncementTravelerIdAndStatusIn(userId, BidStatus.ACCEPTED_OR_BEYOND);
         long rejected = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.REJECTED);
         double acceptRate = (accepted + rejected) == 0 ? 0.0
                 : BigDecimal.valueOf((double) accepted / (accepted + rejected))
