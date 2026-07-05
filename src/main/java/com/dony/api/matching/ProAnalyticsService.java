@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.NumberFormat;
+import java.util.Locale;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -110,8 +112,12 @@ public class ProAnalyticsService {
         return (diff >= 0 ? "+" : "") + diff;
     }
 
+    // Format monétaire fr-FR (« 1 234,56 € ») cohérent avec le rendu de la table
+    // côté front (toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })),
+    // pour que la carte KPI « Revenus nets » et la colonne Net s'affichent pareil.
     private String formatEuros(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP).toString() + " €";
+        return NumberFormat.getCurrencyInstance(Locale.FRANCE)
+                .format(amount.setScale(2, RoundingMode.HALF_UP));
     }
 
     private String formatPercent(double rate) {
@@ -122,29 +128,34 @@ public class ProAnalyticsService {
         return v != null ? v : BigDecimal.ZERO;
     }
 
+    /**
+     * Détail des transactions : une ligne par annonce ayant généré des paiements
+     * RELEASED sur la période. Piloté par les mêmes paiements que le KPI
+     * « Revenus nets » (statut RELEASED + {@code createdAt} dans la période), donc
+     * la somme des colonnes Net se réconcilie exactement avec ce KPI. La commission
+     * remontée est celle réellement prélevée (overrides figés inclus).
+     */
     private List<TransactionRowDto> buildTransactions(UUID userId, LocalDateTime from, LocalDateTime to) {
-        List<AnnouncementEntity> announcements =
-                announcementRepository.findByTravelerIdAndStatusAndCreatedAtBetween(
-                        userId, AnnouncementStatus.COMPLETED, from, to);
-        List<TransactionRowDto> rows = new ArrayList<>();
-        for (AnnouncementEntity ann : announcements) {
-            long parcelCount = bidRepository.countByAnnouncementIdAndStatus(ann.getId(), BidStatus.COMPLETED);
-            BigDecimal gross = orZero(paymentRepository.sumGrossRevenueForAnnouncement(ann.getId(), PaymentStatus.RELEASED));
-            // Commission réellement prélevée (taux effectif figé, overrides inclus) — pas un recalcul au taux global.
-            BigDecimal commission = orZero(paymentRepository.sumCommissionForAnnouncement(ann.getId(), PaymentStatus.RELEASED));
-            BigDecimal net = gross.subtract(commission);
-            String corridor = ann.getDepartureCity() + " → " + ann.getArrivalCity();
-            rows.add(new TransactionRowDto(
-                    ann.getId().toString(),
-                    corridor,
-                    ann.getDepartureDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                    (int) parcelCount,
-                    gross.multiply(BigDecimal.valueOf(100)).longValue(),
-                    commission.multiply(BigDecimal.valueOf(100)).longValue(),
-                    net.multiply(BigDecimal.valueOf(100)).longValue()
-            ));
-        }
-        return rows;
+        return paymentRepository
+                .findReleasedRevenueByAnnouncement(userId, PaymentStatus.RELEASED, from, to)
+                .stream()
+                .map(r -> {
+                    BigDecimal net = r.gross().subtract(r.commission());
+                    return new TransactionRowDto(
+                            r.announcementId().toString(),
+                            r.departureCity() + " → " + r.arrivalCity(),
+                            r.departureDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                            (int) r.parcelCount(),
+                            toCents(r.gross()),
+                            toCents(r.commission()),
+                            toCents(net)
+                    );
+                })
+                .toList();
+    }
+
+    private long toCents(BigDecimal euros) {
+        return euros.multiply(BigDecimal.valueOf(100)).longValue();
     }
 
     private LocalDateTime[] periodRange(String period) {
