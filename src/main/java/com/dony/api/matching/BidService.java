@@ -38,6 +38,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -443,9 +444,14 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
         BidStatus bidStatus = (status != null && !status.isBlank()) ? BidStatus.valueOf(status) : null;
         String qParam = (q != null && !q.isBlank()) ? q.trim() : null;
-        return bidRepository.findByTravelerIdFiltered(
-                traveler.getId(), bidStatus, announcementId, qParam, PageRequest.of(page, size))
-                .map(b -> toResponse(b, traveler));
+        Page<BidEntity> bids = bidRepository.findByTravelerIdFiltered(
+                traveler.getId(), bidStatus, announcementId, qParam, PageRequest.of(page, size));
+        // Chaque colis doit afficher son EXPÉDITEUR réel (les champs sender.* du DTO),
+        // pas le voyageur connecté. On résout les expéditeurs en une seule requête.
+        Map<UUID, UserEntity> sendersById = userRepository.findAllById(
+                        bids.getContent().stream().map(BidEntity::getSenderId).distinct().toList())
+                .stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
+        return bids.map(b -> toResponse(b, sendersById.get(b.getSenderId())));
     }
 
     @Transactional
