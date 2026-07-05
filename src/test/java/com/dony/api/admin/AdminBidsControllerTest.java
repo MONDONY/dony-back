@@ -35,11 +35,11 @@ class AdminBidsControllerTest {
     @Test
     void listBids_returnsPage() {
         Page<BidEntity> page = new PageImpl<>(List.of());
-        when(bidRepo.findAdminFiltered(isNull(), isNull(), isNull(), any())).thenReturn(page);
+        when(bidRepo.findAdminFiltered(isNull(), isNull(), isNull(), isNull(), isNull(), any())).thenReturn(page);
         // empty page → annIds is empty → findAllById called with empty collection
         when(announcementRepo.findAllById(any())).thenReturn(List.of());
         // userRepo.findAllById not called — empty page → no userIds to resolve
-        ResponseEntity<?> resp = controller().listBids(null, null, null, 0, 20);
+        ResponseEntity<?> resp = controller().listBids(null, null, null, null, null, 0, 20);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();
     }

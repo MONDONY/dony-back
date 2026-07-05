@@ -49,7 +49,7 @@ class AdminAuditControllerTest {
         AuditLogEntity entity = new AuditLogEntity();
         entity.setActorId(actorId);
         Page<AuditLogEntity> page = new PageImpl<>(List.of(entity));
-        when(auditRepo.findFiltered(isNull(), isNull(), eq(actorId), isNull(), isNull(), any()))
+        when(auditRepo.findFiltered(isNull(), isNull(), eq(actorId.toString()), isNull(), isNull(), any()))
             .thenReturn(page);
         com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
         user.setFirstName("Alice");
@@ -68,7 +68,7 @@ class AdminAuditControllerTest {
         AuditLogEntity entity = new AuditLogEntity();
         entity.setActorId(actorId);
         Page<AuditLogEntity> page = new PageImpl<>(List.of(entity));
-        when(auditRepo.findFiltered(isNull(), isNull(), eq(actorId), isNull(), isNull(), any()))
+        when(auditRepo.findFiltered(isNull(), isNull(), eq(actorId.toString()), isNull(), isNull(), any()))
             .thenReturn(page);
         com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
         user.setFirstName("Alice");
