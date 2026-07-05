@@ -17,4 +17,10 @@ public interface DisputeRepository extends JpaRepository<DisputeEntity, UUID> {
 
     @Query("SELECT d FROM DisputeEntity d WHERE (:status IS NULL OR d.status = :status) ORDER BY d.createdAt DESC")
     Page<DisputeEntity> findAdminFiltered(@Param("status") String status, Pageable pageable);
+
+    List<DisputeEntity> findAllByCreatedAtBetweenOrderByCreatedAtAsc(
+            java.time.LocalDateTime from, java.time.LocalDateTime to);
+
+    List<DisputeEntity> findAllByResolutionTypeAndResolvedAtBetweenOrderByResolvedAtAsc(
+            String resolutionType, java.time.OffsetDateTime from, java.time.OffsetDateTime to);
 }

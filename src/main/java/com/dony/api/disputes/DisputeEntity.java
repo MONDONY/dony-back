@@ -48,6 +48,9 @@ public class DisputeEntity extends BaseEntity {
     @Column(name = "beneficiary_user_id")
     private UUID beneficiaryUserId;
 
+    @Column(name = "guarantee_amount_cents")
+    private Long guaranteeAmountCents;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -80,4 +83,7 @@ public class DisputeEntity extends BaseEntity {
 
     public UUID getBeneficiaryUserId() { return beneficiaryUserId; }
     public void setBeneficiaryUserId(UUID beneficiaryUserId) { this.beneficiaryUserId = beneficiaryUserId; }
+
+    public Long getGuaranteeAmountCents() { return guaranteeAmountCents; }
+    public void setGuaranteeAmountCents(Long guaranteeAmountCents) { this.guaranteeAmountCents = guaranteeAmountCents; }
 }

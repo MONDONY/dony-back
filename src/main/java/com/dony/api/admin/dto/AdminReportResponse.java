@@ -2,6 +2,7 @@ package com.dony.api.admin.dto;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record AdminReportResponse(
@@ -15,6 +16,7 @@ public record AdminReportResponse(
         String actionTaken,
         String resolutionNote,
         OffsetDateTime resolvedAt,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        List<String> photoUrls
 ) {
 }

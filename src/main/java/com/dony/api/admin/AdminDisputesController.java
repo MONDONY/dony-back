@@ -130,6 +130,7 @@ public class AdminDisputesController {
         entity.setResolutionNote(request.reason());
         entity.setResolvedAt(OffsetDateTime.now(ZoneOffset.UTC));
         entity.setBeneficiaryUserId(request.beneficiaryUserId());
+        entity.setGuaranteeAmountCents((long) request.amountCents());
         disputeRepo.save(entity);
 
         auditService.log("DISPUTE", entity.getId(), "GUARANTEE_FUND", null,

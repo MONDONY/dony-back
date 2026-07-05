@@ -38,9 +38,10 @@ class AdminReportsControllerTest {
     @Mock ReportRepository reportRepo;
     @Mock UserRepository userRepo;
     @Mock AuditService auditService;
+    @Mock com.dony.api.signalements.ReportService reportService;
 
     private AdminReportsController controller() {
-        return new AdminReportsController(reportRepo, userRepo, auditService);
+        return new AdminReportsController(reportRepo, userRepo, auditService, reportService);
     }
 
     // ---- listReports ----

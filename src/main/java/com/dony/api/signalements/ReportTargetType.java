@@ -1,5 +1,5 @@
 package com.dony.api.signalements;
 
 public enum ReportTargetType {
-    USER, ANNOUNCEMENT, BID, MESSAGE, RATING
+    USER, ANNOUNCEMENT, BID, MESSAGE, RATING, APP
 }

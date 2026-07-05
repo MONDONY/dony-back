@@ -12,7 +12,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
-import com.dony.api.payments.dto.PaymentResponse;
+import com.dony.api.admin.dto.AdminPaymentDetailResponse;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -113,7 +113,7 @@ class AdminPaymentControllerTest {
             ArgumentCaptor<TransferCreateParams> captor = ArgumentCaptor.forClass(TransferCreateParams.class);
             trStatic.when(() -> Transfer.create(captor.capture())).thenReturn(mock(Transfer.class));
 
-            ResponseEntity<PaymentResponse> resp = controller.forceRelease(paymentId);
+            ResponseEntity<AdminPaymentDetailResponse> resp = controller.forceRelease(paymentId);
 
             verify(pi, never()).capture();
             TransferCreateParams params = captor.getValue();
@@ -122,7 +122,7 @@ class AdminPaymentControllerTest {
             assertThat(params.getSourceTransaction()).isEqualTo("ch_old");
             assertThat(params.getMetadata().get("bid_id")).isEqualTo(bidId.toString());
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(resp.getBody().getStatus()).isEqualTo("RELEASED");
+            assertThat(resp.getBody().status()).isEqualTo("RELEASED");
         }
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
@@ -225,11 +225,11 @@ class AdminPaymentControllerTest {
             ArgumentCaptor<RefundCreateParams> captor = ArgumentCaptor.forClass(RefundCreateParams.class);
             refundStatic.when(() -> Refund.create(captor.capture())).thenReturn(mock(Refund.class));
 
-            ResponseEntity<PaymentResponse> resp = controller.refund(paymentId);
+            ResponseEntity<AdminPaymentDetailResponse> resp = controller.refund(paymentId);
 
             assertThat(captor.getValue().getPaymentIntent()).isEqualTo("pi_xxx");
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(resp.getBody().getStatus()).isEqualTo("REFUNDED");
+            assertThat(resp.getBody().status()).isEqualTo("REFUNDED");
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_FORCE_REFUNDED"), any(), any());

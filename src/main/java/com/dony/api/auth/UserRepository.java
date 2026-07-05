@@ -124,4 +124,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             @Param("queryLike") String queryLike,
             @Param("role") String role,
             Pageable pageable);
+
+    java.util.List<UserEntity> findAllByCreatedAtBetweenOrderByCreatedAtAsc(
+            java.time.LocalDateTime from, java.time.LocalDateTime to);
 }

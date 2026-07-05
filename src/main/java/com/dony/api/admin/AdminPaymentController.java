@@ -16,7 +16,6 @@ import com.dony.api.payments.PaymentEntity;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
 import com.dony.api.payments.chargeback.ChargebackRepository;
-import com.dony.api.payments.dto.PaymentResponse;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -92,10 +91,16 @@ public class AdminPaymentController {
     @GetMapping
     public ResponseEntity<Page<AdminPaymentListItemResponse>> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String method,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        // La table payments ne contient que l'escrow Stripe (CASH/mobile money ne créent
+        // pas de ligne payments) — un filtre method ≠ STRIPE ne peut rien retourner.
+        if (method != null && !method.isBlank() && !"STRIPE".equalsIgnoreCase(method)) {
+            return ResponseEntity.ok(Page.empty(PageRequest.of(page, size)));
+        }
         Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, dateFrom, dateTo, PageRequest.of(page, size));
         return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
     }
@@ -132,7 +137,7 @@ public class AdminPaymentController {
      */
     @PostMapping("/{id}/force-release")
     @Transactional
-    public ResponseEntity<PaymentResponse> forceRelease(@PathVariable UUID id) {
+    public ResponseEntity<AdminPaymentDetailResponse> forceRelease(@PathVariable UUID id) {
         PaymentEntity payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found",
@@ -251,7 +256,7 @@ public class AdminPaymentController {
         log.info("Admin force-released escrow for payment {} (bid={}, PI={})",
                 id, bidId, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(toResponse(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
     }
 
     /**
@@ -263,7 +268,7 @@ public class AdminPaymentController {
      */
     @PostMapping("/{id}/refund")
     @Transactional
-    public ResponseEntity<PaymentResponse> refund(@PathVariable UUID id) {
+    public ResponseEntity<AdminPaymentDetailResponse> refund(@PathVariable UUID id) {
         PaymentEntity payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found",
@@ -311,7 +316,7 @@ public class AdminPaymentController {
 
         log.info("Admin refunded escrow for payment {} (PI={})", id, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(toResponse(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -345,14 +350,4 @@ public class AdminPaymentController {
                 });
     }
 
-    private PaymentResponse toResponse(PaymentEntity payment) {
-        return new PaymentResponse(
-                payment.getId(),
-                payment.getBidId(),
-                null,
-                payment.getAmount(),
-                payment.getCommissionAmount(),
-                payment.getStatus().name()
-        );
-    }
 }

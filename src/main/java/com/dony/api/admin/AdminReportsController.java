@@ -9,6 +9,7 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.signalements.ReportEntity;
 import com.dony.api.signalements.ReportRepository;
+import com.dony.api.signalements.ReportService;
 import com.dony.api.signalements.ReportStatus;
 import com.dony.api.signalements.ReportTargetType;
 import org.springframework.data.domain.Page;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -36,13 +38,16 @@ public class AdminReportsController {
     private final ReportRepository reportRepo;
     private final UserRepository userRepo;
     private final AuditService auditService;
+    private final ReportService reportService;
 
     public AdminReportsController(ReportRepository reportRepo,
                                   UserRepository userRepo,
-                                  AuditService auditService) {
+                                  AuditService auditService,
+                                  ReportService reportService) {
         this.reportRepo = reportRepo;
         this.userRepo = userRepo;
         this.auditService = auditService;
+        this.reportService = reportService;
     }
 
     @GetMapping("/admin/reports")
@@ -64,7 +69,11 @@ public class AdminReportsController {
                 .filter(u -> u.getId() != null)
                 .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
 
-        Page<AdminReportResponse> result = reports.map(r -> toResponse(r, usersById));
+        Map<UUID, List<String>> photosByReport = reportService.photoUrlsByReport(
+                reports.getContent().stream().map(ReportEntity::getId).collect(Collectors.toSet()));
+
+        Page<AdminReportResponse> result = reports.map(r ->
+                toResponse(r, usersById, photosByReport.getOrDefault(r.getId(), List.of())));
         return ResponseEntity.ok(result);
     }
 
@@ -95,14 +104,14 @@ public class AdminReportsController {
                 report.getReporterId() != null ? Set.of(report.getReporterId()) : Set.of()).stream()
                 .filter(u -> u.getId() != null)
                 .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
-        return ResponseEntity.ok(toResponse(report, singleUser));
+        return ResponseEntity.ok(toResponse(report, singleUser, reportService.photoUrls(report.getId())));
     }
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private AdminReportResponse toResponse(ReportEntity r, Map<UUID, UserEntity> users) {
+    private AdminReportResponse toResponse(ReportEntity r, Map<UUID, UserEntity> users, List<String> photoUrls) {
         String reporterName = resolveReporterName(r.getReporterId(), users);
         return new AdminReportResponse(
                 r.getId(),
@@ -115,7 +124,8 @@ public class AdminReportsController {
                 r.getActionTaken(),
                 r.getResolutionNote(),
                 r.getResolvedAt(),
-                r.getCreatedAt()
+                r.getCreatedAt(),
+                photoUrls
         );
     }
 
