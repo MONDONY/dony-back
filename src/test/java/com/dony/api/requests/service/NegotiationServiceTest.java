@@ -720,6 +720,75 @@ class NegotiationServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("not-thread-participant");
         }
+
+        private NegotiationThreadEntity threadFor(UUID threadId) {
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return thread;
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = true — solde wallet suffisant")
+        void getById_cashCommissionAvailable_trueWhenWalletSufficient() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isTrue();
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = false — pas de solde ni de carte")
+        void getById_cashCommissionAvailable_falseWhenNoWalletAndNoCard() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(false);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isFalse();
+        }
+
+        @Test
+        @DisplayName("cashCommissionAvailable = true — solde insuffisant mais carte enregistrée")
+        void getById_cashCommissionAvailable_trueWhenCardEvenIfWalletInsufficient() {
+            UUID THREAD_ID = UUID.randomUUID();
+            var thread = threadFor(THREAD_ID);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
+            when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(true);
+
+            var resp = service.getById(TRAVELER_ID, THREAD_ID);
+
+            assertThat(resp.cashCommissionAvailable()).isTrue();
+        }
     }
 
     @Nested
@@ -746,12 +815,17 @@ class NegotiationServiceTest {
             thread.setRoundsCount((short) 2);
             thread.setLastActivityAt(java.time.LocalDateTime.now());
 
+            // Trajet lié via submitTrip() (existant, pas dédié) — pas de
+            // linkedPackageRequestId, donc ne doit PAS être soft-delete.
+            com.dony.api.matching.AnnouncementEntity existingAnn = new com.dony.api.matching.AnnouncementEntity();
+
             when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
             when(config.maxNegotiationRounds()).thenReturn(5);
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(existingAnn));
 
             NegotiationThreadResponse resp = service.refuseTrip(SENDER_ID, threadId, "Trajet non adapté");
 
@@ -762,6 +836,55 @@ class NegotiationServiceTest {
             verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(threadId), eq("TRIP_REFUSED"), eq(SENDER_ID), any());
             verify(eventPublisher).publishEvent(any(NegotiationAwaitingTripEvent.class));
             verify(threadRepo).save(thread);
+            assertThat(existingAnn.getDeletedAt()).isNull();
+            verify(announcementRepo, never()).save(any());
+        }
+
+        @Test
+        void refuseTrip_dedicatedTrip_softDeletesOrphanedAnnouncement() {
+            UUID threadId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setTravelerAnnouncementId(announcementId);
+            thread.setTravelerTravelDate(java.time.LocalDate.now());
+            thread.setTravelerAvailableKg(new BigDecimal("5"));
+            thread.setCurrentPriceEur(new BigDecimal("45"));
+            thread.setRoundsCount((short) 2);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+
+            // Trajet DÉDIÉ créé exclusivement pour cette demande (createDedicatedTrip) —
+            // n'a plus aucune utilité une fois détaché, doit être soft-delete.
+            com.dony.api.matching.AnnouncementEntity dedicatedAnn = new com.dony.api.matching.AnnouncementEntity();
+            dedicatedAnn.setLinkedPackageRequestId(REQUEST_ID);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(dedicatedAnn, announcementId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(dedicatedAnn));
+
+            service.refuseTrip(SENDER_ID, threadId, "Trajet non adapté");
+
+            assertThat(dedicatedAnn.getDeletedAt()).isNotNull();
+            verify(announcementRepo).save(dedicatedAnn);
+            verify(auditService).log(eq("ANNOUNCEMENT"), eq(announcementId),
+                eq("DEDICATED_TRIP_ORPHANED_ON_REFUSAL"), eq(SENDER_ID), any());
         }
 
         @Test
@@ -1331,8 +1454,13 @@ class NegotiationServiceTest {
             request.setWeightKg(new BigDecimal("5"));
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            // Simule le comportement réel de CashCommissionService.chargeNegotiationCommission :
+            // stamper commissionChargedVia sur le thread en même temps que le charge réussi.
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
-                .thenReturn(true);
+                .thenAnswer(inv -> {
+                    thread.setCommissionChargedVia("WALLET");
+                    return true;
+                });
             when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
             when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -1351,6 +1479,9 @@ class NegotiationServiceTest {
             verify(eventPublisher).publishEvent(captor.capture());
             assertThat(captor.getValue().paymentMethod())
                 .isEqualTo(com.dony.api.payments.cash.PaymentMethod.CASH);
+            // Sans cette propagation, le bid matérialisé (ThreadAcceptedBidListener) ne
+            // saurait pas comment rembourser la commission si annulé avant remise.
+            assertThat(captor.getValue().commissionChargedVia()).isEqualTo("WALLET");
         }
 
         @Test
