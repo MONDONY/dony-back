@@ -25,4 +25,11 @@ public enum BidStatus {
      */
     public static final Set<BidStatus> ACCEPTED_OR_BEYOND = EnumSet.of(
             ACCEPTED, HANDED_OVER, IN_TRANSIT, COMPLETED, NO_SHOW, PARCEL_REFUSED);
+
+    /**
+     * Colis actuellement pris en charge par le voyageur mais pas encore livrés :
+     * remis en main (HANDED_OVER) ou en transit (IN_TRANSIT). Sert au compteur
+     * « colis en cours » du cockpit.
+     */
+    public static final Set<BidStatus> EN_ROUTE = EnumSet.of(HANDED_OVER, IN_TRANSIT);
 }

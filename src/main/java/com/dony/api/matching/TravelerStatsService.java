@@ -60,10 +60,13 @@ public class TravelerStatsService {
 
         // ── Agrégats tout-temps pour la vue d'ensemble du cockpit ──
         long totalTripsCompleted = announcementRepository.countByTravelerIdAndStatus(userId, AnnouncementStatus.COMPLETED);
+        // Trajets actifs = mêmes statuts que TripsSummaryService (ACTIVE, FULL, IN_PROGRESS) :
+        // un trajet parti avec des colis (IN_PROGRESS) reste « actif » tant qu'il n'est pas COMPLETED.
         long activeTrips = announcementRepository.countByTravelerIdAndStatusIn(
-                userId, List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL));
+                userId, List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL, AnnouncementStatus.IN_PROGRESS));
         long totalParcelsDelivered = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.COMPLETED);
-        long parcelsInTransit = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.IN_TRANSIT);
+        // Colis « en cours » = remis en main OU en transit (pas encore livrés).
+        long parcelsInTransit = bidRepository.countByAnnouncementTravelerIdAndStatusIn(userId, BidStatus.EN_ROUTE);
 
         List<TravelerStatsDto.DestinationStat> topDestinations = announcementRepository
                 .findTopDestinationsForTraveler(userId, PageRequest.of(0, 3));

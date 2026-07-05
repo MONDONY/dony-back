@@ -61,9 +61,10 @@ class TravelerStatsServiceTest {
         // Agrégats tout-temps.
         when(announcementRepository.countByTravelerIdAndStatus(id, AnnouncementStatus.COMPLETED)).thenReturn(7L);
         when(announcementRepository.countByTravelerIdAndStatusIn(
-                eq(id), eq(List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL)))).thenReturn(1L);
+                eq(id), eq(List.of(AnnouncementStatus.ACTIVE, AnnouncementStatus.FULL, AnnouncementStatus.IN_PROGRESS))))
+                .thenReturn(1L);
         when(bidRepository.countByAnnouncementTravelerIdAndStatus(id, BidStatus.COMPLETED)).thenReturn(3L);
-        when(bidRepository.countByAnnouncementTravelerIdAndStatus(id, BidStatus.IN_TRANSIT)).thenReturn(1L);
+        when(bidRepository.countByAnnouncementTravelerIdAndStatusIn(id, BidStatus.EN_ROUTE)).thenReturn(1L);
         when(announcementRepository.findTopDestinationsForTraveler(eq(id), any())).thenReturn(List.of());
 
         TravelerStatsDto dto = service().computeStats(traveler);
