@@ -808,7 +808,8 @@ public class NegotiationService {
             request.getDisclaimerSignedAt(),
             request.getDisclaimerSignedIp(),
             thread.getPaymentMethod(),
-            photoService.objectKeys(request.getId())
+            photoService.objectKeys(request.getId()),
+            thread.getCommissionChargedVia()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),
@@ -915,12 +916,28 @@ public class NegotiationService {
         if (thread.getTravelerAnnouncementId() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/no-trip-linked");
         }
+        UUID oldAnnouncementId = thread.getTravelerAnnouncementId();
 
         // Effacer le trajet lié et repasser en AWAITING_TRIP
         thread.setTravelerAnnouncementId(null);
         thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+
+        // Si le trajet détaché est un trajet DÉDIÉ créé exclusivement pour cette
+        // demande (via createDedicatedTrip — linkedPackageRequestId == request.id ;
+        // jamais le cas pour un trajet existant lié via submitTrip), il n'a plus
+        // aucune utilité une fois détaché : availableKg=0 pour toujours, personne
+        // ne pourra jamais le réserver. Sans ce nettoyage il reste ACTIVE pour
+        // toujours, orphelin dans « Mes trajets » du voyageur avec reservedKg figé.
+        announcementRepo.findById(oldAnnouncementId).ifPresent(ann -> {
+            if (request.getId().equals(ann.getLinkedPackageRequestId())) {
+                ann.softDelete();
+                announcementRepo.save(ann);
+                auditService.log("ANNOUNCEMENT", ann.getId(), "DEDICATED_TRIP_ORPHANED_ON_REFUSAL", callerId,
+                    Map.of("threadId", threadId.toString()));
+            }
+        });
 
         // Persister la raison du refus comme message visible dans le thread
         if (reason != null && !reason.isBlank()) {
@@ -975,7 +992,7 @@ public class NegotiationService {
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
-        return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn);
+        return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn, true);
     }
 
     @Transactional(readOnly = true)
@@ -1008,7 +1025,7 @@ public class NegotiationService {
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
                     ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
-                return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn));
+                return java.util.stream.Stream.of(toResponse(t, messages, null, travelerOpt.get(), requestOpt.get(), userId, senderName, linkedAnn, true));
             })
             .toList();
     }
@@ -1046,7 +1063,7 @@ public class NegotiationService {
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
                     ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
-                return toResponse(t, messages, null, lt_traveler, request, callerId, senderName, linkedAnn);
+                return toResponse(t, messages, null, lt_traveler, request, callerId, senderName, linkedAnn, true);
             })
             .toList();
     }
@@ -1059,6 +1076,27 @@ public class NegotiationService {
                                           UUID callerId,
                                           String senderName,
                                           com.dony.api.matching.AnnouncementEntity linkedAnn) {
+        return toResponse(t, messages, paymentIntentClientSecret, traveler, request, callerId,
+            senderName, linkedAnn, false);
+    }
+
+    /**
+     * @param checkCashAvailability whether to consult {@link CashGatePort} to compute
+     *        {@code cashCommissionAvailable}. Only the read paths that actually feed the
+     *        mobile payment-method picker ({@code getById}/{@code listMine}/{@code
+     *        listForRequest}) need this — action methods (start/accept/counter/submitTrip/
+     *        finalize…) skip it to avoid an extra wallet/card lookup on every write, and to
+     *        keep the existing "cash gate untouched for non-cash flows" test invariants.
+     */
+    NegotiationThreadResponse toResponse(NegotiationThreadEntity t,
+                                          List<NegotiationMessageResponse> messages,
+                                          String paymentIntentClientSecret,
+                                          UserEntity traveler,
+                                          PackageRequestEntity request,
+                                          UUID callerId,
+                                          String senderName,
+                                          com.dony.api.matching.AnnouncementEntity linkedAnn,
+                                          boolean checkCashAvailability) {
         boolean isMyTurn = false;
         boolean canAccept = false;
         boolean canCounter = false;
@@ -1100,6 +1138,17 @@ public class NegotiationService {
                 .map(com.dony.api.auth.UserEntity::getAvatarUrl)
                 .orElse(null));
 
+        // Default true (non-blocking) when unchecked: action responses aren't used to
+        // render the payment-method picker, so we don't want a stale "false" here to
+        // ever be mistaken for an authoritative "cash unavailable".
+        boolean cashCommissionAvailable = true;
+        if (checkCashAvailability && t.getCurrentPriceEur() != null) {
+            BigDecimal commission = PriceBreakdown.fromNet(
+                t.getCurrentPriceEur(), commissionProperties.rate()).commission();
+            cashCommissionAvailable = cashGatePort.hasSufficientFunds(t.getTravelerId(), commission)
+                || cashGatePort.hasCommissionCard(t.getTravelerId());
+        }
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1116,7 +1165,8 @@ public class NegotiationService {
             linkedTrip,
             gross,
             t.getPaymentMethod(),
-            t.getMaterializedBidId()
+            t.getMaterializedBidId(),
+            cashCommissionAvailable
         );
     }
 
