@@ -831,6 +831,8 @@ class AnnouncementServiceTest {
             announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
 
             assertThat(bid.getStatus()).isEqualTo(BidStatus.REJECTED);
+            // Rejet marqué « technique » → exclu du taux d'acceptation du voyageur.
+            assertThat(bid.getRejectionReason()).isEqualTo(BidEntity.REJECTION_ANNOUNCEMENT_DELETED);
             verify(bidRepository).save(bid);
             assertThat(a.getDeletedAt()).isNotNull();
         }

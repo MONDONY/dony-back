@@ -64,7 +64,8 @@ public class ProAnalyticsService {
         // Acceptance rate — un bid accepté puis livré n'est plus en statut ACCEPTED :
         // on compte tout bid ayant dépassé le stade de l'acceptation (ACCEPTED_OR_BEYOND).
         long accepted = bidRepository.countByAnnouncementTravelerIdAndStatusIn(userId, BidStatus.ACCEPTED_OR_BEYOND);
-        long rejected = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.REJECTED);
+        // Refus explicites seulement — les bids rejetés par suppression d'annonce ne comptent pas.
+        long rejected = bidRepository.countExplicitRejectionsForTraveler(userId);
         double acceptRate = (accepted + rejected) == 0 ? 0.0
                 : BigDecimal.valueOf((double) accepted / (accepted + rejected))
                         .setScale(2, RoundingMode.HALF_UP).doubleValue();

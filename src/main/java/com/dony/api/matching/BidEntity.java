@@ -79,6 +79,13 @@ public class BidEntity extends BaseEntity {
     @Column(name = "tracking_token", unique = true, length = 36)
     private String trackingToken;
 
+    /**
+     * Marqueur posé dans {@code rejectionReason} quand un bid passe en REJECTED
+     * parce que son annonce est supprimée (et non refusé explicitement par le
+     * voyageur). Permet d'exclure ces rejets « techniques » du taux d'acceptation.
+     */
+    public static final String REJECTION_ANNOUNCEMENT_DELETED = "ANNOUNCEMENT_DELETED";
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 

@@ -53,7 +53,8 @@ public class TravelerStatsService {
         // Taux d'acceptation : un bid accepté puis livré n'est plus en statut ACCEPTED,
         // on compte donc tout bid ayant dépassé le stade de l'acceptation.
         long accepted = bidRepository.countByAnnouncementTravelerIdAndStatusIn(userId, BidStatus.ACCEPTED_OR_BEYOND);
-        long rejected = bidRepository.countByAnnouncementTravelerIdAndStatus(userId, BidStatus.REJECTED);
+        // Refus explicites seulement — les bids rejetés par suppression d'annonce ne comptent pas.
+        long rejected = bidRepository.countExplicitRejectionsForTraveler(userId);
         double acceptanceRate = (accepted + rejected) == 0 ? 0.0
                 : BigDecimal.valueOf((double) accepted / (accepted + rejected))
                         .setScale(2, RoundingMode.HALF_UP).doubleValue();

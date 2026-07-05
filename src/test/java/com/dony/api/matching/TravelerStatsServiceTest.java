@@ -56,7 +56,8 @@ class TravelerStatsServiceTest {
         // Acceptation : 4 bids acceptés-ou-au-delà, 2 rejetés → 4/6 = 0,67 (et non 0 %).
         when(bidRepository.countByAnnouncementTravelerIdAndStatusIn(id, BidStatus.ACCEPTED_OR_BEYOND))
                 .thenReturn(4L);
-        when(bidRepository.countByAnnouncementTravelerIdAndStatus(id, BidStatus.REJECTED)).thenReturn(2L);
+        // Rejets EXPLICITES seulement (les rejets par suppression d'annonce sont exclus).
+        when(bidRepository.countExplicitRejectionsForTraveler(id)).thenReturn(2L);
 
         // Agrégats tout-temps.
         when(announcementRepository.countByTravelerIdAndStatus(id, AnnouncementStatus.COMPLETED)).thenReturn(7L);
