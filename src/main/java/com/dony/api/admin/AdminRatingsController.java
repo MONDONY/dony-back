@@ -46,13 +46,17 @@ public class AdminRatingsController {
     @GetMapping("/admin/ratings")
     public ResponseEntity<Page<AdminRatingResponse>> listRatings(
             @RequestParam(required = false) Boolean flagged,
+            @RequestParam(required = false) Boolean flaggedOnly,
             @RequestParam(required = false) Integer minScore,
             @RequestParam(required = false) Integer maxScore,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
+        // Le front envoie flaggedOnly=true ; flagged reste accepté (compat).
+        Boolean flaggedFilter = flagged != null ? flagged
+                : (Boolean.TRUE.equals(flaggedOnly) ? Boolean.TRUE : null);
         Page<RatingEntity> entities = ratingRepo.findAdminFiltered(
-                flagged, minScore, maxScore,
+                flaggedFilter, minScore, maxScore,
                 PageRequest.of(page, size, Sort.by("createdAt").descending()));
 
         // Batch load all referenced users
@@ -76,6 +80,7 @@ public class AdminRatingsController {
                                                               @RequestBody ExcludeRatingRequest request) {
         RatingEntity rating = findRatingOrThrow(id);
         rating.setExcludedFromAverage(request.excluded());
+        rating.setExcludedReason(request.excluded() ? request.reason() : null);
         ratingRepo.save(rating);
         auditService.log("RATING", id, "RATING_EXCLUDED", null,
                 Map.of("ratingId", id.toString(), "reason", request.reason() != null ? request.reason() : ""));

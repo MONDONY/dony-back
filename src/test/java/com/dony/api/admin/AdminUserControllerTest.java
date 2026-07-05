@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AdminUserControllerTest {
@@ -27,15 +28,16 @@ class AdminUserControllerTest {
     // ── Délégation du contrôleur ────────────────────────────────────────────
 
     @Test
-    void setCommissionRate_delegatesToService_andReturns204() {
+    void setCommissionRate_delegatesToService_andReturnsDetail() {
         AdminUserController controller = new AdminUserController(userService, userRepository);
         UUID userId = UUID.randomUUID();
         BigDecimal rate = new BigDecimal("0.08");
+        com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
+        when(userService.setCommissionRateOverride(userId, rate)).thenReturn(user);
 
-        ResponseEntity<Void> resp =
-                controller.setCommissionRate(userId, new CommissionRateOverrideRequest(rate));
+        var resp = controller.setCommissionRate(userId, new CommissionRateOverrideRequest(rate));
 
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(resp).isNotNull();
         verify(userService).setCommissionRateOverride(userId, rate);
     }
 
@@ -43,6 +45,8 @@ class AdminUserControllerTest {
     void setCommissionRate_nullRate_delegatesNull_forGlobalReset() {
         AdminUserController controller = new AdminUserController(userService, userRepository);
         UUID userId = UUID.randomUUID();
+        when(userService.setCommissionRateOverride(userId, null))
+                .thenReturn(new com.dony.api.auth.UserEntity());
 
         controller.setCommissionRate(userId, new CommissionRateOverrideRequest(null));
 

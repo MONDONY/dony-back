@@ -47,7 +47,7 @@ class AdminRatingsControllerTest {
                 .thenReturn(page);
         when(userRepo.findAllById(any())).thenReturn(List.of());
 
-        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, null, null, 0, 20);
+        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, null, null, null, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();
@@ -61,7 +61,7 @@ class AdminRatingsControllerTest {
                 .thenReturn(page);
         when(userRepo.findAllById(any())).thenReturn(List.of());
 
-        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(true, null, null, 0, 20);
+        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(true, null, null, null, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(ratingRepo).findAdminFiltered(eq(true), isNull(), isNull(), any(Pageable.class));
@@ -74,7 +74,7 @@ class AdminRatingsControllerTest {
                 .thenReturn(page);
         when(userRepo.findAllById(any())).thenReturn(List.of());
 
-        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, 3, 5, 0, 20);
+        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, null, 3, 5, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(ratingRepo).findAdminFiltered(isNull(), eq(3), eq(5), any(Pageable.class));
@@ -102,7 +102,7 @@ class AdminRatingsControllerTest {
                 .thenReturn(page);
         when(userRepo.findAllById(any())).thenReturn(List.of(fromUser, toUser));
 
-        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, null, null, 0, 20);
+        ResponseEntity<Page<AdminRatingResponse>> resp = controller().listRatings(null, null, null, null, 0, 20);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();

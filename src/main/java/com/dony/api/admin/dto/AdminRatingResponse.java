@@ -30,7 +30,7 @@ public record AdminRatingResponse(
                 e.getComment(),
                 e.isFlagged(),
                 e.isExcludedFromAverage(),
-                null,
+                e.getExcludedReason(),
                 e.getCreatedAt()
         );
     }

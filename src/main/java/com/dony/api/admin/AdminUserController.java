@@ -104,11 +104,11 @@ public class AdminUserController {
     }
 
     @PutMapping("/{userId}/commission-rate")
-    public ResponseEntity<Void> setCommissionRate(
+    public AdminUserDetailResponse setCommissionRate(
             @PathVariable UUID userId,
             @RequestBody @jakarta.validation.Valid CommissionRateOverrideRequest request) {
-        userService.setCommissionRateOverride(userId, request.rate());
-        return ResponseEntity.noContent().build();
+        return AdminUserDetailResponse.from(
+                userService.setCommissionRateOverride(userId, request.rate()));
     }
 
     record SuspendBanRequest(String reason) {}
