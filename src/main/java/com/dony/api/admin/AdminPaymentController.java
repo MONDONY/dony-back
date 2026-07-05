@@ -45,6 +45,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -58,6 +59,10 @@ public class AdminPaymentController {
 
     /** Manual-capture PaymentIntent state where the card is authorized and funds are held. */
     private static final String STATUS_REQUIRES_CAPTURE = "requires_capture";
+    /** PaymentIntent state après annulation d'un hold (autorisation levée). */
+    private static final String STATUS_CANCELED = "canceled";
+    /** Codes d'erreur Stripe signifiant que le renversement a déjà eu lieu — traités comme succès. */
+    private static final Set<String> ALREADY_REVERSED_CODES = Set.of("charge_already_refunded");
 
     private static final Logger log = LoggerFactory.getLogger(AdminPaymentController.class);
 
@@ -261,10 +266,15 @@ public class AdminPaymentController {
 
     /**
      * POST /admin/payments/{id}/refund
-     * Manually refunds the sender (Stripe {@code Refund}) for an escrowed payment — the
-     * counterpart to force-release. Used when a paid trip is cancelled / parcel refused /
-     * dispute resolved for the sender and the automatic refund did not run.
-     * Only allowed when status is ESCROW.
+     * Rend les fonds à l'expéditeur pour un paiement en escrow — contrepartie du
+     * force-release. Utilisé quand un trajet payé est annulé / colis refusé / litige
+     * résolu pour l'expéditeur et que le remboursement automatique n'a pas tourné.
+     * Uniquement en statut ESCROW.
+     *
+     * <p>L'escrow est un PaymentIntent {@code capture_method: manual} : tant que les fonds
+     * ne sont pas capturés (statut {@code requires_capture}), il faut ANNULER le
+     * PaymentIntent pour lever l'autorisation — {@code Refund.create} est réservé aux
+     * charges déjà capturées et échoue sur un hold. On distingue donc les deux cas.
      */
     @PostMapping("/{id}/refund")
     @Transactional
@@ -284,16 +294,35 @@ public class AdminPaymentController {
         }
 
         try {
-            Refund.create(RefundCreateParams.builder()
-                    .setPaymentIntent(payment.getStripePaymentIntentId())
-                    .build());
+            PaymentIntent pi = PaymentIntent.retrieve(payment.getStripePaymentIntentId());
+            String piStatus = pi.getStatus();
+            if (STATUS_CANCELED.equals(piStatus)) {
+                // Déjà annulé côté Stripe (hold levé) → rien à faire, on synchronise juste la DB.
+                log.info("Admin refund: PI {} déjà annulé — synchronisation DB uniquement", pi.getId());
+            } else if (STATUS_REQUIRES_CAPTURE.equals(piStatus)) {
+                // Fonds encore bloqués (non capturés) → annuler le PaymentIntent lève le hold.
+                pi.cancel();
+            } else {
+                // Fonds déjà capturés → remboursement classique.
+                Refund.create(RefundCreateParams.builder()
+                        .setPaymentIntent(payment.getStripePaymentIntentId())
+                        .build());
+            }
         } catch (StripeException e) {
-            log.error("Admin refund: Stripe refund failed for payment {} (PI={}): {}",
-                    id, payment.getStripePaymentIntentId(), e.getMessage(), e);
-            throw new DonyBusinessException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "stripe-refund-failed",
-                    "Stripe Error",
-                    "Impossible de rembourser le paiement Stripe. Veuillez réessayer.");
+            // Idempotence : si Stripe indique que le renversement a déjà eu lieu (charge déjà
+            // remboursée / PI déjà annulé), l'argent est déjà revenu à l'expéditeur — on considère
+            // l'opération réussie et on met simplement la DB à jour plutôt que d'échouer.
+            if (isAlreadyReversed(e)) {
+                log.info("Admin refund: renversement déjà effectué côté Stripe pour {} (PI={}, code={}) — DB synchronisée",
+                        id, payment.getStripePaymentIntentId(), e.getCode());
+            } else {
+                log.error("Admin refund: Stripe refund failed for payment {} (PI={}): {}",
+                        id, payment.getStripePaymentIntentId(), e.getMessage(), e);
+                throw new DonyBusinessException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "stripe-refund-failed",
+                        "Stripe Error",
+                        "Impossible de rembourser le paiement Stripe. Veuillez réessayer.");
+            }
         }
 
         // Reflect the committed DB transition on the managed entity for the response.
@@ -335,6 +364,11 @@ public class AdminPaymentController {
                     .orElse(null);
         }
         return null;
+    }
+
+    /** Vrai si l'erreur Stripe signifie que le paiement a déjà été remboursé/annulé (idempotence). */
+    private static boolean isAlreadyReversed(StripeException e) {
+        return e.getCode() != null && ALREADY_REVERSED_CODES.contains(e.getCode());
     }
 
     private void resolveRelatedAlerts(UUID paymentId) {

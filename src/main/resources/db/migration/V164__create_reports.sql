@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS reports (
     deleted_at      TIMESTAMP WITH TIME ZONE,
     CONSTRAINT pk_reports PRIMARY KEY (id)
 );
-CREATE INDEX idx_reports_target_type ON reports (target_type);
-CREATE INDEX idx_reports_status      ON reports (status);
-CREATE INDEX idx_reports_deleted_at  ON reports (deleted_at);
+CREATE INDEX IF NOT EXISTS idx_reports_target_type ON reports (target_type);
+CREATE INDEX IF NOT EXISTS idx_reports_status      ON reports (status);
+CREATE INDEX IF NOT EXISTS idx_reports_deleted_at  ON reports (deleted_at);

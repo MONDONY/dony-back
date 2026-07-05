@@ -216,12 +216,16 @@ class AdminPaymentControllerTest {
     // ── refund (sender) ─────────────────────────────────────────────────────────
 
     @Test
-    void refund_escrow_payment_issues_stripe_refund() {
+    void refund_capturedPayment_issuesStripeRefund() {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
 
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("succeeded"); // fonds déjà capturés
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
             ArgumentCaptor<RefundCreateParams> captor = ArgumentCaptor.forClass(RefundCreateParams.class);
             refundStatic.when(() -> Refund.create(captor.capture())).thenReturn(mock(Refund.class));
 
@@ -233,6 +237,28 @@ class AdminPaymentControllerTest {
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(auditService).log(eq("PAYMENT"), any(), eq("ESCROW_FORCE_REFUNDED"), any(), any());
+    }
+
+    @Test
+    void refund_uncapturedHold_cancelsPaymentIntent() throws StripeException {
+        PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture"); // hold non capturé
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            ResponseEntity<AdminPaymentDetailResponse> resp = controller.refund(paymentId);
+
+            verify(pi).cancel(); // annulation du hold, pas de Refund
+            refundStatic.verify(() -> Refund.create(any(RefundCreateParams.class)), never());
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody().status()).isEqualTo("REFUNDED");
+        }
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
     }
 
     @Test
@@ -256,11 +282,60 @@ class AdminPaymentControllerTest {
     }
 
     @Test
+    void refund_alreadyRefundedInStripe_isIdempotentSuccess() throws StripeException {
+        PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("succeeded");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+            var alreadyRefunded = mock(com.stripe.exception.InvalidRequestException.class);
+            when(alreadyRefunded.getCode()).thenReturn("charge_already_refunded");
+            refundStatic.when(() -> Refund.create(any(RefundCreateParams.class))).thenThrow(alreadyRefunded);
+
+            ResponseEntity<AdminPaymentDetailResponse> resp = controller.refund(paymentId);
+
+            // L'argent est déjà revenu côté Stripe → succès, DB passée à REFUNDED.
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody().status()).isEqualTo("REFUNDED");
+        }
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    }
+
+    @Test
+    void refund_alreadyCanceledHold_isIdempotentSuccess() {
+        PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("canceled"); // hold déjà levé
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+
+            ResponseEntity<AdminPaymentDetailResponse> resp = controller.refund(paymentId);
+
+            refundStatic.verify(() -> Refund.create(any(RefundCreateParams.class)), never());
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody().status()).isEqualTo("REFUNDED");
+        }
+        assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+    }
+
+    @Test
     void refund_stripe_error_throws_500() {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
         when(paymentRepository.markRefundedIfEscrow(paymentId)).thenReturn(1);
-        try (MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Refund> refundStatic = mockStatic(Refund.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("succeeded");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
             refundStatic.when(() -> Refund.create(any(RefundCreateParams.class)))
                     .thenThrow(mock(com.stripe.exception.InvalidRequestException.class));
             assertThatThrownBy(() -> controller.refund(paymentId))
