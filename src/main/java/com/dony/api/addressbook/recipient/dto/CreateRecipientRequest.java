@@ -12,5 +12,6 @@ public record CreateRecipientRequest(
         @Size(max = 255) String street,
         @NotBlank @Size(max = 100) String city,
         @NotBlank @Pattern(regexp = "^(SN|CI|ML|CM)$", message = "Country must be one of: SN, CI, ML, CM") String country,
-        String notes
+        String notes,
+        boolean isDefault
 ) {}

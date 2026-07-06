@@ -14,5 +14,6 @@ public record RecipientDto(
         String country,
         String notes,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        boolean isDefault
 ) {}
