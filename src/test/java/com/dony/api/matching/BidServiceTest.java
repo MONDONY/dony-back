@@ -28,6 +28,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.HttpStatus;
 
 import java.lang.reflect.Field;
@@ -1918,5 +1920,27 @@ class BidServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.FORBIDDEN));
         }
+    }
+
+    @Test
+    @DisplayName("getTravelerBids() → chaque colis porte l'EXPÉDITEUR réel, pas le voyageur connecté")
+    void getTravelerBids_mapsRealSender_notTraveler() {
+        UserEntity traveler = buildTraveler();
+        traveler.setFirstName("drissa");
+        UserEntity sender = buildSender();
+        sender.setFirstName("abou");
+        BidEntity bid = buildBid(); // senderId = SENDER_ID
+
+        when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+        when(bidRepository.findByTravelerIdFiltered(eq(TRAVELER_ID), isNull(), isNull(), isNull(), any()))
+                .thenReturn(new PageImpl<>(List.of(bid)));
+        when(userRepository.findAllById(any())).thenReturn(List.of(sender));
+
+        Page<BidResponse> page = bidService.getTravelerBids(TRAVELER_UID, null, null, null, 0, 20);
+
+        BidResponse row = page.getContent().get(0);
+        assertThat(row.senderId()).isEqualTo(SENDER_ID);
+        // Avant le fix, toResponse recevait `traveler` → senderName aurait été "drissa".
+        assertThat(row.senderName()).isEqualTo("abou");
     }
 }

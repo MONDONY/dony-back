@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.dony.api.matching.dto.AnnouncementRevenueRow;
+
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -85,32 +87,33 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
             @Param("from") java.time.LocalDateTime from,
             @Param("to") java.time.LocalDateTime to);
 
-    @Query("""
-        SELECT COALESCE(SUM(p.amount), 0)
-        FROM PaymentEntity p
-        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        WHERE b.announcementId = :announcementId
-          AND p.status = :status
-    """)
-    java.math.BigDecimal sumGrossRevenueForAnnouncement(
-            @Param("announcementId") UUID announcementId,
-            @Param("status") PaymentStatus status);
-
     /**
-     * Commission Dony réellement prélevée pour une annonce (somme des {@code commissionAmount}).
-     * Reflète le taux effectif figé à la création du paiement (overrides inclus) — à utiliser
-     * pour les analytics plutôt que de recalculer via le taux global courant.
+     * Revenus agrégés par annonce sur une période, alimentés par les paiements du
+     * statut donné (RELEASED pour les analytics). Même clause WHERE que
+     * {@link #sumCapturedRevenueForTraveler} (voyageur + statut + {@code createdAt}
+     * dans la période), simplement groupée par annonce : la somme des
+     * {@code gross − commission} de toutes les lignes se réconcilie donc exactement
+     * avec le KPI « Revenus nets ». La commission remontée est celle réellement
+     * prélevée (somme des {@code commissionAmount}, overrides figés inclus).
      */
     @Query("""
-        SELECT COALESCE(SUM(p.commissionAmount), 0)
+        SELECT new com.dony.api.matching.dto.AnnouncementRevenueRow(
+            a.id, a.departureCity, a.arrivalCity, a.departureDate,
+            COUNT(p), COALESCE(SUM(p.amount), 0), COALESCE(SUM(p.commissionAmount), 0))
         FROM PaymentEntity p
         JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        WHERE b.announcementId = :announcementId
+        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId
           AND p.status = :status
+          AND p.createdAt BETWEEN :from AND :to
+        GROUP BY a.id, a.departureCity, a.arrivalCity, a.departureDate
+        ORDER BY a.departureDate DESC
     """)
-    java.math.BigDecimal sumCommissionForAnnouncement(
-            @Param("announcementId") UUID announcementId,
-            @Param("status") PaymentStatus status);
+    List<AnnouncementRevenueRow> findReleasedRevenueByAnnouncement(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") PaymentStatus status,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 
     @Query("""
         SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)

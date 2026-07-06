@@ -793,6 +793,9 @@ public class AnnouncementService {
                 id, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED));
         for (BidEntity bid : pendingBids) {
             bid.setStatus(BidStatus.REJECTED);
+            // Rejet « technique » (annonce supprimée), pas un refus du voyageur :
+            // marqué pour être exclu du taux d'acceptation.
+            bid.setRejectionReason(BidEntity.REJECTION_ANNOUNCEMENT_DELETED);
             bidRepository.save(bid);
             auditService.log("BID", bid.getId(), "BID_REJECTED_ANNOUNCEMENT_DELETED", user.getId(),
                     Map.of("announcementId", id.toString(), "senderId", bid.getSenderId().toString()));

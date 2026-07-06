@@ -36,6 +36,29 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     @Query("""
         SELECT COUNT(b) FROM BidEntity b
         JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status IN :statuses
+    """)
+    long countByAnnouncementTravelerIdAndStatusIn(
+            @Param("travelerId") UUID travelerId,
+            @Param("statuses") java.util.Collection<BidStatus> statuses);
+
+    /**
+     * Refus EXPLICITES du voyageur : bids REJECTED, en excluant ceux passés en
+     * REJECTED parce que l'annonce a été supprimée (marqueur
+     * {@code BidEntity.REJECTION_ANNOUNCEMENT_DELETED}). Sert au dénominateur du
+     * taux d'acceptation, pour ne pas pénaliser une suppression de trajet.
+     */
+    @Query("""
+        SELECT COUNT(b) FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = com.dony.api.matching.BidStatus.REJECTED
+          AND (b.rejectionReason IS NULL OR b.rejectionReason <> 'ANNOUNCEMENT_DELETED')
+    """)
+    long countExplicitRejectionsForTraveler(@Param("travelerId") UUID travelerId);
+
+    @Query("""
+        SELECT COUNT(b) FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
         WHERE a.travelerId = :travelerId AND b.status = :status
           AND b.createdAt BETWEEN :from AND :to
     """)
