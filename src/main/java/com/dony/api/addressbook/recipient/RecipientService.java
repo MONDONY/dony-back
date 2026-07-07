@@ -37,6 +37,10 @@ public class RecipientService {
 
     @Transactional
     public RecipientDto create(UUID userId, CreateRecipientRequest request) {
+        if (request.isDefault()) {
+            clearCurrentDefault(userId);
+        }
+
         RecipientEntity entity = new RecipientEntity();
         entity.setUserId(userId);
         entity.setFullName(request.fullName());
@@ -47,6 +51,7 @@ public class RecipientService {
         entity.setCity(request.city());
         entity.setCountry(request.country());
         entity.setNotes(request.notes());
+        entity.setDefault(request.isDefault());
 
         repository.save(entity);
 
@@ -62,6 +67,10 @@ public class RecipientService {
         RecipientEntity entity = repository.findByUserIdAndId(userId, id)
                 .orElseThrow(() -> new DonyNotFoundException("Recipient", id));
 
+        if (request.isDefault() && !entity.isDefault()) {
+            clearCurrentDefault(userId);
+        }
+
         entity.setFullName(request.fullName());
         entity.setRelationship(request.relationship());
         entity.setPhoneE164(request.phoneE164());
@@ -70,6 +79,7 @@ public class RecipientService {
         entity.setCity(request.city());
         entity.setCountry(request.country());
         entity.setNotes(request.notes());
+        entity.setDefault(request.isDefault());
 
         repository.save(entity);
 
@@ -94,6 +104,13 @@ public class RecipientService {
         log.info("Recipient soft-deleted: id={} userId={}", id, userId);
     }
 
+    private void clearCurrentDefault(UUID userId) {
+        repository.findByUserIdAndIsDefaultTrue(userId).ifPresent(current -> {
+            current.setDefault(false);
+            repository.save(current);
+        });
+    }
+
     private RecipientDto toDto(RecipientEntity e) {
         return new RecipientDto(
                 e.getId(),
@@ -106,7 +123,8 @@ public class RecipientService {
                 e.getCountry(),
                 e.getNotes(),
                 e.getCreatedAt(),
-                e.getUpdatedAt()
+                e.getUpdatedAt(),
+                e.isDefault()
         );
     }
 }

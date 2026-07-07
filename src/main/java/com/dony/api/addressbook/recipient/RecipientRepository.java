@@ -11,4 +11,6 @@ public interface RecipientRepository extends JpaRepository<RecipientEntity, UUID
     List<RecipientEntity> findByUserIdOrderByUpdatedAtDesc(UUID userId);
 
     Optional<RecipientEntity> findByUserIdAndId(UUID userId, UUID id);
+
+    Optional<RecipientEntity> findByUserIdAndIsDefaultTrue(UUID userId);
 }

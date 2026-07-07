@@ -68,13 +68,44 @@ class RecipientServiceTest {
 
         CreateRecipientRequest request = new CreateRecipientRequest(
                 "Fatou Diop", "Mère", "+221701234567", null,
-                "Rue 12", "Dakar", "SN", null);
+                "Rue 12", "Dakar", "SN", null, false);
 
         RecipientDto result = service.create(userId, request);
 
         assertThat(result.fullName()).isEqualTo("Fatou Diop");
         assertThat(result.country()).isEqualTo("SN");
         verify(auditService).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void create_withDefault_clearsPreviousDefault() {
+        UUID userId = UUID.randomUUID();
+        RecipientEntity previous = new RecipientEntity();
+        previous.setUserId(userId);
+        previous.setDefault(true);
+        when(repository.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(previous));
+
+        CreateRecipientRequest request = new CreateRecipientRequest(
+                "Awa Diakité", "Mère", "+221771234567", null, null,
+                "Dakar", "SN", null, true);
+
+        RecipientDto dto = service.create(userId, request);
+
+        assertThat(previous.isDefault()).isFalse();
+        assertThat(dto.isDefault()).isTrue();
+    }
+
+    @Test
+    void create_withoutDefault_doesNotTouchPreviousDefault() {
+        UUID userId = UUID.randomUUID();
+        CreateRecipientRequest request = new CreateRecipientRequest(
+                "Issa Koné", null, "+2250789012345", null, null,
+                "Abidjan", "CI", null, false);
+
+        RecipientDto dto = service.create(userId, request);
+
+        verify(repository, never()).findByUserIdAndIsDefaultTrue(any());
+        assertThat(dto.isDefault()).isFalse();
     }
 
     @Test
@@ -87,7 +118,7 @@ class RecipientServiceTest {
 
         UpdateRecipientRequest request = new UpdateRecipientRequest(
                 "Aminata Sow", "Soeur", "+2250101234567", null,
-                null, "Abidjan", "CI", "Quartier Plateau");
+                null, "Abidjan", "CI", "Quartier Plateau", false);
 
         RecipientDto result = service.update(userId, id, request);
 
@@ -103,10 +134,50 @@ class RecipientServiceTest {
         when(repository.findByUserIdAndId(otherId, id)).thenReturn(Optional.empty());
 
         UpdateRecipientRequest request = new UpdateRecipientRequest(
-                "X", null, "+221701234567", null, null, "Dakar", "SN", null);
+                "X", null, "+221701234567", null, null, "Dakar", "SN", null, false);
 
         assertThatThrownBy(() -> service.update(otherId, id, request))
                 .isInstanceOf(DonyNotFoundException.class);
+    }
+
+    @Test
+    void update_setDefault_clearsPreviousDefault() {
+        UUID userId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        RecipientEntity entity = new RecipientEntity();
+        entity.setUserId(userId);
+        RecipientEntity previous = new RecipientEntity();
+        previous.setDefault(true);
+        when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.of(entity));
+        when(repository.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(previous));
+
+        UpdateRecipientRequest request = new UpdateRecipientRequest(
+                "Awa Diakité", "Mère", "+221771234567", null, null,
+                "Dakar", "SN", null, true);
+
+        RecipientDto dto = service.update(userId, id, request);
+
+        assertThat(previous.isDefault()).isFalse();
+        assertThat(dto.isDefault()).isTrue();
+    }
+
+    @Test
+    void update_alreadyDefault_keepsDefaultWithoutClearing() {
+        UUID userId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        RecipientEntity entity = new RecipientEntity();
+        entity.setUserId(userId);
+        entity.setDefault(true);
+        when(repository.findByUserIdAndId(userId, id)).thenReturn(Optional.of(entity));
+
+        UpdateRecipientRequest request = new UpdateRecipientRequest(
+                "Awa Diakité", "Mère", "+221771234567", null, null,
+                "Dakar", "SN", null, true);
+
+        service.update(userId, id, request);
+
+        verify(repository, never()).findByUserIdAndIsDefaultTrue(any());
+        assertThat(entity.isDefault()).isTrue();
     }
 
     @Test
