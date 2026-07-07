@@ -16,6 +16,8 @@ public interface FavoriteRepository extends JpaRepository<FavoriteEntity, UUID> 
 
     List<FavoriteEntity> findByUserIdAndTargetTypeOrderByCreatedAtDesc(UUID userId, FavoriteTargetType targetType);
 
+    List<FavoriteEntity> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
     /** Inclut les lignes soft-deleted pour pouvoir les réactiver (toggle on après off). */
     @Query(value = "SELECT * FROM favorites WHERE user_id = :userId AND target_type = :type AND target_id = :targetId LIMIT 1", nativeQuery = true)
     Optional<FavoriteEntity> findIncludingDeleted(@Param("userId") UUID userId, @Param("type") String type, @Param("targetId") UUID targetId);
