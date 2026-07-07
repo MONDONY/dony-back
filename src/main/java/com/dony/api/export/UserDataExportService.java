@@ -107,7 +107,8 @@ public class UserDataExportService {
                 e.getCountry(),
                 e.getNotes(),
                 e.getCreatedAt(),
-                e.getUpdatedAt()
+                e.getUpdatedAt(),
+                e.isDefault()
         );
     }
 
