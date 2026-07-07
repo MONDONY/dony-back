@@ -268,6 +268,23 @@ class RecipientControllerIntegrationTest {
     }
 
     @Test
+    void create_withoutCity_returns201WithNullCity() throws Exception {
+        String body = objectMapper.writeValueAsString(new java.util.HashMap<>() {{
+            put("fullName", "Ibrahima Fall");
+            put("phoneE164", "+221701234599");
+            put("country", "SN");
+        }});
+
+        mockMvc.perform(post("/addressbook/recipients")
+                .with(authentication(asSender(SENDER_UID)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fullName").value("Ibrahima Fall"))
+                .andExpect(jsonPath("$.city").doesNotExist());
+    }
+
+    @Test
     void listReturnsIsDefaultField() throws Exception {
         mockMvc.perform(post("/addressbook/recipients")
                 .with(authentication(asSender(SENDER_UID)))

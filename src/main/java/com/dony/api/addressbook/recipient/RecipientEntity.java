@@ -31,7 +31,7 @@ public class RecipientEntity extends BaseEntity {
     @Column(name = "street", length = 255)
     private String street;
 
-    @Column(name = "city", nullable = false, length = 100)
+    @Column(name = "city", length = 100)
     private String city;
 
     @Column(name = "country", nullable = false, length = 2)
