@@ -31,7 +31,7 @@ public class RecipientEntity extends BaseEntity {
     @Column(name = "street", length = 255)
     private String street;
 
-    @Column(name = "city", nullable = false, length = 100)
+    @Column(name = "city", length = 100)
     private String city;
 
     @Column(name = "country", nullable = false, length = 2)
@@ -39,6 +39,9 @@ public class RecipientEntity extends BaseEntity {
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
+
+    @Column(name = "is_default", nullable = false)
+    private boolean isDefault;
 
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
@@ -66,4 +69,7 @@ public class RecipientEntity extends BaseEntity {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public boolean isDefault() { return isDefault; }
+    public void setDefault(boolean isDefault) { this.isDefault = isDefault; }
 }

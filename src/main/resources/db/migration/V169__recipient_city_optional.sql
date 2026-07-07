@@ -1,0 +1,1 @@
+ALTER TABLE recipients ALTER COLUMN city DROP NOT NULL;
