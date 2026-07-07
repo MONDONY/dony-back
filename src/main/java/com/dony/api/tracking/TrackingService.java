@@ -19,6 +19,7 @@ import com.dony.api.tracking.dto.QrCodeResponse;
 import com.dony.api.tracking.dto.QrScanRequest;
 import com.dony.api.tracking.dto.TrackingEventResponse;
 import com.dony.api.tracking.dto.TrackingSearchResponse;
+import com.dony.api.tracking.dto.TripScanHistoryEntryDto;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.EncodeHintType;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -330,6 +332,43 @@ public class TrackingService {
 
         return trackingEventRepository.findByBidIdOrderByScannedAtAsc(bidId).stream()
                 .map(e -> toEventResponse(e, resolvePhotoUrl(e.getPhotoUrl())))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TripScanHistoryEntryDto> getTripScanHistory(UUID announcementId, String firebaseUid) {
+        AnnouncementEntity announcement = announcementRepository.findById(announcementId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
+                        "Annonce introuvable"));
+
+        UserEntity currentUser = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.UNAUTHORIZED, "user-not-found", "User Not Found",
+                        "Utilisateur introuvable"));
+
+        if (!announcement.getTravelerId().equals(currentUser.getId())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Accès interdit à l'historique de ce trajet");
+        }
+
+        List<BidEntity> bids = bidRepository.findByAnnouncementId(announcementId);
+        if (bids.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, BidEntity> bidsById = bids.stream()
+                .collect(Collectors.toMap(BidEntity::getId, bid -> bid));
+        List<UUID> bidIds = new java.util.ArrayList<>(bidsById.keySet());
+
+        return trackingEventRepository.findByBidIdInOrderByScannedAtDesc(bidIds).stream()
+                .map(event -> {
+                    BidEntity bid = bidsById.get(event.getBidId());
+                    return new TripScanHistoryEntryDto(
+                            bid != null ? bid.getTrackingNumber() : null,
+                            bid != null ? bid.getRecipientName() : null,
+                            event.getEventType().name(),
+                            event.getScannedAt());
+                })
                 .toList();
     }
 
