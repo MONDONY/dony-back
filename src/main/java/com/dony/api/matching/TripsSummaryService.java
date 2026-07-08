@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,5 +59,17 @@ public class TripsSummaryService {
                 revenue != null
                         ? revenue.setScale(2, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO);
+    }
+
+    /**
+     * Invalide le résumé caché d'un voyageur. À appeler dès que ses kg livrés ou
+     * son escrow libéré changent (livraison confirmée, paiement libéré) pour que
+     * « kg vendus ce mois » / « revenus » se rafraîchissent sans attendre le TTL
+     * Caffeine (5 min). No-op : tout le travail est fait par {@code @CacheEvict}
+     * via le proxy Spring (donc appelé depuis un autre bean, pas en interne).
+     */
+    @CacheEvict(cacheNames = "trips-summary", key = "#travelerId")
+    public void evictSummary(UUID travelerId) {
+        // Intentionnellement vide.
     }
 }
