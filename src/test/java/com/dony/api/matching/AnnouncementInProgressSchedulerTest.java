@@ -15,8 +15,11 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -96,6 +99,8 @@ class AnnouncementInProgressTransitionTest {
         a.setStatus(AnnouncementStatus.ACTIVE);
         a.setAvailableKg(BigDecimal.valueOf(10));
         a.setTotalKg(BigDecimal.valueOf(20));
+        // Date de départ passée → hasDeparted() vrai (timezone par défaut Europe/Paris).
+        a.setDepartureDate(LocalDate.now().minusDays(1));
         return a;
     }
 
@@ -115,7 +120,7 @@ class AnnouncementInProgressTransitionTest {
         AnnouncementEntity ann = activeAnnouncement();
         BidEntity pending = pendingBid();
 
-        when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
+        when(announcementRepository.findActiveOrFullDepartingOnOrBefore(any(LocalDate.class)))
                 .thenReturn(List.of(ann));
         when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
                 List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
@@ -143,7 +148,7 @@ class AnnouncementInProgressTransitionTest {
     void activeWithNoAcceptedBids_becomesCompleted() {
         AnnouncementEntity ann = activeAnnouncement();
 
-        when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
+        when(announcementRepository.findActiveOrFullDepartingOnOrBefore(any(LocalDate.class)))
                 .thenReturn(List.of(ann));
         when(bidRepository.existsByAnnouncementIdAndStatusIn(announcementId,
                 List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
@@ -160,7 +165,7 @@ class AnnouncementInProgressTransitionTest {
     @Test
     @DisplayName("aucune annonce à traiter → rien")
     void noAnnouncements_doesNothing() {
-        when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
+        when(announcementRepository.findActiveOrFullDepartingOnOrBefore(any(LocalDate.class)))
                 .thenReturn(List.of());
 
         service.triggerInProgressTransitions();
@@ -180,8 +185,9 @@ class AnnouncementInProgressTransitionTest {
         ann2.setStatus(AnnouncementStatus.ACTIVE);
         ann2.setAvailableKg(BigDecimal.valueOf(5));
         ann2.setTotalKg(BigDecimal.valueOf(10));
+        ann2.setDepartureDate(LocalDate.now().minusDays(1));
 
-        when(announcementRepository.findDepartedActiveAnnouncements(any(LocalDate.class), any(LocalTime.class)))
+        when(announcementRepository.findActiveOrFullDepartingOnOrBefore(any(LocalDate.class)))
                 .thenReturn(List.of(ann1, ann2));
         when(bidRepository.existsByAnnouncementIdAndStatusIn(eq(announcementId),
                 eq(List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT))))
@@ -196,5 +202,46 @@ class AnnouncementInProgressTransitionTest {
 
         assertThat(ann2.getStatus()).isEqualTo(AnnouncementStatus.COMPLETED);
         verify(announcementRepository).save(ann2);
+    }
+
+    @Test
+    @DisplayName("hasDeparted : évalué dans le fuseau du trajet (Dakar), pas Europe/Paris")
+    void hasDeparted_usesTripTimezoneNotServerParis() {
+        AnnouncementEntity dakar = new AnnouncementEntity();
+        dakar.setTimezone("Africa/Dakar"); // GMT+0
+        dakar.setDepartureDate(LocalDate.of(2026, 6, 20));
+        dakar.setDepartureTime(LocalTime.of(23, 0));
+
+        // 22:00 UTC = 22:00 à Dakar (avant 23:00) → pas parti.
+        // (À Paris il serait déjà 00:00 le 21 → l'ancien code l'aurait cru parti.)
+        Instant before = OffsetDateTime.of(2026, 6, 20, 22, 0, 0, 0, ZoneOffset.UTC).toInstant();
+        assertThat(AnnouncementService.hasDeparted(dakar, before)).isFalse();
+
+        // 23:30 UTC = 23:30 à Dakar (après 23:00) → parti.
+        Instant after = OffsetDateTime.of(2026, 6, 20, 23, 30, 0, 0, ZoneOffset.UTC).toInstant();
+        assertThat(AnnouncementService.hasDeparted(dakar, after)).isTrue();
+    }
+
+    @Test
+    @DisplayName("hasDeparted : date nulle → non parti (défensif)")
+    void hasDeparted_nullDate_returnsFalse() {
+        AnnouncementEntity a = new AnnouncementEntity();
+        assertThat(AnnouncementService.hasDeparted(a, Instant.now())).isFalse();
+    }
+
+    @Test
+    @DisplayName("hasDeparted : sans heure, parti une fois la date locale passée")
+    void hasDeparted_noTime_departedAfterLocalDate() {
+        AnnouncementEntity a = new AnnouncementEntity();
+        a.setTimezone("Africa/Dakar");
+        a.setDepartureDate(LocalDate.of(2026, 6, 20));
+
+        // 2026-06-20 12:00 UTC → encore le 20 à Dakar → pas parti.
+        Instant sameDay = OffsetDateTime.of(2026, 6, 20, 12, 0, 0, 0, ZoneOffset.UTC).toInstant();
+        assertThat(AnnouncementService.hasDeparted(a, sameDay)).isFalse();
+
+        // 2026-06-21 12:00 UTC → le 21 à Dakar → date passée → parti.
+        Instant nextDay = OffsetDateTime.of(2026, 6, 21, 12, 0, 0, 0, ZoneOffset.UTC).toInstant();
+        assertThat(AnnouncementService.hasDeparted(a, nextDay)).isTrue();
     }
 }
