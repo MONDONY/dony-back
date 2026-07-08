@@ -6,6 +6,7 @@ import com.dony.api.tracking.dto.QrCodeResponse;
 import com.dony.api.tracking.dto.QrScanRequest;
 import com.dony.api.tracking.dto.TrackingEventResponse;
 import com.dony.api.tracking.dto.TrackingSearchResponse;
+import com.dony.api.tracking.dto.TripScanHistoryEntryDto;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -58,6 +59,13 @@ public class TrackingController {
             @PathVariable UUID bidId,
             @AuthenticationPrincipal String firebaseUid) {
         return ResponseEntity.ok(trackingService.getEvents(bidId, firebaseUid));
+    }
+
+    @GetMapping("/announcements/{announcementId}/events")
+    public ResponseEntity<List<TripScanHistoryEntryDto>> getTripScanHistory(
+            @PathVariable UUID announcementId,
+            @AuthenticationPrincipal String firebaseUid) {
+        return ResponseEntity.ok(trackingService.getTripScanHistory(announcementId, firebaseUid));
     }
 
     @GetMapping("/{bidId}/confirmation-code")

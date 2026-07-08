@@ -19,6 +19,7 @@ import com.dony.api.tracking.dto.ConfirmDeliveryRequest;
 import com.dony.api.tracking.dto.QrScanRequest;
 import com.dony.api.tracking.dto.TrackingEventResponse;
 import com.dony.api.tracking.dto.TrackingSearchResponse;
+import com.dony.api.tracking.dto.TripScanHistoryEntryDto;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.BeforeEach;
@@ -824,5 +825,62 @@ class TrackingServiceTest {
         List<TrackingEventResponse> events = service.getEvents(bidId, "uid-sender");
 
         assertThat(events.get(0).photoUrl()).isEqualTo("https://storage.example.com/photo.jpg");
+    }
+
+    // ── getTripScanHistory ────────────────────────────────────────────────────
+
+    @Test
+    void getTripScanHistory_announcementNotFound_throwsNotFound() {
+        when(announcementRepository.findById(annId)).thenReturn(Optional.empty());
+        assertDonyError(() -> service.getTripScanHistory(annId, "uid-traveler"), "announcement-not-found");
+    }
+
+    @Test
+    void getTripScanHistory_notTraveler_throwsForbidden() {
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity outsider = buildUser(UUID.randomUUID(), "uid-other");
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-other")).thenReturn(Optional.of(outsider));
+
+        assertDonyError(() -> service.getTripScanHistory(annId, "uid-other"), "forbidden");
+    }
+
+    @Test
+    void getTripScanHistory_noBids_returnsEmptyList() {
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(bidRepository.findByAnnouncementId(annId)).thenReturn(List.of());
+
+        List<TripScanHistoryEntryDto> result = service.getTripScanHistory(annId, "uid-traveler");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getTripScanHistory_success_returnsSortedEvents() {
+        AnnouncementEntity ann = buildAnnouncement();
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        BidEntity bid = buildBid(BidStatus.HANDED_OVER, "qt");
+        bid.setRecipientName("Awa Ndiaye");
+        TrackingEventEntity event = new TrackingEventEntity();
+        setId(event, UUID.randomUUID());
+        event.setBidId(bidId);
+        event.setEventType(TrackingEventType.DEPART);
+        event.setScannedAt(LocalDateTime.now(ZoneOffset.UTC));
+
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(userRepository.findByFirebaseUid("uid-traveler")).thenReturn(Optional.of(traveler));
+        when(bidRepository.findByAnnouncementId(annId)).thenReturn(List.of(bid));
+        when(trackingEventRepository.findByBidIdInOrderByScannedAtDesc(List.of(bidId)))
+                .thenReturn(List.of(event));
+
+        List<TripScanHistoryEntryDto> result = service.getTripScanHistory(annId, "uid-traveler");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).donNumber()).isEqualTo("TRK000001");
+        assertThat(result.get(0).recipientName()).isEqualTo("Awa Ndiaye");
+        assertThat(result.get(0).eventType()).isEqualTo("DEPART");
     }
 }
