@@ -49,21 +49,19 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
             Pageable pageable);
 
     /**
-     * Finds ACTIVE or FULL announcements whose departure time has been reached,
-     * based on today's date and current time in the announcement's timezone (pre-resolved by caller).
-     * Announcements without departure_time are treated as departing at 00:00.
+     * Broad, timezone-agnostic candidate set: ACTIVE/FULL announcements departing
+     * on or before {@code maxDate}. The precise "has departed" decision is made
+     * per-announcement in the service, using each trip's OWN timezone (a Dakar
+     * departure must be evaluated in Dakar time, not a global Europe/Paris now).
+     * {@code maxDate} should include a 1-day buffer to cover any zone offset.
      */
     @Query("""
         SELECT a FROM AnnouncementEntity a
         WHERE a.status IN ('ACTIVE', 'FULL')
-        AND (
-            a.departureDate < :today
-            OR (a.departureDate = :today AND (a.departureTime IS NULL OR a.departureTime <= :nowTime))
-        )
+        AND a.departureDate <= :maxDate
     """)
-    List<AnnouncementEntity> findDepartedActiveAnnouncements(
-        @Param("today") LocalDate today,
-        @Param("nowTime") LocalTime nowTime
+    List<AnnouncementEntity> findActiveOrFullDepartingOnOrBefore(
+        @Param("maxDate") LocalDate maxDate
     );
 
     /**

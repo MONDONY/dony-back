@@ -41,13 +41,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -476,20 +476,56 @@ public class AnnouncementService {
      */
     @Transactional
     public void triggerInProgressTransitions() {
-        ZonedDateTime nowParis = ZonedDateTime.now(DEFAULT_ZONE);
-        LocalDate today = nowParis.toLocalDate();
-        LocalTime nowTime = nowParis.toLocalTime();
-
+        Instant now = Instant.now();
+        // Fetch broad (timezone-agnostic, +1 jour de marge pour couvrir tout
+        // décalage horaire), puis décider trajet par trajet dans SON fuseau —
+        // et non avec un « maintenant » Europe/Paris global pour tous.
+        LocalDate maxDate = now.atZone(DEFAULT_ZONE).toLocalDate().plusDays(1);
         List<AnnouncementEntity> candidates =
-                announcementRepository.findDepartedActiveAnnouncements(today, nowTime);
+                announcementRepository.findActiveOrFullDepartingOnOrBefore(maxDate);
 
         for (AnnouncementEntity announcement : candidates) {
+            if (!hasDeparted(announcement, now)) {
+                continue;
+            }
             try {
                 applyInProgressTransition(announcement);
             } catch (Exception e) {
                 log.error("Inline transition failed for announcement {}: {}",
                         announcement.getId(), e.getMessage(), e);
             }
+        }
+    }
+
+    /**
+     * Un trajet est « parti » quand son instant de départ — (date + heure)
+     * interprétées dans le fuseau PROPRE du trajet — est atteint ou dépassé par
+     * {@code now}. Sans heure de départ, il est parti une fois sa date locale
+     * entièrement passée. Statique + paramètre {@code now} → testable de façon
+     * déterministe, indépendamment de l'horloge et du fuseau du serveur.
+     */
+    static boolean hasDeparted(AnnouncementEntity a, Instant now) {
+        LocalDate depDate = a.getDepartureDate();
+        if (depDate == null) {
+            return false;
+        }
+        ZoneId zone = resolveZoneOrDefault(a.getTimezone());
+        LocalTime depTime = a.getDepartureTime();
+        if (depTime != null) {
+            Instant departureAt = depDate.atTime(depTime).atZone(zone).toInstant();
+            return !departureAt.isAfter(now);
+        }
+        return depDate.isBefore(now.atZone(zone).toLocalDate());
+    }
+
+    private static ZoneId resolveZoneOrDefault(String zone) {
+        if (zone == null || zone.isBlank()) {
+            return DEFAULT_ZONE;
+        }
+        try {
+            return ZoneId.of(zone);
+        } catch (Exception e) {
+            return DEFAULT_ZONE;
         }
     }
 
