@@ -3,6 +3,7 @@ package com.dony.api.automation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -32,6 +33,7 @@ public class AutomationActionExecutor {
      * n'est pas atteint, en écrivant systématiquement une ligne d'historique.
      * Retourne true si l'action a été exécutée avec succès.
      */
+    @Transactional
     public boolean tryExecuteBidAction(AutomationRuleEntity rule, UUID travelerId, UUID bidId,
                                        String actionTaken, Supplier<Void> action) {
         if (ruleService.countTodayActions(travelerId) >= DAILY_ACTION_CAP) {

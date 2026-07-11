@@ -77,4 +77,15 @@ class AutomationActionExecutorTest {
         verify(ruleRepository).save(rule);
         verify(historyRepository).save(argThat(h -> h.getResult().equals("CAP_REACHED")));
     }
+
+    @Test
+    void recordNotification_writesSuccessHistory() {
+        executor.recordNotification(rule, travelerId, "NOTIFY_LOW_MARGIN");
+
+        verify(historyRepository).save(argThat(h ->
+                h.getTravelerId().equals(travelerId)
+                && h.getBidId() == null
+                && h.getActionTaken().equals("NOTIFY_LOW_MARGIN")
+                && h.getResult().equals("SUCCESS")));
+    }
 }
