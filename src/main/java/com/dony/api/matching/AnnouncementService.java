@@ -297,29 +297,48 @@ public class AnnouncementService {
                     "La publication de trajets est suspendue. Contactez le support.");
         }
 
-        if (!user.isProAccount() && config.limits() != null) {
-            YearMonth current = YearMonth.now();
-            LocalDateTime from = current.atDay(1).atStartOfDay();
-            LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
-            long count = announcementRepository.countByTravelerIdAndCreatedAtBetween(user.getId(), from, to);
-            if (count >= config.limits().monthlyAnnouncements()) {
-                throw new DonyBusinessException(
-                        HttpStatus.FORBIDDEN,
-                        "pro-limit-reached",
-                        "Monthly announcement limit reached",
-                        "Vous avez atteint votre limite de " + config.limits().monthlyAnnouncements()
-                                + " annonces ce mois-ci. Passez en PRO pour continuer."
-                );
+        boolean isDraft = request.isDraft();
+
+        if (isDraft) {
+            DonyConfigProperties.Limits limits = config.limits() != null
+                    ? config.limits()
+                    : new DonyConfigProperties.Limits(null, null);
+            int maxDrafts = user.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
+            long draftCount = announcementRepository
+                    .countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT);
+            if (draftCount >= maxDrafts) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "draft-limit-reached",
+                        "Draft Limit Reached",
+                        "Limite de " + maxDrafts + " brouillon(s) atteinte."
+                                + (user.isProAccount() ? "" : " Passez en PRO pour en créer davantage."));
             }
         }
 
-        if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "kyc-not-verified",
-                    "KYC Not Verified",
-                    "Vous devez compléter votre vérification d'identité pour effectuer cette action"
-            );
+        if (!isDraft) {
+            if (!user.isProAccount() && config.limits() != null) {
+                YearMonth current = YearMonth.now();
+                LocalDateTime from = current.atDay(1).atStartOfDay();
+                LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
+                long count = announcementRepository.countByTravelerIdAndCreatedAtBetween(user.getId(), from, to);
+                if (count >= config.limits().monthlyAnnouncements()) {
+                    throw new DonyBusinessException(
+                            HttpStatus.FORBIDDEN,
+                            "pro-limit-reached",
+                            "Monthly announcement limit reached",
+                            "Vous avez atteint votre limite de " + config.limits().monthlyAnnouncements()
+                                    + " annonces ce mois-ci. Passez en PRO pour continuer."
+                    );
+                }
+            }
+
+            if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
+                throw new DonyBusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "kyc-not-verified",
+                        "KYC Not Verified",
+                        "Vous devez compléter votre vérification d'identité pour effectuer cette action"
+                );
+            }
         }
 
         if (enforceStripeOnboarding && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
@@ -360,7 +379,7 @@ public class AnnouncementService {
         announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
-        announcement.setStatus(AnnouncementStatus.ACTIVE);
+        announcement.setStatus(isDraft ? AnnouncementStatus.DRAFT : AnnouncementStatus.ACTIVE);
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
@@ -410,7 +429,8 @@ public class AnnouncementService {
                         "departureDate", saved.getDepartureDate().toString(),
                         "availableKg", saved.getAvailableKg().toString(),
                         "pricePerKg", saved.getPricePerKg().toString(),
-                        "transportMode", saved.getTransportMode().name()
+                        "transportMode", saved.getTransportMode().name(),
+                        "status", saved.getStatus().name()
                 )
         );
 

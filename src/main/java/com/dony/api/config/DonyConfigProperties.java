@@ -18,11 +18,20 @@ public record DonyConfigProperties(
 ) {
     public record Commission(BigDecimal rate) {}
 
-    public record Limits(NonPro nonPro) {
+    public record Limits(NonPro nonPro, Drafts drafts) {
         public record NonPro(int monthlyAnnouncements) {}
+        public record Drafts(Integer max, Integer maxPro) {}
 
         public int monthlyAnnouncements() {
             return nonPro != null ? nonPro.monthlyAnnouncements() : 2;
+        }
+
+        public int maxDrafts() {
+            return drafts != null && drafts.max() != null ? drafts.max() : 1;
+        }
+
+        public int maxDraftsPro() {
+            return drafts != null && drafts.maxPro() != null ? drafts.maxPro() : 10;
         }
     }
 }

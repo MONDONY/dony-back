@@ -72,5 +72,13 @@ public record AnnouncementRequest(
         // Fenêtre de remise — obligatoire (validée dans AnnouncementService).
         // Pas de @JsonFormat : reçoit un ISO-8601 (ex "2026-06-14T18:00:00.000Z").
         LocalDateTime handoverWindowStart,
-        LocalDateTime handoverWindowEnd
-) {}
+        LocalDateTime handoverWindowEnd,
+
+        // Brouillon : si true, l'annonce est créée en statut DRAFT (skip KYC + limite mensuelle,
+        // soumise au quota de brouillons — cf AnnouncementService.createAnnouncement).
+        Boolean saveAsDraft
+) {
+    public boolean isDraft() {
+        return Boolean.TRUE.equals(saveAsDraft);
+    }
+}

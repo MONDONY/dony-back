@@ -147,13 +147,43 @@ class AnnouncementServiceTest {
                 mode,
                 null, null, null, null, null, null,
                 null, null,
-                departure.atTime(8, 0), departure.atTime(9, 0)
+                departure.atTime(8, 0), departure.atTime(9, 0),
+                null
+        );
+    }
+
+    private AnnouncementRequest draftRequest() {
+        LocalDate departure = LocalDate.now().plusDays(10);
+        return new AnnouncementRequest(
+                "Paris", "Dakar",
+                departure,
+                LocalTime.of(10, 0), LocalTime.of(22, 0),
+                new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                new AddressDto("Aéroport LSS", 14.739, -17.490),
+                BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                TransportMode.PLANE,
+                null, null, null, null, null, null,
+                null, null,
+                departure.atTime(8, 0), departure.atTime(9, 0),
+                true
         );
     }
 
     private UserEntity buildTravelerWithCommissionMethod() {
         UserEntity u = buildTraveler();
         u.setCommissionPaymentMethodId("pm_test");
+        return u;
+    }
+
+    private UserEntity proUser() {
+        UserEntity u = buildTraveler();
+        u.setProAccount(true);
+        return u;
+    }
+
+    private UserEntity standardUser() {
+        UserEntity u = buildTraveler();
+        u.setProAccount(false);
         return u;
     }
 
@@ -210,7 +240,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     "US", "SN",
-                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0),
+                    null
             );
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -386,7 +417,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
                     null, null,
-                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0)
+                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0),
+                    null
             );
 
             // Ne doit PAS lever CommissionMethodMissingException
@@ -418,7 +450,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE, com.dony.api.payments.cash.PaymentMethod.CASH), null, null,
                     null, null,
-                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0)
+                    LocalDate.now().plusDays(10).atTime(16, 0), LocalDate.now().plusDays(10).atTime(18, 0),
+                    null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -455,7 +488,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, PricingMode.MIXED,
                     null, null,
-                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0),
+                    null
             );
 
             AnnouncementResponse result = announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -491,7 +525,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, PricingMode.MIXED,
                     null, null,
-                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0),
+                    null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -694,7 +729,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     null, null,
-                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0)
+                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0),
+                    null
             );
 
             AnnouncementDetailResponse result = announcementService.updateAnnouncement(
@@ -751,7 +787,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     null, null,
-                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0)
+                    LocalDate.now().plusDays(15).atTime(16, 0), LocalDate.now().plusDays(15).atTime(18, 0),
+                    null
             );
 
             announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
@@ -1209,7 +1246,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, CapacityUnit.SUITCASE_32KG, null,
                     null, null,
-                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0)
+                    LocalDate.now().plusDays(10).atTime(8, 0), LocalDate.now().plusDays(10).atTime(9, 0),
+                    null
             );
 
             announcementService.createAnnouncement(FIREBASE_UID, req);
@@ -1252,7 +1290,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     null, null,
-                    LocalDate.now().minusDays(1).atTime(16, 0), LocalDate.now().minusDays(1).atTime(18, 0)
+                    LocalDate.now().minusDays(1).atTime(16, 0), LocalDate.now().minusDays(1).atTime(18, 0),
+                    null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
@@ -1263,6 +1302,75 @@ class AnnouncementServiceTest {
                         assertThat(ex.getErrorCode()).isEqualTo("invalid-departure-date");
                         assertThat(ex.getMessage()).contains("passé");
                     });
+        }
+
+        // ─── saveAsDraft (statut DRAFT) ─────────────────────────────────────
+
+        @Test
+        @DisplayName("saveAsDraft=true → statut DRAFT, KYC et limite mensuelle ignorés")
+        void createAnnouncement_saveAsDraft_setsDraftStatusAndSkipsKycAndMonthlyLimit() {
+            UserEntity user = proUser();
+            user.setKycStatus(KycStatus.PENDING); // KYC non vérifié : ne doit PAS bloquer un draft
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(0L);
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementResponse resp = announcementService.createAnnouncement(FIREBASE_UID, draftRequest());
+
+            assertThat(resp.status()).isEqualTo("DRAFT");
+            verify(announcementRepository, never())
+                    .countByTravelerIdAndCreatedAtBetween(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("saveAsDraft=true, non-PRO au quota (1) → 403 draft-limit-reached")
+        void createAnnouncement_saveAsDraft_nonProAtLimit_throws403DraftLimitReached() {
+            UserEntity user = standardUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(1L); // déjà 1 brouillon
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, draftRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", "draft-limit-reached");
+        }
+
+        @Test
+        @DisplayName("saveAsDraft=true, PRO sous le quota (10) → succès")
+        void createAnnouncement_saveAsDraft_proUnderProLimit_succeeds() {
+            UserEntity user = proUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(9L); // 9 < 10
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementResponse resp = announcementService.createAnnouncement(FIREBASE_UID, draftRequest());
+            assertThat(resp.status()).isEqualTo("DRAFT");
+        }
+
+        @Test
+        @DisplayName("saveAsDraft=true, voyageur suspendu de publication → 403 publishing-suspended")
+        void createAnnouncement_saveAsDraft_publishingSuspended_throws403() {
+            UserEntity user = standardUser();
+            user.setPublishingSuspended(true);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, draftRequest()))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", "publishing-suspended");
         }
     }
 
@@ -1285,7 +1393,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     null, null,
-                    start, end
+                    start, end,
+                    null
             );
         }
 
@@ -1347,7 +1456,8 @@ class AnnouncementServiceTest {
                     TransportMode.PLANE,
                     null, null, null, null, null, null,
                     null, null,
-                    start, end
+                    start, end,
+                    null
             );
 
             assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
