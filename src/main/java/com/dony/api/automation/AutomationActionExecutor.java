@@ -70,9 +70,15 @@ public class AutomationActionExecutor {
     }
 
     /**
-     * Sous-chemin "plafond atteint" : ne touche jamais à {@code action}, donc
-     * il peut porter sa propre transaction pour garantir l'atomicité entre la
-     * désactivation de la règle et l'écriture de l'historique.
+     * Sous-chemin "plafond atteint" : ne touche jamais à {@code action}.
+     * ATTENTION : {@code @Transactional} ici est un no-op — cette méthode est
+     * appelée en auto-invocation ({@code this.}) depuis {@link #tryExecuteBidAction},
+     * donc l'appel ne passe jamais par le proxy transactionnel de Spring (limitation
+     * connue de l'AOP par proxy). La désactivation de la règle et l'écriture de
+     * l'historique restent donc best-effort, pas garanties atomiques — cohérent
+     * avec les autres chemins de cette classe (SUCCESS/FAILURE), pas une régression.
+     * Pour une vraie atomicité, il faudrait une auto-injection du proxy (bean
+     * {@code @Lazy} self-injecté) ou un {@code TransactionTemplate} programmatique.
      */
     @Transactional
     void disableRuleAndRecordCapReached(AutomationRuleEntity rule, UUID travelerId, UUID bidId,
