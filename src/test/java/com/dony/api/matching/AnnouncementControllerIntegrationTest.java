@@ -404,6 +404,43 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$[0].status").value("ACTIVE"));
     }
 
+    // ─── GET /announcements/{id} — confidentialité des brouillons ─────────────
+
+    @Test
+    void getDraft_owner_returns200() throws Exception {
+        var traveler = seedTraveler("uid-traveler-draft-detail-owner");
+        UUID draftId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(get("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-detail-owner"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    void getDraft_otherTraveler_returns404_withoutLeakingExistence() throws Exception {
+        var owner = seedTraveler("uid-traveler-draft-detail-owner2");
+        seedTraveler("uid-traveler-draft-detail-other");
+        UUID draftId = seedAnnouncementForTraveler(owner.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(get("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-detail-other"))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.containsString("announcement-not-found")));
+    }
+
+    @Test
+    void getActive_otherTraveler_returns200_nonRegression() throws Exception {
+        var owner = seedTraveler("uid-traveler-active-detail-owner");
+        seedTraveler("uid-traveler-active-detail-other");
+        UUID activeId = seedAnnouncementForTraveler(owner.getId(), AnnouncementStatus.ACTIVE).getId();
+
+        mockMvc.perform(get("/announcements/" + activeId)
+                .with(authentication(authenticatedAs("uid-traveler-active-detail-other"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private String validBodyWithMode(String mode) {

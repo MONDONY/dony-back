@@ -711,6 +711,62 @@ class AnnouncementServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
         }
+
+        @Test
+        @DisplayName("brouillon → le propriétaire peut voir le détail")
+        void getDetail_draftOwner_returnsDetail() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = draftEntityOwnedBy(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(result.status()).isEqualTo("DRAFT");
+        }
+
+        @Test
+        @DisplayName("brouillon → un tiers reçoit 404 (pas de fuite d'existence)")
+        void getDetail_draftNonOwner_throwsNotFoundWithoutLeaking() {
+            UserEntity owner = buildTraveler();
+            AnnouncementEntity a = draftEntityOwnedBy(owner);
+
+            UserEntity other = new UserEntity();
+            other.setFirebaseUid("uid-other-traveler");
+            setId(other, UUID.randomUUID());
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid("uid-other-traveler")).thenReturn(Optional.of(other));
+
+            assertThatThrownBy(() -> announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, "uid-other-traveler"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement-not-found");
+                    });
+        }
+
+        @Test
+        @DisplayName("annonce ACTIVE → un tiers peut voir le détail (non-régression, pas de résolution du viewer)")
+        void getDetail_activeNonOwner_returnsDetail() {
+            UserEntity owner = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(owner);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(bidRepository.countVisibleByAnnouncementId(ANNOUNCEMENT_ID)).thenReturn(0L);
+
+            AnnouncementDetailResponse result = announcementService.getAnnouncementDetail(
+                    ANNOUNCEMENT_ID, "uid-other-traveler-2");
+
+            assertThat(result.status()).isEqualTo("ACTIVE");
+            // Le lookup viewer (findByFirebaseUid) ne doit se déclencher que pour un DRAFT ;
+            // seul le lookup du profil voyageur affiché (findById) est attendu ici.
+            verify(userRepository, never()).findByFirebaseUid(any());
+        }
     }
 
     // ─── updateAnnouncement ────────────────────────────────────────────────────

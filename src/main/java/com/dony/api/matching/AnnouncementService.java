@@ -582,6 +582,18 @@ public class AnnouncementService {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
+        // Un brouillon est invisible des tiers : même erreur que si l'annonce n'existait
+        // pas, pour ne pas révéler son existence à un utilisateur non-propriétaire.
+        if (announcement.getStatus() == AnnouncementStatus.DRAFT) {
+            UUID viewerId = userRepository.findByFirebaseUid(firebaseUid)
+                    .map(UserEntity::getId)
+                    .orElse(null);
+            if (viewerId == null || !viewerId.equals(announcement.getTravelerId())) {
+                throw new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found",
+                        "Announcement Not Found", "Annonce introuvable");
+            }
+        }
+
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
         long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
                 id,
