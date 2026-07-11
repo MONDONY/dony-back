@@ -291,35 +291,29 @@ public class AnnouncementService {
                 ));
 
         // D4 : voyageur suspendu de publication (retour de colis non rendu, décision admin).
-        if (user.isPublishingSuspended()) {
-            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "publishing-suspended",
-                    "Publishing Suspended",
-                    "La publication de trajets est suspendue. Contactez le support.");
-        }
+        // S'applique aussi bien à un brouillon qu'à une publication directe.
+        assertPublishingNotSuspended(user);
 
-        if (!user.isProAccount() && config.limits() != null) {
-            YearMonth current = YearMonth.now();
-            LocalDateTime from = current.atDay(1).atStartOfDay();
-            LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
-            long count = announcementRepository.countByTravelerIdAndCreatedAtBetween(user.getId(), from, to);
-            if (count >= config.limits().monthlyAnnouncements()) {
-                throw new DonyBusinessException(
-                        HttpStatus.FORBIDDEN,
-                        "pro-limit-reached",
-                        "Monthly announcement limit reached",
-                        "Vous avez atteint votre limite de " + config.limits().monthlyAnnouncements()
-                                + " annonces ce mois-ci. Passez en PRO pour continuer."
-                );
+        boolean isDraft = request.isDraft();
+
+        if (isDraft) {
+            DonyConfigProperties.Limits limits = config.limits() != null
+                    ? config.limits()
+                    : new DonyConfigProperties.Limits(null, null);
+            int maxDrafts = user.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
+            long draftCount = announcementRepository
+                    .countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT);
+            if (draftCount >= maxDrafts) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "draft-limit-reached",
+                        "Draft Limit Reached",
+                        "Limite de " + maxDrafts + " brouillon(s) atteinte."
+                                + (user.isProAccount() ? "" : " Passez en PRO pour en créer davantage."));
             }
         }
 
-        if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "kyc-not-verified",
-                    "KYC Not Verified",
-                    "Vous devez compléter votre vérification d'identité pour effectuer cette action"
-            );
+        if (!isDraft) {
+            // Publication directe : mêmes contrôles que publishAnnouncement (DRAFT→ACTIVE).
+            assertCanPublish(user);
         }
 
         if (enforceStripeOnboarding && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
@@ -360,7 +354,7 @@ public class AnnouncementService {
         announcement.setTotalKg(request.availableKg());
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
-        announcement.setStatus(AnnouncementStatus.ACTIVE);
+        announcement.setStatus(isDraft ? AnnouncementStatus.DRAFT : AnnouncementStatus.ACTIVE);
         announcement.setDescription(request.description());
         if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
         if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
@@ -410,10 +404,26 @@ public class AnnouncementService {
                         "departureDate", saved.getDepartureDate().toString(),
                         "availableKg", saved.getAvailableKg().toString(),
                         "pricePerKg", saved.getPricePerKg().toString(),
-                        "transportMode", saved.getTransportMode().name()
+                        "transportMode", saved.getTransportMode().name(),
+                        "status", saved.getStatus().name()
                 )
         );
 
+        // Un brouillon est invisible des expéditeurs : pas de matching/notification/alerte
+        // corridor tant qu'il n'a pas été explicitement publié (voir publishAnnouncement).
+        if (!isDraft) {
+            publishMatchingEvents(saved, user);
+        }
+
+        return toResponse(saved);
+    }
+
+    /**
+     * Events déclenchant matching (alertes corridor), stats de corridor et notifications
+     * d'abonnement voyageur — publiés uniquement quand une annonce devient réellement
+     * visible (création directe non-brouillon, ou publication d'un brouillon).
+     */
+    private void publishMatchingEvents(AnnouncementEntity saved, UserEntity user) {
         eventPublisher.publishEvent(new com.dony.api.matching.events.AnnouncementCreatedEvent(
             saved.getId(),
             saved.getDepartureCity(),
@@ -429,8 +439,6 @@ public class AnnouncementService {
             saved.getDepartureCity(),
             saved.getArrivalCity()
         ));
-
-        return toResponse(saved);
     }
 
     @Transactional
@@ -573,6 +581,18 @@ public class AnnouncementService {
     public AnnouncementDetailResponse getAnnouncementDetail(UUID id, String firebaseUid) {
         AnnouncementEntity announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        // Un brouillon est invisible des tiers : même erreur que si l'annonce n'existait
+        // pas, pour ne pas révéler son existence à un utilisateur non-propriétaire.
+        if (announcement.getStatus() == AnnouncementStatus.DRAFT) {
+            UUID viewerId = userRepository.findByFirebaseUid(firebaseUid)
+                    .map(UserEntity::getId)
+                    .orElse(null);
+            if (viewerId == null || !viewerId.equals(announcement.getTravelerId())) {
+                throw new DonyBusinessException(HttpStatus.NOT_FOUND, "announcement-not-found",
+                        "Announcement Not Found", "Annonce introuvable");
+            }
+        }
 
         long bidsCount = bidRepository.countVisibleByAnnouncementId(id);
         long confirmedParcelCount = bidRepository.countByAnnouncementIdAndStatusIn(
@@ -781,6 +801,101 @@ public class AnnouncementService {
         );
     }
 
+    /**
+     * Publie un brouillon (DRAFT → ACTIVE) : exécute tous les contrôles de publication
+     * ({@link #assertCanPublish}) puis la validation de date de départ, avant de rendre
+     * l'annonce visible des expéditeurs (events de matching/notification déclenchés ici).
+     */
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public AnnouncementDetailResponse publishAnnouncement(UUID id, String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "user-not-found", "User Not Found", "Utilisateur introuvable"));
+
+        AnnouncementEntity announcement = announcementRepository.findById(id)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        if (!announcement.getTravelerId().equals(user.getId())) {
+            // Même pattern d'ownership que updateAnnouncement (statut + code identiques).
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à publier cette annonce");
+        }
+
+        if (announcement.getStatus() != AnnouncementStatus.DRAFT) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "not-a-draft",
+                    "Not A Draft", "Seul un brouillon peut être publié");
+        }
+
+        assertCanPublish(user);
+
+        if (announcement.getDepartureDate() != null
+                && announcement.getDepartureDate().isBefore(LocalDate.now())) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "departure-date-passed",
+                    "Departure Date Passed",
+                    "La date de départ est passée. Modifiez le trajet avant de le publier.");
+        }
+
+        announcement.setStatus(AnnouncementStatus.ACTIVE);
+        AnnouncementEntity saved = announcementRepository.save(announcement);
+
+        auditService.log("USER", user.getId(), "ANNOUNCEMENT_PUBLISHED", saved.getId(),
+                Map.of("departureCity", saved.getDepartureCity(),
+                       "arrivalCity", saved.getArrivalCity(),
+                       "departureDate", saved.getDepartureDate().toString()));
+
+        // Le brouillon devient réel : c'est ici (et non à sa création) que les expéditeurs
+        // doivent en être informés — cf. matching/notifications/alertes corridor.
+        publishMatchingEvents(saved, user);
+
+        return getAnnouncementDetail(saved.getId(), firebaseUid);
+    }
+
+    /**
+     * Contrôles de publication partagés entre {@link #createAnnouncement} (chemin non-brouillon)
+     * et {@link #publishAnnouncement} (DRAFT→ACTIVE) : suspension de publication, KYC vérifié,
+     * limite mensuelle d'annonces (hors PRO).
+     */
+    private void assertCanPublish(UserEntity user) {
+        assertPublishingNotSuspended(user);
+
+        if (enforceKyc && user.getKycStatus() != KycStatus.VERIFIED) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "kyc-not-verified",
+                    "KYC Not Verified",
+                    "Vous devez compléter votre vérification d'identité pour effectuer cette action"
+            );
+        }
+
+        if (!user.isProAccount() && config.limits() != null) {
+            YearMonth current = YearMonth.now();
+            LocalDateTime from = current.atDay(1).atStartOfDay();
+            LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
+            long count = announcementRepository.countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                    user.getId(), from, to, AnnouncementStatus.DRAFT);
+            if (count >= config.limits().monthlyAnnouncements()) {
+                throw new DonyBusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "pro-limit-reached",
+                        "Monthly announcement limit reached",
+                        "Vous avez atteint votre limite de " + config.limits().monthlyAnnouncements()
+                                + " annonces ce mois-ci. Passez en PRO pour continuer."
+                );
+            }
+        }
+    }
+
+    /** D4 : voyageur suspendu de publication (retour de colis non rendu, décision admin). */
+    private void assertPublishingNotSuspended(UserEntity user) {
+        if (user.isPublishingSuspended()) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "publishing-suspended",
+                    "Publishing Suspended",
+                    "La publication de trajets est suspendue. Contactez le support.");
+        }
+    }
+
     @Transactional
     @CacheEvict(value = "announcements-search", allEntries = true)
     public void deleteAnnouncement(UUID id, String firebaseUid) {
@@ -812,6 +927,20 @@ public class AnnouncementService {
                     Map.of("departureCity", announcement.getDepartureCity(),
                             "arrivalCity", announcement.getArrivalCity(),
                             "deletedBidsCount", String.valueOf(bids.size())));
+            return;
+        }
+
+        if (announcement.getStatus() == AnnouncementStatus.DRAFT) {
+            // Un brouillon n'a jamais été publié : aucun bid n'a pu être placé dessus,
+            // donc pas de remboursement ni de rejet de bids à gérer — soft-delete direct.
+            // Sans cette branche, le slot de brouillon (quota 1 pour un compte standard)
+            // resterait verrouillé à vie si l'utilisateur ne publie/supprime jamais.
+            announcement.softDelete();
+            announcementRepository.save(announcement);
+
+            auditService.log("ANNOUNCEMENT", user.getId(), "DRAFT_ANNOUNCEMENT_DELETED", id,
+                    Map.of("departureCity", announcement.getDepartureCity(),
+                            "arrivalCity", announcement.getArrivalCity()));
             return;
         }
 

@@ -177,7 +177,8 @@ public class TripRecurrenceService {
                 null,
                 null,
                 handoverStart,
-                handoverEnd
+                handoverEnd,
+                Boolean.FALSE
         );
     }
 

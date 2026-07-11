@@ -105,6 +105,9 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     long countByTravelerIdAndCreatedAtBetween(UUID travelerId, LocalDateTime from, LocalDateTime to);
 
+    long countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+            UUID travelerId, LocalDateTime from, LocalDateTime to, AnnouncementStatus status);
+
     long countByTravelerIdAndStatusAndCreatedAtBetween(
             UUID travelerId, AnnouncementStatus status, LocalDateTime from, LocalDateTime to);
 
@@ -118,6 +121,7 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
             a.departureCity, a.arrivalCity, COUNT(a))
         FROM AnnouncementEntity a
         WHERE a.travelerId = :travelerId
+          AND a.status <> com.dony.api.matching.AnnouncementStatus.DRAFT
         GROUP BY a.departureCity, a.arrivalCity
         ORDER BY COUNT(a) DESC
     """)
@@ -167,6 +171,7 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
         WHERE LOWER(a.departureCity) = LOWER(:departure)
           AND LOWER(a.arrivalCity)   = LOWER(:arrival)
           AND a.departureDate >= CURRENT_DATE
+          AND a.status <> com.dony.api.matching.AnnouncementStatus.DRAFT
         ORDER BY a.createdAt DESC
     """)
     List<AnnouncementEntity> findRecentByCorridor(

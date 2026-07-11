@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -322,6 +323,146 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$.handoverWindowEnd").value(date + "T07:30:00Z"));
     }
 
+    // ─── POST /announcements/{id}/publish ──────────────────────────────────────
+
+    @Test
+    void publishDraft_returns200_andAnnouncementBecomesActive() throws Exception {
+        var traveler = seedTraveler("uid-traveler-publish");
+        UUID draftId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(post("/announcements/" + draftId + "/publish")
+                .with(authentication(authenticatedAs("uid-traveler-publish"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void publishActive_returns422NotADraft() throws Exception {
+        var traveler = seedTraveler("uid-traveler-active");
+        UUID activeId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.ACTIVE).getId();
+
+        mockMvc.perform(post("/announcements/" + activeId + "/publish")
+                .with(authentication(authenticatedAs("uid-traveler-active"))))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.containsString("not-a-draft")));
+    }
+
+    @Test
+    void publishSomeoneElsesDraft_isRejected() throws Exception {
+        var owner = seedTraveler("uid-traveler-owner");
+        seedTraveler("uid-traveler-other");
+        UUID draftId = seedAnnouncementForTraveler(owner.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(post("/announcements/" + draftId + "/publish")
+                .with(authentication(authenticatedAs("uid-traveler-other"))))
+            .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void createDraft_thenListMyDrafts_returnsIt() throws Exception {
+        seedTraveler("uid-test-traveler");
+
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(draftBodyWithMode("PLANE")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+
+        mockMvc.perform(get("/announcements/my")
+                .with(authentication(authenticatedAs("uid-test-traveler")))
+                .param("status", "DRAFT"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content.length()").value(1))
+            .andExpect(jsonPath("$.content[0].status").value("DRAFT"));
+    }
+
+    @Test
+    void draftIsInvisibleInPublicSearch() throws Exception {
+        var traveler = seedTraveler("uid-traveler-draft-search");
+        seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT);
+
+        mockMvc.perform(get("/announcements")
+                .with(authentication(authenticatedAs("uid-traveler-draft-search")))
+                .param("departureCity", "Paris")
+                .param("arrivalCity", "Dakar"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void publicTravelerAnnouncements_excludeDrafts() throws Exception {
+        var traveler = seedTraveler("uid-traveler-public-profile");
+        seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT);
+        seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.ACTIVE);
+
+        // Endpoint public : accessible sans authentification traveler-owner
+        // (profil public d'un voyageur, consultable par n'importe quel utilisateur).
+        mockMvc.perform(get("/travelers/" + traveler.getId() + "/announcements")
+                .with(authentication(authenticatedAs("uid-some-other-user"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    // ─── DELETE /announcements/{id} — suppression d'un brouillon ──────────────
+
+    @Test
+    void deleteDraft_owner_returns204_andFreesQuota() throws Exception {
+        var traveler = seedTraveler("uid-traveler-draft-delete");
+        UUID draftId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(delete("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-delete"))))
+            .andExpect(status().isNoContent());
+
+        // Le quota (1 brouillon pour un compte standard) doit être libéré : recréer
+        // un brouillon doit repasser, sinon le premier brouillon supprimé le bloquerait à vie.
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-traveler-draft-delete")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(draftBodyWithMode("PLANE")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    // ─── GET /announcements/{id} — confidentialité des brouillons ─────────────
+
+    @Test
+    void getDraft_owner_returns200() throws Exception {
+        var traveler = seedTraveler("uid-traveler-draft-detail-owner");
+        UUID draftId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(get("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-detail-owner"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    void getDraft_otherTraveler_returns404_withoutLeakingExistence() throws Exception {
+        var owner = seedTraveler("uid-traveler-draft-detail-owner2");
+        seedTraveler("uid-traveler-draft-detail-other");
+        UUID draftId = seedAnnouncementForTraveler(owner.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(get("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-detail-other"))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.containsString("announcement-not-found")));
+    }
+
+    @Test
+    void getActive_otherTraveler_returns200_nonRegression() throws Exception {
+        var owner = seedTraveler("uid-traveler-active-detail-owner");
+        seedTraveler("uid-traveler-active-detail-other");
+        UUID activeId = seedAnnouncementForTraveler(owner.getId(), AnnouncementStatus.ACTIVE).getId();
+
+        mockMvc.perform(get("/announcements/" + activeId)
+                .with(authentication(authenticatedAs("uid-traveler-active-detail-other"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private String validBodyWithMode(String mode) {
@@ -343,10 +484,53 @@ class AnnouncementControllerIntegrationTest {
             """.formatted(date, mode, date, date);
     }
 
+    private String draftBodyWithMode(String mode) {
+        String date = LocalDate.now().plusDays(10).toString();
+        return """
+            {
+              "departureCity": "Paris",
+              "arrivalCity": "Dakar",
+              "departureDate": "%s",
+              "departureTime": "10:00",
+              "availableKg": 10,
+              "pricePerKg": 5,
+              "transportMode": "%s",
+              "pickupAddress": {"label": "Lyon", "lat": 45.748, "lng": 4.846},
+              "deliveryAddress": {"label": "Dakar", "lat": 14.693, "lng": -17.447},
+              "handoverWindowStart": "%sT06:00:00",
+              "handoverWindowEnd": "%sT07:30:00",
+              "saveAsDraft": true
+            }
+            """.formatted(date, mode, date, date);
+    }
+
+    private AnnouncementEntity seedAnnouncementForTraveler(UUID travelerId, AnnouncementStatus status) {
+        AnnouncementEntity e = new AnnouncementEntity();
+        e.setTravelerId(travelerId);
+        e.setDepartureCity("Paris");
+        e.setArrivalCity("Dakar");
+        e.setDepartureDate(LocalDate.now().plusDays(7));
+        e.setAvailableKg(new BigDecimal("8"));
+        e.setTotalKg(new BigDecimal("8"));
+        e.setPricePerKg(new BigDecimal("12"));
+        e.setStatus(status);
+        e.setTransportMode(TransportMode.PLANE);
+        e.setPickupAddressLabel("Test pickup");
+        e.setPickupLat(BigDecimal.valueOf(48.8566));
+        e.setPickupLng(BigDecimal.valueOf(2.3522));
+        e.setDeliveryAddressLabel("Test delivery");
+        e.setDeliveryLat(BigDecimal.valueOf(14.6928));
+        e.setDeliveryLng(BigDecimal.valueOf(-17.4467));
+        return announcementRepository.save(e);
+    }
+
     private com.dony.api.auth.UserEntity seedTraveler(String firebaseUid) {
         var user = new com.dony.api.auth.UserEntity();
         user.setFirebaseUid(firebaseUid);
-        user.setPhoneNumber("+33600000000");
+        // Dérivé du firebaseUid (et non une constante) : certains tests seedent plusieurs
+        // voyageurs (ex. propriétaire + tiers pour un contrôle d'ownership) — un numéro fixe
+        // violerait la contrainte d'unicité phone_number dès le 2e appel dans le même test.
+        user.setPhoneNumber(String.format("+336%08d", Math.abs(firebaseUid.hashCode()) % 100_000_000));
         user.setStatus(com.dony.api.auth.UserStatus.ACTIVE);
         user.setKycStatus(com.dony.api.auth.KycStatus.PENDING);
         user.setRoles(new java.util.HashSet<>(List.of(com.dony.api.auth.Role.TRAVELER)));

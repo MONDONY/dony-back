@@ -11,7 +11,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -68,7 +72,7 @@ class AnnouncementInProgressTransitionTest {
     @BeforeEach
     void setUp() {
         DonyConfigProperties.Limits.NonPro nonPro = new DonyConfigProperties.Limits.NonPro(2);
-        DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(nonPro);
+        DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(nonPro, null);
         DonyConfigProperties config = new DonyConfigProperties(
                 new DonyConfigProperties.Commission(new java.math.BigDecimal("0.12")), limits, null);
         service = new AnnouncementService(
@@ -243,5 +247,66 @@ class AnnouncementInProgressTransitionTest {
         // 2026-06-21 12:00 UTC → le 21 à Dakar → date passée → parti.
         Instant nextDay = OffsetDateTime.of(2026, 6, 21, 12, 0, 0, 0, ZoneOffset.UTC).toInstant();
         assertThat(AnnouncementService.hasDeparted(a, nextDay)).isTrue();
+    }
+}
+
+/**
+ * Verrou anti-fuite (Task 5) : la requête source du scheduler
+ * ({@code findActiveOrFullDepartingOnOrBefore}) ne doit jamais renvoyer un
+ * brouillon (DRAFT), même avec une date de départ passée — sinon le scheduler
+ * le transitionnerait vers IN_PROGRESS/COMPLETED comme un vrai trajet publié.
+ * Test au niveau repository (vraie requête JPQL, pas de mock) : c'est la seule
+ * façon de garantir que le filtre {@code status IN (ACTIVE, FULL)} tient
+ * réellement en base, indépendamment de ce qu'un mock pourrait laisser passer.
+ */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ActiveProfiles("test")
+class AnnouncementInProgressSchedulerDraftLeakTest {
+
+    @Autowired
+    AnnouncementRepository repository;
+
+    private AnnouncementEntity newAnnouncement(AnnouncementStatus status, LocalDate departureDate) {
+        AnnouncementEntity a = new AnnouncementEntity();
+        a.setTravelerId(UUID.randomUUID());
+        a.setDepartureCity("Paris");
+        a.setArrivalCity("Bamako");
+        a.setDepartureDate(departureDate);
+        a.setTransportMode(TransportMode.PLANE);
+        a.setPickupAddressLabel("Gare du Nord, Paris");
+        a.setPickupLat(new BigDecimal("48.880756"));
+        a.setPickupLng(new BigDecimal("2.354987"));
+        a.setDeliveryAddressLabel("Aéroport Bamako-Sénou");
+        a.setDeliveryLat(new BigDecimal("12.533579"));
+        a.setDeliveryLng(new BigDecimal("-7.948969"));
+        a.setAvailableKg(new BigDecimal("20.00"));
+        a.setTotalKg(new BigDecimal("23.00"));
+        a.setPricePerKg(new BigDecimal("8.00"));
+        a.setTimezone("Europe/Paris");
+        a.setStatus(status);
+        return a;
+    }
+
+    @Test
+    @DisplayName("scheduler_neverTransitionsDrafts : DRAFT avec départ passé jamais renvoyé")
+    void draftDepartingInThePast_neverReturnedForInProgressTransition() {
+        repository.saveAndFlush(newAnnouncement(AnnouncementStatus.DRAFT, LocalDate.now().minusDays(5)));
+
+        List<AnnouncementEntity> result = repository.findActiveOrFullDepartingOnOrBefore(LocalDate.now());
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ACTIVE avec départ passé est renvoyé, le DRAFT voisin ne l'est pas")
+    void activeDepartingInThePast_isReturned_draftIsNot() {
+        repository.saveAndFlush(newAnnouncement(AnnouncementStatus.ACTIVE, LocalDate.now().minusDays(5)));
+        repository.saveAndFlush(newAnnouncement(AnnouncementStatus.DRAFT, LocalDate.now().minusDays(5)));
+
+        List<AnnouncementEntity> result = repository.findActiveOrFullDepartingOnOrBefore(LocalDate.now());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
     }
 }
