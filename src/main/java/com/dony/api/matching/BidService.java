@@ -466,6 +466,34 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
+        return doAcceptBid(bid, announcement, traveler);
+    }
+
+    /**
+     * Variante système (déclenchée par une automatisation) : le travelerId est déjà
+     * garanti propriétaire par construction (résolu depuis la règle d'automatisation
+     * elle-même), donc pas de firebaseUid à résoudre — juste une vérification défensive
+     * d'appartenance.
+     */
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public BidResponse acceptBidBySystem(UUID bidId, UUID travelerId) {
+        BidEntity bid = bidRepository.findByIdForUpdate(bidId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "bid-not-found", "Bid Not Found", "Demande introuvable"));
+        AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new IllegalStateException(
+                    "Automation travelerId mismatch for announcement " + announcement.getId());
+        }
+        UserEntity traveler = userRepository.findById(travelerId)
+                .orElseThrow(() -> new IllegalStateException("Traveler not found: " + travelerId));
+        return doAcceptBid(bid, announcement, traveler);
+    }
+
+    private BidResponse doAcceptBid(BidEntity bid, AnnouncementEntity announcement, UserEntity traveler) {
         requireBidStatus(bid, BidStatus.PAYMENT_ESCROWED);
 
         if (announcement.getStatus() == AnnouncementStatus.IN_PROGRESS
@@ -504,12 +532,12 @@ public class BidService {
         bid.applyHandoverFrom(announcement);
         bidRepository.save(bid);
 
-        auditService.log("BID", bidId, "BID_ACCEPTED", traveler.getId(),
+        auditService.log("BID", bid.getId(), "BID_ACCEPTED", traveler.getId(),
                 Map.<String, Object>of("announcementId", announcement.getId().toString(),
                        "weightKg", bid.getWeightKg() != null ? bid.getWeightKg().toString() : "null"));
 
         eventPublisher.publishEvent(new BidAcceptedEvent(
-                bidId, bid.getSenderId(), traveler.getId(), announcement.getId()));
+                bid.getId(), bid.getSenderId(), traveler.getId(), announcement.getId()));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }
@@ -522,7 +550,31 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
+        return doRejectBid(bid, announcement, traveler, request);
+    }
 
+    /**
+     * Variante système (déclenchée par une automatisation) : le travelerId est déjà
+     * garanti propriétaire par construction (résolu depuis la règle d'automatisation
+     * elle-même), donc pas de firebaseUid à résoudre — juste une vérification défensive
+     * d'appartenance.
+     */
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public BidResponse rejectBidBySystem(UUID bidId, UUID travelerId, String reason) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new IllegalStateException(
+                    "Automation travelerId mismatch for announcement " + announcement.getId());
+        }
+        UserEntity traveler = userRepository.findById(travelerId)
+                .orElseThrow(() -> new IllegalStateException("Traveler not found: " + travelerId));
+        return doRejectBid(bid, announcement, traveler, new BidRejectRequest(reason));
+    }
+
+    private BidResponse doRejectBid(BidEntity bid, AnnouncementEntity announcement,
+                                    UserEntity traveler, BidRejectRequest request) {
         boolean isOffPlatformPending =
                 (bid.getPaymentMethod() == PaymentMethod.CASH
                  || bid.getPaymentMethod() == PaymentMethod.WAVE
@@ -538,11 +590,11 @@ public class BidService {
         }
         bidRepository.save(bid);
 
-        auditService.log("BID", bidId, "BID_REJECTED", traveler.getId(),
+        auditService.log("BID", bid.getId(), "BID_REJECTED", traveler.getId(),
                 Map.of("reason", String.valueOf(bid.getRejectionReason())));
 
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bidId, bid.getSenderId(), bid.getRejectionReason()));
+                bid.getId(), bid.getSenderId(), bid.getRejectionReason()));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }

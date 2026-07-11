@@ -966,6 +966,47 @@ class BidServiceTest {
         }
     }
 
+    // ─── acceptBidBySystem ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("acceptBidBySystem()")
+    class AcceptBidBySystemTests {
+
+        @Test
+        @DisplayName("travelerId propriétaire → accepté sans résolution firebaseUid")
+        void acceptBidBySystem_acceptsWithoutFirebaseUid() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenReturn(announcement);
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            BidResponse response = bidService.acceptBidBySystem(BID_ID, TRAVELER_ID);
+
+            assertThat(response.status()).isEqualTo(BidStatus.ACCEPTED.name());
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
+        }
+
+        @Test
+        @DisplayName("travelerId ne possède pas l'annonce → IllegalStateException")
+        void acceptBidBySystem_throwsWhenAnnouncementNotOwnedByTravelerId() {
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            UUID otherTravelerId = UUID.randomUUID();
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.acceptBidBySystem(BID_ID, otherTravelerId))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
     // ─── KgFree capacity — acceptance, cancel, and placement ──────────────────
 
     @Nested
@@ -1188,6 +1229,47 @@ class BidServiceTest {
             ).isInstanceOf(DonyBusinessException.class)
              .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                      .isEqualTo(HttpStatus.CONFLICT));
+        }
+    }
+
+    // ─── rejectBidBySystem ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("rejectBidBySystem()")
+    class RejectBidBySystemTests {
+
+        @Test
+        @DisplayName("travelerId propriétaire → rejeté avec raison, sans résolution firebaseUid")
+        void rejectBidBySystem_rejectsWithReason() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            BidResponse response = bidService.rejectBidBySystem(
+                    BID_ID, TRAVELER_ID, "Poids trop important pour la capacité restante.");
+
+            assertThat(response.status()).isEqualTo(BidStatus.REJECTED.name());
+            assertThat(bid.getRejectionReason()).isEqualTo("Poids trop important pour la capacité restante.");
+        }
+
+        @Test
+        @DisplayName("travelerId ne possède pas l'annonce → IllegalStateException")
+        void rejectBidBySystem_throwsWhenAnnouncementNotOwnedByTravelerId() {
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            UUID otherTravelerId = UUID.randomUUID();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.rejectBidBySystem(BID_ID, otherTravelerId, "raison"))
+                    .isInstanceOf(IllegalStateException.class);
         }
     }
 
