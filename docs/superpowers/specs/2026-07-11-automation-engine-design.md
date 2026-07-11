@@ -87,21 +87,21 @@ Structure attendue par preset (clés dans la Map `action`) :
 ```sql
 CREATE TABLE automation_capacity_watermarks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    announcement_id UUID NOT NULL REFERENCES announcements(id),
-    free_since TIMESTAMP WITH TIME ZONE NOT NULL,
+    announcement_id UUID NOT NULL UNIQUE REFERENCES announcements(id),
+    free_since TIMESTAMP WITH TIME ZONE,
     last_alerted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX idx_automation_capacity_watermarks_announcement
-    ON automation_capacity_watermarks(announcement_id);
 ```
 
-Logique du `CapacityWatchScheduler` (toutes les 15 min) :
-1. Pour chaque annonce active avec une règle 4 activée chez son voyageur, si `availableKg ≥ freedKgThreshold` :
-   - Pas de watermark existant → en créer un (`free_since = now()`)
-   - Watermark existant, `now() - free_since ≥ consecutiveHours` ET `last_alerted_at` absent ou antérieur à `free_since` → notifier + poser `last_alerted_at = now()` (évite de spammer à chaque run tant que la capacité reste stable)
-2. Si `availableKg < freedKgThreshold`, supprimer le watermark existant (le compteur "depuis" repart à zéro à la prochaine libération).
+`free_since` nullable (pas de ligne = jamais évaluée ; `free_since IS NULL` = capacité actuellement sous le seuil). Pas de suppression physique de ligne — mise à jour en place uniquement, conforme à la convention du projet.
+
+Logique du `CapacityWatchScheduler` (toutes les 15 min), par annonce active dont le voyageur a la règle 4 activée :
+1. `availableKg ≥ freedKgThreshold` :
+   - Pas de ligne ou `free_since IS NULL` → upsert `free_since = now()`
+   - `free_since` posé et `now() - free_since ≥ consecutiveHours` ET (`last_alerted_at IS NULL` OU `last_alerted_at < free_since`) → notifier + poser `last_alerted_at = now()` (évite de spammer tant que la capacité reste stable)
+2. `availableKg < freedKgThreshold` → upsert `free_since = NULL, last_alerted_at = NULL` (reset ; le compteur repart à zéro à la prochaine libération).
 
 **Corridors habituels (règle 5)** : pas de table dédiée. Dérivé à la volée via `BidRepository.findBySenderId` joint à `AnnouncementEntity.departureCity/arrivalCity`, filtré sur les bids `ACCEPTED`/complétés du voyageur courant, distinct par `(senderId, corridor)`.
 
