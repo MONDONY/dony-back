@@ -73,6 +73,17 @@ class AnnouncementRepositoryCorridorTest {
     }
 
     @Test
+    void draftRow_doesNotMatch() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.DRAFT));
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE));
+
+        List<AnnouncementEntity> result = repository.findActiveByCorridor("Paris", "Bamako");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+    }
+
+    @Test
     void completedRow_doesNotMatch() {
         repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.COMPLETED));
 
@@ -140,5 +151,17 @@ class AnnouncementRepositoryCorridorTest {
                 "Paris", "Bamako", 48.8566, 2.3522, 20);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void withinPickupRadius_draft_excluded() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.DRAFT));
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE));
+
+        List<AnnouncementEntity> result = repository.findActiveByCorridorWithinPickupRadius(
+                "Paris", "Bamako", 48.8566, 2.3522, 20);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
     }
 }
