@@ -319,7 +319,8 @@ public class AnnouncementService {
                 YearMonth current = YearMonth.now();
                 LocalDateTime from = current.atDay(1).atStartOfDay();
                 LocalDateTime to = current.atEndOfMonth().atTime(23, 59, 59);
-                long count = announcementRepository.countByTravelerIdAndCreatedAtBetween(user.getId(), from, to);
+                long count = announcementRepository.countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                        user.getId(), from, to, AnnouncementStatus.DRAFT);
                 if (count >= config.limits().monthlyAnnouncements()) {
                     throw new DonyBusinessException(
                             HttpStatus.FORBIDDEN,

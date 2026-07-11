@@ -1372,6 +1372,37 @@ class AnnouncementServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", "publishing-suspended");
         }
+
+        @Test
+        @DisplayName("saveAsDraft=false, limite mensuelle non-PRO → le compte ignore les brouillons")
+        void createAnnouncement_publishDirect_monthlyLimitIgnoresDrafts() {
+            UserEntity user = standardUser();
+            DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
+                    new DonyConfigProperties.Limits.NonPro(2), null);
+            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits, null);
+            AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
+                    userRepository, bidRepository, priceGridService, storageService);
+            AnnouncementService serviceWithLimits = new AnnouncementService(
+                    announcementRepository, bidRepository, userRepository,
+                    auditService, eventPublisher, configWithLimits, priceGridService, flagService,
+                    storageService, favoriteRepository, mapperWithLimits);
+
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            // le nouveau count (hors DRAFT) renvoie 1 => sous la limite (2) => création OK
+            when(announcementRepository.countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                    eq(user.getId()), any(), any(), eq(AnnouncementStatus.DRAFT))).thenReturn(1L);
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementResponse resp = serviceWithLimits.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            assertThat(resp.status()).isEqualTo("ACTIVE");
+        }
     }
 
     // ─── HandoverWindow validation ─────────────────────────────────────────────

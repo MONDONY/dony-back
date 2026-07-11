@@ -105,6 +105,9 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
 
     long countByTravelerIdAndCreatedAtBetween(UUID travelerId, LocalDateTime from, LocalDateTime to);
 
+    long countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+            UUID travelerId, LocalDateTime from, LocalDateTime to, AnnouncementStatus status);
+
     long countByTravelerIdAndStatusAndCreatedAtBetween(
             UUID travelerId, AnnouncementStatus status, LocalDateTime from, LocalDateTime to);
 
