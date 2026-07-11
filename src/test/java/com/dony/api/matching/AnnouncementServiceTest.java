@@ -187,6 +187,18 @@ class AnnouncementServiceTest {
         return u;
     }
 
+    private UserEntity verifiedProUser() {
+        UserEntity u = proUser();
+        u.setKycStatus(KycStatus.VERIFIED);
+        return u;
+    }
+
+    private AnnouncementEntity draftEntityOwnedBy(UserEntity traveler) {
+        AnnouncementEntity a = buildAnnouncement(traveler);
+        a.setStatus(AnnouncementStatus.DRAFT);
+        return a;
+    }
+
     // ─── createAnnouncement ────────────────────────────────────────────────────
 
     @Nested
@@ -1403,6 +1415,47 @@ class AnnouncementServiceTest {
 
             assertThat(resp.status()).isEqualTo("ACTIVE");
         }
+
+        @Test
+        @DisplayName("saveAsDraft=true → aucun event de publication/matching émis (brouillon invisible)")
+        void createAnnouncement_saveAsDraft_doesNotPublishMatchingEvents() {
+            UserEntity user = proUser();
+            user.setKycStatus(KycStatus.PENDING);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(0L);
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            announcementService.createAnnouncement(FIREBASE_UID, draftRequest());
+
+            verify(eventPublisher, never()).publishEvent(any(com.dony.api.matching.events.AnnouncementCreatedEvent.class));
+            verify(eventPublisher, never()).publishEvent(any(AnnouncementPublishedEvent.class));
+        }
+
+        @Test
+        @DisplayName("saveAsDraft=false → events de publication/matching émis")
+        void createAnnouncement_publishDirect_publishesMatchingEvents() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            announcementService.createAnnouncement(FIREBASE_UID, buildRequest());
+
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.AnnouncementCreatedEvent.class));
+            verify(eventPublisher).publishEvent(any(AnnouncementPublishedEvent.class));
+        }
     }
 
     // ─── HandoverWindow validation ─────────────────────────────────────────────
@@ -1523,6 +1576,168 @@ class AnnouncementServiceTest {
 
             assertThat(captor.getValue().getHandoverWindowStart()).isEqualTo(start);
             assertThat(captor.getValue().getHandoverWindowEnd()).isEqualTo(end);
+        }
+    }
+
+    // ─── publishAnnouncement (DRAFT → ACTIVE) ──────────────────────────────────
+
+    @Nested
+    @DisplayName("publishAnnouncement()")
+    class PublishTests {
+
+        @Test
+        @DisplayName("brouillon du propriétaire → ACTIVE + audit ANNOUNCEMENT_PUBLISHED + events de matching émis")
+        void publishAnnouncement_draft_becomesActive_andAuditsPublication() {
+            UserEntity user = verifiedProUser();
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            announcementService.publishAnnouncement(draft.getId(), FIREBASE_UID);
+
+            assertThat(draft.getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+            verify(auditService).log(eq("USER"), eq(user.getId()),
+                    eq("ANNOUNCEMENT_PUBLISHED"), eq(draft.getId()), anyMap());
+            // Un brouillon devient réel à la publication : c'est ici, et seulement ici,
+            // que les events de matching/notifications doivent partir.
+            verify(eventPublisher).publishEvent(any(com.dony.api.matching.events.AnnouncementCreatedEvent.class));
+            verify(eventPublisher).publishEvent(any(AnnouncementPublishedEvent.class));
+        }
+
+        @Test
+        @DisplayName("annonce déjà active → 422 not-a-draft")
+        void publishAnnouncement_notADraft_throws422() {
+            UserEntity user = verifiedProUser();
+            AnnouncementEntity active = buildAnnouncement(user); // status=ACTIVE par défaut
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("not-a-draft");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("pas propriétaire → même pattern que updateAnnouncement (403 FORBIDDEN / forbidden)")
+        void publishAnnouncement_notOwner_throws() {
+            UserEntity otherUser = new UserEntity();
+            otherUser.setFirebaseUid(FIREBASE_UID);
+            setId(otherUser, UUID.randomUUID());
+
+            AnnouncementEntity draft = new AnnouncementEntity();
+            draft.setTravelerId(UUID.randomUUID()); // différent du user courant
+            draft.setStatus(AnnouncementStatus.DRAFT);
+            setId(draft, ANNOUNCEMENT_ID);
+
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(draft));
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("forbidden");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("KYC non vérifié (enforceKyc=true) → 403 kyc-not-verified")
+        void publishAnnouncement_kycNotVerified_throws403KycNotVerified() throws Exception {
+            UserEntity user = proUser();
+            user.setKycStatus(KycStatus.PENDING);
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+
+            Field enforceKycField = AnnouncementService.class.getDeclaredField("enforceKyc");
+            enforceKycField.setAccessible(true);
+            enforceKycField.set(announcementService, true);
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(draft.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("kyc-not-verified");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("voyageur suspendu de publication → 403 publishing-suspended")
+        void publishAnnouncement_publishingSuspended_throws403() {
+            UserEntity user = verifiedProUser();
+            user.setPublishingSuspended(true);
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(draft.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("publishing-suspended");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("non-PRO, limite mensuelle atteinte → 403 pro-limit-reached")
+        void publishAnnouncement_nonProMonthlyLimitReached_throws403ProLimitReached() {
+            UserEntity user = standardUser();
+            DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
+                    new DonyConfigProperties.Limits.NonPro(2), null);
+            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits, null);
+            AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
+                    userRepository, bidRepository, priceGridService, storageService);
+            AnnouncementService serviceWithLimits = new AnnouncementService(
+                    announcementRepository, bidRepository, userRepository,
+                    auditService, eventPublisher, configWithLimits, priceGridService, flagService,
+                    storageService, favoriteRepository, mapperWithLimits);
+
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+            when(announcementRepository.countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                    eq(user.getId()), any(), any(), eq(AnnouncementStatus.DRAFT))).thenReturn(2L);
+
+            assertThatThrownBy(() -> serviceWithLimits.publishAnnouncement(draft.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("pro-limit-reached");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("date de départ passée → 422 departure-date-passed, statut reste DRAFT")
+        void publishAnnouncement_departureDatePassed_throws422() {
+            UserEntity user = verifiedProUser();
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            draft.setDepartureDate(LocalDate.now().minusDays(1));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(draft.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("departure-date-passed");
+                    });
+            assertThat(draft.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
+            verify(announcementRepository, never()).save(any());
         }
     }
 }
