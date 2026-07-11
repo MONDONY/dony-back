@@ -27,7 +27,10 @@ public interface TravelerSubscriptionRepository extends JpaRepository<TravelerSu
 
     @Query(value = """
         SELECT ts.traveler_id                                   AS traveler_id,
-               (u.first_name || ' ' || u.last_name)             AS traveler_name,
+               COALESCE(
+                 NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                 'Voyageur'
+               )                                                AS traveler_name,
                u.is_pro_account                                 AS is_pro,
                u.average_rating                                 AS average_rating,
                (SELECT COUNT(*) FROM announcements a
