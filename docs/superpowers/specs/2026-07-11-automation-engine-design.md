@@ -66,11 +66,13 @@ Nouvelles notifications via `NotificationDispatcher.notifyUser(userId, title, bo
 
 - Règle 4 : notifie le **voyageur** ("Tu as retrouvé {X} kg de dispo depuis {Y}h")
 - Règle 5 : notifie **chaque expéditeur qualifié** ("Nouveau trajet publié sur votre corridor habituel {ville départ} → {ville arrivée}")
-- Règle 6 : notifie le **voyageur**, critique (push + fallback SMS via `notifyCritical`) — "Offre reçue avec départ dans moins de 48h"
+- Règle 6 : notifie le **voyageur** — "Offre reçue avec départ dans moins de 48h". `NotificationDispatcher.notifyCritical` (fallback SMS) est **privé**, réservé aux événements PAYMENT_RELEASED/DELIVERY_CONFIRMED/DISPUTE_OPENED — on utilise le `notifyUser(...)` public standard (push + notification persistée), sans fallback SMS. Correction par rapport à la version initiale de ce document.
 
 ### Modèle de données additionnel
 
-**`AutomationRuleEntity.config` (JSONB existant)** — structure typée par preset :
+**Correction post-lecture du code réel** : `AutomationRuleEntity` n'a pas de colonne `config` dédiée — les seuils des presets sont stockés dans la colonne JSONB `action` (`Map<String,Object>`), déjà lue/écrite par `AutomationRuleService.updatePreset`/`buildPresetResponse`. Le DTO `UpdatePresetRequest.config()` (nom côté contrat API) est mappé directement sur `rule.setAction(...)` côté persistance — aucun changement de schéma nécessaire, juste consommer cette Map côté moteur.
+
+Structure attendue par preset (clés dans la Map `action`) :
 
 | Preset | Champs config |
 |---|---|
@@ -109,7 +111,7 @@ Logique du `CapacityWatchScheduler` (toutes les 15 min) :
 
 Plafond quotidien configurable (défaut 20) d'actions automatiques (accept + reject confondus, par voyageur, toutes règles 1/2 confondues) :
 
-- `AutomationHistoryWriter` compte les lignes `outcome=EXECUTED` du jour courant pour le voyageur avant chaque action.
+- `AutomationRuleService.countTodayActions(UUID travelerId)` existe déjà (compte `automation_history` du jour courant) — le moteur l'appelle avant chaque action au lieu de recompter.
 - Au-delà du plafond : la règle concernée passe `enabled=false` en base, une notification critique alerte le voyageur ("Ta règle d'automatisation a été désactivée après {N} actions aujourd'hui — vérifie ta configuration"), et l'action en cours n'est **pas** exécutée (le bid reste en attente de décision manuelle).
 - Le plafond est une **constante applicative** (`DAILY_ACTION_CAP = 20`), non configurable par le voyageur, pour éviter qu'un plafond mal réglé annule sa propre protection.
 
