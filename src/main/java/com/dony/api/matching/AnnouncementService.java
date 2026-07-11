@@ -930,6 +930,20 @@ public class AnnouncementService {
             return;
         }
 
+        if (announcement.getStatus() == AnnouncementStatus.DRAFT) {
+            // Un brouillon n'a jamais été publié : aucun bid n'a pu être placé dessus,
+            // donc pas de remboursement ni de rejet de bids à gérer — soft-delete direct.
+            // Sans cette branche, le slot de brouillon (quota 1 pour un compte standard)
+            // resterait verrouillé à vie si l'utilisateur ne publie/supprime jamais.
+            announcement.softDelete();
+            announcementRepository.save(announcement);
+
+            auditService.log("ANNOUNCEMENT", user.getId(), "DRAFT_ANNOUNCEMENT_DELETED", id,
+                    Map.of("departureCity", announcement.getDepartureCity(),
+                            "arrivalCity", announcement.getArrivalCity()));
+            return;
+        }
+
         if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
             throw new DonyBusinessException(HttpStatus.CONFLICT, "deletion-impossible", "Deletion Impossible",
                     "Seuls les trajets actifs ou annulés peuvent être supprimés");

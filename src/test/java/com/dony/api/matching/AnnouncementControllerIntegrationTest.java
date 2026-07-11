@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -402,6 +403,27 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.length()").value(1))
             .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    // ─── DELETE /announcements/{id} — suppression d'un brouillon ──────────────
+
+    @Test
+    void deleteDraft_owner_returns204_andFreesQuota() throws Exception {
+        var traveler = seedTraveler("uid-traveler-draft-delete");
+        UUID draftId = seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT).getId();
+
+        mockMvc.perform(delete("/announcements/" + draftId)
+                .with(authentication(authenticatedAs("uid-traveler-draft-delete"))))
+            .andExpect(status().isNoContent());
+
+        // Le quota (1 brouillon pour un compte standard) doit être libéré : recréer
+        // un brouillon doit repasser, sinon le premier brouillon supprimé le bloquerait à vie.
+        mockMvc.perform(post("/announcements")
+                .with(authentication(authenticatedAs("uid-traveler-draft-delete")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(draftBodyWithMode("PLANE")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
     }
 
     // ─── GET /announcements/{id} — confidentialité des brouillons ─────────────

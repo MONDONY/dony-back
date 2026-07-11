@@ -1020,6 +1020,22 @@ class AnnouncementServiceTest {
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
         }
+
+        @Test
+        @DisplayName("brouillon → soft-delete direct + audit (pas de bids possibles sur un DRAFT)")
+        void delete_draftAnnouncement_softDeletesWithoutBidHandling() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = draftEntityOwnedBy(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            announcementService.deleteAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID);
+
+            assertThat(a.getDeletedAt()).isNotNull();
+            verify(announcementRepository).save(a);
+            verify(auditService).log(eq("ANNOUNCEMENT"), any(), eq("DRAFT_ANNOUNCEMENT_DELETED"), any(), any());
+            verifyNoInteractions(bidRepository);
+        }
     }
 
     // ── searchAnnouncements ────────────────────────────────────────────────────
