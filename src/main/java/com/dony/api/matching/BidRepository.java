@@ -319,4 +319,19 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("from") java.time.LocalDateTime from,
             @Param("to") java.time.LocalDateTime to,
             Pageable pageable);
+
+    /**
+     * Expéditeurs "fidèles" : ceux ayant déjà eu un bid ACCEPTED avec ce voyageur
+     * sur exactement ce corridor (ville de départ + ville d'arrivée). Utilisé par
+     * la règle d'automatisation "notify_loyal_senders" (Task 5) à la publication
+     * d'une nouvelle annonce.
+     */
+    @Query("SELECT DISTINCT b.senderId FROM BidEntity b " +
+           "JOIN AnnouncementEntity a ON a.id = b.announcementId " +
+           "WHERE a.travelerId = :travelerId AND a.departureCity = :departureCity " +
+           "AND a.arrivalCity = :arrivalCity AND b.status = com.dony.api.matching.BidStatus.ACCEPTED " +
+           "AND b.deletedAt IS NULL")
+    List<UUID> findLoyalSenderIds(@Param("travelerId") UUID travelerId,
+                                  @Param("departureCity") String departureCity,
+                                  @Param("arrivalCity") String arrivalCity);
 }
