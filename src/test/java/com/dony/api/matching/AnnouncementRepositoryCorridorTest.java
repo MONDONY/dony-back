@@ -164,4 +164,40 @@ class AnnouncementRepositoryCorridorTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
     }
+
+    // ── findRecentByCorridor (estimation de prix publique — PriceEstimationService/MarketPriceService) ──
+
+    @Test
+    void findRecentByCorridor_draft_excluded_activeIncluded() {
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.DRAFT));
+        repository.saveAndFlush(newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE));
+
+        List<AnnouncementEntity> result = repository.findRecentByCorridor(
+                "Paris", "Bamako", org.springframework.data.domain.PageRequest.of(0, 30));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo(AnnouncementStatus.ACTIVE);
+    }
+
+    // ── findTopDestinationsForTraveler (TravelerStatsService) ──────────────────
+
+    @Test
+    void findTopDestinationsForTraveler_draft_excluded_activeIncluded() {
+        UUID travelerId = UUID.randomUUID();
+
+        AnnouncementEntity draft = newAnnouncement("Paris", "Bamako", AnnouncementStatus.DRAFT);
+        draft.setTravelerId(travelerId);
+        repository.saveAndFlush(draft);
+
+        AnnouncementEntity active = newAnnouncement("Paris", "Bamako", AnnouncementStatus.ACTIVE);
+        active.setTravelerId(travelerId);
+        repository.saveAndFlush(active);
+
+        List<com.dony.api.matching.dto.TravelerStatsDto.DestinationStat> result =
+                repository.findTopDestinationsForTraveler(
+                        travelerId, org.springframework.data.domain.PageRequest.of(0, 100));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).count()).isEqualTo(1L);
+    }
 }
