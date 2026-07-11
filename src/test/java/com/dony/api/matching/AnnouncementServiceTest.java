@@ -1740,4 +1740,48 @@ class AnnouncementServiceTest {
             verify(announcementRepository, never()).save(any());
         }
     }
+
+    // ─── Audit anti-fuite DRAFT (Task 5) ───────────────────────────────────────
+
+    @Nested
+    @DisplayName("getTravelerAnnouncements() — verrou anti-fuite DRAFT")
+    class GetTravelerAnnouncementsTests {
+
+        @Test
+        @DisplayName("ne requête jamais le statut DRAFT — seulement ACTIVE et FULL")
+        void getTravelerAnnouncements_neverQueriesDraftStatus() {
+            UUID travelerId = UUID.randomUUID();
+            when(announcementRepository.findByTravelerIdAndStatus(eq(travelerId), eq(AnnouncementStatus.ACTIVE), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+            when(announcementRepository.findByTravelerIdAndStatus(eq(travelerId), eq(AnnouncementStatus.FULL), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            announcementService.getTravelerAnnouncements(travelerId);
+
+            verify(announcementRepository, never())
+                    .findByTravelerIdAndStatus(eq(travelerId), eq(AnnouncementStatus.DRAFT), any());
+            verify(announcementRepository, never()).findByTravelerId(eq(travelerId), any());
+        }
+
+        @Test
+        @DisplayName("un DRAFT en base ne peut pas apparaître dans le résultat (même en cas de mix ACTIVE/FULL)")
+        void getTravelerAnnouncements_resultNeverContainsDraft() {
+            UUID travelerId = UUID.randomUUID();
+            UserEntity traveler = buildTraveler();
+            setId(traveler, travelerId);
+            AnnouncementEntity active = buildAnnouncement(traveler);
+            active.setStatus(AnnouncementStatus.ACTIVE);
+
+            when(announcementRepository.findByTravelerIdAndStatus(eq(travelerId), eq(AnnouncementStatus.ACTIVE), any()))
+                    .thenReturn(new PageImpl<>(List.of(active)));
+            when(announcementRepository.findByTravelerIdAndStatus(eq(travelerId), eq(AnnouncementStatus.FULL), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            var result = announcementService.getTravelerAnnouncements(travelerId);
+
+            assertThat(result).hasSize(1);
+            assertThat(result).allSatisfy(r -> assertThat(r.status()).isNotEqualTo("DRAFT"));
+            assertThat(result.get(0).status()).isEqualTo("ACTIVE");
+        }
+    }
 }

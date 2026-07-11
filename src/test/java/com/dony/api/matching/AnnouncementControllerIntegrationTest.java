@@ -389,6 +389,21 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$.content.length()").value(0));
     }
 
+    @Test
+    void publicTravelerAnnouncements_excludeDrafts() throws Exception {
+        var traveler = seedTraveler("uid-traveler-public-profile");
+        seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.DRAFT);
+        seedAnnouncementForTraveler(traveler.getId(), AnnouncementStatus.ACTIVE);
+
+        // Endpoint public : accessible sans authentification traveler-owner
+        // (profil public d'un voyageur, consultable par n'importe quel utilisateur).
+        mockMvc.perform(get("/travelers/" + traveler.getId() + "/announcements")
+                .with(authentication(authenticatedAs("uid-some-other-user"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private String validBodyWithMode(String mode) {

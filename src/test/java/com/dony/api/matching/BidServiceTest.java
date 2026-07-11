@@ -424,6 +424,28 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("annonce DRAFT (brouillon non publié) → 409 CONFLICT, aucun bid créé")
+        void createBidOnDraft_rejected() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.DRAFT);
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement-not-active");
+                    });
+            verify(bidRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("IP extraite du header X-Forwarded-For (proxy)")
         void createBid_withForwardedFor_extractsClientIp() {
             UserEntity sender = buildSender();
