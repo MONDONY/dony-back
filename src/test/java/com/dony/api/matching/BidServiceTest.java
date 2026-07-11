@@ -1005,6 +1005,21 @@ class BidServiceTest {
             assertThatThrownBy(() -> bidService.acceptBidBySystem(BID_ID, otherTravelerId))
                     .isInstanceOf(IllegalStateException.class);
         }
+
+        @Test
+        @DisplayName("travelerId propriétaire mais introuvable en base → IllegalStateException")
+        void acceptBidBySystem_throwsWhenTravelerNotFound() {
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findByIdForUpdate(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> bidService.acceptBidBySystem(BID_ID, TRAVELER_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Traveler not found: " + TRAVELER_ID);
+        }
     }
 
     // ─── KgFree capacity — acceptance, cancel, and placement ──────────────────
@@ -1270,6 +1285,21 @@ class BidServiceTest {
 
             assertThatThrownBy(() -> bidService.rejectBidBySystem(BID_ID, otherTravelerId, "raison"))
                     .isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        @DisplayName("travelerId propriétaire mais introuvable en base → IllegalStateException")
+        void rejectBidBySystem_throwsWhenTravelerNotFound() {
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> bidService.rejectBidBySystem(BID_ID, TRAVELER_ID, "raison"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Traveler not found: " + TRAVELER_ID);
         }
     }
 
