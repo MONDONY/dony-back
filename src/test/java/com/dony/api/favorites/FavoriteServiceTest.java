@@ -241,6 +241,31 @@ class FavoriteServiceTest {
     }
 
     @Test
+    void getFavoriteTrips_skipsCompleted() {
+        UUID t1 = UUID.randomUUID(); // ACTIVE — kept
+        UUID t2 = UUID.randomUUID(); // COMPLETED — filtered out (avant le passage du scheduler nocturne)
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP))
+                .thenReturn(List.of(t1, t2));
+
+        AnnouncementEntity a1 = mock(AnnouncementEntity.class);
+        when(a1.getId()).thenReturn(t1);
+        when(a1.getStatus()).thenReturn(AnnouncementStatus.ACTIVE);
+
+        AnnouncementEntity a2 = mock(AnnouncementEntity.class);
+        when(a2.getId()).thenReturn(t2);
+        when(a2.getStatus()).thenReturn(AnnouncementStatus.COMPLETED);
+
+        when(announcementRepository.findAllById(anyCollection())).thenReturn(List.of(a1, a2));
+        AnnouncementSearchResponse dto = mock(AnnouncementSearchResponse.class);
+        when(announcementSearchMapper.toSearchResponseList(eq(List.of(a1)), anySet())).thenReturn(List.of(dto));
+
+        var res = service.getFavoriteTrips(UID);
+
+        assertThat(res).hasSize(1);
+        verify(announcementSearchMapper).toSearchResponseList(eq(List.of(a1)), anySet());
+    }
+
+    @Test
     void getFavoriteTrips_isFavoriteTruePassedToMapper() {
         UUID t1 = UUID.randomUUID();
         when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP))
@@ -301,6 +326,36 @@ class FavoriteServiceTest {
         assertThat(res.get(0)).isSameAs(dto);
         verify(packageRequestSearchMapper).toSearchResponseList(eq(List.of(pr1)), anySet());
         verify(packageRequestSearchMapper, never()).toSearchResponse(any(PackageRequestEntity.class), anyBoolean());
+    }
+
+    @Test
+    void getFavoritePackageRequests_skipsCompletedAndExpired() {
+        UUID p1 = UUID.randomUUID(); // OPEN — kept
+        UUID p2 = UUID.randomUUID(); // COMPLETED — filtered out
+        UUID p3 = UUID.randomUUID(); // EXPIRED — filtered out
+        when(favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST))
+                .thenReturn(List.of(p1, p2, p3));
+
+        PackageRequestEntity pr1 = mock(PackageRequestEntity.class);
+        when(pr1.getId()).thenReturn(p1);
+        when(pr1.getStatus()).thenReturn(PackageRequestStatus.OPEN);
+
+        PackageRequestEntity pr2 = mock(PackageRequestEntity.class);
+        when(pr2.getId()).thenReturn(p2);
+        when(pr2.getStatus()).thenReturn(PackageRequestStatus.COMPLETED);
+
+        PackageRequestEntity pr3 = mock(PackageRequestEntity.class);
+        when(pr3.getId()).thenReturn(p3);
+        when(pr3.getStatus()).thenReturn(PackageRequestStatus.EXPIRED);
+
+        when(packageRequestRepository.findAllById(anyCollection())).thenReturn(List.of(pr1, pr2, pr3));
+        PackageRequestSearchResponse dto = mock(PackageRequestSearchResponse.class);
+        when(packageRequestSearchMapper.toSearchResponseList(eq(List.of(pr1)), anySet())).thenReturn(List.of(dto));
+
+        var res = service.getFavoritePackageRequests(UID);
+
+        assertThat(res).hasSize(1);
+        verify(packageRequestSearchMapper).toSearchResponseList(eq(List.of(pr1)), anySet());
     }
 
     @Test
