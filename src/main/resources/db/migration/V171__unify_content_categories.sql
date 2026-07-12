@@ -218,6 +218,12 @@ WHERE a.ctid <> (SELECT MIN(b.ctid) FROM announcement_refused_types b
 --
 --        Idempotente : rejouée, elle ne trouve plus de collision (le refus
 --        correspondant a déjà été supprimé) et ne supprime plus rien.
+--
+--        Effet de bord assumé : ce bloc ne cible pas seulement les collisions créées
+--        par la normalisation ci-dessus — il résout aussi les contradictions
+--        préexistantes sur du texte libre qu'aucun bras du CASE ne touche (ex.
+--        accepted='Poissons' et refused='Poissons' avant même cette migration). Même
+--        règle produit : on garde l'acceptation, on supprime le refus.
 DELETE FROM announcement_refused_types r
 WHERE EXISTS (
     SELECT 1 FROM announcement_accepted_types a

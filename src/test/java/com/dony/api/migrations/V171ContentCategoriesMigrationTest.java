@@ -193,6 +193,88 @@ class V171ContentCategoriesMigrationTest {
                 .containsExactly("Vêtements & tissus");
     }
 
+    // ─── FIX B (task-2) : la copie du CASE de package_requests n'était exercée que sur
+    //     5 bras/21 — on boucle ici sur les 23 valeurs (9 codes + 14 libellés), comme le
+    //     fait déjà v171_migratesAllLegacyCodesAndLabels_onBids pour bids. Chaque valeur
+    //     legacy est semée sur une package_request DISTINCTE (une seule valeur par ligne)
+    //     pour que l'assertion reste discriminante par bras du CASE.
+
+    @Test
+    void v171_migratesAllLegacyCodesAndLabels_onPackageRequests() throws Exception {
+        Map<String, String> allMappings = new LinkedHashMap<>();
+        allMappings.putAll(LEGACY_CODES);
+        allMappings.putAll(LEGACY_LABELS);
+        assertThat(allMappings).hasSize(23);
+
+        Map<String, String> reqIdByRaw = new LinkedHashMap<>();
+        for (String raw : allMappings.keySet()) {
+            reqIdByRaw.put(raw, seedMinimalPackageRequest(raw));
+        }
+
+        migrateToV171();
+
+        for (Map.Entry<String, String> e : allMappings.entrySet()) {
+            String reqId = reqIdByRaw.get(e.getKey());
+            assertThat(queryStrings("SELECT content_category FROM package_requests WHERE id='" + reqId + "'"))
+                    .as("mapping de '%s'", e.getKey())
+                    .containsExactly(e.getValue());
+        }
+    }
+
+    // ─── FIX B (task-2) : announcement_accepted_types / refused_types n'exerçaient que
+    //     ~6 bras/14. Les codes enum ne s'appliquent pas à ces deux tables (texte libre
+    //     uniquement, jamais de code enum) — on boucle donc sur les 14 libellés
+    //     seulement. Chaque libellé est semé sur une announcement DISTINCTE (un seul item
+    //     par annonce) pour que la déduplication intra-table (FIX A / bloc 3 du SQL) ne
+    //     fusionne pas deux bras convergents (ex. 'Hi-fi' et 'Téléphone') sur la même
+    //     annonce et ne casse l'assertion par bras.
+
+    @Test
+    void v171_migratesAllLegacyLabels_onAnnouncementAcceptedTypes() throws Exception {
+        assertThat(LEGACY_LABELS).hasSize(14);
+
+        Map<String, String> annIdByRaw = new LinkedHashMap<>();
+        for (String raw : LEGACY_LABELS.keySet()) {
+            String annId = seedMinimalAnnouncement();
+            annIdByRaw.put(raw, annId);
+            exec("INSERT INTO announcement_accepted_types (announcement_id, content_type) VALUES ('"
+                    + annId + "', '" + raw.replace("'", "''") + "')");
+        }
+
+        migrateToV171();
+
+        for (Map.Entry<String, String> e : LEGACY_LABELS.entrySet()) {
+            String annId = annIdByRaw.get(e.getKey());
+            assertThat(queryStrings(
+                    "SELECT content_type FROM announcement_accepted_types WHERE announcement_id='" + annId + "'"))
+                    .as("mapping de '%s'", e.getKey())
+                    .containsExactly(e.getValue());
+        }
+    }
+
+    @Test
+    void v171_migratesAllLegacyLabels_onAnnouncementRefusedTypes() throws Exception {
+        assertThat(LEGACY_LABELS).hasSize(14);
+
+        Map<String, String> annIdByRaw = new LinkedHashMap<>();
+        for (String raw : LEGACY_LABELS.keySet()) {
+            String annId = seedMinimalAnnouncement();
+            annIdByRaw.put(raw, annId);
+            exec("INSERT INTO announcement_refused_types (announcement_id, content_type) VALUES ('"
+                    + annId + "', '" + raw.replace("'", "''") + "')");
+        }
+
+        migrateToV171();
+
+        for (Map.Entry<String, String> e : LEGACY_LABELS.entrySet()) {
+            String annId = annIdByRaw.get(e.getKey());
+            assertThat(queryStrings(
+                    "SELECT content_type FROM announcement_refused_types WHERE announcement_id='" + annId + "'"))
+                    .as("mapping de '%s'", e.getKey())
+                    .containsExactly(e.getValue());
+        }
+    }
+
     // ─── FIX 2 : collision accepted/refused sur la même annonce ─────────────────────
 
     @Test
@@ -246,6 +328,62 @@ class V171ContentCategoriesMigrationTest {
         assertThat(queryStrings(
                 "SELECT content_type FROM announcement_refused_types WHERE announcement_id='" + annWithRefusalOnly + "'"))
                 .containsExactly("Alimentation sèche");
+    }
+
+    // ─── FIX A (task-2) : dédup intra-table (bloc 3 du SQL), sans collision accepted/
+    //     refused derrière pour ne pas masquer le résultat. Deux libellés legacy
+    //     convergents ('Hi-fi' et 'Téléphone' → 'Téléphone & électronique') sur la MÊME
+    //     annonce, du même côté (accepted seul, puis refused seul) : sans le DELETE de
+    //     dédup, les deux lignes réécrites resteraient distinctes et la table
+    //     contiendrait deux lignes identiques après migration.
+
+    @Test
+    void v171_deduplicatesAcceptedTypes_convergentLegacyLabelsWithoutRefusalCollision() throws Exception {
+        String annId = seedMinimalAnnouncement();
+        exec("INSERT INTO announcement_accepted_types (announcement_id, content_type) VALUES "
+                + "('" + annId + "', 'Hi-fi'), ('" + annId + "', 'Téléphone')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_type FROM announcement_accepted_types WHERE announcement_id='" + annId + "'"))
+                .containsExactly("Téléphone & électronique");
+    }
+
+    @Test
+    void v171_deduplicatesRefusedTypes_convergentLegacyLabelsWithoutAcceptedCollision() throws Exception {
+        String annId = seedMinimalAnnouncement();
+        exec("INSERT INTO announcement_refused_types (announcement_id, content_type) VALUES "
+                + "('" + annId + "', 'Hi-fi'), ('" + annId + "', 'Téléphone')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_type FROM announcement_refused_types WHERE announcement_id='" + annId + "'"))
+                .containsExactly("Téléphone & électronique");
+    }
+
+    // ─── FIX C (task-2) : contradiction préexistante sur du texte libre (bloc 4 du SQL,
+    //     effet de bord assumé — cf. commentaire ajouté dans le SQL). Un accepted et un
+    //     refused valant déjà le MÊME texte libre non reconnu par le CASE ('Poissons')
+    //     avant même la migration : le refus est supprimé, l'acceptation reste.
+
+    @Test
+    void v171_preexistingFreeTextContradiction_refusalRemovedAcceptanceKept() throws Exception {
+        String annId = seedMinimalAnnouncement();
+        exec("INSERT INTO announcement_accepted_types (announcement_id, content_type) VALUES "
+                + "('" + annId + "', 'Poissons')");
+        exec("INSERT INTO announcement_refused_types (announcement_id, content_type) VALUES "
+                + "('" + annId + "', 'Poissons')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_type FROM announcement_accepted_types WHERE announcement_id='" + annId + "'"))
+                .containsExactly("Poissons");
+        assertThat(queryStrings(
+                "SELECT content_type FROM announcement_refused_types WHERE announcement_id='" + annId + "'"))
+                .isEmpty();
     }
 
     // ─── FIX 3 : déduplication de bids.content_category ──────────────────────────────
