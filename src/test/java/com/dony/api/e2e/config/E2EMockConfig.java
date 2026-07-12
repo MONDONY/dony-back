@@ -86,12 +86,16 @@ public class E2EMockConfig {
         Mockito.when(pi.getClientSecret()).thenReturn("pi_test123_secret_abc");
         Mockito.when(pi.getStatus()).thenReturn("requires_payment_method");
 
+        Customer escrowCustomer = Mockito.mock(Customer.class);
+        Mockito.when(escrowCustomer.getId()).thenReturn("cus_escrow_test123");
+
         Mockito.when(gateway.createAccount(Mockito.any())).thenReturn(account);
         Mockito.when(gateway.retrieveAccount(Mockito.anyString())).thenReturn(account);
         Mockito.when(gateway.createAccountLink(Mockito.any())).thenReturn(link);
         Mockito.when(gateway.createPaymentIntent(Mockito.any())).thenReturn(pi);
         Mockito.when(gateway.retrievePaymentIntent(Mockito.anyString())).thenReturn(pi);
         Mockito.when(gateway.capturePaymentIntent(Mockito.any())).thenReturn(pi);
+        Mockito.when(gateway.createCustomer(Mockito.any())).thenReturn(escrowCustomer);
         return gateway;
     }
 

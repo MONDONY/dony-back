@@ -11,8 +11,13 @@ public class CreatePaymentRequest {
 
     private BigDecimal totalNetEur;  // si fourni, nouvelle formule NET×1.12; sinon ancien calcul GROSS
 
+    // null/true → setup_future_usage=off_session (carte réutilisable) ; false → non enregistrée
+    private Boolean savePaymentMethod;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
     public BigDecimal getTotalNetEur() { return totalNetEur; }
     public void setTotalNetEur(BigDecimal totalNetEur) { this.totalNetEur = totalNetEur; }
+    public Boolean getSavePaymentMethod() { return savePaymentMethod; }
+    public void setSavePaymentMethod(Boolean savePaymentMethod) { this.savePaymentMethod = savePaymentMethod; }
 }

@@ -6,7 +6,9 @@ import com.dony.api.common.stripe.StripeWebhookSource;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
+import com.dony.api.payments.dto.PaymentMethodResponse;
 import com.dony.api.payments.dto.PaymentResponse;
+import com.dony.api.payments.dto.UpdateSavePaymentMethodRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -85,6 +89,23 @@ public class PaymentController {
         return paymentService.getPaymentStatusForBid(bidId, callerUid)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // DonyPaymentSheet — cartes enregistrées de l'utilisateur courant (jamais bloquant : [] si aucune)
+    @GetMapping("/me/payment-methods")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
+    public ResponseEntity<List<PaymentMethodResponse>> listMyPaymentMethods() {
+        return ResponseEntity.ok(paymentService.listSavedPaymentMethods(requireFirebaseUid()));
+    }
+
+    // DonyPaymentSheet — toggle « enregistrer la carte » sur un PaymentIntent non confirmé
+    @PatchMapping("/intents/{paymentIntentId}/save-payment-method")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<Void> updateSavePaymentMethod(
+            @PathVariable String paymentIntentId,
+            @Valid @RequestBody UpdateSavePaymentMethodRequest request) {
+        paymentService.updateSavePaymentMethod(paymentIntentId, request.save(), requireFirebaseUid());
+        return ResponseEntity.noContent().build();
     }
 
     // Webhook Stripe — endpoint public (signature validée dans StripeWebhookIngestService)
