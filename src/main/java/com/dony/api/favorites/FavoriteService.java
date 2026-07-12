@@ -102,7 +102,9 @@ public class FavoriteService {
     /**
      * Returns the caller's favorite trips as enriched DTOs, with {@code isFavorite=true}.
      * Soft-deleted announcements are automatically excluded (via {@code @Where} on the entity).
-     * Announcements with status {@code CANCELLED} are also filtered out.
+     * Announcements with status {@code CANCELLED} or {@code COMPLETED} are also filtered out
+     * (masquage immédiat à la lecture ; le nettoyage effectif en base est fait par
+     * {@link FavoriteCleanupScheduler}).
      * Batch-loads users, bid counts, and grid items in 3 queries total (no N+1).
      */
     @Transactional(readOnly = true)
@@ -111,7 +113,8 @@ public class FavoriteService {
         List<UUID> ids = favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP);
         if (ids.isEmpty()) return List.of();
         List<AnnouncementEntity> active = announcementRepository.findAllById(ids).stream()
-                .filter(a -> a.getStatus() != AnnouncementStatus.CANCELLED)
+                .filter(a -> a.getStatus() != AnnouncementStatus.CANCELLED
+                        && a.getStatus() != AnnouncementStatus.COMPLETED)
                 .toList();
         if (active.isEmpty()) return List.of();
         Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
@@ -120,7 +123,9 @@ public class FavoriteService {
 
     /**
      * Returns the caller's favorite package-requests as enriched DTOs, with {@code isFavorite=true}.
-     * Soft-deleted or cancelled package-requests are excluded.
+     * Soft-deleted, cancelled, completed or expired package-requests are excluded (masquage
+     * immédiat à la lecture ; le nettoyage effectif en base est fait par
+     * {@link FavoriteCleanupScheduler}).
      * Batch-loads users, cities, and photos in 3 queries total (no N+1).
      */
     @Transactional(readOnly = true)
@@ -130,7 +135,9 @@ public class FavoriteService {
         if (ids.isEmpty()) return List.of();
         List<com.dony.api.requests.entity.PackageRequestEntity> active =
                 packageRequestRepository.findAllById(ids).stream()
-                        .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED)
+                        .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED
+                                && pr.getStatus() != PackageRequestStatus.COMPLETED
+                                && pr.getStatus() != PackageRequestStatus.EXPIRED)
                         .toList();
         if (active.isEmpty()) return List.of();
         Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
