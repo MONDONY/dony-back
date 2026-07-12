@@ -373,7 +373,10 @@ WHERE accepted_categories IS NOT NULL AND accepted_categories <> '';
 UPDATE automation_rules SET conditions = (
     SELECT jsonb_agg(
         CASE
-            WHEN elem->>'field' = 'content_type' THEN
+            -- Garde IS NOT NULL : sans elle, un élément {field:'content_type'} SANS clé
+            -- "value" (ou à valeur JSON null) ferait retourner NULL à jsonb_set (fonction
+            -- stricte) et jsonb_agg insérerait un null JSON à la place de l'objet entier.
+            WHEN elem->>'field' = 'content_type' AND elem->>'value' IS NOT NULL THEN
                 jsonb_set(elem, '{value}', to_jsonb(
                     CASE lower(trim(elem->>'value'))
                         WHEN 'vetements'              THEN 'Vêtements & tissus'

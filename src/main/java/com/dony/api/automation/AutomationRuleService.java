@@ -5,6 +5,7 @@ import com.dony.api.automation.dto.AutomationRuleResponse;
 import com.dony.api.automation.dto.CreateRuleRequest;
 import com.dony.api.automation.dto.UpdatePresetRequest;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.ContentCategoryNormalizer;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -67,7 +68,7 @@ public class AutomationRuleService {
         rule.setTravelerId(travelerId);
         rule.setRuleType("CUSTOM");
         rule.setName(req.name());
-        rule.setConditions(req.conditions() != null ? req.conditions() : List.of());
+        rule.setConditions(normalizeConditions(req.conditions()));
         rule.setAction(req.action() != null ? req.action() : Map.of());
         rule.setEnabled(true);
         return toCustomResponse(ruleRepository.save(rule));
@@ -97,9 +98,33 @@ public class AutomationRuleService {
                                                    CreateRuleRequest req) {
         AutomationRuleEntity rule = findOwned(travelerId, ruleId);
         rule.setName(req.name());
-        rule.setConditions(req.conditions() != null ? req.conditions() : List.of());
+        rule.setConditions(normalizeConditions(req.conditions()));
         rule.setAction(req.action() != null ? req.action() : Map.of());
         return toCustomResponse(ruleRepository.save(rule));
+    }
+
+    /**
+     * Normalise à l'écriture la valeur des conditions {@code content_type} vers le libellé
+     * canonique du catalogue ({@link ContentCategoryNormalizer}). Sans ça, une règle créée
+     * avec un libellé legacy (« Vêtements ») — via un dony-pro pas encore redéployé ou via
+     * la saisie libre du modal — ne matcherait jamais un bid canonique : le bug d'origine
+     * du chantier, ressuscité par la porte de la saisie. Les valeurs libres inconnues
+     * (« Poissons ») sont préservées telles quelles ; les autres champs et clés sont intacts.
+     */
+    private List<Map<String, Object>> normalizeConditions(List<Map<String, Object>> conditions) {
+        if (conditions == null) {
+            return List.of();
+        }
+        return conditions.stream().map(condition -> {
+            if (condition == null
+                    || !"content_type".equals(condition.get("field"))
+                    || condition.get("value") == null) {
+                return condition;
+            }
+            Map<String, Object> copy = new java.util.HashMap<>(condition);
+            copy.put("value", ContentCategoryNormalizer.normalizeOne(condition.get("value").toString()));
+            return copy;
+        }).toList();
     }
 
     @Transactional
