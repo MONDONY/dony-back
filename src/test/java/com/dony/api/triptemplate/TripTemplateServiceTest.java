@@ -37,19 +37,34 @@ class TripTemplateServiceTest {
 
     @Test
     void create_mapsFieldsAndJoinsCategories() {
+        // C2 : normalisation à l'écriture — "Vêtements"/"Documents" sont des libellés
+        // legacy (cf. ContentCategoryNormalizer), persistés canoniques désormais.
         var dto = service.create(userId, createRequest(List.of("Vêtements", "Documents")));
 
         assertThat(dto.label()).isEqualTo("Mon Paris->Dakar");
         assertThat(dto.departureCity()).isEqualTo("Paris");
         assertThat(dto.arrivalCity()).isEqualTo("Dakar");
         assertThat(dto.pricePerKg()).isEqualTo(8.0);
-        assertThat(dto.acceptedCategories()).containsExactly("Vêtements", "Documents");
+        assertThat(dto.acceptedCategories()).containsExactly("Vêtements & tissus", "Documents & administratif");
 
         ArgumentCaptor<TripTemplateEntity> captor = ArgumentCaptor.forClass(TripTemplateEntity.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getUserId()).isEqualTo(userId);
-        assertThat(captor.getValue().getAcceptedCategories()).isEqualTo("Vêtements,Documents");
+        assertThat(captor.getValue().getAcceptedCategories()).isEqualTo("Vêtements & tissus,Documents & administratif");
         verify(auditService).log(eq("TRIP_TEMPLATE"), any(), eq("TRIP_TEMPLATE_CREATED"), eq(userId), anyMap());
+    }
+
+    // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+    // legacy, le modèle doit être persisté avec le libellé canonique.
+    @Test
+    void create_legacyCategoryCode_isNormalizedOnWrite() {
+        var dto = service.create(userId, createRequest(List.of("Hi-fi", "Téléphone")));
+
+        assertThat(dto.acceptedCategories()).containsExactly("Téléphone & électronique");
+
+        ArgumentCaptor<TripTemplateEntity> captor = ArgumentCaptor.forClass(TripTemplateEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getAcceptedCategories()).isEqualTo("Téléphone & électronique");
     }
 
     @Test
@@ -97,7 +112,8 @@ class TripTemplateServiceTest {
 
         assertThat(dto.label()).isEqualTo("new label");
         assertThat(dto.transportMode()).isEqualTo("BOAT");
-        assertThat(dto.acceptedCategories()).containsExactly("Documents");
+        // C2 : "Documents" (legacy) → persisté canonique "Documents & administratif".
+        assertThat(dto.acceptedCategories()).containsExactly("Documents & administratif");
         verify(auditService).log(eq("TRIP_TEMPLATE"), any(), eq("TRIP_TEMPLATE_UPDATED"), eq(userId), anyMap());
     }
 

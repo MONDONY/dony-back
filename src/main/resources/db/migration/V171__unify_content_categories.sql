@@ -34,8 +34,18 @@
 -- VARCHAR(255). La normalisation ALLONGE les chaînes ('Hi-fi' = 5 caractères →
 -- 'Téléphone & électronique' = 24) : un colis multi-catégories chargé peut
 -- dépasser la limite pendant l'UPDATE et faire échouer (et donc annuler) toute la
--- migration en production. On élargit en TEXT avant toute écriture — le DTO
--- backend garde sa validation @Size(max=255) sur les nouvelles saisies.
+-- migration en production. On élargit en TEXT avant toute écriture.
+--
+-- Le DTO backend a AUSSI été corrigé (@Size(max=500) sur BidCheckoutRequest,
+-- BidRequest et PackageRequestCreateRequest.contentCategory) : deux libellés
+-- canoniques joints par virgule dépassaient déjà 50 caractères (l'ancienne limite
+-- de BidCheckoutRequest — pas 255, c'était faux), ce qui aurait fait échouer
+-- POST /bids/checkout en 400 dès qu'un front adopte le catalogue unifié avec une
+-- multi-sélection. Le catalogue complet joint fait 216 caractères ; 500 laisse de
+-- la marge pour la saisie libre. Voir aussi ContentCategoryNormalizer (config/) qui
+-- normalise désormais CES MÊMES valeurs à l'écriture, pour que les colonnes
+-- fraîchement normalisées ici ne se re-remplissent pas de libellés legacy dès la
+-- prochaine création/modification (clients mobiles pas encore à jour).
 ALTER TABLE bids ALTER COLUMN content_category TYPE TEXT;
 ALTER TABLE package_requests ALTER COLUMN content_category TYPE TEXT;
 
@@ -230,3 +240,182 @@ WHERE EXISTS (
     WHERE a.announcement_id = r.announcement_id
       AND a.content_type = r.content_type
 );
+
+-- ─── 5. corridor_alert_content_categories : libellé → libellé (une ligne par item) ──
+-- 5e emplacement (V148__corridor_alerts.sql), non couvert par la version initiale de
+-- cette migration : ces valeurs viennent d'une liste front qui contenait 'Électronique',
+-- 'Nourriture', 'Documents', 'Vêtements', 'Cosmétiques', 'Médicaments' — toutes des
+-- sources du CASE ci-dessus. Sans ce bloc, AlertService.fitsAlertCategory (qui compare
+-- alert.getContentCategories() à package_requests.content_category, normalisé par le
+-- bloc 1) ne matcherait plus JAMAIS un colis : toutes les alertes corridor filtrées par
+-- catégorie cesseraient silencieusement de matcher, dès cette migration. Même style que
+-- les tables announcement_* (texte libre uniquement, jamais de code enum ici).
+UPDATE corridor_alert_content_categories SET content_category = CASE lower(trim(content_category))
+    WHEN 'téléphones & hi-fi'      THEN 'Téléphone & électronique'
+    WHEN 'matériel informatique'   THEN 'Téléphone & électronique'
+    WHEN 'électronique'             THEN 'Téléphone & électronique'
+    WHEN 'hi-fi'                    THEN 'Téléphone & électronique'
+    WHEN 'téléphone'                THEN 'Téléphone & électronique'
+    WHEN 'alim. sèche'              THEN 'Alimentation sèche'
+    WHEN 'nourriture'               THEN 'Alimentation sèche'
+    WHEN 'cosmétiques'              THEN 'Cosmétiques & parfums'
+    WHEN 'cosmét.'                  THEN 'Cosmétiques & parfums'
+    WHEN 'vêtements'                THEN 'Vêtements & tissus'
+    WHEN 'médicaments'              THEN 'Médicaments traditionnels'
+    WHEN 'documents'                THEN 'Documents & administratif'
+    WHEN 'cadeaux'                  THEN 'Cadeaux & jouets'
+    WHEN 'autres'                   THEN 'Autre'
+    ELSE content_category
+END
+WHERE lower(trim(content_category)) IN (
+    'téléphones & hi-fi', 'matériel informatique', 'électronique', 'hi-fi', 'téléphone',
+    'alim. sèche', 'nourriture', 'cosmétiques', 'cosmét.', 'vêtements', 'médicaments',
+    'documents', 'cadeaux', 'autres'
+);
+
+-- Déduplication intra-alerte : même logique que le bloc 3 (pas de PK sur cette table,
+-- (alert_id, content_category) peut désormais contenir des doublons après le CASE
+-- ci-dessus, ex. 'Hi-fi' et 'Téléphone' → 'Téléphone & électronique' sur la même alerte).
+DELETE FROM corridor_alert_content_categories a
+WHERE a.ctid <> (SELECT MIN(b.ctid) FROM corridor_alert_content_categories b
+                 WHERE b.alert_id = a.alert_id
+                   AND b.content_category = a.content_category);
+
+-- ─── 6. trip_recurrences / trip_templates.accepted_categories : chaîne jointe ────────
+-- Même traitement décomposé que le bloc 1 (bids/package_requests) : ces deux colonnes
+-- TEXT sont des libellés joints par virgule, non migrées par la version initiale de
+-- cette migration. TripRecurrenceService.generateForRecurrence relit cette colonne à
+-- CHAQUE exécution du scheduler et la réinjecte (splitCategories → AnnouncementRequest
+-- → announcement_accepted_types) : sans cette migration, chaque passage du scheduler
+-- ré-introduirait des libellés legacy dans une table que le bloc 2 vient de normaliser.
+UPDATE trip_recurrences SET accepted_categories = (
+    SELECT string_agg(lbl, ', ' ORDER BY ord)
+    FROM (
+        SELECT
+            CASE lower(trim(item))
+                WHEN 'vetements'              THEN 'Vêtements & tissus'
+                WHEN 'medicaments'             THEN 'Médicaments traditionnels'
+                WHEN 'alimentation'            THEN 'Alimentation sèche'
+                WHEN 'hifi'                    THEN 'Téléphone & électronique'
+                WHEN 'documents'               THEN 'Documents & administratif'
+                WHEN 'telephone'               THEN 'Téléphone & électronique'
+                WHEN 'cosmetiques'              THEN 'Cosmétiques & parfums'
+                WHEN 'cadeaux'                  THEN 'Cadeaux & jouets'
+                WHEN 'autre'                    THEN 'Autre'
+                WHEN 'téléphones & hi-fi'      THEN 'Téléphone & électronique'
+                WHEN 'matériel informatique'   THEN 'Téléphone & électronique'
+                WHEN 'électronique'             THEN 'Téléphone & électronique'
+                WHEN 'hi-fi'                    THEN 'Téléphone & électronique'
+                WHEN 'téléphone'                THEN 'Téléphone & électronique'
+                WHEN 'alim. sèche'              THEN 'Alimentation sèche'
+                WHEN 'nourriture'               THEN 'Alimentation sèche'
+                WHEN 'cosmétiques'              THEN 'Cosmétiques & parfums'
+                WHEN 'cosmét.'                  THEN 'Cosmétiques & parfums'
+                WHEN 'vêtements'                THEN 'Vêtements & tissus'
+                WHEN 'médicaments'              THEN 'Médicaments traditionnels'
+                WHEN 'autres'                   THEN 'Autre'
+                ELSE trim(item)
+            END AS lbl,
+            min(ord) AS ord
+        FROM unnest(string_to_array(trip_recurrences.accepted_categories, ',')) WITH ORDINALITY AS t(item, ord)
+        GROUP BY 1
+    ) d
+)
+WHERE accepted_categories IS NOT NULL AND accepted_categories <> '';
+
+-- Voir bloc ci-dessus : CASE identique, même logique de déduplication/recomposition.
+-- TripTemplateService.applyFields lit/réécrit cette colonne à chaque publication de
+-- trajet depuis un modèle — même risque de re-contamination que trip_recurrences.
+UPDATE trip_templates SET accepted_categories = (
+    SELECT string_agg(lbl, ', ' ORDER BY ord)
+    FROM (
+        SELECT
+            CASE lower(trim(item))
+                WHEN 'vetements'              THEN 'Vêtements & tissus'
+                WHEN 'medicaments'             THEN 'Médicaments traditionnels'
+                WHEN 'alimentation'            THEN 'Alimentation sèche'
+                WHEN 'hifi'                    THEN 'Téléphone & électronique'
+                WHEN 'documents'               THEN 'Documents & administratif'
+                WHEN 'telephone'               THEN 'Téléphone & électronique'
+                WHEN 'cosmetiques'              THEN 'Cosmétiques & parfums'
+                WHEN 'cadeaux'                  THEN 'Cadeaux & jouets'
+                WHEN 'autre'                    THEN 'Autre'
+                WHEN 'téléphones & hi-fi'      THEN 'Téléphone & électronique'
+                WHEN 'matériel informatique'   THEN 'Téléphone & électronique'
+                WHEN 'électronique'             THEN 'Téléphone & électronique'
+                WHEN 'hi-fi'                    THEN 'Téléphone & électronique'
+                WHEN 'téléphone'                THEN 'Téléphone & électronique'
+                WHEN 'alim. sèche'              THEN 'Alimentation sèche'
+                WHEN 'nourriture'               THEN 'Alimentation sèche'
+                WHEN 'cosmétiques'              THEN 'Cosmétiques & parfums'
+                WHEN 'cosmét.'                  THEN 'Cosmétiques & parfums'
+                WHEN 'vêtements'                THEN 'Vêtements & tissus'
+                WHEN 'médicaments'              THEN 'Médicaments traditionnels'
+                WHEN 'autres'                   THEN 'Autre'
+                ELSE trim(item)
+            END AS lbl,
+            min(ord) AS ord
+        FROM unnest(string_to_array(trip_templates.accepted_categories, ',')) WITH ORDINALITY AS t(item, ord)
+        GROUP BY 1
+    ) d
+)
+WHERE accepted_categories IS NOT NULL AND accepted_categories <> '';
+
+-- ─── 7. automation_rules.conditions (JSONB) : migrer les conditions content_type ────
+-- 6e emplacement : automation_rules.conditions (V81) est un tableau JSONB d'objets
+-- {field, operator, value}, évalué par CustomRuleConditionEvaluator (NON modifié — il
+-- matche déjà correctement, par item, en lower+trim ; la normalisation à l'écriture/
+-- migration le rend juste correct sans y toucher). Une règle existante « content_type =
+-- Vêtements → refuser » cesserait de matcher dès que les bids porteraient
+-- 'Vêtements & tissus'. On ne touche QUE la clé "value" des éléments dont field =
+-- 'content_type' ; tous les autres éléments (et toutes les autres clés) sont préservés
+-- tels quels, dans le même ordre (ORDER BY ord sur jsonb_array_elements WITH ORDINALITY).
+UPDATE automation_rules SET conditions = (
+    SELECT jsonb_agg(
+        CASE
+            WHEN elem->>'field' = 'content_type' THEN
+                jsonb_set(elem, '{value}', to_jsonb(
+                    CASE lower(trim(elem->>'value'))
+                        WHEN 'vetements'              THEN 'Vêtements & tissus'
+                        WHEN 'medicaments'             THEN 'Médicaments traditionnels'
+                        WHEN 'alimentation'            THEN 'Alimentation sèche'
+                        WHEN 'hifi'                    THEN 'Téléphone & électronique'
+                        WHEN 'documents'               THEN 'Documents & administratif'
+                        WHEN 'telephone'               THEN 'Téléphone & électronique'
+                        WHEN 'cosmetiques'              THEN 'Cosmétiques & parfums'
+                        WHEN 'cadeaux'                  THEN 'Cadeaux & jouets'
+                        WHEN 'autre'                    THEN 'Autre'
+                        WHEN 'téléphones & hi-fi'      THEN 'Téléphone & électronique'
+                        WHEN 'matériel informatique'   THEN 'Téléphone & électronique'
+                        WHEN 'électronique'             THEN 'Téléphone & électronique'
+                        WHEN 'hi-fi'                    THEN 'Téléphone & électronique'
+                        WHEN 'téléphone'                THEN 'Téléphone & électronique'
+                        WHEN 'alim. sèche'              THEN 'Alimentation sèche'
+                        WHEN 'nourriture'               THEN 'Alimentation sèche'
+                        WHEN 'cosmétiques'              THEN 'Cosmétiques & parfums'
+                        WHEN 'cosmét.'                  THEN 'Cosmétiques & parfums'
+                        WHEN 'vêtements'                THEN 'Vêtements & tissus'
+                        WHEN 'médicaments'              THEN 'Médicaments traditionnels'
+                        WHEN 'autres'                   THEN 'Autre'
+                        ELSE elem->>'value'
+                    END
+                ))
+            ELSE elem
+        END
+        ORDER BY ord
+    )
+    FROM jsonb_array_elements(automation_rules.conditions) WITH ORDINALITY AS t(elem, ord)
+)
+WHERE conditions IS NOT NULL
+  AND jsonb_typeof(conditions) = 'array'
+  AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(automation_rules.conditions) e
+      WHERE e->>'field' = 'content_type'
+        AND lower(trim(e->>'value')) IN (
+            'vetements', 'medicaments', 'alimentation', 'hifi', 'documents', 'telephone',
+            'cosmetiques', 'cadeaux', 'autre',
+            'téléphones & hi-fi', 'matériel informatique', 'électronique', 'hi-fi', 'téléphone',
+            'alim. sèche', 'nourriture', 'cosmétiques', 'cosmét.', 'vêtements', 'médicaments',
+            'autres'
+        )
+  );

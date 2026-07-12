@@ -98,15 +98,35 @@ La valeur persistée en base reste le **libellé** (`"Documents & administratif"
 
 ### Migration des données existantes
 
-Sans migration, un voyageur ayant accepté « Hi-fi » hier ne matcherait plus un colis « Téléphone & électronique » aujourd'hui. Migration `V171__unify_content_categories.sql` :
+Sans migration, un voyageur ayant accepté « Hi-fi » hier ne matcherait plus un colis « Téléphone & électronique » aujourd'hui. Migration `V171__unify_content_categories.sql`, appliquée à **six emplacements** (une revue finale en a débusqué deux de plus que la version initiale de ce document, cf. tableau ci-dessous) :
 
-1. `package_requests.content_category` : **codes → libellés** (`VETEMENTS` → `Vêtements & tissus`, `ALIMENTATION` → `Alimentation sèche`, `HIFI` → `Téléphone & électronique`, `TELEPHONE` → `Téléphone & électronique`, `COSMETIQUES` → `Cosmétiques & parfums`, `MEDICAMENTS` → `Médicaments traditionnels`, `DOCUMENTS` → `Documents & administratif`, `CADEAUX` → `Cadeaux & jouets`, `AUTRE` → `Autre`).
-2. `announcement_accepted_types.content_type` et `announcement_refused_types.content_type` : **anciens libellés → nouveaux** (`Alim. sèche` → `Alimentation sèche`, `Hi-fi` → `Téléphone & électronique`, `Téléphone` → `Téléphone & électronique`, `Téléphones & hi-fi` → idem, `Cosmétiques` → `Cosmétiques & parfums`, `Vêtements` → `Vêtements & tissus`, `Médicaments` → `Médicaments traditionnels`, `Documents` → `Documents & administratif`, `Cadeaux` → `Cadeaux & jouets`, `Matériel informatique` → `Téléphone & électronique`, `Électronique` → `Téléphone & électronique`, `Nourriture` → `Alimentation sèche`, `Autres` → `Autre`).
-3. `bids.content_category` : même mapping, appliqué **sur chaque item de la chaîne jointe par virgule**. Réalisé en SQL par `REPLACE` successifs sur la chaîne complète, en traitant les libellés du plus long au plus court pour éviter qu'un remplacement partiel n'en corrompe un autre (`Téléphones & hi-fi` avant `Téléphone`).
-4. Les valeurs libres non reconnues (« Poissons », « Liquides ») sont **laissées intactes** — c'est le comportement voulu.
-5. Après migration, `announcement_accepted_types` peut contenir des doublons (`Hi-fi` et `Téléphone` convergent tous deux vers `Téléphone & électronique`). Un `DELETE` de déduplication conclut la migration.
+| # | Emplacement | Forme | Traitement |
+|---|---|---|---|
+| 1 | `bids.content_category` | chaîne jointe par virgule (peut hériter d'un vieux code enum isolé) | décomposition + `CASE` d'égalité + recomposition |
+| 2 | `package_requests.content_category` | code enum isolé, ou chaîne jointe par virgule (V143) | décomposition + `CASE` d'égalité + recomposition |
+| 3 | `announcement_accepted_types.content_type` / `announcement_refused_types.content_type` | une ligne par item (texte libre) | `CASE` d'égalité, une ligne à la fois |
+| 4 | `corridor_alert_content_categories.content_category` (`V148`) | une ligne par item (texte libre) | `CASE` d'égalité, une ligne à la fois |
+| 5 | `trip_recurrences.accepted_categories` / `trip_templates.accepted_categories` | chaîne jointe par virgule | décomposition + `CASE` d'égalité + recomposition |
+| 6 | `automation_rules.conditions` (JSONB, `V81`) | tableau d'objets `{field, operator, value}` | `jsonb_agg` sur `jsonb_array_elements`, `CASE` appliqué uniquement quand `field = 'content_type'`, reste du tableau intact |
 
-Cette migration touche des données de production. Elle est idempotente (rejouable sans dommage) et ne supprime aucune information autre que les doublons qu'elle crée elle-même.
+Le mapping (9 codes enum majuscules + 14 libellés legacy → 1 des 11 libellés canoniques) est le même partout — reproduit dans chaque bloc plutôt que factorisé (PL/pgSQL non utilisé ici), et verrouillé identique au CASE Java (`ContentCategoryNormalizer`, cf. section suivante) par un test de cohérence.
+
+Implémentation retenue pour les colonnes « chaîne jointe par virgule » (1, 2, 5) : **décomposition en items (`string_to_array` / `unnest ... WITH ORDINALITY`) + `CASE` d'égalité exacte item par item + déduplication en préservant l'ordre de première occurrence + recomposition (`string_agg`)** — pas des `REPLACE` successifs sur la chaîne complète. Un `REPLACE` en cascade n'est pas idempotent (`REPLACE('Téléphone', 'Téléphone & électronique')` rejoué sur un résultat déjà migré produirait `'Téléphone & électronique & électronique'`) et reste fragile à l'ordre de traitement (un remplacement partiel peut en corrompre un autre, ex. `Téléphone` à l'intérieur de `Téléphones & hi-fi`). La décomposition en items rend chaque comparaison exacte (`CASE lower(trim(item))`) et l'ensemble idempotent par construction : un libellé déjà canonique retombe dans la branche `ELSE` et n'est jamais retransformé, quel que soit le nombre de fois où la migration est rejouée.
+
+Pour les colonnes « une ligne par item » (3, 4), pas de décomposition nécessaire : `CASE` d'égalité directe sur la ligne. Pour le JSONB (6) : reconstruction du tableau via `jsonb_agg`/`jsonb_array_elements WITH ORDINALITY` en préservant l'ordre des conditions et toutes les clés des objets non concernés.
+
+Autres points :
+- Les valeurs libres non reconnues (« Poissons », « Liquides ») sont **laissées intactes, casse comprise** — c'est le comportement voulu.
+- Après migration, `announcement_accepted_types`/`announcement_refused_types` et `corridor_alert_content_categories` peuvent contenir des doublons (`Hi-fi` et `Téléphone` convergent tous deux vers `Téléphone & électronique`) : un `DELETE` de déduplication (sur `ctid`, ces tables n'ayant pas de PK propre à la ligne) conclut chaque bloc concerné.
+- La normalisation peut aussi faire converger un libellé accepté et un libellé refusé de la même annonce vers le même canonique : la migration résout cette collision en gardant l'acceptation et en supprimant le refus (règle produit : on échoue du côté récupérable, cf. commentaire du bloc correspondant dans le SQL).
+
+Cette migration touche des données de production. Elle est idempotente (rejouable sans dommage) et ne supprime aucune information autre que les doublons/collisions qu'elle résout elle-même.
+
+### Normalisation à l'écriture (au-delà de la migration ponctuelle)
+
+V171 ne normalise l'existant **qu'une fois**, au moment où elle s'exécute. Les stores mobiles ne se mettent pas à jour atomiquement : un client resté sur une ancienne version continue d'émettre des libellés/codes legacy (ex. `"Hi-fi"`) bien après la migration — ce qui re-contaminerait silencieusement les colonnes qu'elle vient de normaliser, et ferait échouer des comparaisons comme `BidContentRules.assertNotRefused` (colonne annonce déjà normalisée vs. valeur bid non normalisée).
+
+`ContentCategoryNormalizer` (`config/`) porte donc, **en Java**, la même table de correspondance que le `CASE` SQL de V171 (source de vérité dupliquée intentionnellement, verrouillée identique par un test qui parse le SQL et compare aux entrées Java). Il expose `normalizeOne`, `normalizeJoined` (chaîne jointe par virgule) et `normalizeList`, et est appliqué **à l'écriture**, avant persistance, aux six mêmes emplacements que la migration couvre côté existant : `BidService`/`BidCheckoutService` (`contentCategory` du bid, avant le contrôle `BidContentRules.assertNotRefused`), `PackageRequestService` (`contentCategory` de la demande), `AnnouncementService` (`acceptedContentTypes`/`refusedTypes`), `AlertService` (catégories de l'alerte corridor), `TripRecurrenceService`/`TripTemplateService` (`acceptedCategories`, réinjectées à chaque exécution du scheduler ou publication depuis un modèle). `BidContentRules` et `CustomRuleConditionEvaluator` ne sont pas modifiés : ils matchent déjà correctement (par item, en lower/trim) — normaliser à l'écriture les rend corrects sans y toucher.
 
 ### Un composant de sélection, deux comportements
 
@@ -137,7 +157,7 @@ Partout où l'on choisit un ou plusieurs types de contenu, l'UI présente **le c
 | `tripTemplates.ts` (liste H) | `DEFAULT_CATEGORIES` alignée sur les libellés canoniques |
 | `AutomationRuleModal.vue` | le champ `value` devient une **liste déroulante** quand `field = content_type` (aujourd'hui : `<input type="text">` pour tous les champs) — c'est ce qui rend impossible la création d'une règle qui ne matchera jamais |
 
-**dony-back** : catalogue structuré, endpoint, migration. `BidContentRules` et le moteur d'automatisation restent inchangés.
+**dony-back** : catalogue structuré, endpoint, migration (six emplacements), normalisation à l'écriture (`ContentCategoryNormalizer`). `BidContentRules` et `CustomRuleConditionEvaluator` restent inchangés.
 
 ## Ce que ça corrige
 
@@ -148,7 +168,7 @@ Le bug d'origine est réglé de deux façons, indépendantes :
 
 ## Tests
 
-- **Backend** : le catalogue servi contient 11 entrées ; aucun libellé ne contient de virgule (invariant du `split`) ; codes uniques ; l'endpoint renvoie bien `{code,label,emoji}`. Migration : test d'intégration Flyway vérifiant le mapping des trois tables, le traitement item par item de la chaîne jointe par virgule, la préservation des valeurs libres, et l'idempotence.
+- **Backend** : le catalogue servi contient 11 entrées ; aucun libellé ne contient de virgule (invariant du `split`) ; codes uniques ; l'endpoint renvoie bien `{code,label,emoji}`. Migration : test d'intégration Flyway (PostgreSQL embarqué zonky) vérifiant le mapping sur les **six emplacements** (bids, package_requests, announcement_accepted/refused_types, corridor_alert_content_categories, trip_recurrences/trip_templates.accepted_categories, automation_rules.conditions JSONB), le traitement item par item des chaînes jointes par virgule, la préservation des valeurs libres avec leur casse, la résolution des collisions accepted/refused, et l'idempotence. `ContentCategoryNormalizer` : tests unitaires des 23 mappings legacy + un test de cohérence qui parse le `CASE` SQL de V171 et vérifie qu'il reste identique à la table Java. Chaque point d'écriture (`BidService`, `BidCheckoutService`, `PackageRequestService`, `AnnouncementService`, `AlertService`, `TripRecurrenceService`, `TripTemplateService`) a un test dédié vérifiant qu'une valeur legacy soumise est persistée sous sa forme canonique. `@Size` des DTOs (`BidCheckoutRequest`, `BidRequest`, `PackageRequestCreateRequest`) porté à 500 pour absorber une multi-sélection canonique jointe (le catalogue complet joint fait 216 caractères ; deux libellés canoniques joints dépassaient déjà l'ancienne limite de 50 sur `BidCheckoutRequest`).
 - **Flutter** : le repository met en cache, retombe sur le catalogue embarqué en cas d'échec réseau, et n'empêche jamais l'affichage d'un formulaire. Chaque écran câblé affiche le catalogue et accepte une saisie libre. Le test `create_bid_screen_test.dart:216` (qui recopie la liste A en dur) est réécrit pour itérer sur la source.
 - **dony-pro** : `AutomationRuleModal` affiche une liste déroulante pour `content_type` et un champ texte pour les autres champs ; `ContentTagChips` consomme la nouvelle forme.
 

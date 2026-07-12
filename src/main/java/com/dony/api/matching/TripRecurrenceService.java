@@ -4,6 +4,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.matching.dto.AddressDto;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.TripRecurrenceDto;
@@ -190,7 +191,10 @@ public class TripRecurrenceService {
         e.setCapacityUnit(r.capacityUnit());
         e.setAvailableKg(r.availableKg());
         e.setPricePerKg(r.pricePerKg());
-        e.setAcceptedCategories(joinCategories(r.acceptedCategories()));
+        // Normalisé à l'écriture (C2) : sinon, chaque exécution du scheduler
+        // (generateForRecurrence → announcementService.createAnnouncement) ré-injecte
+        // des libellés legacy dans announcement_accepted_types que V171 vient de normaliser.
+        e.setAcceptedCategories(joinCategories(ContentCategoryNormalizer.normalizeList(r.acceptedCategories())));
         e.setPickupLabel(r.pickupAddress().label());
         e.setPickupLat(r.pickupAddress().lat());
         e.setPickupLng(r.pickupAddress().lng());

@@ -98,6 +98,30 @@ class BidCheckoutServiceTest {
         assertThat(resp.clientSecret()).isEqualTo("secret_xyz");
     }
 
+    // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+    // legacy, le bid doit être persisté avec le libellé canonique.
+    @Test
+    void checkout_legacyContentCategory_isNormalizedOnWrite() {
+        BidCheckoutRequest legacyReq = new BidCheckoutRequest(
+            announcement.getId(), new BigDecimal("2.00"), new BigDecimal("150.00"),
+            "test", "Hi-fi, Téléphone",
+            "Recipient", "+221771234567", true, null, null);
+
+        ArgumentCaptor<BidEntity> savedBid = ArgumentCaptor.forClass(BidEntity.class);
+        when(bidRepository.save(savedBid.capture())).thenAnswer(inv -> {
+            BidEntity b = inv.getArgument(0);
+            if (b.getId() == null) ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
+            return b;
+        });
+        when(paymentService.createEscrow(any(CreatePaymentRequest.class), eq("uid-sender")))
+            .thenReturn(stubPaymentResponse());
+
+        service.checkout("uid-sender", legacyReq, httpRequest);
+
+        assertThat(savedBid.getAllValues().get(0).getContentCategory())
+            .isEqualTo("Téléphone & électronique");
+    }
+
     @Test
     void rejects_inactive_announcement() {
         announcement.setStatus(AnnouncementStatus.FULL);

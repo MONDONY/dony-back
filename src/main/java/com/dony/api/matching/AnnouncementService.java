@@ -13,6 +13,7 @@ import com.dony.api.payments.cash.exception.CommissionMethodMissingException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementPriceGridItemResponse;
@@ -356,8 +357,11 @@ public class AnnouncementService {
         announcement.setTransportMode(request.transportMode());
         announcement.setStatus(isDraft ? AnnouncementStatus.DRAFT : AnnouncementStatus.ACTIVE);
         announcement.setDescription(request.description());
-        if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
-        if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
+        // Normalisé à l'écriture (C2) — cf. ContentCategoryNormalizer javadoc.
+        if (request.acceptedContentTypes() != null)
+            announcement.setAcceptedContentTypes(ContentCategoryNormalizer.normalizeList(request.acceptedContentTypes()));
+        if (request.refusedTypes() != null)
+            announcement.setRefusedTypes(ContentCategoryNormalizer.normalizeList(request.refusedTypes()));
         announcement.setAcceptedPaymentMethods(paymentMethods);
         announcement.setCapacityUnit(
             request.capacityUnit() != null ? request.capacityUnit() : CapacityUnit.SUITCASE_23KG
@@ -719,8 +723,11 @@ public class AnnouncementService {
         announcement.setPricePerKg(request.pricePerKg());
         announcement.setTransportMode(request.transportMode());
         announcement.setDescription(request.description());
-        if (request.acceptedContentTypes() != null) announcement.setAcceptedContentTypes(request.acceptedContentTypes());
-        if (request.refusedTypes() != null) announcement.setRefusedTypes(request.refusedTypes());
+        // Normalisé à l'écriture (C2) — cf. ContentCategoryNormalizer javadoc.
+        if (request.acceptedContentTypes() != null)
+            announcement.setAcceptedContentTypes(ContentCategoryNormalizer.normalizeList(request.acceptedContentTypes()));
+        if (request.refusedTypes() != null)
+            announcement.setRefusedTypes(ContentCategoryNormalizer.normalizeList(request.refusedTypes()));
         if (request.acceptedPaymentMethods() != null) {
             announcement.setAcceptedPaymentMethods(resolvePaymentMethods(request.acceptedPaymentMethods(), user));
         }

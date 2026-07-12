@@ -48,7 +48,10 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "transport_mode", nullable = false, length = 20)
     private com.dony.api.matching.TransportMode transportMode;
 
-    @Column(name = "content_category", nullable = false, length = 255)
+    // Colonne élargie en TEXT par V171 (multi-sélection canonique jointe par virgule
+    // peut dépasser 255) — columnDefinition reflète le vrai type DB (length est
+    // trompeur : Hibernate ne le valide pas au runtime, mais un DDL futur s'y fierait).
+    @Column(name = "content_category", nullable = false, columnDefinition = "TEXT")
     private String contentCategory;
 
     @Column(name = "description", length = 500)

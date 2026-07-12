@@ -571,6 +571,206 @@ class V171ContentCategoriesMigrationTest {
                 .containsExactly(reqAfterMigration);
     }
 
+    // ─── C1 : corridor_alert_content_categories (5e emplacement) ────────────────────
+
+    @Test
+    void v171_migratesCorridorAlertContentCategories() throws Exception {
+        String alertId = seedMinimalCorridorAlert();
+        exec("INSERT INTO corridor_alert_content_categories (alert_id, content_category) VALUES "
+                + "('" + alertId + "', 'Nourriture')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_category FROM corridor_alert_content_categories WHERE alert_id='" + alertId + "'"))
+                .containsExactly("Alimentation sèche");
+    }
+
+    @Test
+    void v171_migratesAllLegacyLabels_onCorridorAlertContentCategories() throws Exception {
+        assertThat(LEGACY_LABELS).hasSize(14);
+
+        Map<String, String> alertIdByRaw = new LinkedHashMap<>();
+        for (String raw : LEGACY_LABELS.keySet()) {
+            String alertId = seedMinimalCorridorAlert();
+            alertIdByRaw.put(raw, alertId);
+            exec("INSERT INTO corridor_alert_content_categories (alert_id, content_category) VALUES ('"
+                    + alertId + "', '" + raw.replace("'", "''") + "')");
+        }
+
+        migrateToV171();
+
+        for (Map.Entry<String, String> e : LEGACY_LABELS.entrySet()) {
+            String alertId = alertIdByRaw.get(e.getKey());
+            assertThat(queryStrings(
+                    "SELECT content_category FROM corridor_alert_content_categories WHERE alert_id='" + alertId + "'"))
+                    .as("mapping de '%s'", e.getKey())
+                    .containsExactly(e.getValue());
+        }
+    }
+
+    @Test
+    void v171_deduplicatesCorridorAlertContentCategories_convergentLegacyLabels() throws Exception {
+        String alertId = seedMinimalCorridorAlert();
+        exec("INSERT INTO corridor_alert_content_categories (alert_id, content_category) VALUES "
+                + "('" + alertId + "', 'Hi-fi'), ('" + alertId + "', 'Téléphone')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_category FROM corridor_alert_content_categories WHERE alert_id='" + alertId + "'"))
+                .containsExactly("Téléphone & électronique");
+    }
+
+    @Test
+    void v171_corridorAlertDedup_doesNotAffectOtherAlerts() throws Exception {
+        String alertWithDuplicate = seedMinimalCorridorAlert();
+        String otherAlert = seedMinimalCorridorAlert();
+        exec("INSERT INTO corridor_alert_content_categories (alert_id, content_category) VALUES "
+                + "('" + alertWithDuplicate + "', 'Hi-fi'), ('" + alertWithDuplicate + "', 'Téléphone')");
+        exec("INSERT INTO corridor_alert_content_categories (alert_id, content_category) VALUES "
+                + "('" + otherAlert + "', 'Nourriture')");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT content_category FROM corridor_alert_content_categories WHERE alert_id='" + otherAlert + "'"))
+                .containsExactly("Alimentation sèche");
+    }
+
+    // ─── C1 (bug adjacent) : AlertService.fitsAlertCategory sur colis multi-catégories ──
+    // Test dédié au bug (pas à la migration SQL) dans AlertServiceMatchesTest —
+    // v171_migratesCorridorAlertContentCategories ci-dessus couvre uniquement la migration.
+
+    // ─── I1 : trip_recurrences.accepted_categories / trip_templates.accepted_categories ──
+
+    @Test
+    void v171_migratesTripRecurrenceAcceptedCategories_commaJoined() throws Exception {
+        String recId = seedMinimalTripRecurrence("Hi-fi,Vêtements");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT accepted_categories FROM trip_recurrences WHERE id='" + recId + "'"))
+                .containsExactly("Téléphone & électronique, Vêtements & tissus");
+    }
+
+    @Test
+    void v171_migratesTripRecurrenceAcceptedCategories_legacyCode() throws Exception {
+        String recId = seedMinimalTripRecurrence("VETEMENTS");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT accepted_categories FROM trip_recurrences WHERE id='" + recId + "'"))
+                .containsExactly("Vêtements & tissus");
+    }
+
+    @Test
+    void v171_migratesTripRecurrenceAcceptedCategories_dedupAndPreservesUnknown() throws Exception {
+        String recId = seedMinimalTripRecurrence("Hi-fi, Téléphone, Poissons");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT accepted_categories FROM trip_recurrences WHERE id='" + recId + "'"))
+                .containsExactly("Téléphone & électronique, Poissons");
+    }
+
+    @Test
+    void v171_migratesTripTemplateAcceptedCategories_commaJoined() throws Exception {
+        String tplId = seedMinimalTripTemplate("Hi-fi,Vêtements");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT accepted_categories FROM trip_templates WHERE id='" + tplId + "'"))
+                .containsExactly("Téléphone & électronique, Vêtements & tissus");
+    }
+
+    @Test
+    void v171_handlesNullTripRecurrenceAcceptedCategories() throws Exception {
+        String recId = seedMinimalTripRecurrence(null);
+
+        migrateToV171();
+
+        assertThat(queryNullableString(
+                "SELECT accepted_categories FROM trip_recurrences WHERE id='" + recId + "'")).isNull();
+    }
+
+    // ─── I2 : automation_rules.conditions (JSONB) ────────────────────────────────────
+
+    @Test
+    void v171_migratesAutomationRuleConditions_contentTypeValue() throws Exception {
+        String ruleId = seedMinimalAutomationRule(
+                "[{\"field\":\"content_type\",\"operator\":\"eq\",\"value\":\"Vêtements\"}]");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'value' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("Vêtements & tissus");
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'field' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("content_type");
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'operator' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("eq");
+    }
+
+    @Test
+    void v171_migratesAutomationRuleConditions_preservesNonContentTypeConditionAndOrder() throws Exception {
+        String ruleId = seedMinimalAutomationRule(
+                "[{\"field\":\"weight_kg\",\"operator\":\"gte\",\"value\":\"5\"},"
+                        + "{\"field\":\"content_type\",\"operator\":\"eq\",\"value\":\"Hi-fi\"}]");
+
+        migrateToV171();
+
+        // Ordre préservé : weight_kg reste en position 0, intact ; content_type migré en position 1.
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'field' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("weight_kg");
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'value' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("5");
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'operator' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("gte");
+        assertThat(queryStrings(
+                "SELECT conditions->1->>'field' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("content_type");
+        assertThat(queryStrings(
+                "SELECT conditions->1->>'value' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("Téléphone & électronique");
+        assertThat(queryStrings(
+                "SELECT jsonb_array_length(conditions)::text FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("2");
+    }
+
+    @Test
+    void v171_automationRuleConditions_withoutContentType_isUntouched() throws Exception {
+        String ruleId = seedMinimalAutomationRule(
+                "[{\"field\":\"weight_kg\",\"operator\":\"gte\",\"value\":\"5\"}]");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'value' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("5");
+    }
+
+    @Test
+    void v171_automationRuleConditions_alreadyCanonical_isUnchanged() throws Exception {
+        String ruleId = seedMinimalAutomationRule(
+                "[{\"field\":\"content_type\",\"operator\":\"eq\",\"value\":\"Vêtements & tissus\"}]");
+
+        migrateToV171();
+
+        assertThat(queryStrings(
+                "SELECT conditions->0->>'value' FROM automation_rules WHERE id='" + ruleId + "'"))
+                .containsExactly("Vêtements & tissus");
+    }
+
     // ─── Helpers de seed ────────────────────────────────────────────────────────
     // Le minimum de colonnes NOT NULL sans DEFAULT, déterminé en lisant le schéma réel :
     // V1 (users), V3 (announcements/bids), V34 (adresses précises announcements),
@@ -611,5 +811,48 @@ class V171ContentCategoriesMigrationTest {
                         + "weight_kg, parcel_size, content_category, transport_mode) VALUES ("
                         + "'" + senderId + "', 'Lyon', 'Abidjan', CURRENT_DATE + 7, "
                         + "5.00, 'MEDIUM', '" + contentCategory.replace("'", "''") + "', 'PLANE') RETURNING id");
+    }
+
+    /** V148/V150 : owner_id (renommé depuis traveler_id par V149), departure_city, arrival_city NOT NULL sans DEFAULT. */
+    private String seedMinimalCorridorAlert() throws Exception {
+        String ownerId = seedMinimalUser();
+        return insertReturningId(
+                "INSERT INTO corridor_alerts (owner_id, departure_city, arrival_city) VALUES ("
+                        + "'" + ownerId + "', 'Paris', 'Bamako') RETURNING id");
+    }
+
+    /** V110 : user_id, departure_city, arrival_city, available_kg, price_per_kg, pickup/delivery,
+     *  weekdays NOT NULL sans DEFAULT. accepted_categories nullable — {@code null} accepté ici. */
+    private String seedMinimalTripRecurrence(String acceptedCategories) throws Exception {
+        String userId = seedMinimalUser();
+        String categoriesSql = acceptedCategories == null
+                ? "NULL" : "'" + acceptedCategories.replace("'", "''") + "'";
+        return insertReturningId(
+                "INSERT INTO trip_recurrences (user_id, departure_city, arrival_city, available_kg, price_per_kg, "
+                        + "accepted_categories, pickup_label, pickup_lat, pickup_lng, "
+                        + "delivery_label, delivery_lat, delivery_lng, weekdays) VALUES ("
+                        + "'" + userId + "', 'Paris', 'Dakar', 20.0, 15.0, "
+                        + categoriesSql + ", "
+                        + "'12 rue de Paris', 48.8566, 2.3522, "
+                        + "'Plateau, Dakar', 14.6928, -17.4467, '1111111') RETURNING id");
+    }
+
+    /** V108 : user_id, label, departure_city, arrival_city, price_per_kg NOT NULL sans DEFAULT. */
+    private String seedMinimalTripTemplate(String acceptedCategories) throws Exception {
+        String userId = seedMinimalUser();
+        return insertReturningId(
+                "INSERT INTO trip_templates (user_id, label, departure_city, arrival_city, price_per_kg, "
+                        + "accepted_categories) VALUES ("
+                        + "'" + userId + "', 'Mon trajet', 'Paris', 'Dakar', 15.0, "
+                        + "'" + acceptedCategories.replace("'", "''") + "') RETURNING id");
+    }
+
+    /** V81 : traveler_id, rule_type (CHECK IN ('PRESET','CUSTOM')), name NOT NULL sans DEFAULT. */
+    private String seedMinimalAutomationRule(String conditionsJson) throws Exception {
+        String travelerId = seedMinimalUser();
+        return insertReturningId(
+                "INSERT INTO automation_rules (traveler_id, rule_type, name, conditions) VALUES ("
+                        + "'" + travelerId + "', 'CUSTOM', 'Règle test', "
+                        + "'" + conditionsJson.replace("'", "''") + "'::jsonb) RETURNING id");
     }
 }

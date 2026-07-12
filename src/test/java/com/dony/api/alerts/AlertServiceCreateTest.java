@@ -122,7 +122,10 @@ class AlertServiceCreateTest {
         existing.setDepartureCity("Paris");
         existing.setArrivalCity("Bamako");
         existing.setMinWeightKg(new BigDecimal("2.00"));
-        existing.setContentCategories(List.of("Documents"));
+        // Reflète une alerte déjà persistée par le service (donc déjà normalisée, C2) —
+        // req() envoie le libellé legacy "Documents", qui doit être reconnu comme
+        // doublon de cette alerte canonique "Documents & administratif".
+        existing.setContentCategories(List.of("Documents & administratif"));
         existing.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
 
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
@@ -133,6 +136,49 @@ class AlertServiceCreateTest {
                 .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                         .isEqualTo(HttpStatus.CONFLICT));
         verify(alertRepository, never()).save(any());
+    }
+
+    // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+    // legacy, l'alerte doit être persistée avec le libellé canonique.
+    @Test
+    void create_legacyContentCategories_areNormalizedOnWrite() {
+        owner.setRoles(Set.of(Role.TRAVELER));
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        when(alertRepository.findAllByOwnerId(ownerId)).thenReturn(List.of());
+        when(alertRepository.save(any(CorridorAlertEntity.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CorridorAlertRequest reqWithLegacyCategories = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, new BigDecimal("2.00"), List.of("Hi-fi", "Téléphone"),
+                AlertDirection.TRAVELER_WANTS_PACKAGES, null);
+
+        CorridorAlertResponse resp = service.create(uid, reqWithLegacyCategories);
+
+        assertThat(resp.contentCategories()).containsExactly("Téléphone & électronique");
+
+        ArgumentCaptor<CorridorAlertEntity> captor = ArgumentCaptor.forClass(CorridorAlertEntity.class);
+        verify(alertRepository).save(captor.capture());
+        assertThat(captor.getValue().getContentCategories()).containsExactly("Téléphone & électronique");
+    }
+
+    @Test
+    void update_legacyContentCategories_areNormalizedOnWrite() {
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(owner));
+        CorridorAlertEntity existing = new CorridorAlertEntity();
+        existing.setOwnerId(ownerId);
+        existing.setDepartureCity("Paris");
+        existing.setArrivalCity("Bamako");
+        existing.setDirection(AlertDirection.TRAVELER_WANTS_PACKAGES);
+        when(alertRepository.findById(any())).thenReturn(Optional.of(existing));
+        when(alertRepository.save(existing)).thenReturn(existing);
+
+        CorridorAlertRequest req = new CorridorAlertRequest("Paris", "FR", "Bamako", "ML",
+                null, null, new BigDecimal("2.00"), List.of("Nourriture"),
+                AlertDirection.TRAVELER_WANTS_PACKAGES, null);
+
+        service.update(uid, UUID.randomUUID(), req, null);
+
+        assertThat(existing.getContentCategories()).containsExactly("Alimentation sèche");
     }
 
     @Test
