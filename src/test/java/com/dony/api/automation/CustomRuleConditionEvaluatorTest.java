@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -84,6 +85,71 @@ class CustomRuleConditionEvaluatorTest {
         assertFalse(CustomRuleConditionEvaluator.matches(rule(List.of(cond("corridor", "eq", "Paris → Abidjan"))), FULL_CTX));
     }
 
+    @Test
+    void corridor_eq_isFullEqualityNotElementMatching_nonRegression() {
+        // corridor est un scalaire ("Paris → Dakar"), contrairement à content_type qui est
+        // une liste jointe par virgule. Une condition partielle ne doit jamais matcher.
+        assertFalse(CustomRuleConditionEvaluator.matches(rule(List.of(cond("corridor", "eq", "Paris"))), FULL_CTX));
+    }
+
+    // --- content_type : liste jointe par virgule, matching PAR ÉLÉMENT (FIX 1) ---
+    //
+    // BidEntity.contentCategory n'est pas un scalaire : le front (multi-sélection de chips,
+    // create_bid_bottom_sheet.dart) le construit en `categories.join(', ')`, et
+    // BidContentRules.assertNotRefused le reconsomme déjà en splittant sur ",". Une règle
+    // "content_type = Poissons" doit matcher un bid "Vêtements, Poissons".
+
+    private BidEvaluationContext ctxWithContent(String contentCategory) {
+        return new BidEvaluationContext(
+                new BigDecimal("8"), "Paris → Dakar", contentCategory,
+                new BigDecimal("4.5"), new BigDecimal("12"), 36L);
+    }
+
+    @Test
+    void contentType_multiValue_matchesWhenConditionIsOneOfTheItems() {
+        assertTrue(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "Poissons"))),
+                ctxWithContent("Vêtements, Poissons")));
+    }
+
+    @Test
+    void contentType_multiValue_matchesRegardlessOfCaseAndPosition() {
+        assertTrue(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "vêtements"))),
+                ctxWithContent("Poissons, Vêtements")));
+    }
+
+    @Test
+    void contentType_multiValue_noMatchWhenItemAbsent() {
+        assertFalse(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "Poissons"))),
+                ctxWithContent("Vêtements, Documents")));
+    }
+
+    @Test
+    void contentType_singleValue_stillMatches_nonRegression() {
+        assertTrue(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "Poissons"))),
+                ctxWithContent("Poissons")));
+    }
+
+    @Test
+    void contentType_multiValue_trimsWhitespaceAroundItems() {
+        assertTrue(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "poissons"))),
+                ctxWithContent(" Poissons , Vêtements ")));
+    }
+
+    @Test
+    void contentType_conditionMatchingWholeJoinedList_doesNotMatch_elementMatchingOnly() {
+        // Comportement assumé : un voyageur qui saisirait bêtement la liste entière comme
+        // valeur de condition ("Vêtements, Documents") ne doit PAS matcher un item unique,
+        // car on matche élément par élément, jamais sur la chaîne entière reconstituée.
+        assertFalse(CustomRuleConditionEvaluator.matches(
+                rule(List.of(cond("content_type", "eq", "Vêtements, Documents"))),
+                ctxWithContent("Vêtements, Documents")));
+    }
+
     // --- ET strict ---
 
     @Test
@@ -136,5 +202,15 @@ class CustomRuleConditionEvaluatorTest {
     void incompleteCondition_missingKeys_notSatisfied() {
         AutomationRuleEntity r = rule(List.of(Map.of("field", "weight_kg")));
         assertFalse(CustomRuleConditionEvaluator.matches(r, FULL_CTX));
+    }
+
+    @Test
+    void nullConditionInList_notSatisfied_noException() {
+        // conditions JSONB malformé (ex. POST "conditions": [null]) : l'élément null ne
+        // doit jamais provoquer de NPE, seulement un non-match fail-safe (FIX 2a).
+        List<Map<String, Object>> conditions = new java.util.ArrayList<>();
+        conditions.add(null);
+        AutomationRuleEntity r = rule(conditions);
+        assertFalse(assertDoesNotThrow(() -> CustomRuleConditionEvaluator.matches(r, FULL_CTX)));
     }
 }

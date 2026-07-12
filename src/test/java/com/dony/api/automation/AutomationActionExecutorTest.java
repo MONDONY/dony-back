@@ -79,6 +79,39 @@ class AutomationActionExecutorTest {
     }
 
     @Test
+    void tryExecuteBidAction_dailyCapReached_logsRuleNameNotNullPresetRuleId() {
+        // Pour une règle CUSTOM, presetRuleId est null (réservé aux presets) : le log au
+        // plafond quotidien doit rester exploitable (nom de la règle), pas "rule null
+        // disabled" (FIX 4). Cohérent avec writeHistory qui fait déjà ce fallback.
+        rule.setPresetRuleId(null);
+        rule.setRuleType("CUSTOM");
+        rule.setName("Ma règle custom");
+        when(ruleService.countTodayActions(travelerId)).thenReturn(20L);
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AutomationActionExecutor.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            executor.tryExecuteBidAction(rule, travelerId, bidId, "CUSTOM_AUTO_ACCEPT", () -> null);
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        boolean hasExploitableLog = appender.list.stream()
+                .anyMatch(e -> e.getFormattedMessage().contains("disabled")
+                        && e.getFormattedMessage().contains("Ma règle custom"));
+        boolean hasNullRuleLog = appender.list.stream()
+                .anyMatch(e -> e.getFormattedMessage().contains("rule null disabled"));
+
+        assertThat(hasExploitableLog).isTrue();
+        assertThat(hasNullRuleLog).isFalse();
+    }
+
+    @Test
     void recordNotification_writesSuccessHistory() {
         executor.recordNotification(rule, travelerId, "NOTIFY_LOW_MARGIN");
 
