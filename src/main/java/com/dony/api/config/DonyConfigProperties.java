@@ -3,7 +3,6 @@ package com.dony.api.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
-import java.util.List;
 
 /**
  * Dony application configuration properties (prefix "dony").
@@ -13,8 +12,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "dony")
 public record DonyConfigProperties(
     Commission commission,
-    Limits limits,
-    List<String> contentCategories
+    Limits limits
 ) {
     public record Commission(BigDecimal rate) {}
 

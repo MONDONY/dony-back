@@ -32,7 +32,7 @@ class CommissionRateResolverTest {
     private CommissionRateResolver resolver() {
         return new CommissionRateResolver(userRepository,
                 new DonyConfigProperties(
-                        new DonyConfigProperties.Commission(new BigDecimal("0.12")), null, null),
+                        new DonyConfigProperties.Commission(new BigDecimal("0.12")), null),
                 promoService);
     }
 

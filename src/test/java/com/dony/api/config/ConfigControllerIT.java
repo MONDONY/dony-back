@@ -43,4 +43,15 @@ class ConfigControllerIT {
         mockMvc.perform(get("/config/commission-rate"))
             .andExpect(status().isOk());
     }
+
+    @Test
+    void getContentCategories_returnsCatalogWithCodeLabelAndEmoji() throws Exception {
+        mockMvc.perform(get("/config/content-categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(11))
+                .andExpect(jsonPath("$[0].code").value("DOCUMENTS"))
+                .andExpect(jsonPath("$[0].label").value("Documents & administratif"))
+                .andExpect(jsonPath("$[0].emoji").value("📄"))
+                .andExpect(jsonPath("$[2].label").value("Produits frais / périssables"));
+    }
 }

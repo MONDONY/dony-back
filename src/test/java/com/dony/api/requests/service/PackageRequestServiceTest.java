@@ -229,6 +229,26 @@ class PackageRequestServiceTest {
             assertThat(saved.isNegotiable()).isTrue();
         }
 
+        // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+        // legacy, la demande doit être persistée avec le libellé canonique.
+        @Test @DisplayName("contentCategory legacy ('Hi-fi') → persisté normalisé ('Téléphone & électronique')")
+        void create_legacyContentCategory_isNormalizedOnWrite() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("5"), "Hi-fi, Téléphone", "desc",
+                new BigDecimal("28.00"), null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of());
+
+            PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
+
+            assertThat(saved.getContentCategory()).isEqualTo("Téléphone & électronique");
+        }
+
         @Test @DisplayName("budget null + non négociable → 422 target-price-required-firm")
         void create_firmPrice_requiresBudget() {
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
@@ -380,6 +400,25 @@ class PackageRequestServiceTest {
             verify(repository).save(entity);
             verify(auditService).log(eq("PACKAGE_REQUEST"), eq(entity.getId()),
                 eq("UPDATED"), eq(SENDER_ID), any());
+        }
+
+        // C2 : normalisation à l'écriture — s'applique aussi à update().
+        @Test @DisplayName("update() : contentCategory legacy ('Hi-fi') → persisté normalisé")
+        void update_legacyContentCategory_isNormalizedOnWrite() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+            when(threadRepository.findByPackageRequestId(entity.getId())).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var req = new PackageRequestCreateRequest(
+                "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
+                new BigDecimal("8"), "Hi-fi, Téléphone", "desc",
+                new BigDecimal("56.00"), null, "7e", "ACI 2000",
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+
+            service.update(SENDER_ID, entity.getId(), req);
+
+            assertThat(entity.getContentCategory()).isEqualTo("Téléphone & électronique");
         }
 
         @Test @DisplayName("NEGOTIATING → rejette les offres OPEN et repasse OPEN")

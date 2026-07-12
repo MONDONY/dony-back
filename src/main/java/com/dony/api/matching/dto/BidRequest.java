@@ -24,6 +24,9 @@ public record BidRequest(
         String description,
 
         @NotBlank(message = "La catégorie est obligatoire")
+        // Multi-sélection jointe par virgule côté front — alignée sur BidCheckoutRequest
+        // (500, cf. V171__unify_content_categories.sql pour le pourquoi).
+        @Size(max = 500, message = "La catégorie ne peut pas dépasser 500 caractères")
         String contentCategory,
 
         @NotBlank(message = "Le prénom et nom du destinataire sont obligatoires")

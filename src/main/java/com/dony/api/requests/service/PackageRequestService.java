@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.favorites.FavoriteRepository;
 import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.payments.cash.CommissionProperties;
@@ -142,7 +143,8 @@ public class PackageRequestService {
         entity.setWeightKg(req.weightKg());
         entity.setParcelSize(ParcelSize.fromWeightKg(req.weightKg()));
         entity.setTransportMode(com.dony.api.matching.TransportMode.PLANE);
-        entity.setContentCategory(req.contentCategory());
+        // Normalisé à l'écriture (C2) — cf. ContentCategoryNormalizer javadoc.
+        entity.setContentCategory(ContentCategoryNormalizer.normalizeJoined(req.contentCategory()));
         entity.setDescription(req.description());
         entity.setTargetPriceEur(netTarget);
         entity.setPhotoUrl(req.photoUrl());
@@ -223,7 +225,8 @@ public class PackageRequestService {
         entity.setDateToleranceDays((short) req.dateToleranceDays());
         entity.setWeightKg(req.weightKg());
         entity.setParcelSize(ParcelSize.fromWeightKg(req.weightKg()));
-        entity.setContentCategory(req.contentCategory());
+        // Normalisé à l'écriture (C2) — cf. ContentCategoryNormalizer javadoc.
+        entity.setContentCategory(ContentCategoryNormalizer.normalizeJoined(req.contentCategory()));
         entity.setDescription(req.description());
         entity.setTargetPriceEur(netTarget);
         entity.setPhotoUrl(req.photoUrl());

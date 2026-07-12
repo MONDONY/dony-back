@@ -22,6 +22,46 @@ class BidCheckoutRequestTest {
         assertThat(validator.validate(req)).isEmpty();
     }
 
+    // C3 : deux libellés canoniques joints par virgule dépassent 50 caractères
+    // ("Produits frais / périssables, Médicaments traditionnels" = 55). Avant le
+    // correctif (@Size(max=50)), cette requête aurait échoué la validation bean
+    // → HTTP 400 sur POST /bids/checkout dès qu'un front envoie une multi-sélection
+    // canonique de 2-3 catégories.
+    @Test
+    void multi_selection_of_canonical_categories_over_50_chars_is_accepted() {
+        String joined = "Produits frais / périssables, Médicaments traditionnels";
+        assertThat(joined).hasSizeGreaterThan(50);
+
+        BidCheckoutRequest req = new BidCheckoutRequest(
+            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            "Colis multi-catégories", joined,
+            "Aïssatou", "+221771234567", true, null, null);
+
+        assertThat(validator.validate(req)).isEmpty();
+    }
+
+    @Test
+    void three_canonical_categories_joined_is_accepted() {
+        String joined = "Documents & administratif, Téléphone & électronique, Vêtements & tissus";
+
+        BidCheckoutRequest req = new BidCheckoutRequest(
+            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            "Colis multi-catégories", joined,
+            "Aïssatou", "+221771234567", true, null, null);
+
+        assertThat(validator.validate(req)).isEmpty();
+    }
+
+    @Test
+    void content_category_over_500_chars_is_rejected() {
+        String tooLong = "x".repeat(501);
+        BidCheckoutRequest req = new BidCheckoutRequest(
+            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            "x", tooLong, "n", "+221", true, null, null);
+
+        assertThat(validator.validate(req)).isNotEmpty();
+    }
+
     @Test
     void weight_must_not_be_negative() {
         BidCheckoutRequest req = new BidCheckoutRequest(

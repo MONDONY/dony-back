@@ -67,7 +67,7 @@ class AnnouncementServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     void initService() {
-        DonyConfigProperties config = new DonyConfigProperties(null, null, null);
+        DonyConfigProperties config = new DonyConfigProperties(null, null);
         // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Real mapper wired to the same mocks so SearchTests assertions remain valid
@@ -224,6 +224,46 @@ class AnnouncementServiceTest {
             assertThat(result.arrivalCity()).isEqualTo("Dakar");
             assertThat(result.status()).isEqualTo("ACTIVE");
             verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_CREATED"), any(), any());
+        }
+
+        // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+        // legacy dans acceptedContentTypes/refusedTypes, doivent être persistés canoniques.
+        @Test
+        @DisplayName("acceptedContentTypes/refusedTypes legacy → persistés normalisés")
+        void create_legacyContentTypes_areNormalizedOnWrite() {
+            UserEntity traveler = buildTraveler();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            ArgumentCaptor<AnnouncementEntity> captor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            when(announcementRepository.save(captor.capture())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            LocalDate departure = LocalDate.now().plusDays(10);
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Paris", "Dakar", departure,
+                    LocalTime.of(10, 0), LocalTime.of(22, 0),
+                    new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                    new AddressDto("Aéroport LSS", 14.739, -17.490),
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                    TransportMode.PLANE,
+                    null,
+                    List.of("Hi-fi", "Téléphone"),
+                    List.of("Nourriture"),
+                    null, null, null, null, null,
+                    departure.atTime(8, 0), departure.atTime(9, 0),
+                    null
+            );
+
+            announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(captor.getValue().getAcceptedContentTypes())
+                    .containsExactly("Téléphone & électronique");
+            assertThat(captor.getValue().getRefusedTypes())
+                    .containsExactly("Alimentation sèche");
         }
 
         @Test
@@ -807,6 +847,42 @@ class AnnouncementServiceTest {
             assertThat(result.departureCity()).isEqualTo("Lyon");
             assertThat(result.arrivalCity()).isEqualTo("Abidjan");
             verify(auditService).log(eq("USER"), any(), eq("ANNOUNCEMENT_UPDATED"), any(), any());
+        }
+
+        // C2 : normalisation à l'écriture — s'applique aussi à updateAnnouncement().
+        @Test
+        @DisplayName("acceptedContentTypes/refusedTypes legacy → persistés normalisés")
+        void update_legacyContentTypes_areNormalizedOnWrite() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity a = buildAnnouncement(traveler);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(a));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT)))
+                    .thenReturn(false);
+            when(announcementRepository.save(any())).thenReturn(a);
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+
+            LocalDate departure = LocalDate.now().plusDays(15);
+            AnnouncementRequest req = new AnnouncementRequest(
+                    "Lyon", "Abidjan", departure,
+                    null, null,
+                    new AddressDto("Gare Part-Dieu, Lyon", 45.760, 4.860),
+                    new AddressDto("Aéroport FHB, Abidjan", 5.261, -3.927),
+                    BigDecimal.valueOf(25), BigDecimal.valueOf(6),
+                    TransportMode.PLANE,
+                    null,
+                    List.of("Hi-fi"),
+                    List.of("Nourriture", "Nourriture"),
+                    null, null, null, null, null,
+                    departure.atTime(16, 0), departure.atTime(18, 0),
+                    null
+            );
+
+            announcementService.updateAnnouncement(ANNOUNCEMENT_ID, FIREBASE_UID, req);
+
+            assertThat(a.getAcceptedContentTypes()).containsExactly("Téléphone & électronique");
+            assertThat(a.getRefusedTypes()).containsExactly("Alimentation sèche");
         }
 
         @Test
@@ -1463,7 +1539,7 @@ class AnnouncementServiceTest {
             UserEntity user = standardUser();
             DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
                     new DonyConfigProperties.Limits.NonPro(2), null);
-            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits, null);
+            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits);
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
                     userRepository, bidRepository, priceGridService, storageService);
             AnnouncementService serviceWithLimits = new AnnouncementService(
@@ -1768,7 +1844,7 @@ class AnnouncementServiceTest {
             UserEntity user = standardUser();
             DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
                     new DonyConfigProperties.Limits.NonPro(2), null);
-            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits, null);
+            DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits);
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
                     userRepository, bidRepository, priceGridService, storageService);
             AnnouncementService serviceWithLimits = new AnnouncementService(

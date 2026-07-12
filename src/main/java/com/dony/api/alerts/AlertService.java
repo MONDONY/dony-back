@@ -9,6 +9,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.DonyNotFoundException;
 import com.dony.api.common.MatchingTextUtil;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.AnnouncementStatus;
@@ -24,6 +25,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -77,9 +79,13 @@ public class AlertService {
                     "Vous avez atteint la limite de " + MAX_ACTIVE_ALERTS + " alertes.");
         }
 
-        List<String> categories = req.contentCategories() != null
-                ? new ArrayList<>(req.contentCategories())
-                : new ArrayList<>();
+        // Normalisé à l'écriture (C2) : le check de doublon ci-dessous compare CETTE
+        // liste à celles déjà persistées (normalisées, cf. javadoc de
+        // ContentCategoryNormalizer) — la normaliser d'abord évite qu'un "Hi-fi" non
+        // normalisé masque un doublon avec une alerte existante en "Téléphone & électronique".
+        List<String> categories = new ArrayList<>(
+                ContentCategoryNormalizer.normalizeList(
+                        req.contentCategories() != null ? req.contentCategories() : List.of()));
 
         boolean duplicate = existing.stream()
                 .anyMatch(e -> isSameFilters(e, req, categories));
@@ -214,8 +220,8 @@ public class AlertService {
         entity.setDateFrom(req.dateFrom());
         entity.setDateTo(req.dateTo());
         entity.setMinWeightKg(req.minWeightKg());
-        entity.setContentCategories(req.contentCategories() != null
-                ? new ArrayList<>(req.contentCategories()) : new ArrayList<>());
+        entity.setContentCategories(ContentCategoryNormalizer.normalizeList(
+                req.contentCategories() != null ? req.contentCategories() : List.of()));
         validateZone(entity.getDirection(), req.centerLat(), req.centerLng(), req.radiusKm());
         applyZone(entity, req);
         if (active != null) {
@@ -388,12 +394,30 @@ public class AlertService {
     }
 
     // Item 6: renamed from fitsCategory
+    // C1 : p.getContentCategory() est une liste jointe par virgule (multi-sélection,
+    // cf. package_requests.content_category) — comparer la chaîne ENTIÈRE à chaque
+    // catégorie voulue ne matchait jamais un colis multi-catégories. Aligné sur
+    // BidContentRules.assertNotRefused : on splitte sur "," et on compare item par
+    // item, en lower+trim (insensible à la casse comme le reste de la plateforme).
     private boolean fitsAlertCategory(PackageRequestEntity p, CorridorAlertEntity alert) {
         List<String> wanted = alert.getContentCategories();
         if (wanted == null || wanted.isEmpty()) {
             return true;
         }
-        return wanted.stream().anyMatch(c -> c.equalsIgnoreCase(p.getContentCategory()));
+        String packageCategories = p.getContentCategory();
+        if (packageCategories == null || packageCategories.isBlank()) {
+            return false;
+        }
+        List<String> wantedLower = wanted.stream()
+                .map(c -> c.toLowerCase(Locale.ROOT).strip())
+                .toList();
+        for (String raw : packageCategories.split(",")) {
+            String item = raw.toLowerCase(Locale.ROOT).strip();
+            if (!item.isEmpty() && wantedLower.contains(item)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Item 5: batch sender lookup — collect distinct sender IDs, single findAllById call

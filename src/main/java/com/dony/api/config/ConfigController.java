@@ -1,6 +1,7 @@
 package com.dony.api.config;
 
 import com.dony.api.config.dto.CommissionRateResponse;
+import com.dony.api.config.dto.ContentCategoryResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,8 +25,7 @@ public class ConfigController {
     }
 
     @GetMapping("/content-categories")
-    public ResponseEntity<List<String>> getContentCategories() {
-        List<String> categories = config.contentCategories();
-        return ResponseEntity.ok(categories != null ? categories : List.of());
+    public ResponseEntity<List<ContentCategoryResponse>> getContentCategories() {
+        return ResponseEntity.ok(ContentCatalog.CATEGORIES);
     }
 }

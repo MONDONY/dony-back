@@ -568,8 +568,16 @@ public class NegotiationService {
         ann.setTransportMode(request.getTransportMode());
         ann.setStatus(com.dony.api.matching.AnnouncementStatus.ACTIVE);
         ann.setDescription(req.description());
-        ann.setAcceptedContentTypes(req.acceptedContentTypes() != null ? req.acceptedContentTypes() : new ArrayList<>());
-        ann.setRefusedTypes(req.refusedTypes() != null ? req.refusedTypes() : new ArrayList<>());
+        // Normalisation legacy→canonique à l'écriture : un vieux binaire mobile peut encore
+        // envoyer « Hi-fi »/« Nourriture » — sans ça, le refus du voyageur serait inerte face
+        // aux bids canoniques dès l'ouverture du surplus (même invariant que les 7 autres
+        // points d'écriture, cf. ContentCategoryNormalizer).
+        ann.setAcceptedContentTypes(req.acceptedContentTypes() != null
+                ? com.dony.api.config.ContentCategoryNormalizer.normalizeList(req.acceptedContentTypes())
+                : new ArrayList<>());
+        ann.setRefusedTypes(req.refusedTypes() != null
+                ? com.dony.api.config.ContentCategoryNormalizer.normalizeList(req.refusedTypes())
+                : new ArrayList<>());
         ann.setLinkedPackageRequestId(request.getId());
         // Sender réservé : il ne pourra pas re-bidder sur le surplus de ce trajet.
         ann.setReservedSenderId(request.getSenderId());

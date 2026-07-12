@@ -1074,6 +1074,48 @@ class NegotiationServiceTest {
         }
 
         @Test
+        @DisplayName("types acceptés/refusés legacy normalisés vers le vocabulaire canonique, texte libre préservé")
+        void createDedicatedTrip_normalisesLegacyContentTypes() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
+            when(announcementRepo.save(any())).thenAnswer(inv -> {
+                com.dony.api.matching.AnnouncementEntity a = inv.getArgument(0);
+                try {
+                    var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                    idField.setAccessible(true);
+                    idField.set(a, UUID.randomUUID());
+                } catch (Exception e) { throw new RuntimeException(e); }
+                return a;
+            });
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(java.util.List.of());
+
+            var req = new com.dony.api.requests.dto.NegotiationCreateDedicatedTripRequest(
+                request.getDesiredDate(),
+                java.time.LocalTime.of(8, 0),
+                java.time.LocalTime.of(14, 30),
+                new com.dony.api.matching.dto.AddressDto("CDG T2E", 49.0097, 2.5479),
+                new com.dony.api.matching.dto.AddressDto("DSS Diass", 14.6708, -17.0734),
+                "Bagage en soute",
+                java.util.List.of("Hi-fi", "Vêtements"),
+                java.util.List.of("Nourriture", "Poissons"),
+                com.dony.api.payments.cash.PaymentMethod.CASH
+            );
+
+            service.createDedicatedTrip(TRAVELER_ID, THREAD_ID, req);
+
+            ArgumentCaptor<com.dony.api.matching.AnnouncementEntity> annCaptor =
+                ArgumentCaptor.forClass(com.dony.api.matching.AnnouncementEntity.class);
+            verify(announcementRepo).save(annCaptor.capture());
+            assertThat(annCaptor.getValue().getAcceptedContentTypes())
+                .containsExactly("Téléphone & électronique", "Vêtements & tissus");
+            assertThat(annCaptor.getValue().getRefusedTypes())
+                .containsExactly("Alimentation sèche", "Poissons");
+        }
+
+        @Test
         @DisplayName("date avant la fenêtre de tolérance → 422 date-mismatch")
         void createDedicatedTrip_dateBeforeWindow_throws422() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));

@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.matching.dto.BidCheckoutRequest;
 import com.dony.api.matching.dto.BidCheckoutResponse;
 import com.dony.api.matching.dto.BidGridItemRequest;
@@ -109,7 +110,10 @@ public class BidCheckoutService {
                 "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
 
-        BidContentRules.assertNotRefused(announcement, req.contentCategory());
+        // Normalisé AVANT le contrôle de refus (C2) — cf. BidService.createBid pour le
+        // raisonnement complet (announcement.refusedTypes est déjà normalisé).
+        String normalizedContentCategory = ContentCategoryNormalizer.normalizeJoined(req.contentCategory());
+        BidContentRules.assertNotRefused(announcement, normalizedContentCategory);
 
         // Idempotency: if an AWAITING_PAYMENT bid exists (e.g. payment sheet crashed),
         // resume it instead of creating a new one.
@@ -179,7 +183,7 @@ public class BidCheckoutService {
         bid.setPricingMode(bidMode);
         bid.setDeclaredValueEur(req.declaredValueEur());
         bid.setDescription(req.description());
-        bid.setContentCategory(req.contentCategory());
+        bid.setContentCategory(normalizedContentCategory);
         bid.setRecipientName(req.recipientName());
         bid.setRecipientPhone(req.recipientPhone());
         bid.setDisclaimerSignedAt(now);

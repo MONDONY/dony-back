@@ -16,7 +16,11 @@ public record BidCheckoutRequest(
         @DecimalMin(value = "0.0") BigDecimal weightKg,
         @NotNull @DecimalMin(value = "0.01", inclusive = true) BigDecimal declaredValueEur,
         @Size(max = 1000) String description,
-        @Size(max = 50) String contentCategory,
+        // Multi-sélection jointe par virgule côté front : le catalogue canonique complet
+        // joint fait 216 caractères, donc 500 laisse de la marge pour la saisie libre.
+        // NE PAS redescendre sous ~220 : deux libellés canoniques joints dépassent déjà
+        // 50 (l'ancienne limite) — cf. V171__unify_content_categories.sql.
+        @Size(max = 500) String contentCategory,
         @Size(max = 200) String recipientName,
         @Size(max = 30) String recipientPhone,
         @AssertTrue(message = "Le disclaimer doit être signé") Boolean disclaimerSigned,

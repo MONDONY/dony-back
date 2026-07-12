@@ -2,6 +2,7 @@ package com.dony.api.triptemplate;
 
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.triptemplate.dto.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +95,9 @@ public class TripTemplateService {
         entity.setCapacityUnit(capacityUnit);
         entity.setAvailableKg(availableKg);
         entity.setPricePerKg(pricePerKg);
-        entity.setAcceptedCategories(joinCategories(acceptedCategories));
+        // Normalisé à l'écriture (C2) — un modèle réutilisé pour publier un trajet
+        // (TripPublishFromTemplate) doit produire des acceptedCategories déjà canoniques.
+        entity.setAcceptedCategories(joinCategories(ContentCategoryNormalizer.normalizeList(acceptedCategories)));
         entity.setCashAccepted(cashAccepted);
         entity.setArrivalTime(arrivalTime);
     }

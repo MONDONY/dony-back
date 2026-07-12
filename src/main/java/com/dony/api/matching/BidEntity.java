@@ -51,7 +51,10 @@ public class BidEntity extends BaseEntity {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "content_category", length = 255)
+    // Colonne élargie en TEXT par V171 (multi-sélection canonique jointe par virgule
+    // peut dépasser 255) — columnDefinition reflète le vrai type DB (length est
+    // trompeur : Hibernate ne le valide pas au runtime, mais un DDL futur s'y fierait).
+    @Column(name = "content_category", columnDefinition = "TEXT")
     private String contentCategory;
 
     @Column(name = "recipient_name", length = 200)

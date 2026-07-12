@@ -115,6 +115,44 @@ class AlertServiceMatchesTest {
         assertThat(matches.get(0).weightKg()).isEqualTo(3.0);
     }
 
+    // C1 (bug adjacent) : p.getContentCategory() est une liste jointe par virgule
+    // (multi-sélection) — comparer la chaîne entière à chaque catégorie voulue ne
+    // matchait jamais un colis multi-catégories. fitsAlertCategory doit désormais
+    // splitter et comparer item par item (aligné sur BidContentRules).
+    @Test
+    void getMatches_multiCategoryPackage_matchesOnAnyItem() {
+        PackageRequestEntity multiCategory = pkg(
+                "Alimentation sèche, Vêtements & tissus", new BigDecimal("3.00"), LocalDate.of(2026, 7, 10));
+        CorridorAlertEntity a = alert(true);
+        a.setContentCategories(List.of("Vêtements & tissus"));
+
+        when(alertRepository.findById(alertId)).thenReturn(Optional.of(a));
+        when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
+                .thenReturn(List.of(multiCategory));
+        when(userRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(senderWithId(multiCategory.getSenderId())));
+
+        List<MatchingRequestDto> matches = service.getMatches(uid, alertId);
+
+        assertThat(matches).hasSize(1);
+    }
+
+    @Test
+    void getMatches_multiCategoryPackage_noOverlap_doesNotMatch() {
+        PackageRequestEntity multiCategory = pkg(
+                "Alimentation sèche, Cadeaux & jouets", new BigDecimal("3.00"), LocalDate.of(2026, 7, 10));
+        CorridorAlertEntity a = alert(true);
+        a.setContentCategories(List.of("Vêtements & tissus"));
+
+        when(alertRepository.findById(alertId)).thenReturn(Optional.of(a));
+        when(packageRequestRepository.findOpenByCorridor("Paris", "Bamako"))
+                .thenReturn(List.of(multiCategory));
+
+        List<MatchingRequestDto> matches = service.getMatches(uid, alertId);
+
+        assertThat(matches).isEmpty();
+    }
+
     @Test
     void getMatches_noFilters_returnsAllOpen() {
         PackageRequestEntity p = pkg("Anything", new BigDecimal("0.50"), LocalDate.of(2030, 1, 1));

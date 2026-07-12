@@ -157,6 +157,25 @@ class TripRecurrenceServiceTest {
         verify(auditService).log(eq("TRIP_RECURRENCE"), any(), eq("TRIP_RECURRENCE_CREATED"), eq(userId), anyMap());
     }
 
+    // C2 : normalisation à l'écriture — un client pas à jour envoie des libellés/codes
+    // legacy, la récurrence doit être persistée avec les libellés canoniques.
+    @Test
+    void create_legacyAcceptedCategories_areNormalizedOnWrite() {
+        var req = new TripRecurrenceRequest(
+                null, "Paris", "Dakar", "PLANE", "SUITCASE_23KG",
+                23.0, 8.0, List.of("Hi-fi", "Téléphone", "Vêtements"),
+                new AddressDto("12 rue de la Paix", 48.86, 2.33),
+                new AddressDto("Aéroport CDG", 49.01, 2.55),
+                LocalTime.of(14, 0), LocalTime.of(18, 30), false, "1111111", 0, false);
+
+        ArgumentCaptor<TripRecurrenceEntity> captor = ArgumentCaptor.forClass(TripRecurrenceEntity.class);
+        var dto = service.create(userId, req);
+
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getAcceptedCategories()).isEqualTo("Téléphone & électronique,Vêtements & tissus");
+        assertThat(dto.acceptedCategories()).containsExactly("Téléphone & électronique", "Vêtements & tissus");
+    }
+
     @Test
     void create_inactive_doesNotGenerate() {
         var req = request("1111111", 0, false);

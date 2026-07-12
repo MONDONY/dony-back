@@ -239,6 +239,69 @@ class AutomationRuleServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("normalisation des conditions content_type")
+    class ContentTypeNormalisation {
+
+        private void stubSaveAssigningId() {
+            when(ruleRepository.save(any())).thenAnswer(inv -> {
+                AutomationRuleEntity r = inv.getArgument(0);
+                try { setField(r, "id", RULE_ID); } catch (Exception ignored) {}
+                return r;
+            });
+        }
+
+        @Test
+        void createRule_normalisesLegacyContentTypeValue_andLeavesOtherFieldsIntact() {
+            stubSaveAssigningId();
+            CreateRuleRequest req = new CreateRuleRequest("Refus hi-fi",
+                    List.of(
+                            Map.of("field", "content_type", "operator", "eq", "value", "Hi-fi"),
+                            Map.of("field", "weight_kg", "operator", "gte", "value", "5")),
+                    Map.of("type", "auto_reject"));
+
+            service.createRule(TRAVELER_ID, req);
+
+            ArgumentCaptor<AutomationRuleEntity> captor = ArgumentCaptor.forClass(AutomationRuleEntity.class);
+            verify(ruleRepository).save(captor.capture());
+            List<Map<String, Object>> conditions = captor.getValue().getConditions();
+            assertThat(conditions.get(0).get("value")).isEqualTo("Téléphone & électronique");
+            assertThat(conditions.get(1).get("value")).isEqualTo("5");
+        }
+
+        @Test
+        void createRule_preservesFreeTextContentTypeValue_withCasing() {
+            stubSaveAssigningId();
+            CreateRuleRequest req = new CreateRuleRequest("Refus poissons",
+                    List.of(Map.of("field", "content_type", "operator", "eq", "value", "Poissons")),
+                    Map.of("type", "auto_reject"));
+
+            service.createRule(TRAVELER_ID, req);
+
+            ArgumentCaptor<AutomationRuleEntity> captor = ArgumentCaptor.forClass(AutomationRuleEntity.class);
+            verify(ruleRepository).save(captor.capture());
+            assertThat(captor.getValue().getConditions().get(0).get("value")).isEqualTo("Poissons");
+        }
+
+        @Test
+        void updateCustomRule_normalisesLegacyContentTypeValue() throws Exception {
+            AutomationRuleEntity rule = buildCustomRule();
+            when(ruleRepository.findByIdAndTravelerId(RULE_ID, TRAVELER_ID))
+                    .thenReturn(Optional.of(rule));
+            stubSaveAssigningId();
+            CreateRuleRequest req = new CreateRuleRequest("Refus nourriture",
+                    List.of(Map.of("field", "content_type", "operator", "eq", "value", "Nourriture")),
+                    Map.of("type", "auto_reject"));
+
+            service.updateCustomRule(TRAVELER_ID, RULE_ID, req);
+
+            ArgumentCaptor<AutomationRuleEntity> captor = ArgumentCaptor.forClass(AutomationRuleEntity.class);
+            verify(ruleRepository).save(captor.capture());
+            assertThat(captor.getValue().getConditions().get(0).get("value"))
+                    .isEqualTo("Alimentation sèche");
+        }
+    }
+
     // ---- Helpers ----
 
     private AutomationRuleEntity buildCustomRule() throws Exception {

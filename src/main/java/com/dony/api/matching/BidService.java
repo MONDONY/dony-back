@@ -9,6 +9,7 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.matching.dto.BidGridItemRequest;
 import com.dony.api.matching.dto.BidQuoteRequest;
 import com.dony.api.matching.dto.BidQuoteResponse;
@@ -210,7 +211,12 @@ public class BidService {
                     "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
 
-        BidContentRules.assertNotRefused(announcement, request.contentCategory());
+        // Normalisé AVANT le contrôle de refus (C2) : announcement.refusedTypes est déjà
+        // normalisé (V171 + écriture normalisée dans AnnouncementService). Comparer un
+        // libellé/code legacy encore non normalisé ("Hi-fi") le ferait passer à travers
+        // un refus explicite ("Téléphone & électronique") — inversion silencieuse du refus.
+        String normalizedContentCategory = ContentCategoryNormalizer.normalizeJoined(request.contentCategory());
+        BidContentRules.assertNotRefused(announcement, normalizedContentCategory);
 
         UUID travelerId = announcement.getTravelerId();
 
@@ -319,7 +325,7 @@ public class BidService {
         bid.setPricingMode(bidMode);
         bid.setDeclaredValueEur(request.declaredValueEur());
         bid.setDescription(request.description());
-        bid.setContentCategory(request.contentCategory());
+        bid.setContentCategory(normalizedContentCategory);
         bid.setRecipientName(request.recipientName());
         bid.setRecipientPhone(request.recipientPhone());
         bid.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));

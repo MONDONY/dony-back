@@ -199,6 +199,34 @@ class BidServiceTest {
             verify(eventPublisher, never()).publishEvent(any(BidCreatedEvent.class));
         }
 
+        // C2 : normalisation à l'écriture — un client pas à jour envoie un libellé/code
+        // legacy, le bid doit être persisté avec le libellé canonique.
+        @Test
+        @DisplayName("contentCategory legacy ('Hi-fi') → persisté normalisé ('Téléphone & électronique')")
+        void createBid_legacyContentCategory_isNormalizedOnWrite() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
+                    SENDER_ID, ANNOUNCEMENT_ID, List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "desc", "Hi-fi, Téléphone",
+                    "Aminata Diallo", "+221701234567", true, null, null, null, null, null, null);
+
+            BidResponse result = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest);
+
+            assertThat(result.contentCategory()).isEqualTo("Téléphone & électronique");
+        }
+
         @Test
         @DisplayName("poids dépasse la capacité → 422 UNPROCESSABLE_ENTITY")
         void createBid_weightExceedsCapacity_throwsUnprocessable() {
@@ -791,7 +819,34 @@ class BidServiceTest {
         void createBid_refusedCategory_throws422() {
             UserEntity sender = buildSender();
             AnnouncementEntity announcement = buildAnnouncement();
-            announcement.setRefusedTypes(java.util.List.of("Hi-fi"));
+            // Reflète l'état réaliste post-C2/post-V171 : refusedTypes est toujours déjà
+            // canonique en production (normalisé à l'écriture par AnnouncementService,
+            // ou par V171 pour l'historique). Bid ici aussi déjà canonique — cas de base.
+            announcement.setRefusedTypes(java.util.List.of("Téléphone & électronique"));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "Téléphone & électronique", "Aminata Diallo", "+221701234567", true,
+                    null, null, null, null, null, null);
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("content-type-refused"));
+        }
+
+        // C2 : reproduit le scénario exact du finding — announcement.refusedTypes déjà
+        // normalisé (état réaliste post-fix : V171 ou écriture via AnnouncementService),
+        // mais le bid entrant porte encore un libellé/code legacy ("Hi-fi", client pas à
+        // jour). Sans la normalisation AVANT assertNotRefused, cette comparaison
+        // échouerait à matcher et un refus explicite du voyageur passerait (plus de 422).
+        @Test
+        @DisplayName("catégorie refusée (déjà canonique) vs bid legacy non normalisé → 422 quand même")
+        void createBid_refusedCanonicalCategory_vsLegacyBidCategory_stillThrows422() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setRefusedTypes(java.util.List.of("Téléphone & électronique"));
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
