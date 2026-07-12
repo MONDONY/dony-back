@@ -54,7 +54,7 @@ public class AutomationActionExecutor {
         if (ruleService.countTodayActions(travelerId) >= DAILY_ACTION_CAP) {
             disableRuleAndRecordCapReached(rule, travelerId, bidId, actionTaken);
             log.warn("Automation daily cap reached for traveler {}, rule {} disabled",
-                    travelerId, rule.getPresetRuleId());
+                    travelerId, rule.getName() != null ? rule.getName() : rule.getPresetRuleId());
             return false;
         }
 

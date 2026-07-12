@@ -23,9 +23,10 @@ Le chantier précédent (`2026-07-11-automation-engine-design.md`, PR #96 dony-b
 
 1. **Actions supportées : `auto_accept` et `auto_reject` uniquement.** Les 4 autres types (`send_alert`, `trigger_search`, `invite_sender`, `close_announcement`) restent hors scope — une règle custom active portant l'un de ces types est ignorée par le moteur (aucune action, aucun historique), comportement identique à aujourd'hui.
 2. **Conditions multiples = ET strict.** Toutes les conditions d'une règle doivent matcher pour que l'action se déclenche.
-3. **Comparaison texte (opérateur `eq` sur `content_type`/`corridor`) : insensible à la casse et aux espaces de bord** (`trim()` + `toLowerCase(Locale.ROOT)` des deux côtés). Pas de pliage d'accents ni de recherche partielle (« Poissons » ≠ « poisson frais ») — hors scope, documenté.
+3. **Comparaison texte (opérateur `eq` sur `content_type`/`corridor`) : insensible à la casse et aux espaces de bord** (`trim()` + `toLowerCase(Locale.ROOT)` des deux côtés). `content_type` est en réalité une **liste de catégories jointe par virgule** (`BidEntity.contentCategory`, multi-sélection de chips côté Flutter — `categories.join(', ')`) : la comparaison se fait **par élément** (au moins un item normalisé égal à la valeur normalisée de la condition), alignée sur `BidContentRules.assertNotRefused` qui reconsomme déjà ce champ de la même façon. `corridor`, lui, reste un scalaire (`"Paris → Dakar"`) comparé en égalité pleine. Pas de pliage d'accents ni de recherche partielle intra-libellé (« Poissons » ≠ « poisson frais ») — hors scope, documenté.
 4. **Priorité inter-règles : tout refus gagne toujours sur toute acceptation**, que la règle soit preset ou custom, indépendamment de l'ordre de création. Généralisation de la logique déjà en place entre les deux presets (refus surpoids > accept confiance).
 5. **Plafond quotidien partagé** : les actions custom passent par le même `AutomationActionExecutor.tryExecuteBidAction` et comptent dans le même `DAILY_ACTION_CAP = 20` par voyageur que les actions preset (l'historique est commun, `countTodayActions` compte tout). Décision technique par cohérence — un seul garde-fou global.
+   - **Conséquence produit à connaître** : au plafond quotidien, c'est la **règle qui tentait l'action en cours** qui est désactivée (`enabled=false`, `disableRuleAndRecordCapReached`) — pas les autres règles. Comme le plafond est partagé entre presets et customs, une règle custom peut donc se retrouver désactivée alors que le quota a été consommé par des actions preset (et inversement). La désactivation n'est pas automatiquement réversible : le voyageur doit la réactiver manuellement une fois le plafond du lendemain repassé.
 
 ## Architecture
 
@@ -62,16 +63,19 @@ record BidEvaluationContext(
 | `weight_kg` | numérique | `BidCreatedEvent.weightKg` | gte, lte, eq |
 | `capacity_free_kg` | numérique | `AnnouncementEntity.availableKg` | gte, lte, eq |
 | `hours_before_departure` | numérique | dérivé de `announcement.departureAt` | gte, lte, eq |
-| `corridor` | texte | `BidCreatedEvent.corridor` | eq uniquement |
-| `content_type` | texte | `BidEntity.contentCategory` | eq uniquement |
+| `corridor` | texte, scalaire | `BidCreatedEvent.corridor` | eq uniquement, égalité pleine |
+| `content_type` | texte, **liste jointe par virgule** | `BidEntity.contentCategory` | eq uniquement, **matching par élément** (au moins un item de la liste égale la valeur de la condition, une fois les deux normalisés) |
 
 **Règles de robustesse (fail-safe : dans le doute, ne pas agir)** :
 
 - Valeur du contexte `null` (ex. expéditeur sans note, colis sans catégorie déclarée) → condition **non satisfaite** → la règle ne matche pas.
+- Élément `null` dans la liste `conditions` (donnée JSONB malformée, ex. `conditions: [null]`) → condition **non satisfaite** + log `warn`, jamais de `NullPointerException`.
 - `value` de la condition non parsable en `BigDecimal` pour un champ numérique → condition non satisfaite + log `warn` (une seule fois par évaluation, pas de spam).
 - Opérateur `gte`/`lte` sur un champ texte → condition non satisfaite + log `warn`.
 - `field` ou `operator` inconnu (donnée corrompue ou future version front) → condition non satisfaite + log `warn`.
 - Liste `conditions` vide → la règle ne matche **jamais** (jamais d'action sur règle sans condition).
+- `content_type` : matching **par élément** uniquement — pas de matching partiel intra-libellé (« Poissons » ≠ « poisson frais »), et pas de matching sur la chaîne entière reconstituée si la valeur de la condition contient elle-même une virgule (un voyageur qui saisirait bêtement « Vêtements, Documents » comme valeur de condition ne matchera jamais un bid dont `contentCategory` vaut exactement « Vêtements, Documents » — seul un item unique peut matcher).
+- Toute exception (`RuntimeException`) levée pendant l'évaluation d'une règle custom (au-delà des gardes ci-dessus) est interceptée dans `AutomationBidListener` : la règle est traitée comme non matchée, jamais propagée. `onBidCreated` est un `@TransactionalEventListener(AFTER_COMMIT)` synchrone appelé depuis le webhook Stripe / la confirmation de paiement — une exception qui s'en échapperait se traduirait par un HTTP 500 pour l'expéditeur.
 
 Comparaison numérique : `BigDecimal.compareTo` (jamais `equals`, qui distingue les échelles). Comparaison texte : normalisation `trim().toLowerCase(Locale.ROOT)` des deux côtés avant `equals`.
 
@@ -80,7 +84,7 @@ Comparaison numérique : `BigDecimal.compareTo` (jamais `equals`, qui distingue 
 Nouvel ordonnancement (remplace le flux actuel, à comportement preset identique) :
 
 1. Charger les règles du voyageur (déjà fait, `findByTravelerIdOrderByCreatedAtAsc`).
-2. Résoudre le `BidEvaluationContext` : charger `BidEntity` via `BidRepository.findById(event.getBidId())` (nouvelle injection — on n'élargit pas le constructeur de `BidCreatedEvent`, partagé avec d'autres listeners) + `UserEntity` expéditeur + `AnnouncementEntity` (déjà chargés aujourd'hui). Bid introuvable → log warn + return.
+2. Résoudre le `BidEvaluationContext` : charger `BidEntity` via `BidRepository.findById(event.getBidId())` (nouvelle injection — on n'élargit pas le constructeur de `BidCreatedEvent`, partagé avec d'autres listeners) + `UserEntity` expéditeur + `AnnouncementEntity` (déjà chargés aujourd'hui). Bid introuvable → log warn, `ctx` reste `null` (conditions custom sautées) et le traitement **continue** vers les presets, qui n'ont pas besoin du bid — comportement plus correct qu'un `return` prématuré, puisque les presets (refus surpoids, accept confiance, alerte dernière minute) restent pertinents même sans bid résolu.
 3. **Phase refus** — dans cet ordre, s'arrêter à la première action exécutée :
    a. Preset `auto_reject_overweight` (logique actuelle inchangée).
    b. Règles custom actives (`ruleType=CUSTOM`, `enabled=true`, `action.type=auto_reject`), par `createdAt` croissant, première qui matche → `executor.tryExecuteBidAction(rule, …, "CUSTOM_AUTO_REJECT", () -> bidService.rejectBidBySystem(bidId, travelerId, motif))`.
@@ -121,12 +125,13 @@ TDD strict. Nouveau code visé ≥ 90 %.
   - deux customs reject matchent → seule la plus ancienne (createdAt) exécutée ;
   - custom accept matche, aucun refus → `acceptBidBySystem` appelé ;
   - règle custom `send_alert` active qui « matcherait » → ignorée, aucun appel ;
-  - bid introuvable → return silencieux (log), aucune action ;
+  - bid introuvable → log warn, conditions custom sautées, traitement des presets non interrompu ;
   - non-régression : les 3 presets (1/2/6) se comportent comme avant.
 
 ## Hors scope (explicitement)
 
 - Actions custom `send_alert`, `trigger_search`, `invite_sender`, `close_announcement`
 - Logique OU entre conditions, opérateurs `contains`/regex, pliage d'accents
+- Matching partiel intra-libellé sur `content_type` (« Poissons » ≠ « poisson frais ») — le matching **par élément** de la liste jointe par virgule, lui, est en scope (cf. § Périmètre, point 3)
 - Vocabulaire contrôlé pour `content_type` (le champ reste du texte libre des deux côtés — amélioration produit future : liste fermée partagée expéditeur/voyageur)
 - Tout changement front (dony-pro) et Flutter (dony_app)

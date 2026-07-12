@@ -125,7 +125,7 @@ public class AutomationBidListener {
         }
         if (!rejectMatched && ctx != null) {
             for (AutomationRuleEntity rule : customRejectRules) {
-                if (CustomRuleConditionEvaluator.matches(rule, ctx)) {
+                if (safeMatches(rule, ctx)) {
                     rejectMatched = true;
                     String reason = customRejectReason(rule);
                     executor.tryExecuteBidAction(rule, event.getTravelerId(), event.getBidId(),
@@ -158,7 +158,7 @@ public class AutomationBidListener {
         }
         if (!rejectMatched && !acceptMatched && ctx != null) {
             for (AutomationRuleEntity rule : customAcceptRules) {
-                if (CustomRuleConditionEvaluator.matches(rule, ctx)) {
+                if (safeMatches(rule, ctx)) {
                     executor.tryExecuteBidAction(rule, event.getTravelerId(), event.getBidId(),
                             "CUSTOM_AUTO_ACCEPT", () -> {
                                 bidService.acceptBidBySystem(event.getBidId(), event.getTravelerId());
@@ -182,6 +182,30 @@ public class AutomationBidListener {
                         Map.of("type", "automation_last_minute", "bidId", event.getBidId().toString()));
                 executor.recordNotification(rule, event.getTravelerId(), "ALERT_LAST_MINUTE_BID");
             }
+        }
+    }
+
+    /**
+     * Enveloppe {@link CustomRuleConditionEvaluator#matches} pour qu'AUCUNE exception
+     * d'évaluation d'une règle custom (données malformées au-delà de ce que couvre le
+     * fail-safe interne de l'évaluateur) ne puisse s'échapper de {@link #onBidCreated}.
+     *
+     * <p>Important : ce garde-fou entoure UNIQUEMENT l'évaluation/le matching — jamais les
+     * appels à {@code executor.tryExecuteBidAction}, qui gère déjà ses propres échecs
+     * (try/catch interne + écriture d'historique FAILURE) et ne doit pas être court-circuité
+     * ici. {@code onBidCreated} est un {@code @TransactionalEventListener(AFTER_COMMIT)}
+     * synchrone, invoqué depuis {@code PaymentService.promoteBidOnPaymentAuthorized} — donc
+     * depuis le webhook Stripe et le chemin de confirmation de paiement. Une exception qui
+     * s'échapperait jusqu'à l'appelant se traduirait par un HTTP 500 pour l'expéditeur à
+     * chaque bid, tant que la règle malformée existe.
+     */
+    private static boolean safeMatches(AutomationRuleEntity rule, BidEvaluationContext ctx) {
+        try {
+            return CustomRuleConditionEvaluator.matches(rule, ctx);
+        } catch (RuntimeException e) {
+            log.warn("Automation custom rule {}: évaluation en erreur, règle ignorée (fail-safe) : {}",
+                    rule.getId(), e.getMessage(), e);
+            return false;
         }
     }
 

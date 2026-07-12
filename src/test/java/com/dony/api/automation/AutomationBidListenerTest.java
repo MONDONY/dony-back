@@ -329,6 +329,50 @@ class AutomationBidListenerTest {
     }
 
     @Test
+    void customAccept_matching_onSenderRatingCapacityAndHoursBeforeDeparture_wiredCorrectly() {
+        // BidEvaluationContext est un record positionnel à 6 arguments dont senderRating et
+        // capacityFreeKg sont deux BigDecimal consécutifs : une inversion de ces deux slots
+        // au câblage (AutomationBidListener) compilerait sans erreur. On choisit trois valeurs
+        // toutes distinctes entre elles pour que le moindre échange de position fasse échouer
+        // ce test (eq strict sur sender_rating/capacity_free_kg, gte tolérant sur les heures
+        // avant départ pour ne pas être fragile au timing).
+        stubSender("4.5");
+        AnnouncementEntity announcement = stubAnnouncement("15");
+        announcement.setDepartureAt(OffsetDateTime.now().plusHours(30));
+        stubBid("Vêtements");
+        when(ruleRepository.findByTravelerIdOrderByCreatedAtAsc(travelerId)).thenReturn(List.of(
+                customRule("Combo triple", "auto_accept", null, List.of(
+                        Map.of("field", "sender_rating", "operator", "eq", "value", "4.5"),
+                        Map.of("field", "capacity_free_kg", "operator", "eq", "value", "15"),
+                        Map.of("field", "hours_before_departure", "operator", "gte", "value", "10")))));
+
+        listener.onBidCreated(event("8"));
+
+        verify(executor).tryExecuteBidAction(any(), eq(travelerId), eq(bidId), eq("CUSTOM_AUTO_ACCEPT"), any());
+        verify(bidService).acceptBidBySystem(bidId, travelerId);
+    }
+
+    @Test
+    void twoCustomAcceptsMatch_onlyFirstExecuted() {
+        // Symétrique de twoCustomRejectsMatch_onlyFirstExecuted, côté auto_accept : deux
+        // règles custom qui matchent toutes les deux, seule la première dans l'ordre
+        // (createdAt croissant, tel que retourné par le repository) est exécutée.
+        stubAnnouncement("20");
+        stubSender("3.0");
+        stubBid("Vêtements");
+        when(ruleRepository.findByTravelerIdOrderByCreatedAtAsc(travelerId)).thenReturn(List.of(
+                customRule("Règle A", "auto_accept", null,
+                        List.of(Map.of("field", "corridor", "operator", "eq", "value", "Paris → Dakar"))),
+                customRule("Règle B", "auto_accept", null,
+                        List.of(Map.of("field", "weight_kg", "operator", "gte", "value", "1")))));
+
+        listener.onBidCreated(event("8"));
+
+        verify(executor, times(1)).tryExecuteBidAction(any(), any(), any(), eq("CUSTOM_AUTO_ACCEPT"), any());
+        verify(bidService).acceptBidBySystem(bidId, travelerId);
+    }
+
+    @Test
     void presetAcceptMatched_customAcceptSkipped() {
         stubAnnouncement("20");
         stubSender("4.8");
@@ -370,6 +414,28 @@ class AutomationBidListenerTest {
         when(ruleRepository.findByTravelerIdOrderByCreatedAtAsc(travelerId)).thenReturn(List.of(disabled));
 
         listener.onBidCreated(event("8"));
+
+        verifyNoInteractions(bidService);
+    }
+
+    @Test
+    void customRuleEvaluationThrows_doesNotEscapeListener_noAction() {
+        // onBidCreated est un @TransactionalEventListener(AFTER_COMMIT) synchrone, appelé
+        // depuis PaymentService.promoteBidOnPaymentAuthorized (webhook Stripe / confirmation
+        // de paiement). Toute exception qui s'en échapperait remonterait en HTTP 500 pour
+        // l'expéditeur. Une règle custom dont l'évaluation lève (donnée corrompue au-delà de
+        // ce que le null-guard de l'évaluateur couvre) ne doit donc jamais faire planter le
+        // listener (FIX 2b) : ici on force une Map de condition qui lève au premier get().
+        stubAnnouncement("20");
+        stubSender("3.0");
+        stubBid("Poissons");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> throwingCondition = mock(Map.class);
+        when(throwingCondition.get(any())).thenThrow(new RuntimeException("donnée corrompue"));
+        when(ruleRepository.findByTravelerIdOrderByCreatedAtAsc(travelerId)).thenReturn(List.of(
+                customRule("Règle cassée", "auto_reject", null, List.of(throwingCondition))));
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> listener.onBidCreated(event("8")));
 
         verifyNoInteractions(bidService);
     }

@@ -41,6 +41,10 @@ final class CustomRuleConditionEvaluator {
 
     private static boolean conditionSatisfied(AutomationRuleEntity rule, Map<String, Object> condition,
                                               BidEvaluationContext ctx) {
+        if (condition == null) {
+            log.warn("Automation custom rule {}: condition null dans la liste (donnée malformée)", rule.getId());
+            return false;
+        }
         String field = asString(condition.get("field"));
         String operator = asString(condition.get("operator"));
         String value = asString(condition.get("value"));
@@ -56,7 +60,7 @@ final class CustomRuleConditionEvaluator {
                     ctx.hoursBeforeDeparture() == null ? null : BigDecimal.valueOf(ctx.hoursBeforeDeparture()),
                     operator, value);
             case "corridor" -> textEquals(rule, ctx.corridor(), operator, value);
-            case "content_type" -> textEquals(rule, ctx.contentCategory(), operator, value);
+            case "content_type" -> contentTypeMatches(rule, ctx.contentCategory(), operator, value);
             default -> {
                 log.warn("Automation custom rule {}: field inconnu '{}'", rule.getId(), field);
                 yield false;
@@ -98,6 +102,35 @@ final class CustomRuleConditionEvaluator {
             return false;
         }
         return normalize(actual).equals(normalize(rawValue));
+    }
+
+    /**
+     * {@code content_type} n'est PAS un scalaire : {@code BidEntity.contentCategory} est une
+     * liste de catégories jointe par virgule (multi-sélection de chips côté Flutter,
+     * {@code create_bid_bottom_sheet.dart} : {@code categories.join(', ')}). La plateforme le
+     * reconsomme déjà comme une liste ({@code BidContentRules.assertNotRefused}, qui splitte sur
+     * ",") : on s'aligne sur cette sémantique ici. Matching PAR ÉLÉMENT — si au moins un item
+     * normalisé égale la valeur normalisée de la condition, la condition est satisfaite. Les
+     * items vides (virgules superflues) sont ignorés. Pas de matching sur la chaîne entière
+     * reconstituée : {@code corridor}, lui, reste un scalaire comparé en égalité pleine.
+     */
+    private static boolean contentTypeMatches(AutomationRuleEntity rule, String actual,
+                                              String operator, String rawValue) {
+        if (!"eq".equals(operator)) {
+            log.warn("Automation custom rule {}: operator '{}' invalide sur un champ texte", rule.getId(), operator);
+            return false;
+        }
+        if (actual == null) {
+            return false;
+        }
+        String expected = normalize(rawValue);
+        for (String raw : actual.split(",")) {
+            String item = normalize(raw);
+            if (!item.isEmpty() && item.equals(expected)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalize(String s) {
