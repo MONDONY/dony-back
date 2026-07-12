@@ -123,12 +123,14 @@ public class BidCheckoutService {
             BidEntity existing = awaitingBid.get();
             CreatePaymentRequest resumeReq = new CreatePaymentRequest();
             resumeReq.setBidId(existing.getId());
+            resumeReq.setSavePaymentMethod(req.savePaymentMethod());
             PaymentResponse resumed = paymentService.createEscrow(resumeReq, firebaseUid);
             return new BidCheckoutResponse(
                 existing.getId(),
                 resumed.getClientSecret(),
                 stripePublishableKey,
-                existing.getAwaitingPaymentExpiresAt()
+                existing.getAwaitingPaymentExpiresAt(),
+                resumed.getPaymentMethodTypes()
             );
         }
 
@@ -227,6 +229,7 @@ public class BidCheckoutService {
         CreatePaymentRequest paymentReq = new CreatePaymentRequest();
         paymentReq.setBidId(saved.getId());
         paymentReq.setTotalNetEur(totalNet);
+        paymentReq.setSavePaymentMethod(req.savePaymentMethod());
         PaymentResponse paymentResp = paymentService.createEscrow(paymentReq, firebaseUid);
 
         // Backfill paymentIntentId on the bid so schedulers can find it
@@ -237,7 +240,8 @@ public class BidCheckoutService {
             saved.getId(),
             paymentResp.getClientSecret(),
             stripePublishableKey,
-            saved.getAwaitingPaymentExpiresAt()
+            saved.getAwaitingPaymentExpiresAt(),
+            paymentResp.getPaymentMethodTypes()
         );
     }
 

@@ -1,6 +1,7 @@
 package com.dony.api.payments.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public class PaymentResponse {
@@ -12,6 +13,9 @@ public class PaymentResponse {
     private BigDecimal commissionAmount;
     private String status;
     private String stripePaymentIntentId;
+    // Types du PaymentIntent (ex. ["card","paypal"]) — le SDK flutter_stripe ne les
+    // expose pas via retrievePaymentIntent, la DonyPaymentSheet les lit donc ici.
+    private List<String> paymentMethodTypes;
 
     public PaymentResponse(UUID id, UUID bidId, String clientSecret,
                            BigDecimal amount, BigDecimal commissionAmount, String status) {
@@ -37,4 +41,8 @@ public class PaymentResponse {
     public BigDecimal getCommissionAmount() { return commissionAmount; }
     public String getStatus() { return status; }
     public String getStripePaymentIntentId() { return stripePaymentIntentId; }
+    public List<String> getPaymentMethodTypes() { return paymentMethodTypes; }
+    public void setPaymentMethodTypes(List<String> paymentMethodTypes) {
+        this.paymentMethodTypes = paymentMethodTypes;
+    }
 }

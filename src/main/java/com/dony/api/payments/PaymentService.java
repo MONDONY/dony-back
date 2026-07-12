@@ -21,18 +21,24 @@ import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
+import com.dony.api.payments.dto.PaymentMethodResponse;
 import com.dony.api.payments.dto.PaymentResponse;
 import com.dony.api.payments.events.StripeOnboardingCompletedEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Charge;
+import com.stripe.model.Customer;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.PaymentMethod;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
+import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.PaymentIntentUpdateParams;
+import com.stripe.param.PaymentMethodListParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
@@ -43,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -355,7 +362,7 @@ public class PaymentService {
                     PaymentIntent pi = stripeGateway.retrievePaymentIntent(payment.getStripePaymentIntentId());
                     if ("requires_payment_method".equals(pi.getStatus())
                             || "requires_confirmation".equals(pi.getStatus())) {
-                        return toPaymentResponse(payment, pi.getClientSecret());
+                        return toPaymentResponse(payment, pi);
                     }
                     // PI déjà autorisé côté Stripe mais pas encore mis à jour en DB → conflict
                     throw new DonyBusinessException(HttpStatus.CONFLICT,
@@ -432,9 +439,14 @@ public class PaymentService {
 
             long commissionCents = commission.multiply(BigDecimal.valueOf(100)).longValue();
 
-            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+            // Customer attaché : rend les cartes réutilisables (DonyPaymentSheet).
+            // Sans effet sur l'escrow (separate charges & transfers inchangé).
+            String customerId = ensureStripeCustomer(sender);
+
+            PaymentIntentCreateParams.Builder paramsBuilder = PaymentIntentCreateParams.builder()
                     .setAmount(amountCents)
                     .setCurrency("eur")
+                    .setCustomer(customerId)
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     // Approche A : carte + Apple Pay + Google Pay (= "card") + PayPal,
                     // tous dans la PaymentSheet. on_behalf_of retiré : PayPal ne le
@@ -451,10 +463,15 @@ public class PaymentService {
                     .putMetadata("traveler_id", traveler.getId().toString())
                     .putMetadata("commission_eur", commission.toPlainString())
                     .putMetadata("commission_rate", rate.toPlainString())
-                    .putMetadata("commission_cents", String.valueOf(commissionCents))
-                    .build();
+                    .putMetadata("commission_cents", String.valueOf(commissionCents));
 
-            PaymentIntent pi = stripeGateway.createPaymentIntent(params);
+            // Défaut aligné sur le toggle « Enregistrer cette carte » (ON) de la sheet.
+            // Décochable ensuite via PATCH /payments/intents/{id}/save-payment-method.
+            if (!Boolean.FALSE.equals(request.getSavePaymentMethod())) {
+                paramsBuilder.setSetupFutureUsage(PaymentIntentCreateParams.SetupFutureUsage.OFF_SESSION);
+            }
+
+            PaymentIntent pi = stripeGateway.createPaymentIntent(paramsBuilder.build());
 
             PaymentEntity payment = new PaymentEntity();
             payment.setBidId(bidId);
@@ -470,7 +487,7 @@ public class PaymentService {
                             "piId", pi.getId()));
 
             log.info("PaymentIntent {} created for bid {} (sender={})", pi.getId(), bidId, sender.getId());
-            return toPaymentResponse(payment, pi.getClientSecret());
+            return toPaymentResponse(payment, pi);
 
         } catch (StripeException e) {
             if (isStripeAccountMissing(e)) {
@@ -486,6 +503,103 @@ public class PaymentService {
             throw new DonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "payment-creation-failed", "Payment Error",
                     "Impossible de créer le paiement. Veuillez réessayer.");
+        }
+    }
+
+    // ── Support DonyPaymentSheet : customer + cartes enregistrées ─────────────
+
+    /**
+     * Garantit un customer Stripe pour l'utilisateur (créé et persisté si absent).
+     * Même pattern que CashCommissionService#ensureStripeCustomer.
+     */
+    private String ensureStripeCustomer(UserEntity user) throws StripeException {
+        if (user.getStripeCustomerId() != null) {
+            return user.getStripeCustomerId();
+        }
+        Customer customer = stripeGateway.createCustomer(CustomerCreateParams.builder()
+                .setEmail(user.getEmail())
+                .putMetadata("dony_user_id", user.getId().toString())
+                .build());
+        user.setStripeCustomerId(customer.getId());
+        userRepository.save(user);
+        log.info("Stripe customer {} created for user {}", customer.getId(), user.getId());
+        return customer.getId();
+    }
+
+    /**
+     * Cartes enregistrées du customer de l'utilisateur courant.
+     * Jamais bloquant : pas de customer ou Stripe en erreur → liste vide.
+     */
+    @Transactional(readOnly = true)
+    public List<PaymentMethodResponse> listSavedPaymentMethods(String firebaseUid) {
+        UserEntity user = findUser(firebaseUid);
+        if (user.getStripeCustomerId() == null) {
+            return List.of();
+        }
+        try {
+            return PaymentMethod.list(PaymentMethodListParams.builder()
+                            .setCustomer(user.getStripeCustomerId())
+                            .setType(PaymentMethodListParams.Type.CARD)
+                            .build())
+                    .getData().stream()
+                    .map(pm -> new PaymentMethodResponse(
+                            pm.getId(),
+                            pm.getCard().getBrand(),
+                            pm.getCard().getLast4(),
+                            pm.getCard().getExpMonth().intValue(),
+                            pm.getCard().getExpYear().intValue()))
+                    .toList();
+        } catch (StripeException e) {
+            log.warn("Could not list payment methods for user {} (customer {})",
+                    user.getId(), user.getStripeCustomerId(), e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Met à jour le flag « enregistrer la carte » (setup_future_usage) sur un
+     * PaymentIntent non confirmé. Ownership vérifié via metadata sender_id.
+     */
+    public void updateSavePaymentMethod(String paymentIntentId, boolean save, String firebaseUid) {
+        UserEntity user = findUser(firebaseUid);
+
+        PaymentIntent pi;
+        try {
+            pi = PaymentIntent.retrieve(paymentIntentId);
+        } catch (StripeException e) {
+            throw new DonyBusinessException(HttpStatus.NOT_FOUND,
+                    "payment-intent-not-found", "Payment Intent Not Found",
+                    "Paiement introuvable");
+        }
+
+        String senderId = pi.getMetadata() == null ? null : pi.getMetadata().get("sender_id");
+        if (senderId == null || !senderId.equals(user.getId().toString())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "forbidden", "Forbidden", "Ce paiement ne vous appartient pas");
+        }
+
+        String status = pi.getStatus();
+        if (!"requires_payment_method".equals(status) && !"requires_confirmation".equals(status)) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT,
+                    "intent-not-editable", "Payment Intent Not Editable",
+                    "Le paiement est déjà confirmé, l'option d'enregistrement ne peut plus changer");
+        }
+
+        try {
+            PaymentIntentUpdateParams.Builder update = PaymentIntentUpdateParams.builder();
+            if (save) {
+                update.setSetupFutureUsage(PaymentIntentUpdateParams.SetupFutureUsage.OFF_SESSION);
+            } else {
+                // Chaîne vide = clear du champ côté API Stripe (le setter n'accepte pas null).
+                update.putExtraParam("setup_future_usage", "");
+            }
+            pi.update(update.build());
+        } catch (StripeException e) {
+            log.error("Failed to update setup_future_usage on {} for user {}",
+                    paymentIntentId, user.getId(), e);
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                    "stripe-update-failed", "Stripe Error",
+                    "Impossible de mettre à jour l'option d'enregistrement de la carte");
         }
     }
 
@@ -835,7 +949,7 @@ public class PaymentService {
                             ? paymentRepository.findByNegotiationThreadId(threadId)
                             : Optional.empty();
                 })
-                .map(payment -> toPaymentResponse(payment, null));
+                .map(payment -> toPaymentResponse(payment, (String) null));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -917,6 +1031,13 @@ public class PaymentService {
                 payment.getStatus().name(),
                 payment.getStripePaymentIntentId()
         );
+    }
+
+    /** Variante avec PaymentIntent : expose aussi payment_method_types (DonyPaymentSheet). */
+    private PaymentResponse toPaymentResponse(PaymentEntity payment, PaymentIntent pi) {
+        PaymentResponse response = toPaymentResponse(payment, pi.getClientSecret());
+        response.setPaymentMethodTypes(pi.getPaymentMethodTypes());
+        return response;
     }
 
     /**
@@ -1202,7 +1323,7 @@ public class PaymentService {
                     String piStatus = pi.getStatus();
                     if ("requires_payment_method".equals(piStatus)
                             || "requires_confirmation".equals(piStatus)) {
-                        return toPaymentResponse(payment, pi.getClientSecret()); // resume in-flight
+                        return toPaymentResponse(payment, pi); // resume in-flight
                     }
                     if (!"canceled".equals(piStatus)) {
                         // requires_capture / processing / succeeded → a live or used PI
@@ -1277,7 +1398,7 @@ public class PaymentService {
 
             log.info("PaymentIntent {} created for negotiation thread {} (sender={})",
                     pi.getId(), threadId, sender.getId());
-            return toPaymentResponse(payment, pi.getClientSecret());
+            return toPaymentResponse(payment, pi);
         } catch (StripeException e) {
             log.error("Stripe PaymentIntent creation failed for negotiation thread {}", threadId, e);
             throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,

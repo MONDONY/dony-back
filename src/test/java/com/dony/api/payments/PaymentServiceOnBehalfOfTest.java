@@ -99,6 +99,9 @@ class PaymentServiceOnBehalfOfTest {
         UserEntity u = new UserEntity();
         setId(u, senderId);
         u.setFirebaseUid("uid-sender");
+        // Customer déjà présent : évite le passage par Customer.create (statique réel).
+        // La création du customer est couverte par PaymentSheetSupportTest.
+        u.setStripeCustomerId("cus_existing");
         return u;
     }
 

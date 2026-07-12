@@ -25,5 +25,17 @@ public record BidCheckoutRequest(
         @Size(max = 30) String recipientPhone,
         @AssertTrue(message = "Le disclaimer doit être signé") Boolean disclaimerSigned,
         @Size(max = 4) List<String> photoKeys,
-        @Valid List<BidGridItemRequest> gridItems
-) {}
+        @Valid List<BidGridItemRequest> gridItems,
+        // null/true → carte réutilisable (setup_future_usage=off_session) ; false → non enregistrée.
+        // Modifiable ensuite via PATCH /payments/intents/{id}/save-payment-method.
+        Boolean savePaymentMethod
+) {
+    /** Constructeur historique (sans savePaymentMethod) — équivalent au défaut null. */
+    public BidCheckoutRequest(UUID announcementId, BigDecimal weightKg, BigDecimal declaredValueEur,
+                              String description, String contentCategory, String recipientName,
+                              String recipientPhone, Boolean disclaimerSigned, List<String> photoKeys,
+                              List<BidGridItemRequest> gridItems) {
+        this(announcementId, weightKg, declaredValueEur, description, contentCategory,
+                recipientName, recipientPhone, disclaimerSigned, photoKeys, gridItems, null);
+    }
+}
