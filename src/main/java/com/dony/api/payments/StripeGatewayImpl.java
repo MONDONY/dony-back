@@ -4,10 +4,12 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Customer;
+import com.stripe.model.EphemeralKey;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.EphemeralKeyCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.springframework.stereotype.Component;
 
@@ -52,5 +54,12 @@ public class StripeGatewayImpl implements StripeGateway {
     @Override
     public Customer createCustomer(CustomerCreateParams params) throws StripeException {
         return Customer.create(params);
+    }
+
+    @Override
+    public EphemeralKey createEphemeralKey(EphemeralKeyCreateParams params) throws StripeException {
+        // stripe-java exige que la version d'API du client mobile soit portée par les params
+        // (EphemeralKeyCreateParams.setStripeVersion) — pas par RequestOptions.
+        return EphemeralKey.create(params);
     }
 }

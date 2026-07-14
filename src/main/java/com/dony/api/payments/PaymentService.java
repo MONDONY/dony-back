@@ -20,6 +20,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
+import com.dony.api.payments.dto.EphemeralKeyResponse;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentMethodResponse;
 import com.dony.api.payments.dto.PaymentResponse;
@@ -29,6 +30,7 @@ import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Charge;
 import com.stripe.model.Customer;
+import com.stripe.model.EphemeralKey;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
@@ -36,6 +38,8 @@ import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.EphemeralKeyCreateParams;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentUpdateParams;
 import com.stripe.param.PaymentMethodListParams;
@@ -524,6 +528,32 @@ public class PaymentService {
         userRepository.save(user);
         log.info("Stripe customer {} created for user {}", customer.getId(), user.getId());
         return customer.getId();
+    }
+
+    /**
+     * Clé éphémère Stripe pour la PaymentSheet native (flutter_stripe) : lui permet de lire/gérer
+     * les cartes enregistrées du customer sans exposer la clé secrète Stripe au client. Doit être
+     * créée avec la version d'API exacte demandée par le SDK — sinon la sheet native rejette la clé.
+     */
+    public EphemeralKeyResponse createEphemeralKey(String firebaseUid, String stripeVersion) {
+        UserEntity user = findUser(firebaseUid);
+        try {
+            String customerId = ensureStripeCustomer(user);
+            // stripe-java exige la version d'API du client mobile sur les params eux-mêmes
+            // (EphemeralKeyCreateParams.setStripeVersion) — un override via RequestOptions
+            // est rejeté à l'exécution par EphemeralKey.create.
+            EphemeralKey key = stripeGateway.createEphemeralKey(
+                    EphemeralKeyCreateParams.builder()
+                            .setCustomer(customerId)
+                            .setStripeVersion(stripeVersion)
+                            .build());
+            return new EphemeralKeyResponse(key.getSecret(), customerId);
+        } catch (StripeException e) {
+            log.error("Failed to create Stripe ephemeral key for user {}", user.getId(), e);
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                    "ephemeral-key-creation-failed", "Stripe Error",
+                    "Impossible de préparer la fiche de paiement. Veuillez réessayer.");
+        }
     }
 
     /**
@@ -1325,13 +1355,23 @@ public class PaymentService {
                             || "requires_confirmation".equals(piStatus)) {
                         return toPaymentResponse(payment, pi); // resume in-flight
                     }
-                    if (!"canceled".equals(piStatus)) {
+                    if ("requires_action".equals(piStatus)) {
+                        // Abandoned 3DS/PayPal redirect: nothing was captured, but the PI
+                        // can no longer be resumed by a fresh PaymentSheet. Cancel it on
+                        // Stripe and recycle the row instead of blocking the sender with
+                        // a spurious "already completed" conflict.
+                        log.info("Canceling abandoned requires_action PaymentIntent {} for thread {}",
+                                pi.getId(), threadId);
+                        pi.cancel(PaymentIntentCancelParams.builder()
+                                .setCancellationReason(PaymentIntentCancelParams.CancellationReason.ABANDONED)
+                                .build());
+                    } else if (!"canceled".equals(piStatus)) {
                         // requires_capture / processing / succeeded → a live or used PI
                         throw new DonyBusinessException(HttpStatus.CONFLICT,
                                 "payment-already-completed", "Payment Already Completed",
                                 "Le paiement pour cette négociation a déjà été effectué");
                     }
-                    // canceled → stale (e.g. a rolled-back method switch); recycle below
+                    // canceled (or just-canceled requires_action) → stale; recycle below
                 } catch (StripeException e) {
                     log.warn("Could not retrieve existing PaymentIntent for thread {}, recycling row",
                             threadId);
@@ -1357,9 +1397,15 @@ public class PaymentService {
         try {
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
+            // Customer attaché (même règle que createEscrow) : sans lui, Stripe rejette
+            // un payment_method enregistré ("pm_... appartient au client cus_...") quand
+            // la PaymentSheet native paie la négociation avec une carte enregistrée.
+            String customerId = ensureStripeCustomer(sender);
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(b.grossCents())                        // gross, pas net
                     .setCurrency("eur")
+                    .setCustomer(customerId)
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     // Approche A : carte + wallets + PayPal dans la PaymentSheet.
                     // on_behalf_of retiré (PayPal ne le supporte pas).

@@ -25,6 +25,7 @@ import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.BeforeEach;
@@ -707,6 +708,7 @@ class PaymentServiceTest {
 
         // sender and traveler
         UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing"); // évite Customer.create (statique non mocké)
         UserEntity traveler = buildUser(travelerId, "uid-traveler");
         traveler.setStripeAccountId("acct_traveler");
         traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
@@ -764,6 +766,104 @@ class PaymentServiceTest {
     }
 
     @Test
+    void createNegotiationEscrow_attachesExistingSenderCustomer() throws Exception {
+        // Cartes enregistrées dans la PaymentSheet native : Stripe exige que le customer
+        // propriétaire du payment_method soit attaché au PaymentIntent. Sans lui, payer
+        // une négociation avec une carte enregistrée est rejeté par Stripe.
+        UUID threadId = UUID.randomUUID();
+
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_negotiation_123");
+            when(mockPi.getClientSecret()).thenReturn("pi_negotiation_123_secret");
+
+            java.util.concurrent.atomic.AtomicReference<PaymentIntentCreateParams> capturedParams =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class)))
+                    .thenAnswer(inv -> {
+                        capturedParams.set(inv.getArgument(0));
+                        return mockPi;
+                    });
+
+            service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
+
+            assertThat(capturedParams.get().getCustomer()).isEqualTo("cus_existing");
+            // Customer déjà existant → jamais recréé
+            verify(userRepository, never()).save(sender);
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_noSenderCustomer_createsAndPersistsCustomer() throws Exception {
+        UUID threadId = UUID.randomUUID();
+
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<com.stripe.model.Customer> custStatic =
+                     mockStatic(com.stripe.model.Customer.class)) {
+
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            com.stripe.model.Customer mockCustomer = mock(com.stripe.model.Customer.class);
+            when(mockCustomer.getId()).thenReturn("cus_created");
+            custStatic.when(() -> com.stripe.model.Customer.create(
+                            any(com.stripe.param.CustomerCreateParams.class)))
+                    .thenReturn(mockCustomer);
+
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_negotiation_123");
+            when(mockPi.getClientSecret()).thenReturn("pi_negotiation_123_secret");
+
+            java.util.concurrent.atomic.AtomicReference<PaymentIntentCreateParams> capturedParams =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class)))
+                    .thenAnswer(inv -> {
+                        capturedParams.set(inv.getArgument(0));
+                        return mockPi;
+                    });
+
+            service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
+
+            assertThat(capturedParams.get().getCustomer()).isEqualTo("cus_created");
+            assertThat(sender.getStripeCustomerId()).isEqualTo("cus_created");
+            verify(userRepository).save(sender);
+        }
+    }
+
+    @Test
     void createNegotiationEscrow_travelerNotOnboarded_throwsTravelerNotEligible() {
         UUID threadId = UUID.randomUUID();
 
@@ -808,6 +908,7 @@ class PaymentServiceTest {
     void createNegotiationEscrow_existingCanceledPayment_recyclesRowNot409() throws Exception {
         UUID threadId = UUID.randomUUID();
         UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing"); // évite Customer.create (statique non mocké)
         UserEntity traveler = buildUser(travelerId, "uid-traveler");
         traveler.setStripeAccountId("acct_traveler");
         traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
@@ -849,6 +950,7 @@ class PaymentServiceTest {
     void createNegotiationEscrow_existingPendingCanceledPi_recyclesRow() throws Exception {
         UUID threadId = UUID.randomUUID();
         UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing"); // évite Customer.create (statique non mocké)
         UserEntity traveler = buildUser(travelerId, "uid-traveler");
         traveler.setStripeAccountId("acct_traveler");
         traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
@@ -884,6 +986,54 @@ class PaymentServiceTest {
             service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
 
             assertThat(stale.getStripePaymentIntentId()).isEqualTo("pi_fresh2");
+            assertThat(stale.getStatus()).isEqualTo(PaymentStatus.PENDING);
+            verify(paymentRepository).save(stale);
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_existingPendingRequiresActionPi_cancelsAndRecycles() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing"); // évite Customer.create (statique non mocké)
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        PaymentEntity stale = new PaymentEntity();
+        setId(stale, UUID.randomUUID());
+        stale.setNegotiationThreadId(threadId);
+        stale.setStripePaymentIntentId("pi_stuck");
+        stale.setStatus(PaymentStatus.PENDING);
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.of(stale));
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            // The existing PENDING PaymentIntent is stuck in requires_action (abandoned
+            // 3DS/PayPal redirect) → it must be canceled on Stripe and the row recycled,
+            // never treated as an already-completed payment (409).
+            PaymentIntent stuckPi = mock(PaymentIntent.class);
+            when(stuckPi.getStatus()).thenReturn("requires_action");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_stuck")).thenReturn(stuckPi);
+
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent freshPi = mock(PaymentIntent.class);
+            when(freshPi.getId()).thenReturn("pi_fresh3");
+            when(freshPi.getClientSecret()).thenReturn("pi_fresh3_secret");
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(freshPi);
+
+            service.createNegotiationEscrow(threadId, senderId, travelerId, new BigDecimal("35.00"));
+
+            verify(stuckPi).cancel(any(PaymentIntentCancelParams.class));
+            assertThat(stale.getStripePaymentIntentId()).isEqualTo("pi_fresh3");
             assertThat(stale.getStatus()).isEqualTo(PaymentStatus.PENDING);
             verify(paymentRepository).save(stale);
         }
