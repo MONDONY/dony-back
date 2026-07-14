@@ -13,7 +13,7 @@ import java.util.UUID;
 public interface DisputeRepository extends JpaRepository<DisputeEntity, UUID> {
     Optional<DisputeEntity> findByBidId(UUID bidId);
 
-    List<DisputeEntity> findByTravelerIdOrderByCreatedAtDesc(UUID travelerId);
+    List<DisputeEntity> findBySenderIdOrTravelerIdOrderByCreatedAtDesc(UUID senderId, UUID travelerId);
 
     @Query("SELECT d FROM DisputeEntity d WHERE (:status IS NULL OR d.status = :status) ORDER BY d.createdAt DESC")
     Page<DisputeEntity> findAdminFiltered(@Param("status") String status, Pageable pageable);

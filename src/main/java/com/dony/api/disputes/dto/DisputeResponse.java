@@ -1,26 +1,33 @@
 package com.dony.api.disputes.dto;
 
-import com.dony.api.disputes.DisputeEntity;
-
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * Vue « Mes litiges » côté utilisateur. Le contexte colis (villes, date, poids,
+ * autre partie) est null si le bid ou l'annonce a été soft-deleted.
+ */
 public record DisputeResponse(
         UUID id,
         UUID bidId,
         String type,
         String status,
         boolean refundFrozen,
-        LocalDateTime createdAt
-) {
-    public static DisputeResponse from(DisputeEntity e) {
-        return new DisputeResponse(
-                e.getId(),
-                e.getBidId(),
-                e.getType(),
-                e.getStatus(),
-                e.isRefundFrozen(),
-                e.getCreatedAt()
-        );
-    }
-}
+        LocalDateTime createdAt,
+        String myRole,             // "SENDER" | "TRAVELER"
+        String otherPartyName,
+        String departureCity,
+        String arrivalCity,
+        String departureCountryCode,
+        String arrivalCountryCode,
+        LocalDate tripDate,
+        BigDecimal weightKg,
+        String resolutionType,
+        OffsetDateTime resolvedAt,
+        String resolutionNote,
+        Long guaranteeAmountCents,
+        boolean isBeneficiary
+) {}
