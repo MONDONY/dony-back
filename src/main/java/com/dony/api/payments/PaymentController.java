@@ -5,6 +5,8 @@ import com.dony.api.common.stripe.StripeWebhookIngestService;
 import com.dony.api.common.stripe.StripeWebhookSource;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
+import com.dony.api.payments.dto.EphemeralKeyRequest;
+import com.dony.api.payments.dto.EphemeralKeyResponse;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentMethodResponse;
 import com.dony.api.payments.dto.PaymentResponse;
@@ -96,6 +98,15 @@ public class PaymentController {
     @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
     public ResponseEntity<List<PaymentMethodResponse>> listMyPaymentMethods() {
         return ResponseEntity.ok(paymentService.listSavedPaymentMethods(requireFirebaseUid()));
+    }
+
+    // PaymentSheet native (flutter_stripe) — clé éphémère Stripe pour le customer courant
+    @PostMapping("/me/ephemeral-key")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
+    public ResponseEntity<EphemeralKeyResponse> createEphemeralKey(
+            @Valid @RequestBody EphemeralKeyRequest request) {
+        return ResponseEntity.ok(
+                paymentService.createEphemeralKey(requireFirebaseUid(), request.stripeVersion()));
     }
 
     // DonyPaymentSheet — toggle « enregistrer la carte » sur un PaymentIntent non confirmé

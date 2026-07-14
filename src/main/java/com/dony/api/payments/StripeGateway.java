@@ -4,10 +4,13 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Customer;
+import com.stripe.model.EphemeralKey;
 import com.stripe.model.PaymentIntent;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.EphemeralKeyCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 
 /**
@@ -31,4 +34,6 @@ public interface StripeGateway {
     PaymentIntent capturePaymentIntent(PaymentIntent paymentIntent) throws StripeException;
 
     Customer createCustomer(CustomerCreateParams params) throws StripeException;
+
+    EphemeralKey createEphemeralKey(EphemeralKeyCreateParams params, RequestOptions options) throws StripeException;
 }

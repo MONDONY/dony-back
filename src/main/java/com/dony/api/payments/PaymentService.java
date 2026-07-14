@@ -20,6 +20,7 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidCreatedEvent;
 import com.dony.api.payments.dto.ConnectAccountResponse;
 import com.dony.api.payments.dto.CreatePaymentRequest;
+import com.dony.api.payments.dto.EphemeralKeyResponse;
 import com.dony.api.payments.dto.OnboardingLinkResponse;
 import com.dony.api.payments.dto.PaymentMethodResponse;
 import com.dony.api.payments.dto.PaymentResponse;
@@ -29,13 +30,16 @@ import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
 import com.stripe.model.Charge;
 import com.stripe.model.Customer;
+import com.stripe.model.EphemeralKey;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.EphemeralKeyCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentUpdateParams;
 import com.stripe.param.PaymentMethodListParams;
@@ -524,6 +528,35 @@ public class PaymentService {
         userRepository.save(user);
         log.info("Stripe customer {} created for user {}", customer.getId(), user.getId());
         return customer.getId();
+    }
+
+    /**
+     * Clé éphémère Stripe pour la PaymentSheet native (flutter_stripe) : lui permet de lire/gérer
+     * les cartes enregistrées du customer sans exposer la clé secrète Stripe au client. Doit être
+     * créée avec la version d'API exacte demandée par le SDK — sinon la sheet native rejette la clé.
+     */
+    public EphemeralKeyResponse createEphemeralKey(String firebaseUid, String stripeVersion) {
+        UserEntity user = findUser(firebaseUid);
+        try {
+            String customerId = ensureStripeCustomer(user);
+            // setStripeVersionOverride n'existe pas en API publique stable côté RequestOptions ;
+            // le SDK expose volontairement une variante "unsafe" pour ce cas précis (Stripe-Version
+            // du header doit correspondre à celle envoyée par le SDK mobile flutter_stripe).
+            RequestOptions options = RequestOptions.RequestOptionsBuilder
+                    .unsafeSetStripeVersionOverride(RequestOptions.builder(), stripeVersion)
+                    .build();
+            EphemeralKey key = stripeGateway.createEphemeralKey(
+                    EphemeralKeyCreateParams.builder()
+                            .setCustomer(customerId)
+                            .build(),
+                    options);
+            return new EphemeralKeyResponse(key.getSecret(), customerId);
+        } catch (StripeException e) {
+            log.error("Failed to create Stripe ephemeral key for user {}", user.getId(), e);
+            throw new DonyBusinessException(HttpStatus.BAD_GATEWAY,
+                    "ephemeral-key-creation-failed", "Stripe Error",
+                    "Impossible de préparer la fiche de paiement. Veuillez réessayer.");
+        }
     }
 
     /**
