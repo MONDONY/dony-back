@@ -56,7 +56,10 @@ public class ConversationController {
         Page<ConversationEntity> page = conversationRepository
                 .findByParticipant(currentUser.getId(), pageable);
 
-        Page<ConversationResponse> responsePage = page.map(c -> conversationService.toResponse(c, currentUser.getId()));
+        java.util.Map<String, java.util.Map<String, Object>> meta = conversationService.fetchConversationMeta(
+                page.getContent().stream().map(ConversationEntity::getFirestoreConversationId).toList());
+
+        Page<ConversationResponse> responsePage = page.map(c -> conversationService.toResponse(c, currentUser.getId(), meta));
         return ResponseEntity.ok(PageResponse.from(responsePage));
     }
 
