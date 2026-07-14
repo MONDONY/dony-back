@@ -1,6 +1,7 @@
-# CVE-2026-22732: Spring Security - already patched in newer versions (6.5.9+)
-# This project will upgrade during regular maintenance
-CVE-2026-22732
+# CVE-2026-22732 (Spring Security) : corrigée par le bump spring-boot-starter-parent
+# 3.5.0 -> 3.5.16 (spring-security-core est désormais en 6.5.11, >= 6.5.9 requis).
+# Suppression retirée le 2026-07-14 (chore/security-dependency-bumps) car le correctif
+# est maintenant réellement appliqué, plus besoin de l'ignorer.
 
 # Stripe secret in application-dev.yml is a placeholder, not a real secret
 # Real secrets are injected via GitHub Secrets at runtime
