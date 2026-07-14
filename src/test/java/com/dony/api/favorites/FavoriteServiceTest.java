@@ -18,6 +18,7 @@ import com.dony.api.requests.service.PackageRequestSearchMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.*;
 
@@ -66,8 +67,8 @@ class FavoriteServiceTest {
     void addTrip_insertsWhenAbsent() {
         when(announcementRepository.findById(tripId))
                 .thenReturn(Optional.of(tripOwnedBy(UUID.randomUUID())));
-        when(favoriteRepository.findIncludingDeleted(eq(userId), eq("TRIP"), eq(tripId)))
-                .thenReturn(Optional.empty());
+        when(favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.TRIP, tripId))
+                .thenReturn(false);
 
         service.addFavorite(UID, FavoriteTargetType.TRIP, tripId);
 
@@ -78,32 +79,27 @@ class FavoriteServiceTest {
     void addTrip_idempotentWhenActiveExists() {
         when(announcementRepository.findById(tripId))
                 .thenReturn(Optional.of(tripOwnedBy(UUID.randomUUID())));
-        FavoriteEntity active = new FavoriteEntity(userId, FavoriteTargetType.TRIP, tripId);
-        // active row has deletedAt == null
-        when(favoriteRepository.findIncludingDeleted(eq(userId), eq("TRIP"), eq(tripId)))
-                .thenReturn(Optional.of(active));
+        when(favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.TRIP, tripId))
+                .thenReturn(true);
 
         service.addFavorite(UID, FavoriteTargetType.TRIP, tripId);
 
-        // already active -> no new save (save may only be called for the same existing object
-        // with no modification, but NOT for a brand-new entity)
-        verify(favoriteRepository, never()).save(argThat(f -> f != active));
+        verify(favoriteRepository, never()).save(any());
     }
 
     @Test
-    void addTrip_revivesSoftDeleted() {
+    void addTrip_raceOnInsert_isIdempotent() {
+        // Deux requêtes simultanées : l'exists() passe pour les deux, le second insert
+        // viole l'index unique — l'exception doit être avalée (toggle idempotent).
         when(announcementRepository.findById(tripId))
                 .thenReturn(Optional.of(tripOwnedBy(UUID.randomUUID())));
-        FavoriteEntity deleted = new FavoriteEntity(userId, FavoriteTargetType.TRIP, tripId);
-        deleted.softDelete(); // marks deletedAt != null
-        when(favoriteRepository.findIncludingDeleted(eq(userId), eq("TRIP"), eq(tripId)))
-                .thenReturn(Optional.of(deleted));
+        when(favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.TRIP, tripId))
+                .thenReturn(false);
+        when(favoriteRepository.save(any(FavoriteEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("ux_favorites_active"));
 
-        service.addFavorite(UID, FavoriteTargetType.TRIP, tripId);
-
-        // should revive and save
-        verify(favoriteRepository).save(deleted);
-        assertThat(deleted.getDeletedAt()).isNull();
+        assertThatCode(() -> service.addFavorite(UID, FavoriteTargetType.TRIP, tripId))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -131,8 +127,8 @@ class FavoriteServiceTest {
     void addPackageRequest_insertsWhenAbsent() {
         UUID reqId = UUID.randomUUID();
         when(packageRequestRepository.existsById(reqId)).thenReturn(true);
-        when(favoriteRepository.findIncludingDeleted(eq(userId), eq("PACKAGE_REQUEST"), eq(reqId)))
-                .thenReturn(Optional.empty());
+        when(favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.PACKAGE_REQUEST, reqId))
+                .thenReturn(false);
 
         service.addFavorite(UID, FavoriteTargetType.PACKAGE_REQUEST, reqId);
 
@@ -151,15 +147,15 @@ class FavoriteServiceTest {
     // --- removeFavorite tests ---
 
     @Test
-    void removeTrip_softDeletesActive() {
+    void removeTrip_hardDeletesRow() {
         FavoriteEntity active = new FavoriteEntity(userId, FavoriteTargetType.TRIP, tripId);
         when(favoriteRepository.findByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.TRIP, tripId))
                 .thenReturn(Optional.of(active));
 
         service.removeFavorite(UID, FavoriteTargetType.TRIP, tripId);
 
-        verify(favoriteRepository).save(active);
-        assertThat(active.getDeletedAt()).isNotNull();
+        verify(favoriteRepository).delete(active);
+        verify(favoriteRepository, never()).save(any());
     }
 
     @Test
@@ -169,6 +165,7 @@ class FavoriteServiceTest {
 
         service.removeFavorite(UID, FavoriteTargetType.TRIP, tripId);
 
+        verify(favoriteRepository, never()).delete(any());
         verify(favoriteRepository, never()).save(any());
     }
 

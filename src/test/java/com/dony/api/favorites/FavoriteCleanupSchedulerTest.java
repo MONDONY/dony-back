@@ -10,10 +10,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tous les jours à minuit : nettoie les favoris dont la cible (trajet ou
- * demande d'envoi) a atteint un état terminal — évite l'accumulation
- * indéfinie de lignes actives sur des cibles qui ne sont plus jamais
- * actionnables (cf. FavoriteRepositoryTest pour la requête elle-même).
+ * Tous les jours à minuit : supprime physiquement les favoris dont la cible
+ * (trajet ou demande d'envoi) a atteint un état terminal — évite l'accumulation
+ * indéfinie de lignes sur des cibles qui ne sont plus jamais actionnables
+ * (cf. FavoriteRepositoryTest pour la requête elle-même).
  */
 @ExtendWith(MockitoExtension.class)
 class FavoriteCleanupSchedulerTest {
@@ -23,23 +23,23 @@ class FavoriteCleanupSchedulerTest {
 
     @Test
     void purgeTerminalFavorites_delegatesToBothRepositoryQueries() {
-        when(favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements()).thenReturn(3);
-        when(favoriteRepository.softDeletePackageRequestFavoritesForTerminalRequests()).thenReturn(2);
+        when(favoriteRepository.deleteTripFavoritesForTerminalAnnouncements()).thenReturn(3);
+        when(favoriteRepository.deletePackageRequestFavoritesForTerminalRequests()).thenReturn(2);
 
         scheduler.purgeTerminalFavorites();
 
-        verify(favoriteRepository).softDeleteTripFavoritesForTerminalAnnouncements();
-        verify(favoriteRepository).softDeletePackageRequestFavoritesForTerminalRequests();
+        verify(favoriteRepository).deleteTripFavoritesForTerminalAnnouncements();
+        verify(favoriteRepository).deletePackageRequestFavoritesForTerminalRequests();
     }
 
     @Test
     void purgeTerminalFavorites_noneToClean_doesNotThrow() {
-        when(favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements()).thenReturn(0);
-        when(favoriteRepository.softDeletePackageRequestFavoritesForTerminalRequests()).thenReturn(0);
+        when(favoriteRepository.deleteTripFavoritesForTerminalAnnouncements()).thenReturn(0);
+        when(favoriteRepository.deletePackageRequestFavoritesForTerminalRequests()).thenReturn(0);
 
         scheduler.purgeTerminalFavorites();
 
-        verify(favoriteRepository).softDeleteTripFavoritesForTerminalAnnouncements();
-        verify(favoriteRepository).softDeletePackageRequestFavoritesForTerminalRequests();
+        verify(favoriteRepository).deleteTripFavoritesForTerminalAnnouncements();
+        verify(favoriteRepository).deletePackageRequestFavoritesForTerminalRequests();
     }
 }

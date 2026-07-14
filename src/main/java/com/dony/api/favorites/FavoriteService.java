@@ -13,13 +13,13 @@ import com.dony.api.requests.dto.PackageRequestSearchResponse;
 import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
 import com.dony.api.requests.service.PackageRequestSearchMapper;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,8 +49,10 @@ public class FavoriteService {
     }
 
     /**
-     * Toggle-add: inserts a new favorite, or revives a soft-deleted one.
-     * Idempotent if the row is already active.
+     * Toggle-add: inserts a new favorite if absent. Idempotent if the row already
+     * exists — including under a concurrent double-insert, where the unique index
+     * {@code ux_favorites_active} rejects the second insert and the resulting
+     * {@link DataIntegrityViolationException} is swallowed.
      *
      * @throws DonyNotFoundException   if the target does not exist
      * @throws DonyBusinessException   (422) if the caller owns the TRIP target
@@ -59,32 +61,23 @@ public class FavoriteService {
         UUID userId = resolveUserId(firebaseUid);
         validateTargetExistsAndNotOwned(userId, type, targetId);
 
-        Optional<FavoriteEntity> existing =
-                favoriteRepository.findIncludingDeleted(userId, type.name(), targetId);
-
-        if (existing.isPresent()) {
-            FavoriteEntity fav = existing.get();
-            if (fav.getDeletedAt() != null) {
-                fav.revive();
-                favoriteRepository.save(fav);
-            }
-            // already active -> idempotent, no-op
+        if (favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, type, targetId)) {
             return;
         }
-
-        favoriteRepository.save(new FavoriteEntity(userId, type, targetId));
+        try {
+            favoriteRepository.save(new FavoriteEntity(userId, type, targetId));
+        } catch (DataIntegrityViolationException e) {
+            // course entre deux ajouts simultanés : la ligne existe déjà -> no-op
+        }
     }
 
     /**
-     * Soft-deletes the active favorite row if present. No-op otherwise.
+     * Physically deletes the favorite row if present. No-op otherwise.
      */
     public void removeFavorite(String firebaseUid, FavoriteTargetType type, UUID targetId) {
         UUID userId = resolveUserId(firebaseUid);
         favoriteRepository.findByUserIdAndTargetTypeAndTargetId(userId, type, targetId)
-                .ifPresent(fav -> {
-                    fav.softDelete();
-                    favoriteRepository.save(fav);
-                });
+                .ifPresent(favoriteRepository::delete);
     }
 
     /**

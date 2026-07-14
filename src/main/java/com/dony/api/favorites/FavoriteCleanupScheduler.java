@@ -7,12 +7,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Tous les jours à minuit : soft-delete les favoris (TRIP et PACKAGE_REQUEST)
- * dont la cible a atteint un état terminal (COMPLETED/CANCELLED/EXPIRED selon
- * le type). Sans ce nettoyage, la table favorites accumule indéfiniment des
- * lignes actives sur des trajets/demandes qui ne sont plus jamais
- * actionnables — le filtrage à la lecture ({@code getFavoriteTrips}) masque le
- * symptôme mais ne nettoie rien en base.
+ * Tous les jours à minuit : supprime physiquement les favoris (TRIP et
+ * PACKAGE_REQUEST) dont la cible a atteint un état terminal
+ * (COMPLETED/CANCELLED/EXPIRED selon le type). Sans ce nettoyage, la table
+ * favorites accumule indéfiniment des lignes sur des trajets/demandes qui ne
+ * sont plus jamais actionnables — le filtrage à la lecture
+ * ({@code getFavoriteTrips}) masque le symptôme mais ne nettoie rien en base.
  */
 @Component
 public class FavoriteCleanupScheduler {
@@ -28,8 +28,8 @@ public class FavoriteCleanupScheduler {
     @Scheduled(cron = "0 0 0 * * *", zone = "UTC")
     @Transactional
     public void purgeTerminalFavorites() {
-        int trips = favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
-        int packageRequests = favoriteRepository.softDeletePackageRequestFavoritesForTerminalRequests();
+        int trips = favoriteRepository.deleteTripFavoritesForTerminalAnnouncements();
+        int packageRequests = favoriteRepository.deletePackageRequestFavoritesForTerminalRequests();
         if (trips > 0 || packageRequests > 0) {
             log.info("FavoriteCleanup: {} favoris trajet + {} favoris demande d'envoi nettoyés (cible terminale)",
                     trips, packageRequests);
