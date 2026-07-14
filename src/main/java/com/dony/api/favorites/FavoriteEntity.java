@@ -32,7 +32,4 @@ public class FavoriteEntity extends BaseEntity {
     public UUID getUserId() { return userId; }
     public FavoriteTargetType getTargetType() { return targetType; }
     public UUID getTargetId() { return targetId; }
-
-    /** Réactive une ligne précédemment soft-deleted. */
-    public void revive() { setDeletedAt(null); }
 }

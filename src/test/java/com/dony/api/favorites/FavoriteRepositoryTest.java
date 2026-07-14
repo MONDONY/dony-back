@@ -7,6 +7,8 @@ import com.dony.api.matching.TransportMode;
 import com.dony.api.requests.entity.PackageRequestEntity;
 import com.dony.api.requests.entity.PackageRequestStatus;
 import com.dony.api.requests.repository.PackageRequestRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,8 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Vérifie le nettoyage des favoris dont la cible (trajet ou demande d'envoi) a
- * atteint un état terminal : la ligne doit être soft-deleted, jamais laissée
- * active indéfiniment (cf. FavoriteCleanupScheduler).
+ * atteint un état terminal : la ligne doit être supprimée physiquement, jamais
+ * laissée en base (cf. FavoriteCleanupScheduler).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -34,6 +36,15 @@ class FavoriteRepositoryTest {
     @Autowired FavoriteRepository favoriteRepository;
     @Autowired AnnouncementRepository announcementRepository;
     @Autowired PackageRequestRepository packageRequestRepository;
+    @PersistenceContext EntityManager entityManager;
+
+    /** Compte les lignes en base sans passer par le @Where de l'entité. */
+    private long countRowsInTable(UUID targetId) {
+        return ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM favorites WHERE target_id = :tid")
+                .setParameter("tid", targetId)
+                .getSingleResult()).longValue();
+    }
 
     private AnnouncementEntity newAnnouncement(AnnouncementStatus status) {
         AnnouncementEntity a = new AnnouncementEntity();
@@ -72,8 +83,8 @@ class FavoriteRepositoryTest {
     }
 
     @Test
-    @DisplayName("softDeleteTripFavoritesForTerminalAnnouncements : COMPLETED/CANCELLED nettoyés, ACTIVE conservé")
-    void softDeleteTripFavorites_onlyTerminalAnnouncements() {
+    @DisplayName("deleteTripFavoritesForTerminalAnnouncements : COMPLETED/CANCELLED supprimés physiquement, ACTIVE conservé")
+    void deleteTripFavorites_onlyTerminalAnnouncements() {
         UUID userId = UUID.randomUUID();
         AnnouncementEntity completed = newAnnouncement(AnnouncementStatus.COMPLETED);
         AnnouncementEntity cancelled = newAnnouncement(AnnouncementStatus.CANCELLED);
@@ -83,24 +94,28 @@ class FavoriteRepositoryTest {
         favoriteRepository.saveAndFlush(new FavoriteEntity(userId, FavoriteTargetType.TRIP, cancelled.getId()));
         favoriteRepository.saveAndFlush(new FavoriteEntity(userId, FavoriteTargetType.TRIP, active.getId()));
 
-        int updated = favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
+        int deleted = favoriteRepository.deleteTripFavoritesForTerminalAnnouncements();
 
-        assertThat(updated).isEqualTo(2);
+        assertThat(deleted).isEqualTo(2);
         List<UUID> remaining = favoriteRepository.findTargetIds(userId, FavoriteTargetType.TRIP);
         assertThat(remaining).containsExactly(active.getId());
+        // suppression physique : plus aucune ligne en base, même hors @Where
+        assertThat(countRowsInTable(completed.getId())).isZero();
+        assertThat(countRowsInTable(cancelled.getId())).isZero();
+        assertThat(countRowsInTable(active.getId())).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("softDeleteTripFavoritesForTerminalAnnouncements : idempotent (rien à nettoyer → 0)")
-    void softDeleteTripFavorites_idempotent() {
-        favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
-        int secondRun = favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
+    @DisplayName("deleteTripFavoritesForTerminalAnnouncements : idempotent (rien à nettoyer → 0)")
+    void deleteTripFavorites_idempotent() {
+        favoriteRepository.deleteTripFavoritesForTerminalAnnouncements();
+        int secondRun = favoriteRepository.deleteTripFavoritesForTerminalAnnouncements();
         assertThat(secondRun).isEqualTo(0);
     }
 
     @Test
-    @DisplayName("softDeletePackageRequestFavoritesForTerminalRequests : COMPLETED/CANCELLED/EXPIRED nettoyés, OPEN conservé")
-    void softDeletePackageRequestFavorites_onlyTerminalRequests() {
+    @DisplayName("deletePackageRequestFavoritesForTerminalRequests : COMPLETED/CANCELLED/EXPIRED supprimés, OPEN conservé")
+    void deletePackageRequestFavorites_onlyTerminalRequests() {
         UUID userId = UUID.randomUUID();
         PackageRequestEntity completed = newPackageRequest(PackageRequestStatus.COMPLETED);
         PackageRequestEntity cancelled = newPackageRequest(PackageRequestStatus.CANCELLED);
@@ -112,25 +127,27 @@ class FavoriteRepositoryTest {
         favoriteRepository.saveAndFlush(new FavoriteEntity(userId, FavoriteTargetType.PACKAGE_REQUEST, expired.getId()));
         favoriteRepository.saveAndFlush(new FavoriteEntity(userId, FavoriteTargetType.PACKAGE_REQUEST, open.getId()));
 
-        int updated = favoriteRepository.softDeletePackageRequestFavoritesForTerminalRequests();
+        int deleted = favoriteRepository.deletePackageRequestFavoritesForTerminalRequests();
 
-        assertThat(updated).isEqualTo(3);
+        assertThat(deleted).isEqualTo(3);
         List<UUID> remaining = favoriteRepository.findTargetIds(userId, FavoriteTargetType.PACKAGE_REQUEST);
         assertThat(remaining).containsExactly(open.getId());
+        assertThat(countRowsInTable(completed.getId())).isZero();
+        assertThat(countRowsInTable(expired.getId())).isZero();
+        assertThat(countRowsInTable(open.getId())).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("un favori déjà soft-deleted n'est jamais recompté (idempotence stricte)")
-    void alreadyDeletedFavorite_notCountedAgain() {
+    @DisplayName("delete du repository = suppression physique (retrait manuel d'un favori)")
+    void deleteFavorite_removesRowPhysically() {
         UUID userId = UUID.randomUUID();
-        AnnouncementEntity completed = newAnnouncement(AnnouncementStatus.COMPLETED);
+        AnnouncementEntity active = newAnnouncement(AnnouncementStatus.ACTIVE);
         FavoriteEntity fav = favoriteRepository.saveAndFlush(
-                new FavoriteEntity(userId, FavoriteTargetType.TRIP, completed.getId()));
+                new FavoriteEntity(userId, FavoriteTargetType.TRIP, active.getId()));
 
-        int firstRun = favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
-        assertThat(firstRun).isEqualTo(1);
+        favoriteRepository.delete(fav);
+        favoriteRepository.flush();
 
-        int secondRun = favoriteRepository.softDeleteTripFavoritesForTerminalAnnouncements();
-        assertThat(secondRun).isEqualTo(0);
+        assertThat(countRowsInTable(active.getId())).isZero();
     }
 }
