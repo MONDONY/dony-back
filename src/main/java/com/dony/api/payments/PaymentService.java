@@ -1386,9 +1386,15 @@ public class PaymentService {
         try {
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
+            // Customer attaché (même règle que createEscrow) : sans lui, Stripe rejette
+            // un payment_method enregistré ("pm_... appartient au client cus_...") quand
+            // la PaymentSheet native paie la négociation avec une carte enregistrée.
+            String customerId = ensureStripeCustomer(sender);
+
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                     .setAmount(b.grossCents())                        // gross, pas net
                     .setCurrency("eur")
+                    .setCustomer(customerId)
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                     // Approche A : carte + wallets + PayPal dans la PaymentSheet.
                     // on_behalf_of retiré (PayPal ne le supporte pas).
