@@ -39,6 +39,7 @@ import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.EphemeralKeyCreateParams;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentUpdateParams;
 import com.stripe.param.PaymentMethodListParams;
@@ -1354,13 +1355,23 @@ public class PaymentService {
                             || "requires_confirmation".equals(piStatus)) {
                         return toPaymentResponse(payment, pi); // resume in-flight
                     }
-                    if (!"canceled".equals(piStatus)) {
+                    if ("requires_action".equals(piStatus)) {
+                        // Abandoned 3DS/PayPal redirect: nothing was captured, but the PI
+                        // can no longer be resumed by a fresh PaymentSheet. Cancel it on
+                        // Stripe and recycle the row instead of blocking the sender with
+                        // a spurious "already completed" conflict.
+                        log.info("Canceling abandoned requires_action PaymentIntent {} for thread {}",
+                                pi.getId(), threadId);
+                        pi.cancel(PaymentIntentCancelParams.builder()
+                                .setCancellationReason(PaymentIntentCancelParams.CancellationReason.ABANDONED)
+                                .build());
+                    } else if (!"canceled".equals(piStatus)) {
                         // requires_capture / processing / succeeded → a live or used PI
                         throw new DonyBusinessException(HttpStatus.CONFLICT,
                                 "payment-already-completed", "Payment Already Completed",
                                 "Le paiement pour cette négociation a déjà été effectué");
                     }
-                    // canceled → stale (e.g. a rolled-back method switch); recycle below
+                    // canceled (or just-canceled requires_action) → stale; recycle below
                 } catch (StripeException e) {
                     log.warn("Could not retrieve existing PaymentIntent for thread {}, recycling row",
                             threadId);
