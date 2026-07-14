@@ -11,7 +11,6 @@ import com.dony.api.payments.dto.EphemeralKeyResponse;
 import com.stripe.exception.ApiException;
 import com.stripe.model.Customer;
 import com.stripe.model.EphemeralKey;
-import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.EphemeralKeyCreateParams;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,17 +100,15 @@ class EphemeralKeyServiceTest {
 
         ArgumentCaptor<EphemeralKeyCreateParams> paramsCaptor =
                 ArgumentCaptor.forClass(EphemeralKeyCreateParams.class);
-        ArgumentCaptor<RequestOptions> optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
-        when(stripeGateway.createEphemeralKey(paramsCaptor.capture(), optionsCaptor.capture()))
-                .thenReturn(mockKey);
+        when(stripeGateway.createEphemeralKey(paramsCaptor.capture())).thenReturn(mockKey);
 
         EphemeralKeyResponse response = service.createEphemeralKey("uid-user", "2024-06-20");
 
         assertThat(response.ephemeralKeySecret()).isEqualTo("ek_test_secret");
         assertThat(response.customerId()).isEqualTo("cus_existing");
         assertThat(paramsCaptor.getValue().getCustomer()).isEqualTo("cus_existing");
-        assertThat(RequestOptions.unsafeGetStripeVersionOverride(optionsCaptor.getValue()))
-                .isEqualTo("2024-06-20");
+        // stripe-java exige la version d'API du client mobile sur les params (pas RequestOptions)
+        assertThat(paramsCaptor.getValue().getStripeVersion()).isEqualTo("2024-06-20");
         // Customer déjà existant → jamais recréé
         org.mockito.Mockito.verify(stripeGateway, org.mockito.Mockito.never())
                 .createCustomer(any(CustomerCreateParams.class));
@@ -130,13 +127,13 @@ class EphemeralKeyServiceTest {
         when(mockKey.getSecret()).thenReturn("ek_test_secret");
         ArgumentCaptor<EphemeralKeyCreateParams> paramsCaptor =
                 ArgumentCaptor.forClass(EphemeralKeyCreateParams.class);
-        when(stripeGateway.createEphemeralKey(paramsCaptor.capture(), any(RequestOptions.class)))
-                .thenReturn(mockKey);
+        when(stripeGateway.createEphemeralKey(paramsCaptor.capture())).thenReturn(mockKey);
 
         EphemeralKeyResponse response = service.createEphemeralKey("uid-user", "2024-06-20");
 
         assertThat(response.customerId()).isEqualTo("cus_created");
         assertThat(paramsCaptor.getValue().getCustomer()).isEqualTo("cus_created");
+        assertThat(paramsCaptor.getValue().getStripeVersion()).isEqualTo("2024-06-20");
         assertThat(user.getStripeCustomerId()).isEqualTo("cus_created");
         org.mockito.Mockito.verify(userRepository).save(user);
     }
@@ -145,7 +142,7 @@ class EphemeralKeyServiceTest {
     void createEphemeralKey_stripeError_throwsDonyBusinessException502() throws Exception {
         when(userRepository.findByFirebaseUid("uid-user"))
                 .thenReturn(Optional.of(buildUser("cus_existing")));
-        when(stripeGateway.createEphemeralKey(any(EphemeralKeyCreateParams.class), any(RequestOptions.class)))
+        when(stripeGateway.createEphemeralKey(any(EphemeralKeyCreateParams.class)))
                 .thenThrow(new ApiException("stripe down", null, null, 500, null));
 
         Throwable thrown = catchThrowable(() -> service.createEphemeralKey("uid-user", "2024-06-20"));

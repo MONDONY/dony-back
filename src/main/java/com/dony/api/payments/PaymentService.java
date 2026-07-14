@@ -34,7 +34,6 @@ import com.stripe.model.EphemeralKey;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
-import com.stripe.net.RequestOptions;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
@@ -539,17 +538,14 @@ public class PaymentService {
         UserEntity user = findUser(firebaseUid);
         try {
             String customerId = ensureStripeCustomer(user);
-            // setStripeVersionOverride n'existe pas en API publique stable côté RequestOptions ;
-            // le SDK expose volontairement une variante "unsafe" pour ce cas précis (Stripe-Version
-            // du header doit correspondre à celle envoyée par le SDK mobile flutter_stripe).
-            RequestOptions options = RequestOptions.RequestOptionsBuilder
-                    .unsafeSetStripeVersionOverride(RequestOptions.builder(), stripeVersion)
-                    .build();
+            // stripe-java exige la version d'API du client mobile sur les params eux-mêmes
+            // (EphemeralKeyCreateParams.setStripeVersion) — un override via RequestOptions
+            // est rejeté à l'exécution par EphemeralKey.create.
             EphemeralKey key = stripeGateway.createEphemeralKey(
                     EphemeralKeyCreateParams.builder()
                             .setCustomer(customerId)
-                            .build(),
-                    options);
+                            .setStripeVersion(stripeVersion)
+                            .build());
             return new EphemeralKeyResponse(key.getSecret(), customerId);
         } catch (StripeException e) {
             log.error("Failed to create Stripe ephemeral key for user {}", user.getId(), e);
