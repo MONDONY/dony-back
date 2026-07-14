@@ -15,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -100,6 +102,69 @@ class ConversationServiceTest {
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(pendingBid));
         var pending = service.toResponse(conv, senderId);
         assertThat(pending.otherParticipant().phone()).isNull();
+    }
+
+    @Test
+    void toResponse_mergesFirestoreLastMessage_whenMetaPresent() {
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        when(firestoreService.getConversationMeta(List.of("conv_" + bidId))).thenReturn(Map.of(
+                "conv_" + bidId, Map.of(
+                        "lastMessagePreview", "À demain !",
+                        "lastMessageAt", "2026-07-14T17:03:56.739Z")));
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.lastMessagePreview()).isEqualTo("À demain !");
+        assertThat(response.lastMessageAt())
+                .isEqualTo(java.time.LocalDateTime.of(2026, 7, 14, 17, 3, 56, 739_000_000));
+    }
+
+    @Test
+    void toResponse_fallsBackToUpdatedAt_whenFirestoreMetaAbsent() {
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        when(firestoreService.getConversationMeta(List.of("conv_" + bidId))).thenReturn(Map.of());
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.lastMessagePreview()).isNull();
+        assertThat(response.lastMessageAt()).isEqualTo(conv.getUpdatedAt());
+    }
+
+    @Test
+    void toResponse_fallsBackToUpdatedAt_whenLastMessageAtMalformed() {
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        when(firestoreService.getConversationMeta(List.of("conv_" + bidId))).thenReturn(Map.of(
+                "conv_" + bidId, Map.of("lastMessageAt", "not-a-timestamp")));
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.lastMessageAt()).isEqualTo(conv.getUpdatedAt());
+    }
+
+    @Test
+    void toResponse_batchOverload_usesProvidedMap_withoutExtraFirestoreCall() {
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        Map<String, Map<String, Object>> meta = Map.of(
+                "conv_" + bidId, Map.of("lastMessagePreview", "Merci beaucoup"));
+
+        var response = service.toResponse(conv, senderId, meta);
+
+        assertThat(response.lastMessagePreview()).isEqualTo("Merci beaucoup");
+        verifyNoInteractions(firestoreService);
+    }
+
+    @Test
+    void fetchConversationMeta_delegatesToFirestoreService() {
+        List<String> ids = List.of("conv_a", "conv_b");
+        when(firestoreService.getConversationMeta(ids)).thenReturn(Map.of());
+
+        service.fetchConversationMeta(ids);
+
+        verify(firestoreService).getConversationMeta(ids);
     }
 
     private BidEntity mockBid(BidStatus status) {

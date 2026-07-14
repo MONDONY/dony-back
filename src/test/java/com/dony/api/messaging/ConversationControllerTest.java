@@ -27,12 +27,15 @@ import org.springframework.web.server.ResponseStatusException;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -114,7 +117,8 @@ class ConversationControllerTest {
                 null, null, null, null, null, false, false);
 
         when(conversationRepository.findByParticipant(currentUserId, pageable)).thenReturn(page);
-        when(conversationService.toResponse(eq(conversation), eq(currentUserId))).thenReturn(fakeResponse);
+        when(conversationService.fetchConversationMeta(anyList())).thenReturn(Map.of());
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap())).thenReturn(fakeResponse);
 
         ResponseEntity<PageResponse<ConversationResponse>> response =
                 controller.listConversations(pageable);
@@ -123,6 +127,27 @@ class ConversationControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().content()).hasSize(1);
         assertThat(response.getBody().totalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void listConversations_batchFetchesFirestoreMeta_forAllFirestoreIds() {
+        Pageable pageable = PageRequest.of(0, 20);
+        PageImpl<ConversationEntity> page = new PageImpl<>(List.of(conversation));
+        ConversationResponse fakeResponse = new ConversationResponse(
+                conversationId, conversation.getBidId(),
+                conversation.getFirestoreConversationId(),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, null, null, false),
+                null, LocalDateTime.now(), false,
+                null, null, null, null, null, false, false);
+
+        when(conversationRepository.findByParticipant(currentUserId, pageable)).thenReturn(page);
+        when(conversationService.fetchConversationMeta(List.of(conversation.getFirestoreConversationId())))
+                .thenReturn(Map.of());
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap())).thenReturn(fakeResponse);
+
+        controller.listConversations(pageable);
+
+        verify(conversationService).fetchConversationMeta(List.of(conversation.getFirestoreConversationId()));
     }
 
     // -------------------------------------------------------------------------

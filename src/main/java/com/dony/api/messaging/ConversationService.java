@@ -211,10 +211,13 @@ public class ConversationService {
     }
 
     public List<ConversationResponse> getArchivedConversations(UUID userId) {
-        return conversationRepository
+        List<ConversationEntity> archived = conversationRepository
             .findArchivedByParticipant(userId, Pageable.unpaged())
-            .stream()
-            .map(c -> toResponse(c, userId))
+            .getContent();
+        Map<String, Map<String, Object>> meta = fetchConversationMeta(
+            archived.stream().map(ConversationEntity::getFirestoreConversationId).toList());
+        return archived.stream()
+            .map(c -> toResponse(c, userId, meta))
             .toList();
     }
 
@@ -222,10 +225,35 @@ public class ConversationService {
         firestoreService.updateLastMessage(firestoreConversationId, preview, Instant.now().toString());
     }
 
+    /**
+     * Batch-fetch Firestore lastMessageAt/lastMessagePreview pour une liste de
+     * conversations (un seul getAll) — à utiliser avant un {@code page.map(...)}
+     * pour éviter un aller-retour Firestore par conversation.
+     */
+    public Map<String, Map<String, Object>> fetchConversationMeta(List<String> firestoreConversationIds) {
+        return firestoreService.getConversationMeta(firestoreConversationIds);
+    }
+
     private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
             BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
 
+    /** Convenience : fait son propre aller-retour Firestore pour une conversation seule. */
     public ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId) {
+        Map<String, Object> meta = firestoreService
+            .getConversationMeta(List.of(conv.getFirestoreConversationId()))
+            .get(conv.getFirestoreConversationId());
+        return buildResponse(conv, currentUserId, meta);
+    }
+
+    /** Variante batch : réutilise une map déjà chargée (cf. {@link #fetchConversationMeta}). */
+    public ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId,
+                                            Map<String, Map<String, Object>> metaByFirestoreId) {
+        Map<String, Object> meta = metaByFirestoreId.get(conv.getFirestoreConversationId());
+        return buildResponse(conv, currentUserId, meta);
+    }
+
+    private ConversationResponse buildResponse(ConversationEntity conv, UUID currentUserId,
+                                                Map<String, Object> meta) {
         UUID otherUserId = conv.getSenderId().equals(currentUserId)
             ? conv.getTravelerId()
             : conv.getSenderId();
@@ -259,13 +287,15 @@ public class ConversationService {
 
         ParticipantDTO otherParticipant = buildParticipant(otherUserId, other, revealPhone, role);
 
+        String lastMessagePreview = meta != null ? (String) meta.get("lastMessagePreview") : null;
+
         return new ConversationResponse(
             conv.getId(),
             conv.getBidId(),
             conv.getFirestoreConversationId(),
             otherParticipant,
-            null,   // lastMessagePreview — lives in Firestore
-            conv.getUpdatedAt(),
+            lastMessagePreview,
+            parseLastMessageAt(meta, conv.getUpdatedAt()),
             false,  // hasUnread — determined client-side via Firestore
             tripOrigin,
             tripDestination,
@@ -275,6 +305,29 @@ public class ConversationService {
             conv.isReadOnlyFor(currentUserId),
             conv.isDeletedByUser(currentUserId)
         );
+    }
+
+    /**
+     * lastMessageAt vit dans Firestore (Instant ISO-8601, ex. "2026-07-14T17:03:56.739Z").
+     * Retombe sur updated_at Postgres si Firestore est désactivé, la conversation
+     * n'a jamais reçu de message, ou le champ est absent/mal formé.
+     */
+    private static java.time.LocalDateTime parseLastMessageAt(Map<String, Object> meta,
+                                                               java.time.LocalDateTime fallback) {
+        if (meta == null) {
+            return fallback;
+        }
+        Object raw = meta.get("lastMessageAt");
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return java.time.Instant.parse(raw.toString())
+                .atZone(java.time.ZoneOffset.UTC)
+                .toLocalDateTime();
+        } catch (Exception e) {
+            return fallback;
+        }
     }
 
     private ParticipantDTO buildParticipant(UUID userId, UserEntity user, boolean revealPhone, String role) {
