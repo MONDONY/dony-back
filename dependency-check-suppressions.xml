@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+    <!-- 2026-07-14 — Faux positif CPE documenté chez l'éditeur de l'outil : log4j-api est
+         régulièrement rattaché à cpe:2.3:a:apache:log4j, le CPE des CVE de log4j-core
+         (RCE JNDI Log4Shell et dérivés). log4j-api ne contient aucun appender/lookup et
+         nous n'avons log4j-core nulle part dans l'arbre de dépendances — seul
+         spring-boot-starter-logging -> log4j-to-slf4j -> log4j-api est présent, et cette
+         version est celle pinée par le BOM Spring Boot 3.5.16 lui-même.
+         Refs : https://github.com/dependency-check/DependencyCheck/issues/8228
+                https://github.com/jeremylong/DependencyCheck/issues/2619 -->
+    <suppress>
+        <notes><![CDATA[
+            Faux positif CPE : log4j-api confondu avec log4j-core. Aucun log4j-core dans
+            l'arbre. Version pinée par spring-boot-dependencies:3.5.16.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j-api@.*$</packageUrl>
+        <cpe>cpe:2.3:a:apache:log4j:*:*:*:*:*:*:*:*</cpe>
+    </suppress>
+
+    <!-- 2026-07-14 — httpcore (classic org.apache.httpcomponents:httpcore, PAS httpcore5)
+         est déjà à la DERNIÈRE version publiée de cette branche legacy : 4.4.16
+         (confirmé via maven-metadata.xml, <release>4.4.16</release>, aucune 4.4.17+).
+         Ce module est en fin de vie, remplacé par httpcore5 (déjà mis à jour en 5.3.6 via
+         le bump du parent Spring Boot). Il est tiré transitivement par com.twilio.sdk:twilio
+         (org.apache.httpcomponents:httpclient:4.5.13), qui n'a pas encore migré vers
+         httpclient5. Pas de correctif possible sans remplacer le SDK Twilio. -->
+    <suppress>
+        <notes><![CDATA[
+            Pas de correctif disponible : 4.4.16 est la dernière version publiée de la
+            branche classic httpcore (EOL, remplacée par httpcore5). Tiré transitivement
+            par com.twilio.sdk:twilio:10.6.5 (httpclient 4.5.13). Réévaluer si Twilio migre
+            vers httpclient5.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.httpcomponents/httpcore@4\.4\.16$</packageUrl>
+    </suppress>
+
+    <!-- 2026-07-14 — Artefacts OpenTelemetry -alpha/-incubator tirés transitivement par
+         firebase-admin -> google-cloud-storage/firestore (export de métriques GCP), jamais
+         activés côté dony (pas de javaagent OpenTelemetry, pas d'auto-instrumentation JDBC).
+         La seule CVE OpenTelemetry Java récente identifiée à cette date (CVE-2026-54704,
+         CVSS 6.5 — fuite de mot de passe via l'auto-instrumentation JDBC du javaagent,
+         corrigée en 2.28.0) ne s'applique pas : nous n'utilisons ni le javaagent, ni son
+         instrumentation JDBC. Le dictionnaire CPE de dependency-check ne référence pas
+         proprement les artefacts -alpha/-incubator, d'où de fréquents faux rattachements. -->
+    <suppress>
+        <notes><![CDATA[
+            Tiré transitivement par firebase-admin (export métriques GCP), javaagent
+            OpenTelemetry non utilisé. CVE-2026-54704 (CVSS 6.5, instrumentation JDBC du
+            javaagent) non applicable. Faux positifs CPE fréquents sur les artefacts
+            -alpha/-incubator.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/io\.opentelemetry(\.(contrib|instrumentation|semconv))?/opentelemetry-.*@.*-(alpha|incubator)$</packageUrl>
+    </suppress>
+
+</suppressions>
