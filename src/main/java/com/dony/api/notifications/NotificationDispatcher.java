@@ -2,6 +2,7 @@ package com.dony.api.notifications;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.events.UserSuspendedEvent;
+import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.events.AnnouncementInProgressEvent;
@@ -120,6 +121,18 @@ public class NotificationDispatcher {
             notifyUser(senderId, "Trajet annulé",
                     "Le voyageur a annulé son trajet. Remboursement en cours.",
                     Map.of("type", "TRIP_CANCELLED"));
+        }
+    }
+
+    @EventListener @Async
+    public void onDeliveryNoShowReported(DeliveryNoShowReportedEvent event) {
+        Map<String, String> data = Map.of("type", "DELIVERY_NOSHOW_REPORTED", "bidId", event.getBidId().toString());
+        if (event.isReportedByTraveler()) {
+            notifyUser(event.getSenderId(), "Absence signalée à la livraison",
+                    "Le voyageur signale que votre destinataire ne s'est pas présenté", data);
+        } else {
+            notifyUser(event.getTravelerId(), "Absence signalée à la livraison",
+                    "L'expéditeur signale que vous n'avez pas livré le colis", data);
         }
     }
 
