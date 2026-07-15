@@ -88,6 +88,67 @@ class CancellationRepositoryScopeTest {
         assertThat(expiredHandover).isEmpty();
     }
 
+    @Test
+    void existsByBidIdAndNoShowStatusIn_legacyMethod_ignoresDeliveryScopeRows() {
+        BidEntity bid = persistBid();
+
+        // Ce cancellation DELIVERY matcherait le statut recherché si le filtre
+        // scope='HANDOVER' du @Query legacy était absent ou mal appliqué.
+        CancellationEntity delivery = new CancellationEntity();
+        delivery.setBidId(bid.getId());
+        delivery.setCancelledBy(bid.getSenderId());
+        delivery.setReason("RECIPIENT_NO_SHOW");
+        delivery.setScope(CancellationScope.DELIVERY);
+        delivery.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        cancellationRepository.save(delivery);
+
+        assertThat(cancellationRepository.existsByBidIdAndNoShowStatusIn(
+                bid.getId(), List.of(CancellationStatus.PENDING_CONFIRMATION))).isFalse();
+
+        // Preuve positive que la méthode fonctionne bien quand la ligne est HANDOVER.
+        CancellationEntity handover = new CancellationEntity();
+        handover.setBidId(bid.getId());
+        handover.setCancelledBy(bid.getSenderId());
+        handover.setReason("SENDER_NO_SHOW");
+        handover.setScope(CancellationScope.HANDOVER);
+        handover.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        cancellationRepository.save(handover);
+
+        assertThat(cancellationRepository.existsByBidIdAndNoShowStatusIn(
+                bid.getId(), List.of(CancellationStatus.PENDING_CONFIRMATION))).isTrue();
+    }
+
+    @Test
+    void findExpiredPending_legacyMethod_ignoresDeliveryScopeRows() {
+        BidEntity bid = persistBid();
+
+        // Deadline expirée + statut PENDING_CONFIRMATION : matcherait
+        // findExpiredPending() si le filtre scope='HANDOVER' n'était pas
+        // appliqué par le @Query legacy.
+        CancellationEntity delivery = new CancellationEntity();
+        delivery.setBidId(bid.getId());
+        delivery.setCancelledBy(bid.getSenderId());
+        delivery.setReason("RECIPIENT_NO_SHOW");
+        delivery.setScope(CancellationScope.DELIVERY);
+        delivery.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        delivery.setContestationDeadline(OffsetDateTime.now().minusHours(1));
+        cancellationRepository.save(delivery);
+
+        assertThat(cancellationRepository.findExpiredPending(OffsetDateTime.now())).isEmpty();
+
+        // Preuve positive que la méthode fonctionne bien quand la ligne est HANDOVER.
+        CancellationEntity handover = new CancellationEntity();
+        handover.setBidId(bid.getId());
+        handover.setCancelledBy(bid.getSenderId());
+        handover.setReason("SENDER_NO_SHOW");
+        handover.setScope(CancellationScope.HANDOVER);
+        handover.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        handover.setContestationDeadline(OffsetDateTime.now().minusHours(1));
+        cancellationRepository.save(handover);
+
+        assertThat(cancellationRepository.findExpiredPending(OffsetDateTime.now())).hasSize(1);
+    }
+
     private BidEntity persistBid() {
         // createdAt/updatedAt sont auto-renseignés par BaseEntity#onCreate
         // (@PrePersist) — BaseEntity n'expose pas de setter public pour ces
