@@ -90,6 +90,30 @@ public class CancellationController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/bids/{bidId}/report-delivery-noshow")
+    @PreAuthorize("hasRole('TRAVELER')")
+    public ResponseEntity<Void> reportDeliveryNoShow(@PathVariable UUID bidId) {
+        UUID travelerId = resolveUserId();
+        cancellationService.reportDeliveryNoShow(bidId, travelerId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/bids/{bidId}/report-traveler-delivery-noshow")
+    @PreAuthorize("hasRole('SENDER')")
+    public ResponseEntity<Void> reportTravelerDeliveryNoShow(@PathVariable UUID bidId) {
+        UUID senderId = resolveUserId();
+        cancellationService.reportTravelerDeliveryNoShow(bidId, senderId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/bids/{bidId}/contest-delivery-noshow")
+    @PreAuthorize("hasAnyRole('SENDER', 'TRAVELER')")
+    public ResponseEntity<Void> contestDeliveryNoShow(@PathVariable UUID bidId) {
+        UUID callerId = resolveUserId();
+        cancellationService.contestDeliveryNoShow(bidId, callerId);
+        return ResponseEntity.ok().build();
+    }
+
     // Le voyageur confirme le retour du colis (annulation après remise) en saisissant
     // le code de retour détenu par l'expéditeur.
     @PostMapping("/bids/{bidId}/confirm-return")
