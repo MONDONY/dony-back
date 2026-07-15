@@ -8,6 +8,7 @@ import com.dony.api.admin.dto.AdminResolveDisputeRequest;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
@@ -30,6 +31,7 @@ import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -104,6 +106,7 @@ public class AdminDisputesController {
         entity.setResolutionNote(request.note());
         entity.setResolvedAt(OffsetDateTime.now(ZoneOffset.UTC));
         disputeRepo.save(entity);
+        resolveLinkedCancellation(entity);
 
         auditService.log("DISPUTE", entity.getId(), "RESOLVE", null,
                 Map.of("resolution", Objects.toString(request.resolution(), ""),
@@ -132,6 +135,7 @@ public class AdminDisputesController {
         entity.setBeneficiaryUserId(request.beneficiaryUserId());
         entity.setGuaranteeAmountCents((long) request.amountCents());
         disputeRepo.save(entity);
+        resolveLinkedCancellation(entity);
 
         auditService.log("DISPUTE", entity.getId(), "GUARANTEE_FUND", null,
                 Map.of("amountCents", request.amountCents(),
@@ -145,6 +149,25 @@ public class AdminDisputesController {
                 .filter(u -> u.getId() != null)
                 .collect(Collectors.toMap(UserEntity::getId, Function.identity(), (a, b) -> a));
         return ResponseEntity.ok(toDisputeDetail(entity, gfUsers));
+    }
+
+    /** À la résolution d'un litige, transitionne l'annulation liée (si encore
+     *  active) vers un statut terminal RESOLVED — sans quoi la bannière app
+     *  reste bloquée sur PENDING_CONFIRMATION/CONTESTED indéfiniment. Le
+     *  scope (HANDOVER/DELIVERY) est déduit du type de litige. */
+    private void resolveLinkedCancellation(DisputeEntity entity) {
+        if (entity.getBidId() == null) return;
+        boolean isHandover = "SENDER_NO_SHOW_CONTESTED".equals(entity.getType());
+        Optional<CancellationEntity> cancellation = isHandover
+                ? cancellationRepo.findByBidId(entity.getBidId())
+                : cancellationRepo.findByBidIdAndScope(entity.getBidId(), CancellationScope.DELIVERY);
+        cancellation.ifPresent(c -> {
+            if (c.getNoShowStatus() == CancellationStatus.PENDING_CONFIRMATION
+                    || c.getNoShowStatus() == CancellationStatus.CONTESTED) {
+                c.setNoShowStatus(CancellationStatus.RESOLVED);
+                cancellationRepo.save(c);
+            }
+        });
     }
 
     // -------------------------------------------------------------------------

@@ -126,6 +126,89 @@ class AdminDisputesControllerTest {
                 () -> controller().resolveDispute(id, new AdminResolveDisputeRequest("res", "note")));
     }
 
+    @Test
+    void resolveDispute_senderNoShowContested_transitionsLinkedHandoverCancellationToResolved() {
+        UUID id = UUID.randomUUID();
+        UUID bidId = UUID.randomUUID();
+        DisputeEntity entity = new DisputeEntity();
+        entity.setStatus("OPEN");
+        entity.setBidId(bidId);
+        entity.setType("SENDER_NO_SHOW_CONTESTED");
+        when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(disputeRepo.save(entity)).thenReturn(entity);
+
+        CancellationEntity cancellation = new CancellationEntity();
+        cancellation.setNoShowStatus(CancellationStatus.CONTESTED);
+        when(cancellationRepo.findByBidId(bidId)).thenReturn(Optional.of(cancellation));
+
+        controller().resolveDispute(id, new AdminResolveDisputeRequest("REFUND_SENDER", "note"));
+
+        assertThat(cancellation.getNoShowStatus()).isEqualTo(CancellationStatus.RESOLVED);
+        verify(cancellationRepo).save(cancellation);
+        verify(cancellationRepo, never()).findByBidIdAndScope(any(), any());
+    }
+
+    @Test
+    void resolveDispute_recipientNoShowContested_transitionsLinkedDeliveryCancellationToResolved() {
+        UUID id = UUID.randomUUID();
+        UUID bidId = UUID.randomUUID();
+        DisputeEntity entity = new DisputeEntity();
+        entity.setStatus("OPEN");
+        entity.setBidId(bidId);
+        entity.setType("RECIPIENT_NO_SHOW_CONTESTED");
+        when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(disputeRepo.save(entity)).thenReturn(entity);
+
+        CancellationEntity cancellation = new CancellationEntity();
+        cancellation.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        when(cancellationRepo.findByBidIdAndScope(bidId, com.dony.api.cancellation.CancellationScope.DELIVERY))
+                .thenReturn(Optional.of(cancellation));
+
+        controller().resolveDispute(id, new AdminResolveDisputeRequest("REFUND_SENDER", "note"));
+
+        assertThat(cancellation.getNoShowStatus()).isEqualTo(CancellationStatus.RESOLVED);
+        verify(cancellationRepo).save(cancellation);
+        verify(cancellationRepo, never()).findByBidId(any());
+    }
+
+    @Test
+    void resolveDispute_noLinkedCancellation_doesNotThrowOrSave() {
+        UUID id = UUID.randomUUID();
+        UUID bidId = UUID.randomUUID();
+        DisputeEntity entity = new DisputeEntity();
+        entity.setStatus("OPEN");
+        entity.setBidId(bidId);
+        entity.setType("SENDER_NO_SHOW_CONTESTED");
+        when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(disputeRepo.save(entity)).thenReturn(entity);
+        when(cancellationRepo.findByBidId(bidId)).thenReturn(Optional.empty());
+
+        controller().resolveDispute(id, new AdminResolveDisputeRequest("REFUND_SENDER", "note"));
+
+        verify(cancellationRepo, never()).save(any());
+    }
+
+    @Test
+    void resolveDispute_cancellationAlreadyConfirmed_leftUntouched() {
+        UUID id = UUID.randomUUID();
+        UUID bidId = UUID.randomUUID();
+        DisputeEntity entity = new DisputeEntity();
+        entity.setStatus("OPEN");
+        entity.setBidId(bidId);
+        entity.setType("SENDER_NO_SHOW_CONTESTED");
+        when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(disputeRepo.save(entity)).thenReturn(entity);
+
+        CancellationEntity cancellation = new CancellationEntity();
+        cancellation.setNoShowStatus(CancellationStatus.CONFIRMED);
+        when(cancellationRepo.findByBidId(bidId)).thenReturn(Optional.of(cancellation));
+
+        controller().resolveDispute(id, new AdminResolveDisputeRequest("REFUND_SENDER", "note"));
+
+        assertThat(cancellation.getNoShowStatus()).isEqualTo(CancellationStatus.CONFIRMED);
+        verify(cancellationRepo, never()).save(any());
+    }
+
     // ---- payGuaranteeFund ----
 
     @Test
@@ -147,6 +230,30 @@ class AdminDisputesControllerTest {
         assertThat(entity.getResolvedAt()).isNotNull();
         verify(disputeRepo).save(entity);
         verify(auditService).log(eq("DISPUTE"), eq(entity.getId()), eq("GUARANTEE_FUND"), isNull(), any());
+    }
+
+    @Test
+    void payGuaranteeFund_transitionsLinkedCancellationToResolved() {
+        UUID id = UUID.randomUUID();
+        UUID bidId = UUID.randomUUID();
+        UUID beneficiary = UUID.randomUUID();
+        DisputeEntity entity = new DisputeEntity();
+        entity.setStatus("OPEN");
+        entity.setBidId(bidId);
+        entity.setType("TRAVELER_DELIVERY_NO_SHOW_CONTESTED");
+        when(disputeRepo.findById(id)).thenReturn(Optional.of(entity));
+        when(disputeRepo.save(entity)).thenReturn(entity);
+
+        CancellationEntity cancellation = new CancellationEntity();
+        cancellation.setNoShowStatus(CancellationStatus.CONTESTED);
+        when(cancellationRepo.findByBidIdAndScope(bidId, com.dony.api.cancellation.CancellationScope.DELIVERY))
+                .thenReturn(Optional.of(cancellation));
+
+        controller().payGuaranteeFund(id,
+                new AdminGuaranteeFundRequest(5000, beneficiary, "paiement fonds de garantie"));
+
+        assertThat(cancellation.getNoShowStatus()).isEqualTo(CancellationStatus.RESOLVED);
+        verify(cancellationRepo).save(cancellation);
     }
 
     @Test
