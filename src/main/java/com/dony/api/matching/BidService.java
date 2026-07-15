@@ -20,6 +20,7 @@ import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -913,6 +914,19 @@ public class BidService {
                 ? cancellation.getContestationDeadline()
                 : null;
 
+        var deliveryCancellation = cancellationRepository
+                .findByBidIdAndScope(bid.getId(), CancellationScope.DELIVERY)
+                .orElse(null);
+        String deliveryNoShowStatus = deliveryCancellation != null
+                ? deliveryCancellation.getNoShowStatus().name()
+                : null;
+        java.time.OffsetDateTime deliveryContestationDeadline = deliveryCancellation != null
+                ? deliveryCancellation.getContestationDeadline()
+                : null;
+        Boolean deliveryNoShowReportedByTraveler = deliveryCancellation != null
+                ? "RECIPIENT_NO_SHOW".equals(deliveryCancellation.getReason())
+                : null;
+
         // Compute total net: sum of grid items + KG part (for display in Flutter)
         java.math.BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
                 .map(i -> i.getUnitPriceNetSnapshot().multiply(java.math.BigDecimal.valueOf(i.getQuantity())))
@@ -1003,6 +1017,9 @@ public class BidService {
                 bid.getConfirmationCodeRefreshWindowStart(),
                 cancellationNoShowStatus,
                 contestationDeadline,
+                deliveryNoShowStatus,
+                deliveryContestationDeadline,
+                deliveryNoShowReportedByTraveler,
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
                 bid.getPricingMode(),
                 totalNetAmountEur,

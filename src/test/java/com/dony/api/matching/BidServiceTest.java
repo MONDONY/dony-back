@@ -13,6 +13,7 @@ import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.cancellation.CancellationStatus;
 import com.dony.api.ratings.RatingRepository;
 import com.dony.api.matching.events.BidCreatedEvent;
@@ -1895,6 +1896,56 @@ class BidServiceTest {
 
             assertThat(resp.cancellationNoShowStatus()).isNull();
             assertThat(resp.contestationDeadline()).isNull();
+        }
+
+        @Test
+        @DisplayName("delivery cancellation présente (signalée par le voyageur) → champs delivery no-show renseignés")
+        void getBidResponse_exposesDeliveryNoShowStatusWhenPresent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.IN_TRANSIT);
+
+            CancellationEntity delivery = new CancellationEntity();
+            delivery.setScope(CancellationScope.DELIVERY);
+            delivery.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            OffsetDateTime deadline = OffsetDateTime.now().plusHours(24);
+            delivery.setContestationDeadline(deadline);
+            delivery.setReason("RECIPIENT_NO_SHOW"); // signalé par le voyageur
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
+                    .thenReturn(Optional.of(delivery));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.deliveryNoShowStatus()).isEqualTo("PENDING_CONFIRMATION");
+            assertThat(resp.deliveryNoShowContestationDeadline()).isEqualTo(deadline);
+            assertThat(resp.deliveryNoShowReportedByTraveler()).isTrue();
+        }
+
+        @Test
+        @DisplayName("pas de delivery cancellation → champs delivery no-show null")
+        void getBidResponse_deliveryNoShowStatusNullWhenNoDeliveryCancellation() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
+                    .thenReturn(Optional.empty());
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.deliveryNoShowStatus()).isNull();
+            assertThat(resp.deliveryNoShowContestationDeadline()).isNull();
+            assertThat(resp.deliveryNoShowReportedByTraveler()).isNull();
         }
 
         @Test
