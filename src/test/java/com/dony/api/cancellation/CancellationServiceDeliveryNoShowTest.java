@@ -2,6 +2,7 @@ package com.dony.api.cancellation;
 
 import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.DonyBusinessException;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -78,7 +80,9 @@ class CancellationServiceDeliveryNoShowTest {
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
 
         assertThatThrownBy(() -> service.reportDeliveryNoShow(BID_ID, TRAVELER_ID))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(HttpStatus.CONFLICT));
     }
 
     @Test
@@ -88,7 +92,9 @@ class CancellationServiceDeliveryNoShowTest {
                 .thenReturn(Optional.of(announcement(java.time.LocalDate.now().plusDays(1))));
 
         assertThatThrownBy(() -> service.reportDeliveryNoShow(BID_ID, TRAVELER_ID))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(HttpStatus.CONFLICT));
     }
 
     @Test
@@ -102,7 +108,9 @@ class CancellationServiceDeliveryNoShowTest {
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.reportDeliveryNoShow(BID_ID, TRAVELER_ID))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(HttpStatus.CONFLICT));
     }
 
     @Test
@@ -168,7 +176,9 @@ class CancellationServiceDeliveryNoShowTest {
                 .thenReturn(Optional.of(c));
 
         assertThatThrownBy(() -> service.contestDeliveryNoShow(BID_ID, SENDER_ID))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
+                        .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
     }
 
     @Test

@@ -373,18 +373,22 @@ public class CancellationService {
      *  sert notamment à vérifier que l'appelant est bien le voyageur assigné). */
     private AnnouncementEntity assertDeliveryReportable(BidEntity bid) {
         if (bid.getStatus() != BidStatus.IN_TRANSIT) {
-            throw new IllegalStateException("Le bid doit être en statut IN_TRANSIT.");
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "bid-not-in-transit", "Invalid Status",
+                    "Le bid doit être en statut IN_TRANSIT.");
         }
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "announcement-not-found", "Not Found", "Annonce introuvable"));
         if (announcement.getDepartureDate() == null
                 || !announcement.getDepartureDate().isBefore(LocalDate.now().plusDays(1))) {
-            throw new IllegalStateException("Le trajet n'est pas encore parti.");
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "trip-not-departed", "Invalid Status",
+                    "Le trajet n'est pas encore parti.");
         }
         if (cancellationRepository.existsByBidIdAndScopeAndNoShowStatusIn(bid.getId(), CancellationScope.DELIVERY,
                 List.of(CancellationStatus.PENDING_CONFIRMATION, CancellationStatus.CONTESTED))) {
-            throw new IllegalStateException("Un signalement d'absence à la livraison est déjà en cours pour ce bid.");
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "delivery-noshow-in-progress",
+                    "Already In Progress",
+                    "Un signalement d'absence à la livraison est déjà en cours pour ce bid.");
         }
         return announcement;
     }
@@ -401,7 +405,8 @@ public class CancellationService {
                         "Aucun signalement d'absence à la livraison pour ce bid"));
         if (c.getContestationDeadline() == null
                 || OffsetDateTime.now().isAfter(c.getContestationDeadline())) {
-            throw new IllegalStateException("Le délai de contestation est dépassé.");
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "contestation-deadline-passed",
+                    "Contestation Deadline Passed", "Le délai de contestation est dépassé.");
         }
 
         BidEntity bid = bidRepository.findById(bidId).orElseThrow();
