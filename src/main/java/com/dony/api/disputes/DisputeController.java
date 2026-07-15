@@ -28,12 +28,12 @@ public class DisputeController {
         this.userRepository = userRepository;
     }
 
-    // GET /disputes/me — litiges en lecture seule où l'utilisateur courant est le voyageur
+    // GET /disputes/me — litiges en lecture seule où l'utilisateur courant est partie
     @GetMapping("/me")
-    @PreAuthorize("hasRole('TRAVELER')")
+    @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
     public ResponseEntity<List<DisputeResponse>> getMyDisputes() {
-        UUID travelerId = resolveUserId();
-        return ResponseEntity.ok(disputeService.getDisputesForTraveler(travelerId));
+        UUID userId = resolveUserId();
+        return ResponseEntity.ok(disputeService.getDisputesForUser(userId));
     }
 
     private UUID resolveUserId() {

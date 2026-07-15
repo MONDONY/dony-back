@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,24 +42,37 @@ class DisputeControllerTest {
                 uid, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
     }
 
+    private static DisputeResponse sample() {
+        return new DisputeResponse(UUID.randomUUID(), UUID.randomUUID(),
+                "SENDER_NO_SHOW_CONTESTED", "OPEN", true, LocalDateTime.now(),
+                "SENDER", "Awa K.", "Lyon", "Abidjan", "FR", "CI",
+                java.time.LocalDate.of(2026, 6, 20), new java.math.BigDecimal("5.00"),
+                null, null, null, null, false);
+    }
+
     @Test
-    void getMyDisputes_returnsTravelerDisputes() throws Exception {
+    void getMyDisputes_okForTraveler() throws Exception {
         UserEntity user = new UserEntity();
         ReflectionTestUtils.setField(user, "id", TRAVELER_ID);
         when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(user));
-        when(disputeService.getDisputesForTraveler(TRAVELER_ID)).thenReturn(List.of(
-                new DisputeResponse(UUID.randomUUID(), UUID.randomUUID(),
-                        "SENDER_NO_SHOW_CONTESTED", "OPEN", true, LocalDateTime.now())));
+        when(disputeService.getDisputesForUser(TRAVELER_ID)).thenReturn(List.of(sample()));
 
         mockMvc.perform(get("/disputes/me").with(authentication(asRole(TRAVELER_UID, "TRAVELER"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("OPEN"))
-                .andExpect(jsonPath("$[0].type").value("SENDER_NO_SHOW_CONTESTED"));
+                .andExpect(jsonPath("$[0].myRole").value("SENDER"))
+                .andExpect(jsonPath("$[0].departureCity").value("Lyon"))
+                .andExpect(jsonPath("$[0].isBeneficiary").value(false));
     }
 
     @Test
-    void getMyDisputes_forbiddenForSender() throws Exception {
+    void getMyDisputes_okForSender() throws Exception {
+        UserEntity user = new UserEntity();
+        ReflectionTestUtils.setField(user, "id", TRAVELER_ID);
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
+        when(disputeService.getDisputesForUser(TRAVELER_ID)).thenReturn(List.of());
+
         mockMvc.perform(get("/disputes/me").with(authentication(asRole("uid-sender", "SENDER"))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
     }
 }
