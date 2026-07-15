@@ -313,7 +313,11 @@ public class CancellationService {
         BidEntity bid = bidRepository.findById(bidId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
-        assertDeliveryReportable(bid);
+        AnnouncementEntity announcement = assertDeliveryReportable(bid);
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas le voyageur de ce bid.");
+        }
 
         CancellationEntity c = new CancellationEntity();
         c.setBidId(bidId);
@@ -343,11 +347,7 @@ public class CancellationService {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
                     "Vous n'êtes pas l'expéditeur de ce bid.");
         }
-        assertDeliveryReportable(bid);
-
-        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
-                .orElseThrow(() -> new DonyBusinessException(
-                        HttpStatus.NOT_FOUND, "announcement-not-found", "Not Found", "Annonce introuvable"));
+        AnnouncementEntity announcement = assertDeliveryReportable(bid);
 
         CancellationEntity c = new CancellationEntity();
         c.setBidId(bidId);
@@ -368,8 +368,10 @@ public class CancellationService {
     }
 
     /** Garde commune aux deux signalements de livraison : bid IN_TRANSIT, trajet déjà
-     *  parti, aucun signalement DELIVERY déjà en cours ou contesté sur ce bid. */
-    private void assertDeliveryReportable(BidEntity bid) {
+     *  parti, aucun signalement DELIVERY déjà en cours ou contesté sur ce bid.
+     *  Retourne l'annonce chargée pour éviter un second fetch chez l'appelant (D8 :
+     *  sert notamment à vérifier que l'appelant est bien le voyageur assigné). */
+    private AnnouncementEntity assertDeliveryReportable(BidEntity bid) {
         if (bid.getStatus() != BidStatus.IN_TRANSIT) {
             throw new IllegalStateException("Le bid doit être en statut IN_TRANSIT.");
         }
@@ -384,6 +386,7 @@ public class CancellationService {
                 List.of(CancellationStatus.PENDING_CONFIRMATION, CancellationStatus.CONTESTED))) {
             throw new IllegalStateException("Un signalement d'absence à la livraison est déjà en cours pour ce bid.");
         }
+        return announcement;
     }
 
     /** La partie adverse à celle qui a signalé conteste, avant la deadline.
@@ -403,6 +406,18 @@ public class CancellationService {
 
         BidEntity bid = bidRepository.findById(bidId).orElseThrow();
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElseThrow();
+
+        if (REASON_RECIPIENT_NO_SHOW.equals(c.getReason())) {
+            if (!bid.getSenderId().equals(callerId)) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                        "Vous n'êtes pas l'expéditeur de ce bid.");
+            }
+        } else {
+            if (!announcement.getTravelerId().equals(callerId)) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                        "Vous n'êtes pas le voyageur de ce bid.");
+            }
+        }
 
         c.setNoShowStatus(CancellationStatus.CONTESTED);
         cancellationRepository.save(c);

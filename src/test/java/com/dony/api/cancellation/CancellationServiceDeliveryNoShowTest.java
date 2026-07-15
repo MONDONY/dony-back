@@ -123,6 +123,16 @@ class CancellationServiceDeliveryNoShowTest {
     }
 
     @Test
+    void reportDeliveryNoShow_forbiddenIfNotAssignedTraveler() {
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(inTransitBid(null)));
+        when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                .thenReturn(Optional.of(announcement(java.time.LocalDate.now().minusDays(1))));
+
+        assertThatThrownBy(() -> service.reportDeliveryNoShow(BID_ID, UUID.randomUUID()))
+                .isInstanceOf(com.dony.api.common.DonyBusinessException.class);
+    }
+
+    @Test
     void reportTravelerDeliveryNoShow_forbiddenIfNotSenderOfBid() {
         BidEntity bid = inTransitBid(null);
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
@@ -200,5 +210,39 @@ class CancellationServiceDeliveryNoShowTest {
         assertThat(c.getNoShowStatus()).isEqualTo(CancellationStatus.CONTESTED);
         verify(eventPublisher).publishEvent(argThat((DisputeOpenedEvent e) ->
                 "TRAVELER_DELIVERY_NO_SHOW_CONTESTED".equals(e.getType())));
+    }
+
+    @Test
+    void contestDeliveryNoShow_forbiddenIfCallerNotSenderForRecipientNoShow() {
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(BID_ID);
+        c.setScope(CancellationScope.DELIVERY);
+        c.setReason("RECIPIENT_NO_SHOW");
+        c.setContestationDeadline(OffsetDateTime.now().plusHours(1));
+        when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
+                .thenReturn(Optional.of(c));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(inTransitBid(null)));
+        when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                .thenReturn(Optional.of(announcement(java.time.LocalDate.now().minusDays(1))));
+
+        assertThatThrownBy(() -> service.contestDeliveryNoShow(BID_ID, UUID.randomUUID()))
+                .isInstanceOf(com.dony.api.common.DonyBusinessException.class);
+    }
+
+    @Test
+    void contestDeliveryNoShow_forbiddenIfCallerNotTravelerForTravelerDeliveryNoShow() {
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(BID_ID);
+        c.setScope(CancellationScope.DELIVERY);
+        c.setReason("TRAVELER_DELIVERY_NO_SHOW");
+        c.setContestationDeadline(OffsetDateTime.now().plusHours(1));
+        when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
+                .thenReturn(Optional.of(c));
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(inTransitBid(null)));
+        when(announcementRepository.findById(ANNOUNCEMENT_ID))
+                .thenReturn(Optional.of(announcement(java.time.LocalDate.now().minusDays(1))));
+
+        assertThatThrownBy(() -> service.contestDeliveryNoShow(BID_ID, UUID.randomUUID()))
+                .isInstanceOf(com.dony.api.common.DonyBusinessException.class);
     }
 }
