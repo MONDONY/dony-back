@@ -9,7 +9,7 @@ public class CreatePaymentRequest {
     @NotNull(message = "bidId est obligatoire")
     private UUID bidId;
 
-    private BigDecimal totalNetEur;  // si fourni, nouvelle formule NET×1.12; sinon ancien calcul GROSS
+    private BigDecimal totalNetEur;  // si fourni, formule NET×(1+taux dony.commission.rate); sinon ancien calcul GROSS
 
     // null/true → setup_future_usage=off_session (carte réutilisable) ; false → non enregistrée
     private Boolean savePaymentMethod;

@@ -393,7 +393,7 @@ public class PaymentService {
             throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
-        // Nouvelle formule NET×1.12 si totalNetEur fourni, sinon calcul GROSS legacy
+        // Formule NET×(1+taux dony.commission.rate) si totalNetEur fourni, sinon calcul GROSS legacy
         BigDecimal totalNet;
         if (request.getTotalNetEur() != null) {
             totalNet = request.getTotalNetEur().setScale(2, RoundingMode.HALF_UP);

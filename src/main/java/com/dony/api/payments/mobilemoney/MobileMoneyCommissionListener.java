@@ -13,7 +13,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Prélève la commission Dony (12 %) après confirmation du paiement Mobile Money.
+ * Prélève la commission Dony (taux configuré via {@code dony.commission.rate}) après confirmation du paiement Mobile Money.
  *
  * Logique : wallet prioritaire → carte en fallback automatique (chargeCommissionAuto).
  * Si ni wallet ni carte → commission FAILED (créance), le trajet n'est PAS annulé
