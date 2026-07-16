@@ -106,7 +106,7 @@ logging:
 # Dony business config
 dony:
   commission:
-    rate: 0.12
+    rate: 0.05
     minimum-amount: 1.00
     no-show-contestation-hours: 24
   cash-commission:

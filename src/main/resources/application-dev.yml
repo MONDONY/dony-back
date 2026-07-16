@@ -85,7 +85,7 @@ dony:
     # Actif uniquement hors prod ET depuis la loopback (voir FirebaseTokenFilter).
     bypass-token: ${DONY_DEV_BYPASS_TOKEN:dev-super-admin}
   commission:
-    rate: 0.12
+    rate: 0.05
 
 logging:
   level:

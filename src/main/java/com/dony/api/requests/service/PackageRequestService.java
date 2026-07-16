@@ -98,7 +98,7 @@ public class PackageRequestService {
      *   <li>Transport mode is always {@code PLANE} (avion-only).</li>
      *   <li>{@link ParcelSize} is derived from {@code weightKg} via
      *       {@link ParcelSize#fromWeightKg}.</li>
-     *   <li>The caller supplies a <em>gross</em> budget (including the 12 % commission).
+     *   <li>The caller supplies a <em>gross</em> budget (including the commission, rate from {@code dony.commission.rate}).
      *       We store the <em>net</em> price: {@code net = gross / (1 + rate)}.</li>
      *   <li>If {@code !negotiable}, a budget is mandatory (HTTP 422 otherwise).</li>
      * </ul>
