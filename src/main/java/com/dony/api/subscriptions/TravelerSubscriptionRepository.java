@@ -31,6 +31,7 @@ public interface TravelerSubscriptionRepository extends JpaRepository<TravelerSu
                  NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
                  'Voyageur'
                )                                                AS traveler_name,
+               u.avatar_url                                     AS avatar_url,
                u.is_pro_account                                 AS is_pro,
                u.average_rating                                 AS average_rating,
                (SELECT COUNT(*) FROM announcements a

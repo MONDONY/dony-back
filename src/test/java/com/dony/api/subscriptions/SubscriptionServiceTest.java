@@ -25,6 +25,7 @@ class SubscriptionServiceTest {
 
     @Mock TravelerSubscriptionRepository repo;
     @Mock UserRepository userRepository;
+    @Mock com.dony.api.common.StorageService storageService;
     @InjectMocks SubscriptionService service;
 
     final String uid = "firebase-uid";
@@ -136,8 +137,9 @@ class SubscriptionServiceTest {
     @Test
     void getMySubscriptions_mapsProjection() {
         when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(sender));
+        when(storageService.avatarUrl("avatars/ibrahima.jpg")).thenReturn("https://cdn.dony.app/signed/ibrahima.jpg");
         Object[] row = new Object[]{
-            travelerId, "Ibrahima D", true, new java.math.BigDecimal("4.8"), 2L,
+            travelerId, "Ibrahima D", "avatars/ibrahima.jpg", true, new java.math.BigDecimal("4.8"), 2L,
             false, true, UUID.randomUUID(), "Paris", "Dakar",
             new java.math.BigDecimal("8.00"), java.sql.Timestamp.valueOf(java.time.LocalDateTime.now())
         };
@@ -147,8 +149,25 @@ class SubscriptionServiceTest {
 
         assertThat(list).hasSize(1);
         assertThat(list.get(0).travelerName()).isEqualTo("Ibrahima D");
+        assertThat(list.get(0).avatarUrl()).isEqualTo("https://cdn.dony.app/signed/ibrahima.jpg");
         assertThat(list.get(0).ongoingTripsCount()).isEqualTo(2L);
         assertThat(list.get(0).lastAnnouncement().arrivalCity()).isEqualTo("Dakar");
+    }
+
+    @Test
+    void getMySubscriptions_nullAvatarKey_mapsToNullUrl() {
+        when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.of(sender));
+        when(storageService.avatarUrl(null)).thenReturn(null);
+        Object[] row = new Object[]{
+            travelerId, "Karim", null, false, new java.math.BigDecimal("4.5"), 0L,
+            false, false, null, null, null, null, null
+        };
+        when(repo.findEnrichedBySenderId(senderId)).thenReturn(List.<Object[]>of(row));
+
+        var list = service.getMySubscriptions(uid);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).avatarUrl()).isNull();
     }
 
     @Test
