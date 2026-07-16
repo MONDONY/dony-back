@@ -17,7 +17,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,12 +78,13 @@ class DeliveryNoShowUncontestedSchedulerTest {
         bid.setSenderId(senderId);
         UUID annId = UUID.randomUUID();
         bid.setAnnouncementId(annId);
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findAllById(List.of(bidId))).thenReturn(List.of(bid));
 
         AnnouncementEntity ann = new AnnouncementEntity();
+        ReflectionTestUtils.setField(ann, "id", annId);
         UUID travelerId = UUID.randomUUID();
         ann.setTravelerId(travelerId);
-        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(announcementRepository.findAllById(List.of(annId))).thenReturn(List.of(ann));
 
         scheduler.run();
 
@@ -119,12 +119,13 @@ class DeliveryNoShowUncontestedSchedulerTest {
         bid.setSenderId(senderId);
         UUID annId = UUID.randomUUID();
         bid.setAnnouncementId(annId);
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(bidRepository.findAllById(List.of(bidId))).thenReturn(List.of(bid));
 
         AnnouncementEntity ann = new AnnouncementEntity();
+        ReflectionTestUtils.setField(ann, "id", annId);
         UUID travelerId = UUID.randomUUID();
         ann.setTravelerId(travelerId);
-        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        when(announcementRepository.findAllById(List.of(annId))).thenReturn(List.of(ann));
 
         scheduler.run();
 
@@ -150,7 +151,7 @@ class DeliveryNoShowUncontestedSchedulerTest {
         CancellationEntity c = pendingDelivery(bidId, "RECIPIENT_NO_SHOW");
         when(cancellationRepository.findExpiredPendingByScope(eq(CancellationScope.DELIVERY), any()))
                 .thenReturn(List.of(c));
-        when(bidRepository.findById(bidId)).thenReturn(Optional.empty());
+        when(bidRepository.findAllById(List.of(bidId))).thenReturn(List.of());
 
         scheduler.run();
 
@@ -170,8 +171,8 @@ class DeliveryNoShowUncontestedSchedulerTest {
         bid.setSenderId(UUID.randomUUID());
         UUID annId = UUID.randomUUID();
         bid.setAnnouncementId(annId);
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-        when(announcementRepository.findById(annId)).thenReturn(Optional.empty());
+        when(bidRepository.findAllById(List.of(bidId))).thenReturn(List.of(bid));
+        when(announcementRepository.findAllById(List.of(annId))).thenReturn(List.of());
 
         scheduler.run();
 

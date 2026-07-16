@@ -16,19 +16,25 @@ public interface CancellationRepository extends JpaRepository<CancellationEntity
     long countByCancelledBy(UUID userId);
 
     // ── Scope HANDOVER implicite — préserve le comportement et les signatures
-    // existantes (aucun appelant, production ou test, n'a besoin de changer). ──
+    // existantes (aucun appelant, production ou test, n'a besoin de changer).
+    // Déléguées aux versions scope-aware ci-dessous pour éviter la duplication
+    // de JPQL (même filtre, même tri — HANDOVER en dur). ──
 
-    @Query("SELECT c FROM CancellationEntity c WHERE c.bidId = :bidId AND c.scope = 'HANDOVER'")
-    Optional<CancellationEntity> findByBidId(@Param("bidId") UUID bidId);
+    default Optional<CancellationEntity> findByBidId(UUID bidId) {
+        return findByBidIdAndScope(bidId, CancellationScope.HANDOVER);
+    }
 
-    @Query("SELECT COUNT(c) > 0 FROM CancellationEntity c WHERE c.bidId = :bidId " +
-           "AND c.scope = 'HANDOVER' AND c.noShowStatus IN :statuses")
-    boolean existsByBidIdAndNoShowStatusIn(@Param("bidId") UUID bidId,
-                                           @Param("statuses") List<CancellationStatus> statuses);
+    default boolean existsByBidIdAndNoShowStatusIn(UUID bidId, List<CancellationStatus> statuses) {
+        return existsByBidIdAndScopeAndNoShowStatusIn(bidId, CancellationScope.HANDOVER, statuses);
+    }
 
-    @Query("SELECT c FROM CancellationEntity c WHERE c.scope = 'HANDOVER' " +
-           "AND c.noShowStatus = 'PENDING_CONFIRMATION' AND c.contestationDeadline < :now")
-    List<CancellationEntity> findExpiredPending(@Param("now") OffsetDateTime now);
+    default List<CancellationEntity> findExpiredPending(OffsetDateTime now) {
+        return findExpiredPendingByScope(CancellationScope.HANDOVER, now);
+    }
+
+    /** Les 2 lignes max par bid (UNIQUE(bid_id, scope)) — une seule requête pour
+     *  récupérer HANDOVER et DELIVERY ensemble (voir BidService#toResponse). */
+    List<CancellationEntity> findAllByBidId(UUID bidId);
 
     // ── Scope explicite — nouveau, utilisé par le flux DELIVERY. ──
 

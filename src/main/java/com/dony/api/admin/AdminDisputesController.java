@@ -15,6 +15,7 @@ import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.MatchingTextUtil;
 import com.dony.api.disputes.DisputeEntity;
 import com.dony.api.disputes.DisputeRepository;
+import com.dony.api.disputes.DisputeTypes;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -157,7 +158,7 @@ public class AdminDisputesController {
      *  scope (HANDOVER/DELIVERY) est déduit du type de litige. */
     private void resolveLinkedCancellation(DisputeEntity entity) {
         if (entity.getBidId() == null) return;
-        boolean isHandover = "SENDER_NO_SHOW_CONTESTED".equals(entity.getType());
+        boolean isHandover = DisputeTypes.isHandover(entity.getType());
         Optional<CancellationEntity> cancellation = isHandover
                 ? cancellationRepo.findByBidId(entity.getBidId())
                 : cancellationRepo.findByBidIdAndScope(entity.getBidId(), CancellationScope.DELIVERY);

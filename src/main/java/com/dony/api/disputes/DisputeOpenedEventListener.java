@@ -19,7 +19,7 @@ public class DisputeOpenedEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleDisputeOpened(DisputeOpenedEvent event) {
-        if ("SENDER_NO_SHOW_CONTESTED".equals(event.getType())) {
+        if (DisputeTypes.isHandover(event.getType())) {
             disputeService.openSenderNoShowDispute(
                     event.getBidId(), event.getSenderId(), event.getTravelerId());
         } else {

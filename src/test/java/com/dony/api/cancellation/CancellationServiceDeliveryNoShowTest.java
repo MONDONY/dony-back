@@ -125,7 +125,7 @@ class CancellationServiceDeliveryNoShowTest {
         CancellationEntity result = service.reportDeliveryNoShow(BID_ID, TRAVELER_ID);
 
         assertThat(result.getScope()).isEqualTo(CancellationScope.DELIVERY);
-        assertThat(result.getNoShowStatus()).isEqualTo(CancellationStatus.CONFIRMED == result.getNoShowStatus() ? null : CancellationStatus.PENDING_CONFIRMATION);
+        assertThat(result.getNoShowStatus()).isEqualTo(CancellationStatus.PENDING_CONFIRMATION);
         assertThat(result.getContestationDeadline()).isAfter(OffsetDateTime.now());
         verify(eventPublisher).publishEvent(any(DeliveryNoShowReportedEvent.class));
     }

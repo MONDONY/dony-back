@@ -14,7 +14,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Signalement d'absence à la livraison (scope DELIVERY) expiré sans
@@ -45,9 +48,6 @@ public class DeliveryNoShowUncontestedScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(DeliveryNoShowUncontestedScheduler.class);
 
-    private static final String REASON_RECIPIENT_NO_SHOW = "RECIPIENT_NO_SHOW";
-    private static final String TYPE_TRAVELER_DELIVERY_NO_SHOW = "TRAVELER_DELIVERY_NO_SHOW";
-
     private final CancellationRepository cancellationRepository;
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
@@ -69,27 +69,44 @@ public class DeliveryNoShowUncontestedScheduler {
     @Scheduled(cron = "0 0 * * * *", zone = "UTC")
     @Transactional
     public void run() {
-        cancellationRepository.findExpiredPendingByScope(CancellationScope.DELIVERY, OffsetDateTime.now())
-                .forEach(this::openUncontestedDispute);
+        List<CancellationEntity> expired = cancellationRepository
+                .findExpiredPendingByScope(CancellationScope.DELIVERY, OffsetDateTime.now());
+        if (expired.isEmpty()) return;
+
+        // Batch les fetch bid/annonce (évite un N+1 : un findById par cancellation).
+        List<UUID> bidIds = expired.stream().map(CancellationEntity::getBidId).distinct().toList();
+        Map<UUID, BidEntity> bidsById = bidRepository.findAllById(bidIds).stream()
+                .collect(Collectors.toMap(BidEntity::getId, b -> b));
+
+        Map<UUID, AnnouncementEntity> announcementsById;
+        if (bidsById.isEmpty()) {
+            announcementsById = Map.of();
+        } else {
+            List<UUID> announcementIds = bidsById.values().stream()
+                    .map(BidEntity::getAnnouncementId).distinct().toList();
+            announcementsById = announcementRepository.findAllById(announcementIds).stream()
+                    .collect(Collectors.toMap(AnnouncementEntity::getId, a -> a));
+        }
+
+        expired.forEach(c -> openUncontestedDispute(c, bidsById, announcementsById));
     }
 
-    private void openUncontestedDispute(CancellationEntity c) {
-        BidEntity bid = bidRepository.findById(c.getBidId()).orElse(null);
+    private void openUncontestedDispute(CancellationEntity c, Map<UUID, BidEntity> bidsById,
+                                         Map<UUID, AnnouncementEntity> announcementsById) {
+        BidEntity bid = bidsById.get(c.getBidId());
         if (bid == null) {
             log.warn("DeliveryNoShowUncontestedScheduler: bid {} introuvable pour cancellation {} — ignoré",
                     c.getBidId(), c.getId());
             return;
         }
-        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+        AnnouncementEntity announcement = announcementsById.get(bid.getAnnouncementId());
         if (announcement == null) {
             log.warn("DeliveryNoShowUncontestedScheduler: annonce {} introuvable pour bid {} (cancellation {}) — ignoré",
                     bid.getAnnouncementId(), c.getBidId(), c.getId());
             return;
         }
 
-        String type = REASON_RECIPIENT_NO_SHOW.equals(c.getReason())
-                ? REASON_RECIPIENT_NO_SHOW
-                : TYPE_TRAVELER_DELIVERY_NO_SHOW;
+        String type = DeliveryNoShowTypes.uncontestedDisputeType(c.getReason());
 
         c.setNoShowStatus(CancellationStatus.CONFIRMED);
         cancellationRepository.save(c);

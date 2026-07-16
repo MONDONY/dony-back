@@ -304,9 +304,6 @@ public class CancellationService {
         eventPublisher.publishEvent(new TravelerNoShowReportedEvent(bidId, senderId));
     }
 
-    private static final String REASON_RECIPIENT_NO_SHOW = "RECIPIENT_NO_SHOW";
-    private static final String REASON_TRAVELER_DELIVERY_NO_SHOW = "TRAVELER_DELIVERY_NO_SHOW";
-
     /** Le voyageur signale que le destinataire ne s'est pas présenté à la remise (arrivée). */
     @Transactional
     public CancellationEntity reportDeliveryNoShow(UUID bidId, UUID travelerId) {
@@ -322,7 +319,7 @@ public class CancellationService {
         CancellationEntity c = new CancellationEntity();
         c.setBidId(bidId);
         c.setCancelledBy(travelerId);
-        c.setReason(REASON_RECIPIENT_NO_SHOW);
+        c.setReason(DeliveryNoShowTypes.REASON_RECIPIENT_NO_SHOW);
         c.setScope(CancellationScope.DELIVERY);
         c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
         c.setContestationDeadline(
@@ -352,7 +349,7 @@ public class CancellationService {
         CancellationEntity c = new CancellationEntity();
         c.setBidId(bidId);
         c.setCancelledBy(senderId);
-        c.setReason(REASON_TRAVELER_DELIVERY_NO_SHOW);
+        c.setReason(DeliveryNoShowTypes.REASON_TRAVELER_DELIVERY_NO_SHOW);
         c.setScope(CancellationScope.DELIVERY);
         c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
         c.setContestationDeadline(
@@ -412,7 +409,8 @@ public class CancellationService {
         BidEntity bid = bidRepository.findById(bidId).orElseThrow();
         AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElseThrow();
 
-        if (REASON_RECIPIENT_NO_SHOW.equals(c.getReason())) {
+        boolean isRecipientNoShow = DeliveryNoShowTypes.isRecipientNoShow(c.getReason());
+        if (isRecipientNoShow) {
             if (!bid.getSenderId().equals(callerId)) {
                 throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
                         "Vous n'êtes pas l'expéditeur de ce bid.");
@@ -427,9 +425,7 @@ public class CancellationService {
         c.setNoShowStatus(CancellationStatus.CONTESTED);
         cancellationRepository.save(c);
 
-        String disputeType = REASON_RECIPIENT_NO_SHOW.equals(c.getReason())
-                ? "RECIPIENT_NO_SHOW_CONTESTED"
-                : "TRAVELER_DELIVERY_NO_SHOW_CONTESTED";
+        String disputeType = DeliveryNoShowTypes.contestedDisputeType(c.getReason());
 
         eventPublisher.publishEvent(new DisputeOpenedEvent(
                 bidId, bid.getSenderId(), announcement.getTravelerId(), disputeType));

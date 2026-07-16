@@ -19,6 +19,7 @@ import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
+import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -906,7 +907,13 @@ public class BidService {
         boolean travelerHasRated = travelerId != null
                 && ratingRepository.existsByBidIdAndRaterId(bid.getId(), travelerId);
 
-        var cancellation = cancellationRepository.findByBidId(bid.getId()).orElse(null);
+        // Une seule requête pour les 2 cancellations possibles du bid (HANDOVER +
+        // DELIVERY, UNIQUE(bid_id, scope) garantit au plus 2 lignes), partitionnées
+        // en mémoire — évite un second aller-retour DB par bid sur les endpoints de liste.
+        java.util.List<CancellationEntity> bidCancellations = cancellationRepository.findAllByBidId(bid.getId());
+        var cancellation = bidCancellations.stream()
+                .filter(c -> c.getScope() == CancellationScope.HANDOVER)
+                .findFirst().orElse(null);
         String cancellationNoShowStatus = cancellation != null
                 ? cancellation.getNoShowStatus().name()
                 : null;
@@ -914,9 +921,9 @@ public class BidService {
                 ? cancellation.getContestationDeadline()
                 : null;
 
-        var deliveryCancellation = cancellationRepository
-                .findByBidIdAndScope(bid.getId(), CancellationScope.DELIVERY)
-                .orElse(null);
+        var deliveryCancellation = bidCancellations.stream()
+                .filter(c -> c.getScope() == CancellationScope.DELIVERY)
+                .findFirst().orElse(null);
         String deliveryNoShowStatus = deliveryCancellation != null
                 ? deliveryCancellation.getNoShowStatus().name()
                 : null;

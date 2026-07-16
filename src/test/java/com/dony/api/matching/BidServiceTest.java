@@ -149,8 +149,8 @@ class BidServiceTest {
 
     @BeforeEach
     void stubCancellationRepository() {
-        lenient().when(cancellationRepository.findByBidId(any()))
-                .thenReturn(java.util.Optional.empty());
+        lenient().when(cancellationRepository.findAllByBidId(any()))
+                .thenReturn(java.util.List.of());
         // Pass-through for presigned avatar URLs — tests don't care about the URL value
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Return empty photos list by default — toResponse calls this for every bid
@@ -737,7 +737,7 @@ class BidServiceTest {
             when(annGridItemRepository.findById(gridItemId)).thenReturn(Optional.of(annGridItem));
             when(bidGridItemRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
             lenient().when(ratingRepository.existsByBidIdAndRaterId(any(), any())).thenReturn(false);
-            lenient().when(cancellationRepository.findByBidId(any())).thenReturn(Optional.empty());
+            lenient().when(cancellationRepository.findAllByBidId(any())).thenReturn(java.util.List.of());
             lenient().when(userRepository.findById(any())).thenReturn(Optional.of(sender));
 
             BidRequest req = new BidRequest(
@@ -1871,7 +1871,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
-            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(cancellation));
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
 
             BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
 
@@ -1890,7 +1890,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
-            when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of());
 
             BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
 
@@ -1917,8 +1917,8 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
-            when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
-                    .thenReturn(Optional.of(delivery));
+            when(cancellationRepository.findAllByBidId(BID_ID))
+                    .thenReturn(java.util.List.of(delivery));
 
             BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
 
@@ -1938,8 +1938,8 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
             when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
-            when(cancellationRepository.findByBidIdAndScope(BID_ID, CancellationScope.DELIVERY))
-                    .thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID))
+                    .thenReturn(java.util.List.of());
 
             BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
 
