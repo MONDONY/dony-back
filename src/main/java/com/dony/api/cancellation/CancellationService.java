@@ -6,6 +6,7 @@ import com.dony.api.cancellation.dto.CancellationRequest;
 import com.dony.api.cancellation.dto.CancellationResponse;
 import com.dony.api.cancellation.dto.RematchSuggestionDto;
 import com.dony.api.cancellation.events.CancellationConfirmedEvent;
+import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.cancellation.dto.ReturnCodeResponse;
 import com.dony.api.cancellation.events.ParcelReturnedEvent;
@@ -301,6 +302,135 @@ public class CancellationService {
         auditService.log("BID", bidId, "TRAVELER_NO_SHOW_REPORTED", senderId,
                 Map.of("bidId", bidId.toString()));
         eventPublisher.publishEvent(new TravelerNoShowReportedEvent(bidId, senderId));
+    }
+
+    /** Le voyageur signale que le destinataire ne s'est pas présenté à la remise (arrivée). */
+    @Transactional
+    public CancellationEntity reportDeliveryNoShow(UUID bidId, UUID travelerId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        AnnouncementEntity announcement = assertDeliveryReportable(bid);
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas le voyageur de ce bid.");
+        }
+
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(bidId);
+        c.setCancelledBy(travelerId);
+        c.setReason(DeliveryNoShowTypes.REASON_RECIPIENT_NO_SHOW);
+        c.setScope(CancellationScope.DELIVERY);
+        c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        c.setContestationDeadline(
+                OffsetDateTime.now().plusHours(commissionProperties.noShowContestationHours()));
+        CancellationEntity saved = cancellationRepository.save(c);
+
+        auditService.log("BID", bidId, "DELIVERY_NOSHOW_REPORTED_BY_TRAVELER", travelerId,
+                Map.of("bidId", bidId.toString()));
+        eventPublisher.publishEvent(new DeliveryNoShowReportedEvent(
+                bidId, bid.getSenderId(), travelerId, true));
+
+        return saved;
+    }
+
+    /** L'expéditeur signale que le voyageur ne livre pas / est injoignable à l'arrivée. */
+    @Transactional
+    public CancellationEntity reportTravelerDeliveryNoShow(UUID bidId, UUID senderId) {
+        BidEntity bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "bid-not-found", "Not Found", "Bid introuvable"));
+        if (!bid.getSenderId().equals(senderId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas l'expéditeur de ce bid.");
+        }
+        AnnouncementEntity announcement = assertDeliveryReportable(bid);
+
+        CancellationEntity c = new CancellationEntity();
+        c.setBidId(bidId);
+        c.setCancelledBy(senderId);
+        c.setReason(DeliveryNoShowTypes.REASON_TRAVELER_DELIVERY_NO_SHOW);
+        c.setScope(CancellationScope.DELIVERY);
+        c.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+        c.setContestationDeadline(
+                OffsetDateTime.now().plusHours(commissionProperties.noShowContestationHours()));
+        CancellationEntity saved = cancellationRepository.save(c);
+
+        auditService.log("BID", bidId, "DELIVERY_NOSHOW_REPORTED_BY_SENDER", senderId,
+                Map.of("bidId", bidId.toString()));
+        eventPublisher.publishEvent(new DeliveryNoShowReportedEvent(
+                bidId, senderId, announcement.getTravelerId(), false));
+
+        return saved;
+    }
+
+    /** Garde commune aux deux signalements de livraison : bid IN_TRANSIT, trajet déjà
+     *  parti, aucun signalement DELIVERY déjà en cours ou contesté sur ce bid.
+     *  Retourne l'annonce chargée pour éviter un second fetch chez l'appelant (D8 :
+     *  sert notamment à vérifier que l'appelant est bien le voyageur assigné). */
+    private AnnouncementEntity assertDeliveryReportable(BidEntity bid) {
+        if (bid.getStatus() != BidStatus.IN_TRANSIT) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "bid-not-in-transit", "Invalid Status",
+                    "Le bid doit être en statut IN_TRANSIT.");
+        }
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId())
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Not Found", "Annonce introuvable"));
+        if (announcement.getDepartureDate() == null
+                || !announcement.getDepartureDate().isBefore(LocalDate.now().plusDays(1))) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "trip-not-departed", "Invalid Status",
+                    "Le trajet n'est pas encore parti.");
+        }
+        if (cancellationRepository.existsByBidIdAndScopeAndNoShowStatusIn(bid.getId(), CancellationScope.DELIVERY,
+                List.of(CancellationStatus.PENDING_CONFIRMATION, CancellationStatus.CONTESTED))) {
+            throw new DonyBusinessException(HttpStatus.CONFLICT, "delivery-noshow-in-progress",
+                    "Already In Progress",
+                    "Un signalement d'absence à la livraison est déjà en cours pour ce bid.");
+        }
+        return announcement;
+    }
+
+    /** La partie adverse à celle qui a signalé conteste, avant la deadline.
+     *  `reason` du signalement détermine le type de litige ouvert :
+     *  RECIPIENT_NO_SHOW → contesté par le sender → RECIPIENT_NO_SHOW_CONTESTED ;
+     *  TRAVELER_DELIVERY_NO_SHOW → contesté par le traveler → TRAVELER_DELIVERY_NO_SHOW_CONTESTED. */
+    @Transactional
+    public void contestDeliveryNoShow(UUID bidId, UUID callerId) {
+        CancellationEntity c = cancellationRepository.findByBidIdAndScope(bidId, CancellationScope.DELIVERY)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "cancellation-not-found", "Not Found",
+                        "Aucun signalement d'absence à la livraison pour ce bid"));
+        if (c.getContestationDeadline() == null
+                || OffsetDateTime.now().isAfter(c.getContestationDeadline())) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "contestation-deadline-passed",
+                    "Contestation Deadline Passed", "Le délai de contestation est dépassé.");
+        }
+
+        BidEntity bid = bidRepository.findById(bidId).orElseThrow();
+        AnnouncementEntity announcement = announcementRepository.findById(bid.getAnnouncementId()).orElseThrow();
+
+        boolean isRecipientNoShow = DeliveryNoShowTypes.isRecipientNoShow(c.getReason());
+        if (isRecipientNoShow) {
+            if (!bid.getSenderId().equals(callerId)) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                        "Vous n'êtes pas l'expéditeur de ce bid.");
+            }
+        } else {
+            if (!announcement.getTravelerId().equals(callerId)) {
+                throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                        "Vous n'êtes pas le voyageur de ce bid.");
+            }
+        }
+
+        c.setNoShowStatus(CancellationStatus.CONTESTED);
+        cancellationRepository.save(c);
+
+        String disputeType = DeliveryNoShowTypes.contestedDisputeType(c.getReason());
+
+        eventPublisher.publishEvent(new DisputeOpenedEvent(
+                bidId, bid.getSenderId(), announcement.getTravelerId(), disputeType));
+        auditService.log("CANCELLATION", c.getId(), "DELIVERY_NOSHOW_CONTESTED", callerId,
+                Map.of("bidId", bidId.toString(), "type", disputeType));
     }
 
     /**

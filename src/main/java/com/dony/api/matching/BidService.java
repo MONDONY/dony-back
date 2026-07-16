@@ -19,7 +19,9 @@ import com.dony.api.matching.dto.BidResponse;
 import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
+import com.dony.api.cancellation.CancellationEntity;
 import com.dony.api.cancellation.CancellationRepository;
+import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -905,12 +907,31 @@ public class BidService {
         boolean travelerHasRated = travelerId != null
                 && ratingRepository.existsByBidIdAndRaterId(bid.getId(), travelerId);
 
-        var cancellation = cancellationRepository.findByBidId(bid.getId()).orElse(null);
+        // Une seule requête pour les 2 cancellations possibles du bid (HANDOVER +
+        // DELIVERY, UNIQUE(bid_id, scope) garantit au plus 2 lignes), partitionnées
+        // en mémoire — évite un second aller-retour DB par bid sur les endpoints de liste.
+        java.util.List<CancellationEntity> bidCancellations = cancellationRepository.findAllByBidId(bid.getId());
+        var cancellation = bidCancellations.stream()
+                .filter(c -> c.getScope() == CancellationScope.HANDOVER)
+                .findFirst().orElse(null);
         String cancellationNoShowStatus = cancellation != null
                 ? cancellation.getNoShowStatus().name()
                 : null;
         java.time.OffsetDateTime contestationDeadline = cancellation != null
                 ? cancellation.getContestationDeadline()
+                : null;
+
+        var deliveryCancellation = bidCancellations.stream()
+                .filter(c -> c.getScope() == CancellationScope.DELIVERY)
+                .findFirst().orElse(null);
+        String deliveryNoShowStatus = deliveryCancellation != null
+                ? deliveryCancellation.getNoShowStatus().name()
+                : null;
+        java.time.OffsetDateTime deliveryContestationDeadline = deliveryCancellation != null
+                ? deliveryCancellation.getContestationDeadline()
+                : null;
+        Boolean deliveryNoShowReportedByTraveler = deliveryCancellation != null
+                ? "RECIPIENT_NO_SHOW".equals(deliveryCancellation.getReason())
                 : null;
 
         // Compute total net: sum of grid items + KG part (for display in Flutter)
@@ -1003,6 +1024,9 @@ public class BidService {
                 bid.getConfirmationCodeRefreshWindowStart(),
                 cancellationNoShowStatus,
                 contestationDeadline,
+                deliveryNoShowStatus,
+                deliveryContestationDeadline,
+                deliveryNoShowReportedByTraveler,
                 bid.getPaymentMethod() != null ? bid.getPaymentMethod().name() : "STRIPE",
                 bid.getPricingMode(),
                 totalNetAmountEur,

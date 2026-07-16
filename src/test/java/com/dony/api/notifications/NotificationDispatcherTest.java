@@ -2,6 +2,7 @@ package com.dony.api.notifications;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
 import com.dony.api.matching.events.BidAcceptedEvent;
@@ -174,6 +175,33 @@ class NotificationDispatcherTest {
 
         verify(fcmService).sendToUser(eq(senderId),   eq("Litige ouvert"), any(), any());
         verify(fcmService).sendToUser(eq(travelerId), eq("Litige ouvert"), any(), any());
+    }
+
+    // ── DeliveryNoShowReportedEvent ───────────────────────────────────────────
+
+    @Test
+    void onDeliveryNoShowReportedByTraveler_notifiesSenderOnly() {
+        UUID newBidId = UUID.randomUUID(), newSenderId = UUID.randomUUID(), newTravelerId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onDeliveryNoShowReported(
+                new DeliveryNoShowReportedEvent(newBidId, newSenderId, newTravelerId, true));
+
+        verify(notificationService).persist(eq(newSenderId), eq("DELIVERY_NOSHOW_REPORTED"), any(), any(), any(), eq(false));
+        verify(fcmService).sendToUser(eq(newSenderId), any(), any(), any());
+        verifyNoInteractions(smsService);
+    }
+
+    @Test
+    void onDeliveryNoShowReportedBySender_notifiesTravelerOnly() {
+        UUID newBidId = UUID.randomUUID(), newSenderId = UUID.randomUUID(), newTravelerId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onDeliveryNoShowReported(
+                new DeliveryNoShowReportedEvent(newBidId, newSenderId, newTravelerId, false));
+
+        verify(notificationService).persist(eq(newTravelerId), eq("DELIVERY_NOSHOW_REPORTED"), any(), any(), any(), eq(false));
+        verify(fcmService).sendToUser(eq(newTravelerId), any(), any(), any());
     }
 
     // ── notifyBySms ──────────────────────────────────────────────────────────

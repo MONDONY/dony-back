@@ -11,7 +11,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DisputeRepository extends JpaRepository<DisputeEntity, UUID> {
-    Optional<DisputeEntity> findByBidId(UUID bidId);
+
+    // Préserve le comportement existant (seul type en usage avant cette feature) —
+    // aucun appelant existant à modifier. Délègue à la version paramétrée par
+    // type pour éviter de dupliquer le JPQL (même filtre).
+    default Optional<DisputeEntity> findByBidId(UUID bidId) {
+        return findByBidIdAndType(bidId, "SENDER_NO_SHOW_CONTESTED");
+    }
+
+    // Nouveau — idempotence par type pour les litiges d'arrivée.
+    Optional<DisputeEntity> findByBidIdAndType(UUID bidId, String type);
 
     List<DisputeEntity> findBySenderIdOrTravelerIdOrderByCreatedAtDesc(UUID senderId, UUID travelerId);
 

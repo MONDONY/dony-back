@@ -95,6 +95,44 @@ class DisputeServiceTest {
         }
     }
 
+    @Nested
+    class OpenDeliveryNoShowDispute {
+
+        @Test
+        void openDeliveryNoShowDispute_createsDisputeWithGivenType() {
+            UUID bidId = UUID.randomUUID();
+            UUID senderId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            when(disputeRepository.findByBidIdAndType(bidId, "RECIPIENT_NO_SHOW_CONTESTED"))
+                    .thenReturn(Optional.empty());
+            when(disputeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            DisputeEntity result = service.openDeliveryNoShowDispute(
+                    bidId, senderId, travelerId, "RECIPIENT_NO_SHOW_CONTESTED");
+
+            assertThat(result.getType()).isEqualTo("RECIPIENT_NO_SHOW_CONTESTED");
+            assertThat(result.getStatus()).isEqualTo("OPEN");
+            assertThat(result.isRefundFrozen()).isTrue();
+            assertThat(result.getSenderId()).isEqualTo(senderId);
+            assertThat(result.getTravelerId()).isEqualTo(travelerId);
+        }
+
+        @Test
+        void openDeliveryNoShowDispute_idempotent_returnsExistingIfAlreadyOpen() {
+            UUID bidId = UUID.randomUUID();
+            DisputeEntity existing = new DisputeEntity();
+            existing.setType("TRAVELER_DELIVERY_NO_SHOW");
+            when(disputeRepository.findByBidIdAndType(bidId, "TRAVELER_DELIVERY_NO_SHOW"))
+                    .thenReturn(Optional.of(existing));
+
+            DisputeEntity result = service.openDeliveryNoShowDispute(
+                    bidId, UUID.randomUUID(), UUID.randomUUID(), "TRAVELER_DELIVERY_NO_SHOW");
+
+            assertThat(result).isSameAs(existing);
+            verify(disputeRepository, never()).save(any());
+        }
+    }
+
     @Test
     void getDisputesForUser_returnsUnion_withMyRolePerDispute() {
         UUID me = UUID.randomUUID();

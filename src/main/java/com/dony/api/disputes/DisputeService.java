@@ -68,6 +68,28 @@ public class DisputeService {
         return saved;
     }
 
+    public DisputeEntity openDeliveryNoShowDispute(UUID bidId, UUID senderId, UUID travelerId, String type) {
+        Optional<DisputeEntity> existing = disputeRepository.findByBidIdAndType(bidId, type);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        DisputeEntity dispute = new DisputeEntity();
+        dispute.setBidId(bidId);
+        dispute.setSenderId(senderId);
+        dispute.setTravelerId(travelerId);
+        dispute.setType(type);
+        dispute.setStatus(STATUS_OPEN);
+        dispute.setRefundFrozen(true);
+
+        DisputeEntity saved = disputeRepository.save(dispute);
+
+        auditService.log("DISPUTE", saved.getId(), "DELIVERY_NOSHOW_DISPUTE_OPENED", senderId,
+                Map.of("bidId", bidId.toString(), "travelerId", travelerId.toString(), "type", type));
+
+        return saved;
+    }
+
     /** Litiges où l'utilisateur est sender OU traveler, plus récents d'abord. */
     @Transactional(readOnly = true)
     public List<DisputeResponse> getDisputesForUser(UUID userId) {
