@@ -104,11 +104,13 @@ logging:
     org.flywaydb: INFO
 
 # Dony business config
+# Toutes les valeurs métier sont surchargeables par variable d'environnement
+# (${VAR:défaut}) — provisioning prod sans rebuild.
 dony:
   commission:
-    rate: 0.05
-    minimum-amount: 1.00
-    no-show-contestation-hours: 24
+    rate: ${DONY_COMMISSION_RATE:0.05}
+    minimum-amount: ${DONY_COMMISSION_MINIMUM_AMOUNT:1.00}
+    no-show-contestation-hours: ${DONY_COMMISSION_NO_SHOW_CONTESTATION_HOURS:24}
   cash-commission:
     orphan-pi-cleanup-cron: "0 */15 * * * *"
     orphan-pi-timeout-minutes: 30
@@ -118,17 +120,17 @@ dony:
     return-deadline-cron: "0 0 * * * *"
   limits:
     non-pro:
-      monthly-announcements: 2
-  escrow-timeout-hours: 48
-  dispute-sla-hours: 72
-  max-declared-value-eur: 500
+      monthly-announcements: ${DONY_LIMITS_NON_PRO_MONTHLY_ANNOUNCEMENTS:2}
+  escrow-timeout-hours: ${DONY_ESCROW_TIMEOUT_HOURS:48}
+  dispute-sla-hours: ${DONY_DISPUTE_SLA_HOURS:72}
+  max-declared-value-eur: ${DONY_MAX_DECLARED_VALUE_EUR:500}
   kyc:
-    return-url: "https://dony.store/kyc/complete"
+    return-url: ${DONY_KYC_RETURN_URL:https://dony.store/kyc/complete}
   stripe:
     connect:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Dony"
-      business-url: "https://yadony.com"
+      business-url: ${DONY_STRIPE_CONNECT_BUSINESS_URL:https://yadony.com}
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
     webhook:
@@ -138,26 +140,26 @@ dony:
       retry-backoff-base: 30s
       scheduler-enabled: true
   referral:
-    reward-amount-cents: 500
-    max-invitations-per-user: 50
-    code-regeneration-cooldown-days: 30
+    reward-amount-cents: ${DONY_REFERRAL_REWARD_AMOUNT_CENTS:500}
+    max-invitations-per-user: ${DONY_REFERRAL_MAX_INVITATIONS_PER_USER:50}
+    code-regeneration-cooldown-days: ${DONY_REFERRAL_CODE_REGENERATION_COOLDOWN_DAYS:30}
   requests:
-    max-negotiation-rounds: 5
-    thread-inactivity-hours: 72
-    awaiting-trip-hours: 24
-    awaiting-payment-hours: 24
-    date-tolerance-default-days: 2
-    date-tolerance-max-days: 7
-    weight-kg-min: 0.5
-    weight-kg-max: 32
-    declared-value-max-eur: 500
-    body-max-chars: 280
-    max-open-requests-per-sender: 10
-    max-open-threads-per-traveler: 5
-    threads-per-minute-rate-limit: 1
+    max-negotiation-rounds: ${DONY_REQUESTS_MAX_NEGOTIATION_ROUNDS:5}
+    thread-inactivity-hours: ${DONY_REQUESTS_THREAD_INACTIVITY_HOURS:72}
+    awaiting-trip-hours: ${DONY_REQUESTS_AWAITING_TRIP_HOURS:24}
+    awaiting-payment-hours: ${DONY_REQUESTS_AWAITING_PAYMENT_HOURS:24}
+    date-tolerance-default-days: ${DONY_REQUESTS_DATE_TOLERANCE_DEFAULT_DAYS:2}
+    date-tolerance-max-days: ${DONY_REQUESTS_DATE_TOLERANCE_MAX_DAYS:7}
+    weight-kg-min: ${DONY_REQUESTS_WEIGHT_KG_MIN:0.5}
+    weight-kg-max: ${DONY_REQUESTS_WEIGHT_KG_MAX:32}
+    declared-value-max-eur: ${DONY_REQUESTS_DECLARED_VALUE_MAX_EUR:500}
+    body-max-chars: ${DONY_REQUESTS_BODY_MAX_CHARS:280}
+    max-open-requests-per-sender: ${DONY_REQUESTS_MAX_OPEN_REQUESTS_PER_SENDER:10}
+    max-open-threads-per-traveler: ${DONY_REQUESTS_MAX_OPEN_THREADS_PER_TRAVELER:5}
+    threads-per-minute-rate-limit: ${DONY_REQUESTS_THREADS_PER_MINUTE_RATE_LIMIT:1}
     auto-expire-check-cron: "0 */15 * * * *"
-    estimation-corridor-recent-trips: 20
-    estimation-cache-ttl-minutes: 60
+    estimation-corridor-recent-trips: ${DONY_REQUESTS_ESTIMATION_CORRIDOR_RECENT_TRIPS:20}
+    estimation-cache-ttl-minutes: ${DONY_REQUESTS_ESTIMATION_CACHE_TTL_MINUTES:60}
   mobilemoney:
     wave:
       api-key: ${WAVE_API_KEY:}
@@ -167,10 +169,10 @@ dony:
       api-key: ${ORANGE_MONEY_API_KEY:}
       api-url: ${ORANGE_MONEY_API_URL:https://api.orange.com/orange-money-webpay/v1}
       webhook-secret: ${ORANGE_MONEY_WEBHOOK_SECRET:}
-    link-expiry-minutes: 30
+    link-expiry-minutes: ${DONY_MOBILEMONEY_LINK_EXPIRY_MINUTES:30}
   email:
     resend-api-key: ${RESEND_API_KEY:}
-    from-address: noreply@dony.store
+    from-address: ${DONY_EMAIL_FROM_ADDRESS:noreply@dony.store}
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
 
 # Encryption (AES-256 for KYC sensitive data)
@@ -190,11 +192,11 @@ app:
   places:
     api-key: ${GOOGLE_PLACES_API_KEY}
     allowed-countries: FR,SN,CI,ML,CM,GN,BF,TG,BJ,NE,MR,CD,CG,GA,TD,MA,DZ,TN,MG,RE,MU,GP,MQ
-    rate-limit-per-minute: 100
-    daily-quota-autocomplete: 5000
-    daily-quota-details: 1000
-    daily-quota-reverse: 500
-    block-when-quota-exceeded: true
+    rate-limit-per-minute: ${APP_PLACES_RATE_LIMIT_PER_MINUTE:100}
+    daily-quota-autocomplete: ${APP_PLACES_DAILY_QUOTA_AUTOCOMPLETE:5000}
+    daily-quota-details: ${APP_PLACES_DAILY_QUOTA_DETAILS:1000}
+    daily-quota-reverse: ${APP_PLACES_DAILY_QUOTA_REVERSE:500}
+    block-when-quota-exceeded: ${APP_PLACES_BLOCK_WHEN_QUOTA_EXCEEDED:true}
 
   alerts:
     digest-cron: "0 0 9 * * *"
