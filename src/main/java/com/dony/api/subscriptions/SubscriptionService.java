@@ -3,6 +3,7 @@ package com.dony.api.subscriptions;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyNotFoundException;
+import com.dony.api.common.StorageService;
 import com.dony.api.subscriptions.dto.SubscriberResponse;
 import com.dony.api.subscriptions.dto.SubscriptionItemResponse;
 import com.dony.api.subscriptions.dto.SubscriptionStatusResponse;
@@ -21,11 +22,14 @@ public class SubscriptionService {
 
     private final TravelerSubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
+    private final StorageService storageService;
 
     public SubscriptionService(TravelerSubscriptionRepository subscriptionRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               StorageService storageService) {
         this.subscriptionRepository = subscriptionRepository;
         this.userRepository = userRepository;
+        this.storageService = storageService;
     }
 
     private UUID senderId(String firebaseUid) {
@@ -129,24 +133,25 @@ public class SubscriptionService {
 
     private SubscriptionItemResponse mapRow(Object[] r) {
         SubscriptionItemResponse.LastAnnouncement last = null;
-        if (r[7] != null) {
-            LocalDateTime published = r[11] instanceof java.sql.Timestamp ts
+        if (r[8] != null) {
+            LocalDateTime published = r[12] instanceof java.sql.Timestamp ts
                 ? ts.toLocalDateTime()
-                : ((java.time.Instant) r[11]).atZone(ZoneOffset.UTC).toLocalDateTime();
+                : ((java.time.Instant) r[12]).atZone(ZoneOffset.UTC).toLocalDateTime();
             last = new SubscriptionItemResponse.LastAnnouncement(
-                (UUID) r[7], (String) r[8], (String) r[9],
-                (BigDecimal) r[10],
+                (UUID) r[8], (String) r[9], (String) r[10],
+                (BigDecimal) r[11],
                 published
             );
         }
         return new SubscriptionItemResponse(
             (UUID) r[0],
             (String) r[1],
-            (Boolean) r[2],
-            (BigDecimal) r[3],
-            ((Number) r[4]).longValue(),
-            (Boolean) r[5],
+            storageService.avatarUrl((String) r[2]),
+            (Boolean) r[3],
+            (BigDecimal) r[4],
+            ((Number) r[5]).longValue(),
             (Boolean) r[6],
+            (Boolean) r[7],
             last
         );
     }

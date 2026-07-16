@@ -170,7 +170,7 @@ class SubscriptionControllerTest {
     @Test
     void mySubscriptions_asSender_returnsItems() throws Exception {
         SubscriptionItemResponse item = new SubscriptionItemResponse(
-                TRAVELER_ID, "Moussa T.", false, null, 2L, true, true, null);
+                TRAVELER_ID, "Moussa T.", "https://cdn.dony.app/signed/moussa.jpg", false, null, 2L, true, true, null);
         when(subscriptionService.getMySubscriptions(FIREBASE_UID)).thenReturn(List.of(item));
 
         mockMvc.perform(get("/me/subscriptions")
@@ -178,6 +178,7 @@ class SubscriptionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].travelerId").value(TRAVELER_ID.toString()))
                 .andExpect(jsonPath("$[0].travelerName").value("Moussa T."))
+                .andExpect(jsonPath("$[0].avatarUrl").value("https://cdn.dony.app/signed/moussa.jpg"))
                 .andExpect(jsonPath("$[0].pushEnabled").value(true))
                 .andExpect(jsonPath("$[0].hasNew").value(true));
     }

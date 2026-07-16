@@ -53,5 +53,27 @@ class TravelerSubscriptionRepositoryTest {
 
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0)[1]).isEqualTo("Voyageur");
+        // avatar_url pas renseigné sur ce voyageur → colonne null (index 2)
+        assertThat(rows.get(0)[2]).isNull();
+    }
+
+    @Test
+    void findEnrichedBySenderId_includesTravelerAvatarUrl() {
+        UserEntity traveler = new UserEntity();
+        traveler.setFirebaseUid("uid-" + UUID.randomUUID());
+        traveler.setFirstName("Ibrahima");
+        traveler.setAvatarUrl("avatars/ibrahima.jpg");
+        traveler = userRepository.save(traveler);
+
+        UUID sender = UUID.randomUUID();
+        TravelerSubscriptionEntity sub = new TravelerSubscriptionEntity();
+        sub.setSenderId(sender);
+        sub.setTravelerId(traveler.getId());
+        repo.save(sub);
+
+        List<Object[]> rows = repo.findEnrichedBySenderId(sender);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)[2]).isEqualTo("avatars/ibrahima.jpg");
     }
 }

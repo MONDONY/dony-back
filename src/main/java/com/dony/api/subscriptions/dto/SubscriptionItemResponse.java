@@ -7,6 +7,7 @@ import java.util.UUID;
 public record SubscriptionItemResponse(
     UUID travelerId,
     String travelerName,
+    String avatarUrl,
     boolean isProAccount,
     BigDecimal averageRating,
     long ongoingTripsCount,
