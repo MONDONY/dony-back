@@ -54,4 +54,11 @@ class ConfigControllerIT {
                 .andExpect(jsonPath("$[0].emoji").value("📄"))
                 .andExpect(jsonPath("$[2].label").value("Produits frais / périssables"));
     }
+
+    @Test
+    void getUrgencyThreshold_returnsConfiguredValue() throws Exception {
+        mockMvc.perform(get("/config/urgency-threshold"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thresholdDays").value(3));
+    }
 }

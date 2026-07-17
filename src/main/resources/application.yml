@@ -111,6 +111,8 @@ dony:
     rate: ${DONY_COMMISSION_RATE:0.05}
     minimum-amount: ${DONY_COMMISSION_MINIMUM_AMOUNT:1.00}
     no-show-contestation-hours: ${DONY_COMMISSION_NO_SHOW_CONTESTATION_HOURS:24}
+  urgency:
+    threshold-days: ${DONY_URGENCY_THRESHOLD_DAYS:3}
   cash-commission:
     orphan-pi-cleanup-cron: "0 */15 * * * *"
     orphan-pi-timeout-minutes: 30
