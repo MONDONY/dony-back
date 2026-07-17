@@ -17,7 +17,13 @@ public record DonyConfigProperties(
 ) {
     public record Commission(BigDecimal rate) {}
 
-    public record Urgency(Integer thresholdDays) {}
+    public record Urgency(Integer thresholdDays) {
+        public Urgency {
+            if (thresholdDays == null) {
+                thresholdDays = 3;
+            }
+        }
+    }
 
     public record Limits(NonPro nonPro, Drafts drafts) {
         public record NonPro(int monthlyAnnouncements) {}
