@@ -17,11 +17,7 @@ public record DonyConfigProperties(
 ) {
     public record Commission(BigDecimal rate) {}
 
-    public record Urgency(int thresholdDays) {
-        public Urgency(Integer thresholdDays) {
-            this(thresholdDays == null ? 3 : thresholdDays);
-        }
-    }
+    public record Urgency(Integer thresholdDays) {}
 
     public record Limits(NonPro nonPro, Drafts drafts) {
         public record NonPro(int monthlyAnnouncements) {}
