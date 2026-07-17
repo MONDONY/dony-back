@@ -52,6 +52,7 @@ public class AnnouncementController {
             @RequestParam(required = false) BigDecimal minRating,
             @RequestParam(required = false) Boolean kiloProOnly,
             @RequestParam(required = false) Boolean weekendOnly,
+            @RequestParam(required = false) Boolean urgent,
             @RequestParam(required = false) String transportMode,
             @RequestParam(required = false) Boolean kycVerifiedOnly,
             @RequestParam(required = false) String contentType,
@@ -67,7 +68,7 @@ public class AnnouncementController {
                 minAvailableKg, maxAvailableKg, maxPricePerKg, minRating, kiloProOnly, weekendOnly,
                 transportMode, kycVerifiedOnly, contentType,
                 userLat, userLng, radiusKm,
-                sortBy, sortDir, pageable, currentFirebaseUidOrNull());
+                sortBy, sortDir, pageable, currentFirebaseUidOrNull(), urgent);
         return ResponseEntity.ok(PageResponse.from(page));
     }
 

@@ -73,7 +73,7 @@ class AnnouncementServiceTest {
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Real mapper wired to the same mocks so SearchTests assertions remain valid
         AnnouncementSearchMapper realMapper = new AnnouncementSearchMapper(
-                userRepository, bidRepository, priceGridService, storageService);
+                userRepository, bidRepository, priceGridService, storageService, config);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
@@ -1142,7 +1142,7 @@ class AnnouncementServiceTest {
             stubBatchSearch(traveler, 3L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -1162,7 +1162,7 @@ class AnnouncementServiceTest {
             Page<?> result = announcementService.searchAnnouncements(
                     "Paris", "Dakar",
                     LocalDate.now(), LocalDate.now().plusDays(30),
-                    BigDecimal.valueOf(5), null, null, null, null, null, null, null, null, null, null, null, "price", "desc", PageRequest.of(0, 10), null);
+                    BigDecimal.valueOf(5), null, null, null, null, null, null, null, null, null, null, null, "price", "desc", PageRequest.of(0, 10), null, null);
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -1180,7 +1180,7 @@ class AnnouncementServiceTest {
             stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "asc", PageRequest.of(0, 10), null, null);
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -1198,7 +1198,7 @@ class AnnouncementServiceTest {
             when(bidRepository.countVisibleByAnnouncementIds(anyCollection())).thenReturn(List.of());
 
             Page<?> result = announcementService.searchAnnouncements(
-                    "Paris", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "desc", PageRequest.of(0, 10), null);
+                    "Paris", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "desc", PageRequest.of(0, 10), null, null);
 
             assertThat(result.getContent()).hasSize(1);
         }
@@ -1216,7 +1216,7 @@ class AnnouncementServiceTest {
             stubBatchSearch(traveler, 0L);
 
             assertThatNoException().isThrownBy(() -> announcementService.searchAnnouncements(
-                    null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10), null));
+                    null, "Dakar", LocalDate.now(), null, null, null, null, null, null, null, null, null, null, null, null, null, "price", "asc", PageRequest.of(0, 10), null, null));
         }
 
         @Test
@@ -1232,7 +1232,7 @@ class AnnouncementServiceTest {
             stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.traveler()).isNotNull();
@@ -1252,7 +1252,7 @@ class AnnouncementServiceTest {
             stubBatchSearch(traveler, 0L);
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.traveler()).isNotNull();
@@ -1279,7 +1279,7 @@ class AnnouncementServiceTest {
                     .thenReturn(List.of(ANNOUNCEMENT_ID));
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid");
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid", null);
 
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.isFavorite()).isTrue();
@@ -1303,7 +1303,7 @@ class AnnouncementServiceTest {
                     .thenReturn(List.of()); // no favorites
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid");
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), "viewer-uid", null);
 
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.isFavorite()).isFalse();
@@ -1321,7 +1321,7 @@ class AnnouncementServiceTest {
             // viewerFirebaseUid = null → anonymous caller
 
             Page<?> result = announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             var response = (com.dony.api.matching.dto.AnnouncementSearchResponse) result.getContent().get(0);
             assertThat(response.isFavorite()).isFalse();
@@ -1348,7 +1348,7 @@ class AnnouncementServiceTest {
                     .thenReturn(List.of(new Object[]{ANNOUNCEMENT_ID, 0L}, new Object[]{id2, 1L}));
 
             announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             // Batch call made once for both rows
             verify(userRepository, times(1)).findAllById(anyCollection());
@@ -1370,10 +1370,62 @@ class AnnouncementServiceTest {
             when(bidRepository.countVisibleByAnnouncementIds(anyCollection())).thenReturn(List.of());
 
             announcementService.searchAnnouncements(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "date", "asc", PageRequest.of(0, 10), null, null);
 
             verify(bidRepository, times(1)).countVisibleByAnnouncementIds(anyCollection());
             verify(bidRepository, never()).countVisibleByAnnouncementId(any());
+        }
+
+        // ─── urgent filter ────────────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("urgent=true → restreint departureDate à [today, today+seuil]")
+        void searchAnnouncements_urgentTrue_restrictsToNextThresholdDays() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            stubBatchSearch(traveler, 0L);
+
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            LocalDate expectedTo = today.plusDays(3); // config.urgency().thresholdDays() == 3 (voir initService())
+
+            try (org.mockito.MockedStatic<AnnouncementSpecification> specMock =
+                    mockStatic(AnnouncementSpecification.class, CALLS_REAL_METHODS)) {
+                announcementService.searchAnnouncements(
+                        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                        "date", "asc", PageRequest.of(0, 10), null, true);
+
+                specMock.verify(() -> AnnouncementSpecification.departureDateFrom(today));
+                specMock.verify(() -> AnnouncementSpecification.departureDateTo(expectedTo));
+            }
+        }
+
+        @Test
+        @DisplayName("urgent=true + filtres de date explicites → intersection des bornes")
+        void searchAnnouncements_urgentTrue_withExplicitDateFilters_appliesIntersection() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            stubBatchSearch(traveler, 0L);
+
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            LocalDate explicitFrom = today.plusDays(1); // plus strict que today → conservé tel quel
+            LocalDate explicitTo = today.plusDays(30);  // plus large que today+3 → ramené à today+3
+            LocalDate expectedTo = today.plusDays(3);
+
+            try (org.mockito.MockedStatic<AnnouncementSpecification> specMock =
+                    mockStatic(AnnouncementSpecification.class, CALLS_REAL_METHODS)) {
+                announcementService.searchAnnouncements(
+                        null, null, explicitFrom, explicitTo, null, null, null, null, null, null, null, null, null, null, null, null,
+                        "date", "asc", PageRequest.of(0, 10), null, true);
+
+                specMock.verify(() -> AnnouncementSpecification.departureDateFrom(explicitFrom));
+                specMock.verify(() -> AnnouncementSpecification.departureDateTo(expectedTo));
+            }
         }
     }
 
@@ -1543,7 +1595,7 @@ class AnnouncementServiceTest {
             DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits,
                     new DonyConfigProperties.Urgency(3));
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
-                    userRepository, bidRepository, priceGridService, storageService);
+                    userRepository, bidRepository, priceGridService, storageService, configWithLimits);
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
@@ -1849,7 +1901,7 @@ class AnnouncementServiceTest {
             DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits,
                     new DonyConfigProperties.Urgency(3));
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
-                    userRepository, bidRepository, priceGridService, storageService);
+                    userRepository, bidRepository, priceGridService, storageService, configWithLimits);
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
