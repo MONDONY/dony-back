@@ -27,8 +27,7 @@ public class ConfigController {
 
     @GetMapping("/urgency-threshold")
     public ResponseEntity<UrgencyThresholdResponse> getUrgencyThreshold() {
-        int thresholdDays = config.urgency() != null ? config.urgency().thresholdDays() : 3;
-        return ResponseEntity.ok(new UrgencyThresholdResponse(thresholdDays));
+        return ResponseEntity.ok(new UrgencyThresholdResponse(config.urgency().thresholdDays()));
     }
 
     @GetMapping("/content-categories")

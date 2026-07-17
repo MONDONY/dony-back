@@ -15,6 +15,12 @@ public record DonyConfigProperties(
     Limits limits,
     Urgency urgency
 ) {
+    public DonyConfigProperties {
+        if (urgency == null) {
+            urgency = new Urgency(null);
+        }
+    }
+
     public record Commission(BigDecimal rate) {}
 
     public record Urgency(Integer thresholdDays) {

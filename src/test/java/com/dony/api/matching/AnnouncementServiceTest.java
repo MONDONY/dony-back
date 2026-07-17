@@ -1427,6 +1427,58 @@ class AnnouncementServiceTest {
                 specMock.verify(() -> AnnouncementSpecification.departureDateTo(expectedTo));
             }
         }
+
+        // ─── computeUrgent boundary (DTO field, seuil de test = 3) ─────────────────
+
+        private com.dony.api.matching.dto.AnnouncementSearchResponse searchSingle(LocalDate departureDate) {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity ann = buildAnnouncement(traveler);
+            ann.setDepartureDate(departureDate);
+            Page<AnnouncementEntity> page = new PageImpl<>(List.of(ann));
+
+            when(announcementRepository.findAll(ArgumentMatchers.<Specification<AnnouncementEntity>>any(), any(Pageable.class))).thenReturn(page);
+            stubBatchSearch(traveler, 0L);
+
+            Page<com.dony.api.matching.dto.AnnouncementSearchResponse> result = announcementService.searchAnnouncements(
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    "date", "asc", PageRequest.of(0, 10), null, null);
+
+            return result.getContent().get(0);
+        }
+
+        @Test
+        @DisplayName("departureDate = today (UTC) → urgent=true")
+        void computeUrgent_departureDateToday_urgentTrue() {
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            assertThat(searchSingle(today).urgent()).isTrue();
+        }
+
+        @Test
+        @DisplayName("departureDate = today+3 (borne exacte du seuil) → urgent=true")
+        void computeUrgent_departureDateAtThresholdBoundary_urgentTrue() {
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            assertThat(searchSingle(today.plusDays(3)).urgent()).isTrue();
+        }
+
+        @Test
+        @DisplayName("departureDate = today+4 (juste après le seuil) → urgent=false")
+        void computeUrgent_departureDateJustBeyondThreshold_urgentFalse() {
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            assertThat(searchSingle(today.plusDays(4)).urgent()).isFalse();
+        }
+
+        @Test
+        @DisplayName("departureDate = today-1 (passé) → urgent=false")
+        void computeUrgent_departureDateInPast_urgentFalse() {
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            assertThat(searchSingle(today.minusDays(1)).urgent()).isFalse();
+        }
+
+        @Test
+        @DisplayName("departureDate = null → urgent=false")
+        void computeUrgent_departureDateNull_urgentFalse() {
+            assertThat(searchSingle(null).urgent()).isFalse();
+        }
     }
 
     // ─── capacityUnit + date validation ───────────────────────────────────────
