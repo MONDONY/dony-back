@@ -6,6 +6,7 @@ import com.dony.api.requests.entity.PackageRequestStatus;
 import org.springframework.data.jpa.domain.Specification;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 public final class PackageRequestSpecifications {
 
@@ -42,5 +43,16 @@ public final class PackageRequestSpecifications {
     public static Specification<PackageRequestEntity> parcelSize(ParcelSize size) {
         return (root, query, cb) -> size == null ? cb.conjunction()
                 : cb.equal(root.get("parcelSize"), size);
+    }
+
+    /**
+     * Restricts results to requests whose {@code desiredDate} falls within
+     * {@code [today, today + thresholdDays]} (bounds inclusive, today in UTC).
+     */
+    public static Specification<PackageRequestEntity> urgent(int thresholdDays) {
+        return (root, query, cb) -> {
+            LocalDate today = LocalDate.now(ZoneOffset.UTC);
+            return cb.between(root.get("desiredDate"), today, today.plusDays(thresholdDays));
+        };
     }
 }

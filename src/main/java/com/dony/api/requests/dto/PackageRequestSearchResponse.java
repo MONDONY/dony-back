@@ -25,7 +25,9 @@ public record PackageRequestSearchResponse(
     /** Photos colis présignées (max 4, ordonnées). photoUrl = 1ère pour rétro-compat. */
     List<PackageRequestPhotoResponse> photos,
     /** True si le voyageur authentifié a mis cette demande en favori. False pour les appelants anonymes ou non-voyageurs. */
-    boolean isFavorite
+    boolean isFavorite,
+    /** True si desiredDate ∈ [today, today + dony.urgency.threshold-days] (bornes incluses, today en UTC). */
+    boolean urgent
 ) {
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
 }

@@ -2,6 +2,7 @@ package com.dony.api.requests.controller;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.ParcelSize;
 import com.dony.api.requests.entity.PackageRequestEntity;
@@ -33,17 +34,20 @@ public class PackageRequestController {
     private final com.dony.api.requests.service.NegotiationService negotiationService;
     private final com.dony.api.requests.service.PackageRequestReportService reportService;
     private final UserRepository userRepository;
+    private final DonyConfigProperties config;
 
     public PackageRequestController(PackageRequestService service,
                                     PriceEstimationService estimationService,
                                     com.dony.api.requests.service.NegotiationService negotiationService,
                                     com.dony.api.requests.service.PackageRequestReportService reportService,
-                                    UserRepository userRepository) {
+                                    UserRepository userRepository,
+                                    DonyConfigProperties config) {
         this.service = service;
         this.estimationService = estimationService;
         this.negotiationService = negotiationService;
         this.reportService = reportService;
         this.userRepository = userRepository;
+        this.config = config;
     }
 
     @PostMapping
@@ -113,6 +117,7 @@ public class PackageRequestController {
             @RequestParam(required = false) BigDecimal lat,
             @RequestParam(required = false) BigDecimal lng,
             @RequestParam(required = false) Double radiusKm,
+            @RequestParam(required = false) Boolean urgent,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -122,6 +127,9 @@ public class PackageRequestController {
                 .and(PackageRequestSpecifications.dateRange(dateFrom, dateTo))
                 .and(PackageRequestSpecifications.maxWeight(maxWeight))
                 .and(PackageRequestSpecifications.parcelSize(parcelSize));
+        if (Boolean.TRUE.equals(urgent)) {
+            spec = spec.and(PackageRequestSpecifications.urgent(config.urgency().thresholdDays()));
+        }
         UUID callerId = requireUserId();
         Pageable pageable = PageRequest.of(page, size);
         if (lat != null && lng != null) {
