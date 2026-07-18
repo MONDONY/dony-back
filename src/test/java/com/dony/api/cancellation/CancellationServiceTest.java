@@ -48,6 +48,7 @@ class CancellationServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RematchService rematchService;
 
     @InjectMocks private CancellationService cancellationService;
 
@@ -160,7 +161,6 @@ class CancellationServiceTest {
                 setId(c, UUID.randomUUID());
                 return c;
             });
-            when(announcementRepository.findAll()).thenReturn(List.of());
 
             CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
 
@@ -201,7 +201,6 @@ class CancellationServiceTest {
                 setId(c, UUID.randomUUID());
                 return c;
             });
-            when(announcementRepository.findAll()).thenReturn(List.of());
 
             CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
 

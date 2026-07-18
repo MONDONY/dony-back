@@ -50,6 +50,7 @@ public class CancellationService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final CommissionProperties commissionProperties;
+    private final RematchService rematchService;
 
     private static final SecureRandom RETURN_CODE_RANDOM = new SecureRandom();
     private static final int MAX_RETURN_CODE_ATTEMPTS = 3;
@@ -61,7 +62,8 @@ public class CancellationService {
                                 UserRepository userRepository,
                                 AuditService auditService,
                                 ApplicationEventPublisher eventPublisher,
-                                CommissionProperties commissionProperties) {
+                                CommissionProperties commissionProperties,
+                                RematchService rematchService) {
         this.cancellationRepository = cancellationRepository;
         this.rematchSuggestionRepository = rematchSuggestionRepository;
         this.bidRepository = bidRepository;
@@ -70,6 +72,7 @@ public class CancellationService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.commissionProperties = commissionProperties;
+        this.rematchService = rematchService;
     }
 
     @Transactional
@@ -157,14 +160,24 @@ public class CancellationService {
             }
         }
 
-        // Publish event for notifications (Epic 8) and payment refunds (Story 6.7)
+        // Generate rematch suggestions for each affected sender's cancellation (one
+        // RematchService call per bid, capacity-filtered per sender — fix du bug qui ne
+        // générait des suggestions que pour le 1er expéditeur affecté).
+        Map<UUID, RematchService.RematchInfo> rematchBySender =
+                rematchService.generateForCancellations(announcement, affectedBids, cancellations);
+
+        // Publish event for notifications (Epic 8) and payment refunds (Story 6.7) — après
+        // la génération des suggestions rematch (Task B2 enrichira cet event avec rematchBySender).
         eventPublisher.publishEvent(new TripCancelledEvent(
                 request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
                 affectedBidIds, bidPaymentMethods, bidCommissionChargedVia));
 
-        // Generate rematch suggestions for each affected bid
-        List<RematchSuggestionDto> suggestions = generateRematchSuggestions(
-                announcement, affectedBids, cancellations);
+        // La réponse HTTP continue de renvoyer les suggestions du PREMIER expéditeur affecté
+        // (comportement historique, consommé par l'écran voyageur post-annulation) ; les
+        // autres expéditeurs récupèrent les leurs via GET /cancellations/{id}/rematch.
+        List<RematchSuggestionDto> suggestions = cancellations.isEmpty()
+                ? List.of()
+                : buildRematchSuggestionDtos(cancellations.get(0).getId());
 
         return new CancellationResponse(
                 request.announcementId(),
@@ -201,6 +214,14 @@ public class CancellationService {
                     "Vous n'êtes pas concerné par cette annulation");
         }
 
+        return buildRematchSuggestionDtos(cancellationId);
+    }
+
+    /** Mappe les {@link RematchSuggestionEntity} persistées d'une cancellation vers leurs DTOs
+     *  (résolution de l'annonce alternative associée). Réutilisé par {@code cancelTrip}
+     *  (suggestions du 1er expéditeur affecté) et {@code getRematchSuggestions} (consultation
+     *  par n'importe quel expéditeur affecté via son propre cancellationId). */
+    private List<RematchSuggestionDto> buildRematchSuggestionDtos(UUID cancellationId) {
         return rematchSuggestionRepository.findByCancellationId(cancellationId)
                 .stream().map(s -> {
                     AnnouncementEntity a = announcementRepository.findById(s.getAnnouncementId()).orElse(null);
@@ -211,47 +232,6 @@ public class CancellationService {
                 })
                 .filter(s -> s != null)
                 .toList();
-    }
-
-    private List<RematchSuggestionDto> generateRematchSuggestions(
-            AnnouncementEntity cancelled,
-            List<BidEntity> affectedBids,
-            List<CancellationEntity> cancellations) {
-
-        if (affectedBids.isEmpty()) return List.of();
-
-        // Find alternatives on same corridor within 72h
-        LocalDate from = cancelled.getDepartureDate();
-        LocalDate to = from.plusDays(3);
-
-        // Find active announcements on same corridor, within 72h, with capacity
-        List<AnnouncementEntity> alternatives = announcementRepository.findAll().stream()
-                .filter(a -> a.getStatus() == AnnouncementStatus.ACTIVE)
-                .filter(a -> !a.getId().equals(cancelled.getId()))
-                .filter(a -> a.getDepartureCity().equalsIgnoreCase(cancelled.getDepartureCity()))
-                .filter(a -> a.getArrivalCity().equalsIgnoreCase(cancelled.getArrivalCity()))
-                .filter(a -> !a.getDepartureDate().isBefore(from) && !a.getDepartureDate().isAfter(to))
-                .limit(5)
-                .toList();
-
-        List<RematchSuggestionDto> result = new ArrayList<>();
-
-        // Create rematch suggestion records for the first affected bid's cancellation
-        if (!cancellations.isEmpty() && !alternatives.isEmpty()) {
-            CancellationEntity firstCancellation = cancellations.get(0);
-            for (AnnouncementEntity alt : alternatives) {
-                RematchSuggestionEntity suggestion = new RematchSuggestionEntity();
-                suggestion.setCancellationId(firstCancellation.getId());
-                suggestion.setAnnouncementId(alt.getId());
-                RematchSuggestionEntity saved = rematchSuggestionRepository.save(suggestion);
-
-                result.add(new RematchSuggestionDto(saved.getId(), alt.getId(),
-                        alt.getDepartureCity(), alt.getArrivalCity(),
-                        alt.getDepartureDate(), alt.getAvailableKg(), alt.getPricePerKg()));
-            }
-        }
-
-        return result;
     }
 
     @Transactional

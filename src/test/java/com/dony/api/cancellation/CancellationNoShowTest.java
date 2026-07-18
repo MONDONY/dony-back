@@ -43,6 +43,7 @@ class CancellationNoShowTest {
     @Mock private com.dony.api.auth.UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RematchService rematchService;
 
     private CancellationService service;
 
@@ -57,7 +58,7 @@ class CancellationNoShowTest {
         service = new CancellationService(
                 cancellationRepository, rematchSuggestionRepository,
                 bidRepository, announcementRepository,
-                userRepository, auditService, eventPublisher, commissionProps);
+                userRepository, auditService, eventPublisher, commissionProps, rematchService);
     }
 
     private static final UUID ANNOUNCEMENT_ID = UUID.randomUUID();
