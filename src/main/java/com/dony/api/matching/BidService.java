@@ -881,6 +881,15 @@ public class BidService {
             CancellationReason.SENDER_CANCEL_AFTER_HANDOVER.name(),
             CancellationReason.TRAVELER_CANCEL_AFTER_HANDOVER.name());
 
+    /** Reasons de {@code CancellationEntity.reason} écrites par le flux "rematch bid-only"
+     * (voyageur annule le transport d'un bid payé, ou refuse une demande payée) — le trajet
+     * (l'annonce) N'est PAS annulé dans ces cas, seul ce bid l'est. Contrairement à
+     * {@link #NON_TRIP_HANDOVER_REASONS}, ces cancellations ouvrent quand même droit au
+     * rematch : cf. {@code BidLostRematchListener}. */
+    private static final java.util.Set<String> REMATCH_BID_REASONS = java.util.Set.of(
+            CancellationReason.BID_CANCELLED_BY_TRAVELER.name(),
+            CancellationReason.BID_REJECTED_AFTER_PAYMENT.name());
+
     /** Numéro révélé en clair seulement si l'offre est acceptée ou au-delà, sinon null. */
     static String phoneForStatus(String phone, BidStatus status) {
         if (phone == null) return null;
@@ -976,12 +985,21 @@ public class BidService {
         // announcement CANCELLED ET reason qui n'est PAS l'une des constantes programmatiques
         // des autres flux HANDOVER (SENDER_NO_SHOW, *_CANCEL_AFTER_HANDOVER — les seules valeurs
         // non-libres jamais écrites sur une cancellation HANDOVER, cf. CancellationService).
+        //
+        // Rematch bid-only (Task 4) : en plus du cas "trajet annulé" ci-dessus, une cancellation
+        // HANDOVER dont `reason` est BID_CANCELLED_BY_TRAVELER ou BID_REJECTED_AFTER_PAYMENT
+        // ouvre AUSSI droit au rematch, même si l'annonce reste ACTIVE — seul ce bid a été
+        // annulé/refusé par le voyageur, pas le trajet entier (cf. BidLostRematchListener).
         boolean tripWasCancelled = announcement != null && announcement.getStatus() == AnnouncementStatus.CANCELLED;
         boolean isTripCancellation = cancellation != null
                 && cancellation.getReason() != null
                 && !NON_TRIP_HANDOVER_REASONS.contains(cancellation.getReason());
-        UUID tripCancellationId = tripWasCancelled && isTripCancellation ? cancellation.getId() : null;
-        String tripCancellationRematchStatus = tripWasCancelled && isTripCancellation
+        boolean isRematchBidCancellation = cancellation != null
+                && cancellation.getReason() != null
+                && REMATCH_BID_REASONS.contains(cancellation.getReason());
+        boolean isRematchCancellation = (tripWasCancelled && isTripCancellation) || isRematchBidCancellation;
+        UUID tripCancellationId = isRematchCancellation ? cancellation.getId() : null;
+        String tripCancellationRematchStatus = isRematchCancellation
                 ? cancellation.getRematchStatus()
                 : null;
 

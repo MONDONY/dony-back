@@ -2205,6 +2205,89 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("bid CANCELLED par le voyageur (reason=BID_CANCELLED_BY_TRAVELER) sur annonce "
+                + "ACTIVE → tripCancellationId et rematchStatus renseignés (rematch bid-only)")
+        void toResponse_bidCancelledByTraveler_populatesRematchCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("BID_CANCELLED_BY_TRAVELER");
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid REJECTED après paiement (reason=BID_REJECTED_AFTER_PAYMENT) sur annonce "
+                + "ACTIVE → tripCancellationId et rematchStatus renseignés (rematch bid-only)")
+        void toResponse_bidRejectedAfterPayment_populatesRematchCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.REJECTED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("BID_REJECTED_AFTER_PAYMENT");
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid CANCELLED avec reason SENDER_NO_SHOW sur annonce ACTIVE → champs null "
+                + "(non-régression : ne doit PAS être traité comme rematch bid-only)")
+        void toResponse_senderNoShowOnActiveAnnouncement_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, UUID.randomUUID());
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("SENDER_NO_SHOW");
+            cancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
         @DisplayName("expéditeur avec prénom ET nom → nom complet dans la réponse")
         void toResponse_senderWithBothNames_returnsFullName() {
             UserEntity sender = buildSender();
