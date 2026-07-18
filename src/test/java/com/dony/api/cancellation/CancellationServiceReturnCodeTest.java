@@ -44,6 +44,8 @@ class CancellationServiceReturnCodeTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RematchService rematchService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     private CancellationService service;
 
@@ -59,7 +61,8 @@ class CancellationServiceReturnCodeTest {
         service = new CancellationService(
                 cancellationRepository, rematchSuggestionRepository, bidRepository,
                 announcementRepository, userRepository, auditService, eventPublisher,
-                new CommissionProperties(new BigDecimal("0.12"), new BigDecimal("1.00"), 24));
+                new CommissionProperties(new BigDecimal("0.12"), new BigDecimal("1.00"), 24),
+                rematchService, storageService);
     }
 
     private UserEntity user(UUID id) {

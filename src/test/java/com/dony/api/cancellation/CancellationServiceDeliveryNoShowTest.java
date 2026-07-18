@@ -42,6 +42,8 @@ class CancellationServiceDeliveryNoShowTest {
     @Mock UserRepository userRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock RematchService rematchService;
+    @Mock com.dony.api.common.StorageService storageService;
 
     CancellationService service;
     static final UUID BID_ID = UUID.randomUUID();
@@ -53,7 +55,8 @@ class CancellationServiceDeliveryNoShowTest {
     void setUp() {
         CommissionProperties props = new CommissionProperties(BigDecimal.ZERO, BigDecimal.ZERO, 24);
         service = new CancellationService(cancellationRepository, rematchSuggestionRepository,
-                bidRepository, announcementRepository, userRepository, auditService, eventPublisher, props);
+                bidRepository, announcementRepository, userRepository, auditService, eventPublisher, props,
+                rematchService, storageService);
     }
 
     private BidEntity inTransitBid(LocalDateTime departureDate) {

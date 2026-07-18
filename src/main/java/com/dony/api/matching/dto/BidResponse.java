@@ -71,5 +71,14 @@ public record BidResponse(
         java.time.LocalDateTime returnedAt,
         String senderAvatarUrl,
         String travelerAvatarUrl,
-        java.util.List<com.dony.api.matching.dto.BidPhotoResponse> photos
+        java.util.List<com.dony.api.matching.dto.BidPhotoResponse> photos,
+        /** ID de la {@code CancellationEntity} ouvrant droit au rematch (trajet annulé OU
+         * transport annulé/refusé par le voyageur) — distinct des cancellations no-show /
+         * après-remise, qui n'ouvrent pas droit au rematch. Null si le bid n'a pas été
+         * affecté par une cancellation rematch. */
+        UUID tripCancellationId,
+        /** {@code rematchStatus} de cette cancellation ("NONE" / "SUGGESTED") — permet au
+         * front d'afficher le CTA « Voir les trajets alternatifs ». Null si pas de
+         * cancellation ouvrant droit au rematch pour ce bid. */
+        String tripCancellationRematchStatus
 ) {}

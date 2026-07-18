@@ -30,6 +30,7 @@ import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,6 +49,8 @@ class CancellationServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RematchService rematchService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     @InjectMocks private CancellationService cancellationService;
 
@@ -160,13 +163,87 @@ class CancellationServiceTest {
                 setId(c, UUID.randomUUID());
                 return c;
             });
-            when(announcementRepository.findAll()).thenReturn(List.of());
 
             CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
 
             assertThat(acceptedBid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             assertThat(result.affectedBidsCount()).isEqualTo(1);
             verify(cancellationRepository).save(any(CancellationEntity.class));
+        }
+
+        @Test
+        @DisplayName("délègue à RematchService avec les arguments exacts et restitue ses suggestions dans la réponse")
+        void cancelTrip_delegatesToRematchServiceAndReturnsItsSuggestions() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            UUID senderId = UUID.randomUUID();
+            BidEntity acceptedBid = buildAcceptedBid(senderId);
+            List<BidEntity> affectedBidsList = List.of(acceptedBid);
+            CancellationRequest req = new CancellationRequest(ANNOUNCEMENT_ID, "Vol annulé");
+
+            UUID suggestionId = UUID.randomUUID();
+            UUID altAnnouncementId = UUID.randomUUID();
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(affectedBidsList);
+            when(userRepository.save(any())).thenReturn(traveler);
+            when(cancellationRepository.save(any(CancellationEntity.class))).thenAnswer(inv -> {
+                CancellationEntity c = inv.getArgument(0);
+                setId(c, UUID.randomUUID());
+                return c;
+            });
+
+            // RematchService renvoie une map connue référençant la cancellation générée par
+            // cancelTrip (récupérée via le 3e argument reçu — on ne peut pas la construire
+            // avant l'appel, son id est assigné dans le stub cancellationRepository.save ci-dessus).
+            when(rematchService.generateForCancellations(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        List<CancellationEntity> cancellations = inv.getArgument(2);
+                        CancellationEntity firstCancellation = cancellations.get(0);
+                        return Map.of(senderId, new RematchService.RematchInfo(firstCancellation.getId(), 1));
+                    });
+
+            AnnouncementEntity altAnnouncement = new AnnouncementEntity();
+            setId(altAnnouncement, altAnnouncementId);
+            altAnnouncement.setDepartureCity("Paris");
+            altAnnouncement.setArrivalCity("Dakar");
+            altAnnouncement.setDepartureDate(LocalDate.now().plusDays(3));
+            altAnnouncement.setAvailableKg(BigDecimal.TEN);
+            altAnnouncement.setPricePerKg(BigDecimal.valueOf(5));
+
+            RematchSuggestionEntity suggestionEntity = new RematchSuggestionEntity();
+            setId(suggestionEntity, suggestionId);
+            suggestionEntity.setAnnouncementId(altAnnouncementId);
+
+            when(rematchSuggestionRepository.findByCancellationId(any(UUID.class)))
+                    .thenReturn(List.of(suggestionEntity));
+            when(announcementRepository.findAllById(List.of(altAnnouncementId)))
+                    .thenReturn(List.of(altAnnouncement));
+
+            CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
+
+            assertThat(result.rematchSuggestions()).hasSize(1);
+            RematchSuggestionDto dto = result.rematchSuggestions().get(0);
+            assertThat(dto.suggestionId()).isEqualTo(suggestionId);
+            assertThat(dto.announcementId()).isEqualTo(altAnnouncementId);
+            assertThat(dto.departureCity()).isEqualTo("Paris");
+            assertThat(dto.arrivalCity()).isEqualTo("Dakar");
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<BidEntity>> bidsCaptor = ArgumentCaptor.forClass(List.class);
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<CancellationEntity>> cancellationsCaptor = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<AnnouncementEntity> announcementCaptor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            verify(rematchService).generateForCancellations(
+                    announcementCaptor.capture(), bidsCaptor.capture(), cancellationsCaptor.capture());
+
+            assertThat(announcementCaptor.getValue()).isSameAs(announcement);
+            assertThat(bidsCaptor.getValue()).isSameAs(affectedBidsList);
+            assertThat(cancellationsCaptor.getValue()).hasSize(1);
+            assertThat(cancellationsCaptor.getValue().get(0).getBidId()).isEqualTo(acceptedBid.getId());
         }
 
         @Test
@@ -201,7 +278,6 @@ class CancellationServiceTest {
                 setId(c, UUID.randomUUID());
                 return c;
             });
-            when(announcementRepository.findAll()).thenReturn(List.of());
 
             CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
 
@@ -420,6 +496,7 @@ class CancellationServiceTest {
             UUID travelerId = UUID.randomUUID();
             UUID altAnnouncementId = UUID.randomUUID();
             UUID suggestionId = UUID.randomUUID();
+            UUID altTravelerId = UUID.randomUUID();
 
             CancellationEntity cancellation = new CancellationEntity();
             setId(cancellation, cancellationId);
@@ -445,23 +522,135 @@ class CancellationServiceTest {
 
             AnnouncementEntity altAnnouncement = new AnnouncementEntity();
             setId(altAnnouncement, altAnnouncementId);
+            altAnnouncement.setTravelerId(altTravelerId);
             altAnnouncement.setDepartureCity("Paris");
             altAnnouncement.setArrivalCity("Dakar");
             altAnnouncement.setDepartureDate(LocalDate.now().plusDays(7));
             altAnnouncement.setAvailableKg(BigDecimal.TEN);
             altAnnouncement.setPricePerKg(BigDecimal.valueOf(5));
 
+            UserEntity altTraveler = new UserEntity();
+            setId(altTraveler, altTravelerId);
+            altTraveler.setFirstName("Moussa");
+            altTraveler.setAverageRating(BigDecimal.valueOf(4.8));
+            altTraveler.setRatingCount(12);
+            altTraveler.setAvatarUrl("users/avatar-key.jpg");
+
             when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
             when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
             when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
             when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
             when(rematchSuggestionRepository.findByCancellationId(cancellationId)).thenReturn(List.of(suggestion));
-            when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+            when(announcementRepository.findAllById(List.of(altAnnouncementId)))
+                    .thenReturn(List.of(altAnnouncement));
+            when(userRepository.findAllById(List.of(altTravelerId))).thenReturn(List.of(altTraveler));
+            when(storageService.avatarUrl("users/avatar-key.jpg"))
+                    .thenReturn("https://s3.example/presigned-avatar");
 
             List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).departureCity()).isEqualTo("Paris");
+            assertThat(result.get(0).travelerFirstName()).isEqualTo("Moussa");
+            assertThat(result.get(0).travelerRating()).isEqualByComparingTo(BigDecimal.valueOf(4.8));
+            assertThat(result.get(0).travelerRatingCount()).isEqualTo(12);
+            assertThat(result.get(0).travelerAvatarUrl()).isEqualTo("https://s3.example/presigned-avatar");
+        }
+
+        @Test
+        @DisplayName("2 suggestions / 2 voyageurs distincts → un seul findAllById par repository (anti N+1)")
+        void getRematchSuggestions_twoSuggestionsTwoTravelers_batchesAnnouncementsAndTravelersInOneCallEach() {
+            UUID cancellationId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+            UUID userId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setBidId(bidId);
+            cancellation.setCancelledBy(userId);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, bidId);
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(userId);
+
+            AnnouncementEntity announcement = new AnnouncementEntity();
+            setId(announcement, announcementId);
+            announcement.setTravelerId(travelerId);
+
+            UserEntity caller = new UserEntity();
+            setId(caller, userId);
+
+            UUID altAnnouncementId1 = UUID.randomUUID();
+            UUID altAnnouncementId2 = UUID.randomUUID();
+            UUID altTravelerId1 = UUID.randomUUID();
+            UUID altTravelerId2 = UUID.randomUUID();
+            UUID suggestionId1 = UUID.randomUUID();
+            UUID suggestionId2 = UUID.randomUUID();
+
+            RematchSuggestionEntity suggestion1 = new RematchSuggestionEntity();
+            setId(suggestion1, suggestionId1);
+            suggestion1.setCancellationId(cancellationId);
+            suggestion1.setAnnouncementId(altAnnouncementId1);
+
+            RematchSuggestionEntity suggestion2 = new RematchSuggestionEntity();
+            setId(suggestion2, suggestionId2);
+            suggestion2.setCancellationId(cancellationId);
+            suggestion2.setAnnouncementId(altAnnouncementId2);
+
+            AnnouncementEntity altAnnouncement1 = new AnnouncementEntity();
+            setId(altAnnouncement1, altAnnouncementId1);
+            altAnnouncement1.setTravelerId(altTravelerId1);
+            altAnnouncement1.setDepartureCity("Paris");
+            altAnnouncement1.setArrivalCity("Dakar");
+            altAnnouncement1.setDepartureDate(LocalDate.now().plusDays(3));
+            altAnnouncement1.setAvailableKg(BigDecimal.TEN);
+            altAnnouncement1.setPricePerKg(BigDecimal.valueOf(5));
+
+            AnnouncementEntity altAnnouncement2 = new AnnouncementEntity();
+            setId(altAnnouncement2, altAnnouncementId2);
+            altAnnouncement2.setTravelerId(altTravelerId2);
+            altAnnouncement2.setDepartureCity("Lyon");
+            altAnnouncement2.setArrivalCity("Abidjan");
+            altAnnouncement2.setDepartureDate(LocalDate.now().plusDays(4));
+            altAnnouncement2.setAvailableKg(BigDecimal.valueOf(15));
+            altAnnouncement2.setPricePerKg(BigDecimal.valueOf(6));
+
+            UserEntity altTraveler1 = new UserEntity();
+            setId(altTraveler1, altTravelerId1);
+            altTraveler1.setFirstName("Moussa");
+
+            UserEntity altTraveler2 = new UserEntity();
+            setId(altTraveler2, altTravelerId2);
+            altTraveler2.setFirstName("Fatou");
+
+            when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
+            when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
+            when(rematchSuggestionRepository.findByCancellationId(cancellationId))
+                    .thenReturn(List.of(suggestion1, suggestion2));
+            // L'ordre d'itération d'un Map (HashMap via Collectors.toMap) n'est pas garanti —
+            // on matche sur any() plutôt que sur une liste précisément ordonnée.
+            when(announcementRepository.findAllById(any()))
+                    .thenReturn(List.of(altAnnouncement1, altAnnouncement2));
+            when(userRepository.findAllById(any()))
+                    .thenReturn(List.of(altTraveler1, altTraveler2));
+
+            List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
+
+            assertThat(result).hasSize(2);
+            assertThat(result).extracting(RematchSuggestionDto::travelerFirstName)
+                    .containsExactlyInAnyOrder("Moussa", "Fatou");
+
+            // Anti N+1 : un seul findAllById pour les annonces, un seul pour les voyageurs —
+            // jamais un findById par suggestion.
+            verify(announcementRepository, times(1)).findAllById(any());
+            verify(userRepository, times(1)).findAllById(any());
+            verify(announcementRepository, never()).findById(altAnnouncementId1);
+            verify(announcementRepository, never()).findById(altAnnouncementId2);
         }
 
         @Test

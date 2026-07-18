@@ -21,13 +21,17 @@ public class TripCancelledEvent {
      * Permet aux listeners de remboursement de router vers wallet.credit() ou Stripe Refund.
      */
     private final Map<UUID, String> bidCommissionChargedVia;
+    /** Suggestions rematch par expéditeur (Story 5.6). Clé = senderId. */
+    public record RematchBySenderInfo(UUID cancellationId, int suggestionCount) {}
+    private final Map<UUID, RematchBySenderInfo> rematchBySender;
 
     /** Full constructor. */
     public TripCancelledEvent(UUID announcementId, UUID travelerId,
                                List<UUID> affectedSenderIds, String reason,
                                List<UUID> affectedBidIds,
                                Map<UUID, String> bidPaymentMethods,
-                               Map<UUID, String> bidCommissionChargedVia) {
+                               Map<UUID, String> bidCommissionChargedVia,
+                               Map<UUID, RematchBySenderInfo> rematchBySender) {
         this.announcementId = announcementId;
         this.travelerId = travelerId;
         this.affectedSenderIds = affectedSenderIds;
@@ -35,21 +39,31 @@ public class TripCancelledEvent {
         this.affectedBidIds = affectedBidIds;
         this.bidPaymentMethods = bidPaymentMethods != null ? bidPaymentMethods : Map.of();
         this.bidCommissionChargedVia = bidCommissionChargedVia != null ? bidCommissionChargedVia : Map.of();
+        this.rematchBySender = rematchBySender != null ? rematchBySender : Map.of();
     }
 
-    /** Backward-compatible constructor — bidCommissionChargedVia defaults to empty map. */
+    /** Backward-compatible constructor — rematchBySender defaults to empty map. */
+    public TripCancelledEvent(UUID announcementId, UUID travelerId,
+                               List<UUID> affectedSenderIds, String reason,
+                               List<UUID> affectedBidIds,
+                               Map<UUID, String> bidPaymentMethods,
+                               Map<UUID, String> bidCommissionChargedVia) {
+        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, bidPaymentMethods, bidCommissionChargedVia, Map.of());
+    }
+
+    /** Backward-compatible constructor — bidCommissionChargedVia and rematchBySender default to empty map. */
     public TripCancelledEvent(UUID announcementId, UUID travelerId,
                                List<UUID> affectedSenderIds, String reason,
                                List<UUID> affectedBidIds,
                                Map<UUID, String> bidPaymentMethods) {
-        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, bidPaymentMethods, Map.of());
+        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, bidPaymentMethods, Map.of(), Map.of());
     }
 
-    /** Backward-compatible constructor — both maps default to empty. */
+    /** Backward-compatible constructor — all maps default to empty. */
     public TripCancelledEvent(UUID announcementId, UUID travelerId,
                                List<UUID> affectedSenderIds, String reason,
                                List<UUID> affectedBidIds) {
-        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, Map.of(), Map.of());
+        this(announcementId, travelerId, affectedSenderIds, reason, affectedBidIds, Map.of(), Map.of(), Map.of());
     }
 
     public UUID getAnnouncementId() { return announcementId; }
@@ -59,4 +73,5 @@ public class TripCancelledEvent {
     public List<UUID> getAffectedBidIds() { return affectedBidIds; }
     public Map<UUID, String> getBidPaymentMethods() { return bidPaymentMethods; }
     public Map<UUID, String> getBidCommissionChargedVia() { return bidCommissionChargedVia; }
+    public Map<UUID, RematchBySenderInfo> getRematchBySender() { return rematchBySender; }
 }

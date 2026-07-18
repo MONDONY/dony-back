@@ -1301,6 +1301,49 @@ class BidServiceTest {
              .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                      .isEqualTo(HttpStatus.CONFLICT));
         }
+
+        @Test
+        @DisplayName("bid PAYMENT_ESCROWED rejeté par le voyageur → event rematchEligible=true")
+        void rejectBid_onEscrowedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"));
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+            assertThat(captor.getValue().getAnnouncementId()).isEqualTo(ANNOUNCEMENT_ID);
+        }
+
+        @Test
+        @DisplayName("bid cash PENDING (off-platform) rejeté → event rematchEligible=false")
+        void rejectBid_onOffPlatformPendingBid_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.WAVE);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"));
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
+        }
     }
 
     // ─── rejectBidBySystem ─────────────────────────────────────────────────────
@@ -1356,6 +1399,26 @@ class BidServiceTest {
             assertThatThrownBy(() -> bidService.rejectBidBySystem(BID_ID, TRAVELER_ID, "raison"))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Traveler not found: " + TRAVELER_ID);
+        }
+
+        @Test
+        @DisplayName("rejet automatisé (système) sur bid PAYMENT_ESCROWED → event rematchEligible=false")
+        void rejectBidBySystem_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBidBySystem(BID_ID, TRAVELER_ID, "Poids trop important pour la capacité restante.");
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
         }
     }
 
@@ -1538,6 +1601,89 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid ACCEPTED → event rematchEligible=true")
+        void cancelBid_byTraveler_onAcceptedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+            assertThat(captor.getValue().getAnnouncementId()).isEqualTo(announcement.getId());
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid PAYMENT_ESCROWED → event rematchEligible=true")
+        void cancelBid_byTraveler_onEscrowedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+        }
+
+        @Test
+        @DisplayName("expéditeur annule un bid ACCEPTED → event rematchEligible=false")
+        void cancelBid_bySender_publishesNonEligibleEvent() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid PENDING → event rematchEligible=false")
+        void cancelBid_byTraveler_onPendingBid_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
         }
     }
 
@@ -1946,6 +2092,199 @@ class BidServiceTest {
             assertThat(resp.deliveryNoShowStatus()).isNull();
             assertThat(resp.deliveryNoShowContestationDeadline()).isNull();
             assertThat(resp.deliveryNoShowReportedByTraveler()).isNull();
+        }
+
+        @Test
+        @DisplayName("trajet annulé (announcement CANCELLED) → tripCancellationId et rematchStatus renseignés")
+        void toResponse_tripCancelled_populatesTripCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.CANCELLED);
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("Vol annulé"); // texte libre saisi par le voyageur
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid actif (announcement ACTIVE) avec cancellation HANDOVER (ex: après remise) → champs trip cancellation null")
+        void toResponse_activeAnnouncementWithNonTripCancellation_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            // Cancellation HANDOVER issue d'un flux qui n'annule pas le trajet entier
+            // (ex: annulation après remise ou no-show) — announcement reste ACTIVE.
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, UUID.randomUUID());
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("SENDER_CANCEL_AFTER_HANDOVER");
+            cancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("régression : no-show préexistant PUIS suppression de compte (bulk CANCELLED, "
+                + "sans CancellationEntity) → champs trip cancellation null, pas de faux positif")
+        void toResponse_accountDeletionBulkCancelAfterPreexistingNoShow_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            // Scénario du reviewer : (1) reportSenderNoShow crée une CancellationEntity HANDOVER
+            // (reason=SENDER_NO_SHOW) sur un bid ACCEPTED, l'annonce reste ACTIVE à ce moment-là ;
+            // (2) le voyageur supprime son compte → AccountDeletionListener appelle
+            // AnnouncementRepository#cancelOpenAnnouncementsByUserId, qui bascule l'annonce (et le
+            // bid) en CANCELLED en bulk SANS créer de nouvelle CancellationEntity. La cancellation
+            // no-show préexistante ne doit PAS être exposée comme "trajet annulé".
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.CANCELLED);
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            CancellationEntity noShowCancellation = new CancellationEntity();
+            setId(noShowCancellation, UUID.randomUUID());
+            noShowCancellation.setScope(CancellationScope.HANDOVER);
+            noShowCancellation.setReason("SENDER_NO_SHOW");
+            noShowCancellation.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            noShowCancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(noShowCancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("bid actif sans cancellation → champs trip cancellation null")
+        void toResponse_noCancellation_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of());
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("bid CANCELLED par le voyageur (reason=BID_CANCELLED_BY_TRAVELER) sur annonce "
+                + "ACTIVE → tripCancellationId et rematchStatus renseignés (rematch bid-only)")
+        void toResponse_bidCancelledByTraveler_populatesRematchCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("BID_CANCELLED_BY_TRAVELER");
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid REJECTED après paiement (reason=BID_REJECTED_AFTER_PAYMENT) sur annonce "
+                + "ACTIVE → tripCancellationId et rematchStatus renseignés (rematch bid-only)")
+        void toResponse_bidRejectedAfterPayment_populatesRematchCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.REJECTED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("BID_REJECTED_AFTER_PAYMENT");
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid CANCELLED avec reason SENDER_NO_SHOW sur annonce ACTIVE → champs null "
+                + "(non-régression : ne doit PAS être traité comme rematch bid-only)")
+        void toResponse_senderNoShowOnActiveAnnouncement_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, UUID.randomUUID());
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("SENDER_NO_SHOW");
+            cancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
         }
 
         @Test

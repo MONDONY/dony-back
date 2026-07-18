@@ -20,6 +20,7 @@ import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.cancellation.CancellationEntity;
+import com.dony.api.cancellation.CancellationReason;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -558,7 +559,7 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
-        return doRejectBid(bid, announcement, traveler, request);
+        return doRejectBid(bid, announcement, traveler, request, false);
     }
 
     /**
@@ -578,11 +579,12 @@ public class BidService {
         }
         UserEntity traveler = userRepository.findById(travelerId)
                 .orElseThrow(() -> new IllegalStateException("Traveler not found: " + travelerId));
-        return doRejectBid(bid, announcement, traveler, new BidRejectRequest(reason));
+        return doRejectBid(bid, announcement, traveler, new BidRejectRequest(reason), true);
     }
 
     private BidResponse doRejectBid(BidEntity bid, AnnouncementEntity announcement,
-                                    UserEntity traveler, BidRejectRequest request) {
+                                    UserEntity traveler, BidRejectRequest request,
+                                    boolean systemInitiated) {
         boolean isOffPlatformPending =
                 (bid.getPaymentMethod() == PaymentMethod.CASH
                  || bid.getPaymentMethod() == PaymentMethod.WAVE
@@ -601,8 +603,13 @@ public class BidService {
         auditService.log("BID", bid.getId(), "BID_REJECTED", traveler.getId(),
                 Map.of("reason", String.valueOf(bid.getRejectionReason())));
 
+        // Rematch éligible uniquement si l'action vient d'un humain (pas d'une
+        // automatisation système) et que le bid était réellement payé (pas un
+        // simple refus d'une demande cash encore PENDING, jamais confirmée).
+        boolean rematchEligible = !systemInitiated && !isOffPlatformPending;
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bid.getId(), bid.getSenderId(), bid.getRejectionReason()));
+                bid.getId(), bid.getSenderId(), bid.getRejectionReason(),
+                bid.getAnnouncementId(), rematchEligible));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }
@@ -658,6 +665,8 @@ public class BidService {
         // Verrou D3 : pas d'annulation en transit ni après le départ réel (colis remis).
         com.dony.api.cancellation.CancellationGuard.assertCancellable(bid, announcement);
 
+        BidStatus statusBeforeCancel = bid.getStatus();
+
         // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
         // (sauf pour KG_FREE où la capacité n'est jamais décrémentée)
         if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
@@ -681,9 +690,16 @@ public class BidService {
                 Map.of("actor", isTraveler ? "TRAVELER" : "SENDER"));
 
         // Rembourse l'expéditeur (séquestre libéré via RefundProcessor) et notifie,
-        // quel que soit l'acteur de l'annulation.
+        // quel que soit l'acteur de l'annulation. Rematch éligible uniquement si
+        // c'est le voyageur qui se désiste d'un transport déjà confirmé (bid payé
+        // ou accepté) — pas un simple retrait de demande encore PENDING, et pas
+        // une annulation côté expéditeur.
+        boolean rematchEligible = isTraveler
+                && (statusBeforeCancel == BidStatus.ACCEPTED
+                    || statusBeforeCancel == BidStatus.PAYMENT_ESCROWED);
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bid.getId(), bid.getSenderId(), reason));
+                bid.getId(), bid.getSenderId(), reason,
+                bid.getAnnouncementId(), rematchEligible));
 
         UserEntity senderUser = isSender
                 ? caller
@@ -853,6 +869,27 @@ public class BidService {
     private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
             BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
 
+    /** Valeurs programmatiques (non-libres) de {@code CancellationEntity.reason} écrites par les
+     * flux HANDOVER qui n'annulent PAS le trajet entier (no-show expéditeur, annulation après
+     * remise) — cf. {@code CancellationService#reportSenderNoShow} et le flux "cancel after
+     * handover". Sert à exclure ces cancellations quand on détecte la cancellation "trajet
+     * annulé" pour {@link BidResponse#tripCancellationId()} : `reason` y est du texte libre
+     * saisi par le voyageur, donc on ne peut identifier positivement "trajet annulé" que par
+     * élimination des seules autres valeurs jamais écrites sur une cancellation HANDOVER. */
+    private static final java.util.Set<String> NON_TRIP_HANDOVER_REASONS = java.util.Set.of(
+            CancellationReason.SENDER_NO_SHOW.name(),
+            CancellationReason.SENDER_CANCEL_AFTER_HANDOVER.name(),
+            CancellationReason.TRAVELER_CANCEL_AFTER_HANDOVER.name());
+
+    /** Reasons de {@code CancellationEntity.reason} écrites par le flux "rematch bid-only"
+     * (voyageur annule le transport d'un bid payé, ou refuse une demande payée) — le trajet
+     * (l'annonce) N'est PAS annulé dans ces cas, seul ce bid l'est. Contrairement à
+     * {@link #NON_TRIP_HANDOVER_REASONS}, ces cancellations ouvrent quand même droit au
+     * rematch : cf. {@code BidLostRematchListener}. */
+    private static final java.util.Set<String> REMATCH_BID_REASONS = java.util.Set.of(
+            CancellationReason.BID_CANCELLED_BY_TRAVELER.name(),
+            CancellationReason.BID_REJECTED_AFTER_PAYMENT.name());
+
     /** Numéro révélé en clair seulement si l'offre est acceptée ou au-delà, sinon null. */
     static String phoneForStatus(String phone, BidStatus status) {
         if (phone == null) return null;
@@ -932,6 +969,38 @@ public class BidService {
                 : null;
         Boolean deliveryNoShowReportedByTraveler = deliveryCancellation != null
                 ? "RECIPIENT_NO_SHOW".equals(deliveryCancellation.getReason())
+                : null;
+
+        // La cancellation "trajet annulé" (RematchService/cancelTrip) est la même ligne
+        // HANDOVER que ci-dessus (contrainte UNIQUE(bid_id, scope) : au plus une par bid) —
+        // MAIS elle partage son scope/noShowStatus par défaut avec d'autres flux (no-show,
+        // annulation après remise), donc `reason` seul (texte libre côté cancelTrip) n'est PAS
+        // un discriminant positif fiable. announcement.status == CANCELLED n'est pas suffisant
+        // non plus à lui seul : AnnouncementRepository#cancelOpenAnnouncementsByUserId (bulk,
+        // appelé à la suppression de compte par AccountDeletionListener) passe aussi l'annonce
+        // à CANCELLED — sans créer de CancellationEntity — donc un bid dont la cancellation
+        // HANDOVER préexistante vient d'un no-show ou d'une annulation après remise (announcement
+        // restée ACTIVE/FULL à ce moment-là) peut ensuite se retrouver avec announcement CANCELLED
+        // si son voyageur supprime son compte plus tard. On combine donc les deux signaux :
+        // announcement CANCELLED ET reason qui n'est PAS l'une des constantes programmatiques
+        // des autres flux HANDOVER (SENDER_NO_SHOW, *_CANCEL_AFTER_HANDOVER — les seules valeurs
+        // non-libres jamais écrites sur une cancellation HANDOVER, cf. CancellationService).
+        //
+        // Rematch bid-only (Task 4) : en plus du cas "trajet annulé" ci-dessus, une cancellation
+        // HANDOVER dont `reason` est BID_CANCELLED_BY_TRAVELER ou BID_REJECTED_AFTER_PAYMENT
+        // ouvre AUSSI droit au rematch, même si l'annonce reste ACTIVE — seul ce bid a été
+        // annulé/refusé par le voyageur, pas le trajet entier (cf. BidLostRematchListener).
+        boolean tripWasCancelled = announcement != null && announcement.getStatus() == AnnouncementStatus.CANCELLED;
+        boolean isTripCancellation = cancellation != null
+                && cancellation.getReason() != null
+                && !NON_TRIP_HANDOVER_REASONS.contains(cancellation.getReason());
+        boolean isRematchBidCancellation = cancellation != null
+                && cancellation.getReason() != null
+                && REMATCH_BID_REASONS.contains(cancellation.getReason());
+        boolean isRematchCancellation = (tripWasCancelled && isTripCancellation) || isRematchBidCancellation;
+        UUID tripCancellationId = isRematchCancellation ? cancellation.getId() : null;
+        String tripCancellationRematchStatus = isRematchCancellation
+                ? cancellation.getRematchStatus()
                 : null;
 
         // Compute total net: sum of grid items + KG part (for display in Flutter)
@@ -1037,7 +1106,9 @@ public class BidService {
                 bid.getReturnedAt(),
                 storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null),
                 storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null),
-                bidPhotoService.activePhotos(bid.getId())
+                bidPhotoService.activePhotos(bid.getId()),
+                tripCancellationId,
+                tripCancellationRematchStatus
         );
     }
 }

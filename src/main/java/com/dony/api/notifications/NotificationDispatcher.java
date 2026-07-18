@@ -2,6 +2,7 @@ package com.dony.api.notifications;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.events.UserSuspendedEvent;
+import com.dony.api.cancellation.events.BidLostRematchPreparedEvent;
 import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
@@ -19,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -109,18 +112,69 @@ public class NotificationDispatcher {
 
     @EventListener @Async
     public void onBidRejected(BidRejectedEvent event) {
+        if (event.isRematchEligible()) return; // relayé par onBidLostRematchPrepared (X2/X3)
         notifyUser(event.getSenderId(), "Demande refusée",
                 "Le voyageur a refusé votre demande",
                 Map.of("type", "BID_REJECTED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener @Async
+    // Notification unique (BID_REJECTED conservé) pour un bid perdu par annulation/refus voyageur,
+    // avec deep link rematch si des suggestions existent. Même pattern AFTER_COMMIT + @Async que
+    // onTripCancelled : le deep link cancellationId ne doit jamais partir avant que
+    // BidLostRematchListener (cancellation/) ait commité la CancellationEntity + les suggestions.
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async
+    public void onBidLostRematchPrepared(BidLostRematchPreparedEvent event) {
+        String title = event.cancelledByTraveler() ? "Transport annulé" : "Demande refusée";
+        String prefix = event.cancelledByTraveler()
+                ? "Le voyageur a annulé le transport de votre colis"
+                : "Le voyageur a refusé votre demande";
+        int n = event.suggestionCount();
+        // Défense : count > 0 avec cancellationId null ne devrait pas arriver (contrat X2 garantit
+        // cancellationId non-null dès que suggestionCount > 0), mais si ça survient on retombe
+        // sur le corps "remboursement en cours" sans deep link plutôt que de risquer un NPE.
+        if (n > 0 && event.cancellationId() != null) {
+            notifyUser(event.senderId(), title,
+                    prefix + " — remboursement en cours. " + n
+                            + " voyageur" + (n > 1 ? "s" : "") + " alternatif" + (n > 1 ? "s" : "")
+                            + " disponible" + (n > 1 ? "s" : ""),
+                    Map.of("type", "BID_REJECTED",
+                           "bidId", event.bidId().toString(),
+                           "cancellationId", event.cancellationId().toString()));
+        } else {
+            notifyUser(event.senderId(), title,
+                    prefix + " — votre remboursement est en cours",
+                    Map.of("type", "BID_REJECTED", "bidId", event.bidId().toString()));
+        }
+    }
+
+    // Le deep link cancellationId ne doit pas partir avant le commit de cancelTrip
+    // (rollback → push mensonger ; race → 404 sur GET /cancellations/{id}/rematch-suggestions).
+    // Pattern reproduit de TripCancelledEventListener (payments) : AFTER_COMMIT + @Async, sans
+    // @Transactional(REQUIRES_NEW) — ce listener ne fait que lire/notifier, pas de refund à isoler.
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async
     public void onTripCancelled(TripCancelledEvent event) {
         if (event.getAffectedSenderIds() == null) return;
         for (UUID senderId : event.getAffectedSenderIds()) {
-            notifyUser(senderId, "Trajet annulé",
-                    "Le voyageur a annulé son trajet. Remboursement en cours.",
-                    Map.of("type", "TRIP_CANCELLED"));
+            TripCancelledEvent.RematchBySenderInfo info = event.getRematchBySender().get(senderId);
+            if (info == null) {
+                notifyUser(senderId, "Trajet annulé",
+                        "Le voyageur a annulé son trajet. Remboursement en cours.",
+                        Map.of("type", "TRIP_CANCELLED"));
+            } else if (info.suggestionCount() > 0) {
+                int n = info.suggestionCount();
+                notifyUser(senderId, "Trajet annulé",
+                        "Trajet annulé — remboursement en cours. "
+                                + n + " voyageur" + (n > 1 ? "s" : "") + " alternatif"
+                                + (n > 1 ? "s" : "") + " disponible" + (n > 1 ? "s" : ""),
+                        Map.of("type", "TRIP_CANCELLED",
+                               "cancellationId", info.cancellationId().toString()));
+            } else {
+                notifyUser(senderId, "Trajet annulé",
+                        "Trajet annulé — Aucun voyageur disponible dans les 72h, votre remboursement est traité",
+                        Map.of("type", "TRIP_CANCELLED"));
+            }
         }
     }
 

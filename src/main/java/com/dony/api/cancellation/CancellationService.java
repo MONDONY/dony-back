@@ -15,6 +15,7 @@ import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.cancellation.events.TravelerNoShowReportedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.AnnouncementStatus;
@@ -50,6 +51,8 @@ public class CancellationService {
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final CommissionProperties commissionProperties;
+    private final RematchService rematchService;
+    private final StorageService storageService;
 
     private static final SecureRandom RETURN_CODE_RANDOM = new SecureRandom();
     private static final int MAX_RETURN_CODE_ATTEMPTS = 3;
@@ -61,7 +64,9 @@ public class CancellationService {
                                 UserRepository userRepository,
                                 AuditService auditService,
                                 ApplicationEventPublisher eventPublisher,
-                                CommissionProperties commissionProperties) {
+                                CommissionProperties commissionProperties,
+                                RematchService rematchService,
+                                StorageService storageService) {
         this.cancellationRepository = cancellationRepository;
         this.rematchSuggestionRepository = rematchSuggestionRepository;
         this.bidRepository = bidRepository;
@@ -70,6 +75,8 @@ public class CancellationService {
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.commissionProperties = commissionProperties;
+        this.rematchService = rematchService;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -157,14 +164,29 @@ public class CancellationService {
             }
         }
 
-        // Publish event for notifications (Epic 8) and payment refunds (Story 6.7)
+        // Generate rematch suggestions for each affected sender's cancellation (one
+        // RematchService call per bid, capacity-filtered per sender — fix du bug qui ne
+        // générait des suggestions que pour le 1er expéditeur affecté).
+        Map<UUID, RematchService.RematchInfo> rematchBySender =
+                rematchService.generateForCancellations(announcement, affectedBids, cancellations);
+
+        // Publish event for notifications (Epic 8) and payment refunds (Story 6.7) — après
+        // la génération des suggestions rematch. rematchInfo permet à NotificationDispatcher
+        // de rendre la notification TRIP_CANCELLED conditionnelle (deep link si suggestions).
+        Map<UUID, TripCancelledEvent.RematchBySenderInfo> rematchInfo = new HashMap<>();
+        rematchBySender.forEach((senderId, info) -> rematchInfo.put(senderId,
+                new TripCancelledEvent.RematchBySenderInfo(info.cancellationId(), info.suggestionCount())));
+
         eventPublisher.publishEvent(new TripCancelledEvent(
                 request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
-                affectedBidIds, bidPaymentMethods, bidCommissionChargedVia));
+                affectedBidIds, bidPaymentMethods, bidCommissionChargedVia, rematchInfo));
 
-        // Generate rematch suggestions for each affected bid
-        List<RematchSuggestionDto> suggestions = generateRematchSuggestions(
-                announcement, affectedBids, cancellations);
+        // La réponse HTTP continue de renvoyer les suggestions du PREMIER expéditeur affecté
+        // (comportement historique, consommé par l'écran voyageur post-annulation) ; les
+        // autres expéditeurs récupèrent les leurs via GET /cancellations/{id}/rematch.
+        List<RematchSuggestionDto> suggestions = cancellations.isEmpty()
+                ? List.of()
+                : buildRematchSuggestionDtos(cancellations.get(0).getId());
 
         return new CancellationResponse(
                 request.announcementId(),
@@ -201,57 +223,61 @@ public class CancellationService {
                     "Vous n'êtes pas concerné par cette annulation");
         }
 
-        return rematchSuggestionRepository.findByCancellationId(cancellationId)
-                .stream().map(s -> {
-                    AnnouncementEntity a = announcementRepository.findById(s.getAnnouncementId()).orElse(null);
+        return buildRematchSuggestionDtos(cancellationId);
+    }
+
+    /** Mappe les {@link RematchSuggestionEntity} persistées d'une cancellation vers leurs DTOs
+     *  (résolution de l'annonce alternative associée + infos voyageur). Réutilisé par
+     *  {@code cancelTrip} (suggestions du 1er expéditeur affecté) et
+     *  {@code getRematchSuggestions} (consultation par n'importe quel expéditeur affecté via
+     *  son propre cancellationId). Annonces alternatives ET voyageurs sont chacun batch-chargés
+     *  (un seul {@code findAllById} par type) — pas de {@code findById} par suggestion. */
+    private List<RematchSuggestionDto> buildRematchSuggestionDtos(UUID cancellationId) {
+        List<RematchSuggestionEntity> suggestionEntities =
+                rematchSuggestionRepository.findByCancellationId(cancellationId);
+        if (suggestionEntities.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> announcementIds = suggestionEntities.stream()
+                .map(RematchSuggestionEntity::getAnnouncementId)
+                .distinct()
+                .toList();
+        Map<UUID, AnnouncementEntity> announcementsById = announcementRepository.findAllById(announcementIds)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(AnnouncementEntity::getId, a -> a));
+
+        List<UUID> travelerIds = announcementsById.values().stream()
+                .map(AnnouncementEntity::getTravelerId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, UserEntity> travelersById = travelerIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(travelerIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(UserEntity::getId, u -> u));
+
+        return suggestionEntities.stream()
+                .map(s -> {
+                    AnnouncementEntity a = announcementsById.get(s.getAnnouncementId());
                     if (a == null) return null;
+                    UserEntity traveler = a.getTravelerId() != null
+                            ? travelersById.get(a.getTravelerId())
+                            : null;
+                    String travelerFirstName = traveler != null ? traveler.getFirstName() : null;
+                    java.math.BigDecimal travelerRating = traveler != null ? traveler.getAverageRating() : null;
+                    Integer travelerRatingCount = traveler != null ? traveler.getRatingCount() : null;
+                    String travelerAvatarUrl = traveler != null
+                            ? storageService.avatarUrl(traveler.getAvatarUrl())
+                            : null;
                     return new RematchSuggestionDto(s.getId(), a.getId(),
                             a.getDepartureCity(), a.getArrivalCity(),
-                            a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg());
+                            a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg(),
+                            travelerFirstName, travelerRating, travelerRatingCount,
+                            travelerAvatarUrl);
                 })
                 .filter(s -> s != null)
                 .toList();
-    }
-
-    private List<RematchSuggestionDto> generateRematchSuggestions(
-            AnnouncementEntity cancelled,
-            List<BidEntity> affectedBids,
-            List<CancellationEntity> cancellations) {
-
-        if (affectedBids.isEmpty()) return List.of();
-
-        // Find alternatives on same corridor within 72h
-        LocalDate from = cancelled.getDepartureDate();
-        LocalDate to = from.plusDays(3);
-
-        // Find active announcements on same corridor, within 72h, with capacity
-        List<AnnouncementEntity> alternatives = announcementRepository.findAll().stream()
-                .filter(a -> a.getStatus() == AnnouncementStatus.ACTIVE)
-                .filter(a -> !a.getId().equals(cancelled.getId()))
-                .filter(a -> a.getDepartureCity().equalsIgnoreCase(cancelled.getDepartureCity()))
-                .filter(a -> a.getArrivalCity().equalsIgnoreCase(cancelled.getArrivalCity()))
-                .filter(a -> !a.getDepartureDate().isBefore(from) && !a.getDepartureDate().isAfter(to))
-                .limit(5)
-                .toList();
-
-        List<RematchSuggestionDto> result = new ArrayList<>();
-
-        // Create rematch suggestion records for the first affected bid's cancellation
-        if (!cancellations.isEmpty() && !alternatives.isEmpty()) {
-            CancellationEntity firstCancellation = cancellations.get(0);
-            for (AnnouncementEntity alt : alternatives) {
-                RematchSuggestionEntity suggestion = new RematchSuggestionEntity();
-                suggestion.setCancellationId(firstCancellation.getId());
-                suggestion.setAnnouncementId(alt.getId());
-                RematchSuggestionEntity saved = rematchSuggestionRepository.save(suggestion);
-
-                result.add(new RematchSuggestionDto(saved.getId(), alt.getId(),
-                        alt.getDepartureCity(), alt.getArrivalCity(),
-                        alt.getDepartureDate(), alt.getAvailableKg(), alt.getPricePerKg()));
-            }
-        }
-
-        return result;
     }
 
     @Transactional
