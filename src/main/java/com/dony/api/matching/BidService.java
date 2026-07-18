@@ -934,6 +934,21 @@ public class BidService {
                 ? "RECIPIENT_NO_SHOW".equals(deliveryCancellation.getReason())
                 : null;
 
+        // La cancellation "trajet annulé" (RematchService/cancelTrip) est la même ligne
+        // HANDOVER que ci-dessus (contrainte UNIQUE(bid_id, scope) : au plus une par bid) —
+        // MAIS elle partage son scope/noShowStatus par défaut avec d'autres flux (no-show,
+        // annulation après remise), donc `reason` (texte libre côté cancelTrip) n'est PAS un
+        // discriminant fiable. Le seul site qui passe announcement.status à CANCELLED dans
+        // toute la codebase est CancellationService#cancelTrip — donc announcement.status ==
+        // CANCELLED identifie sans ambiguïté que cette cancellation HANDOVER provient bien de
+        // l'annulation du trajet entier (et non d'un no-show / d'une annulation après remise,
+        // qui laissent l'annonce ACTIVE/FULL).
+        boolean tripWasCancelled = announcement != null && announcement.getStatus() == AnnouncementStatus.CANCELLED;
+        UUID tripCancellationId = tripWasCancelled && cancellation != null ? cancellation.getId() : null;
+        String tripCancellationRematchStatus = tripWasCancelled && cancellation != null
+                ? cancellation.getRematchStatus()
+                : null;
+
         // Compute total net: sum of grid items + KG part (for display in Flutter)
         java.math.BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
                 .map(i -> i.getUnitPriceNetSnapshot().multiply(java.math.BigDecimal.valueOf(i.getQuantity())))
@@ -1037,7 +1052,9 @@ public class BidService {
                 bid.getReturnedAt(),
                 storageService.avatarUrl(sender != null ? sender.getAvatarUrl() : null),
                 storageService.avatarUrl(traveler != null ? traveler.getAvatarUrl() : null),
-                bidPhotoService.activePhotos(bid.getId())
+                bidPhotoService.activePhotos(bid.getId()),
+                tripCancellationId,
+                tripCancellationRematchStatus
         );
     }
 }

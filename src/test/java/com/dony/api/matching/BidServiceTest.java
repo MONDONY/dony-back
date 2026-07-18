@@ -1949,6 +1949,81 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("trajet annulé (announcement CANCELLED) → tripCancellationId et rematchStatus renseignés")
+        void toResponse_tripCancelled_populatesTripCancellationFields() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.CANCELLED);
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            UUID cancellationId = UUID.randomUUID();
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("Vol annulé"); // texte libre saisi par le voyageur
+            cancellation.setRematchStatus("SUGGESTED");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isEqualTo(cancellationId);
+            assertThat(resp.tripCancellationRematchStatus()).isEqualTo("SUGGESTED");
+        }
+
+        @Test
+        @DisplayName("bid actif (announcement ACTIVE) avec cancellation HANDOVER (ex: après remise) → champs trip cancellation null")
+        void toResponse_activeAnnouncementWithNonTripCancellation_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(); // status = ACTIVE
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            // Cancellation HANDOVER issue d'un flux qui n'annule pas le trajet entier
+            // (ex: annulation après remise ou no-show) — announcement reste ACTIVE.
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, UUID.randomUUID());
+            cancellation.setScope(CancellationScope.HANDOVER);
+            cancellation.setReason("SENDER_CANCEL_AFTER_HANDOVER");
+            cancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(cancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("bid actif sans cancellation → champs trip cancellation null")
+        void toResponse_noCancellation_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of());
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
         @DisplayName("expéditeur avec prénom ET nom → nom complet dans la réponse")
         void toResponse_senderWithBothNames_returnsFullName() {
             UserEntity sender = buildSender();

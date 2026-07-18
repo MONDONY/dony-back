@@ -223,17 +223,50 @@ public class CancellationService {
     }
 
     /** Mappe les {@link RematchSuggestionEntity} persistées d'une cancellation vers leurs DTOs
-     *  (résolution de l'annonce alternative associée). Réutilisé par {@code cancelTrip}
-     *  (suggestions du 1er expéditeur affecté) et {@code getRematchSuggestions} (consultation
-     *  par n'importe quel expéditeur affecté via son propre cancellationId). */
+     *  (résolution de l'annonce alternative associée + infos voyageur). Réutilisé par
+     *  {@code cancelTrip} (suggestions du 1er expéditeur affecté) et
+     *  {@code getRematchSuggestions} (consultation par n'importe quel expéditeur affecté via
+     *  son propre cancellationId). Les voyageurs des annonces alternatives sont batch-chargés
+     *  (un seul {@code findAllById}) — pas de {@code findById} par suggestion. */
     private List<RematchSuggestionDto> buildRematchSuggestionDtos(UUID cancellationId) {
-        return rematchSuggestionRepository.findByCancellationId(cancellationId)
-                .stream().map(s -> {
-                    AnnouncementEntity a = announcementRepository.findById(s.getAnnouncementId()).orElse(null);
+        List<RematchSuggestionEntity> suggestionEntities =
+                rematchSuggestionRepository.findByCancellationId(cancellationId);
+        if (suggestionEntities.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, AnnouncementEntity> announcementsById = suggestionEntities.stream()
+                .map(RematchSuggestionEntity::getAnnouncementId)
+                .distinct()
+                .map(id -> announcementRepository.findById(id))
+                .filter(java.util.Optional::isPresent)
+                .map(java.util.Optional::get)
+                .collect(java.util.stream.Collectors.toMap(AnnouncementEntity::getId, a -> a));
+
+        List<UUID> travelerIds = announcementsById.values().stream()
+                .map(AnnouncementEntity::getTravelerId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, UserEntity> travelersById = travelerIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(travelerIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(UserEntity::getId, u -> u));
+
+        return suggestionEntities.stream()
+                .map(s -> {
+                    AnnouncementEntity a = announcementsById.get(s.getAnnouncementId());
                     if (a == null) return null;
+                    UserEntity traveler = a.getTravelerId() != null
+                            ? travelersById.get(a.getTravelerId())
+                            : null;
+                    String travelerFirstName = traveler != null ? traveler.getFirstName() : null;
+                    java.math.BigDecimal travelerRating = traveler != null ? traveler.getAverageRating() : null;
+                    Integer travelerRatingCount = traveler != null ? traveler.getRatingCount() : null;
                     return new RematchSuggestionDto(s.getId(), a.getId(),
                             a.getDepartureCity(), a.getArrivalCity(),
-                            a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg());
+                            a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg(),
+                            travelerFirstName, travelerRating, travelerRatingCount);
                 })
                 .filter(s -> s != null)
                 .toList();

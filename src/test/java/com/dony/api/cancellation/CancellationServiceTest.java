@@ -494,6 +494,7 @@ class CancellationServiceTest {
             UUID travelerId = UUID.randomUUID();
             UUID altAnnouncementId = UUID.randomUUID();
             UUID suggestionId = UUID.randomUUID();
+            UUID altTravelerId = UUID.randomUUID();
 
             CancellationEntity cancellation = new CancellationEntity();
             setId(cancellation, cancellationId);
@@ -519,11 +520,18 @@ class CancellationServiceTest {
 
             AnnouncementEntity altAnnouncement = new AnnouncementEntity();
             setId(altAnnouncement, altAnnouncementId);
+            altAnnouncement.setTravelerId(altTravelerId);
             altAnnouncement.setDepartureCity("Paris");
             altAnnouncement.setArrivalCity("Dakar");
             altAnnouncement.setDepartureDate(LocalDate.now().plusDays(7));
             altAnnouncement.setAvailableKg(BigDecimal.TEN);
             altAnnouncement.setPricePerKg(BigDecimal.valueOf(5));
+
+            UserEntity altTraveler = new UserEntity();
+            setId(altTraveler, altTravelerId);
+            altTraveler.setFirstName("Moussa");
+            altTraveler.setAverageRating(BigDecimal.valueOf(4.8));
+            altTraveler.setRatingCount(12);
 
             when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
             when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
@@ -531,11 +539,15 @@ class CancellationServiceTest {
             when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
             when(rematchSuggestionRepository.findByCancellationId(cancellationId)).thenReturn(List.of(suggestion));
             when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+            when(userRepository.findAllById(List.of(altTravelerId))).thenReturn(List.of(altTraveler));
 
             List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).departureCity()).isEqualTo("Paris");
+            assertThat(result.get(0).travelerFirstName()).isEqualTo("Moussa");
+            assertThat(result.get(0).travelerRating()).isEqualByComparingTo(BigDecimal.valueOf(4.8));
+            assertThat(result.get(0).travelerRatingCount()).isEqualTo(12);
         }
 
         @Test
