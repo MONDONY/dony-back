@@ -1301,6 +1301,49 @@ class BidServiceTest {
              .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                      .isEqualTo(HttpStatus.CONFLICT));
         }
+
+        @Test
+        @DisplayName("bid PAYMENT_ESCROWED rejeté par le voyageur → event rematchEligible=true")
+        void rejectBid_onEscrowedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"));
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+            assertThat(captor.getValue().getAnnouncementId()).isEqualTo(ANNOUNCEMENT_ID);
+        }
+
+        @Test
+        @DisplayName("bid cash PENDING (off-platform) rejeté → event rematchEligible=false")
+        void rejectBid_onOffPlatformPendingBid_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+            bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.WAVE);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBid(BID_ID, TRAVELER_UID, new BidRejectRequest("Non compatible"));
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
+        }
     }
 
     // ─── rejectBidBySystem ─────────────────────────────────────────────────────
@@ -1356,6 +1399,26 @@ class BidServiceTest {
             assertThatThrownBy(() -> bidService.rejectBidBySystem(BID_ID, TRAVELER_ID, "raison"))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Traveler not found: " + TRAVELER_ID);
+        }
+
+        @Test
+        @DisplayName("rejet automatisé (système) sur bid PAYMENT_ESCROWED → event rematchEligible=false")
+        void rejectBidBySystem_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+
+            bidService.rejectBidBySystem(BID_ID, TRAVELER_ID, "Poids trop important pour la capacité restante.");
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
         }
     }
 
@@ -1538,6 +1601,89 @@ class BidServiceTest {
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid ACCEPTED → event rematchEligible=true")
+        void cancelBid_byTraveler_onAcceptedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+            assertThat(captor.getValue().getAnnouncementId()).isEqualTo(announcement.getId());
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid PAYMENT_ESCROWED → event rematchEligible=true")
+        void cancelBid_byTraveler_onEscrowedBid_publishesRematchEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid(); // status = PAYMENT_ESCROWED par défaut
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isTrue();
+        }
+
+        @Test
+        @DisplayName("expéditeur annule un bid ACCEPTED → event rematchEligible=false")
+        void cancelBid_bySender_publishesNonEligibleEvent() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+
+            bidService.cancelBid(BID_ID, SENDER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
+        }
+
+        @Test
+        @DisplayName("voyageur annule un bid PENDING → event rematchEligible=false")
+        void cancelBid_byTraveler_onPendingBid_publishesNonEligibleEvent() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(buildSender()));
+
+            bidService.cancelBid(BID_ID, TRAVELER_UID);
+
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
         }
     }
 

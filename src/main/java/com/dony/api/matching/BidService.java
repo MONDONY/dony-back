@@ -559,7 +559,7 @@ public class BidService {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
 
         requireTravelerOwnsAnnouncement(traveler, announcement);
-        return doRejectBid(bid, announcement, traveler, request);
+        return doRejectBid(bid, announcement, traveler, request, false);
     }
 
     /**
@@ -579,11 +579,12 @@ public class BidService {
         }
         UserEntity traveler = userRepository.findById(travelerId)
                 .orElseThrow(() -> new IllegalStateException("Traveler not found: " + travelerId));
-        return doRejectBid(bid, announcement, traveler, new BidRejectRequest(reason));
+        return doRejectBid(bid, announcement, traveler, new BidRejectRequest(reason), true);
     }
 
     private BidResponse doRejectBid(BidEntity bid, AnnouncementEntity announcement,
-                                    UserEntity traveler, BidRejectRequest request) {
+                                    UserEntity traveler, BidRejectRequest request,
+                                    boolean systemInitiated) {
         boolean isOffPlatformPending =
                 (bid.getPaymentMethod() == PaymentMethod.CASH
                  || bid.getPaymentMethod() == PaymentMethod.WAVE
@@ -602,8 +603,13 @@ public class BidService {
         auditService.log("BID", bid.getId(), "BID_REJECTED", traveler.getId(),
                 Map.of("reason", String.valueOf(bid.getRejectionReason())));
 
+        // Rematch éligible uniquement si l'action vient d'un humain (pas d'une
+        // automatisation système) et que le bid était réellement payé (pas un
+        // simple refus d'une demande cash encore PENDING, jamais confirmée).
+        boolean rematchEligible = !systemInitiated && !isOffPlatformPending;
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bid.getId(), bid.getSenderId(), bid.getRejectionReason()));
+                bid.getId(), bid.getSenderId(), bid.getRejectionReason(),
+                bid.getAnnouncementId(), rematchEligible));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }
@@ -659,6 +665,8 @@ public class BidService {
         // Verrou D3 : pas d'annulation en transit ni après le départ réel (colis remis).
         com.dony.api.cancellation.CancellationGuard.assertCancellable(bid, announcement);
 
+        BidStatus statusBeforeCancel = bid.getStatus();
+
         // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
         // (sauf pour KG_FREE où la capacité n'est jamais décrémentée)
         if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
@@ -682,9 +690,16 @@ public class BidService {
                 Map.of("actor", isTraveler ? "TRAVELER" : "SENDER"));
 
         // Rembourse l'expéditeur (séquestre libéré via RefundProcessor) et notifie,
-        // quel que soit l'acteur de l'annulation.
+        // quel que soit l'acteur de l'annulation. Rematch éligible uniquement si
+        // c'est le voyageur qui se désiste d'un transport déjà confirmé (bid payé
+        // ou accepté) — pas un simple retrait de demande encore PENDING, et pas
+        // une annulation côté expéditeur.
+        boolean rematchEligible = isTraveler
+                && (statusBeforeCancel == BidStatus.ACCEPTED
+                    || statusBeforeCancel == BidStatus.PAYMENT_ESCROWED);
         eventPublisher.publishEvent(new BidRejectedEvent(
-                bid.getId(), bid.getSenderId(), reason));
+                bid.getId(), bid.getSenderId(), reason,
+                bid.getAnnouncementId(), rematchEligible));
 
         UserEntity senderUser = isSender
                 ? caller
