@@ -33,6 +33,16 @@ import java.util.UUID;
  * le bid sont introuvables, log un warning et ne fait rien : aucune exception n'est levée
  * ici, car le remboursement AFTER_COMMIT côté paiements dépend du commit de la transaction
  * appelante — la faire échouer casserait le remboursement.
+ *
+ * <p>Garde d'unicité : la contrainte {@code UNIQUE(bid_id, scope)} (V173,
+ * {@code uq_cancellations_bid_id_scope}) interdit une 2e cancellation HANDOVER sur le même
+ * bid — atteignable si une {@code CancellationEntity} SENDER_NO_SHOW (scope HANDOVER défaut)
+ * existe déjà pour ce bid ({@code reportSenderNoShow}) avant l'annulation/refus voyageur. On
+ * ne réutilise pas cette cancellation existante (sémantique différente, {@code noShowStatus}
+ * en cours) : on publie quand même {@link BidLostRematchPreparedEvent} avec
+ * {@code cancellationId = null} et {@code suggestionCount = 0} pour que le dispatcher envoie
+ * la notification « remboursement en cours » sans deep link — sinon l'expéditeur ne
+ * recevrait AUCUNE notification (la générique est sautée dès que {@code rematchEligible}).
  */
 @Component
 public class BidLostRematchListener {
@@ -65,6 +75,16 @@ public class BidLostRematchListener {
             return;
         }
 
+        boolean cancelledByTraveler = REASON_CANCELLED_BY_TRAVELER.equals(event.getReason());
+
+        if (cancellationRepository.findByBidId(event.getBidId()).isPresent()) {
+            log.warn("BidLostRematchListener: cancellation HANDOVER déjà existante pour bid {}, "
+                            + "rematch non généré (probable no-show en cours)", event.getBidId());
+            eventPublisher.publishEvent(new BidLostRematchPreparedEvent(
+                    event.getSenderId(), event.getBidId(), null, 0, cancelledByTraveler));
+            return;
+        }
+
         BidEntity bid = bidRepository.findById(event.getBidId()).orElse(null);
         if (bid == null) {
             log.warn("BidLostRematchListener: bid {} introuvable, rematch ignoré", event.getBidId());
@@ -82,8 +102,6 @@ public class BidLostRematchListener {
                     announcementId, event.getBidId());
             return;
         }
-
-        boolean cancelledByTraveler = REASON_CANCELLED_BY_TRAVELER.equals(event.getReason());
 
         CancellationEntity cancellation = new CancellationEntity();
         cancellation.setBidId(bid.getId());

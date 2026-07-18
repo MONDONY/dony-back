@@ -100,6 +100,7 @@ class BidLostRematchListenerTest {
         BidRejectedEvent event = new BidRejectedEvent(
                 BID_ID, SENDER_ID, "CANCELLED_BY_TRAVELER", ANNOUNCEMENT_ID, true);
 
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
         when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
@@ -152,6 +153,7 @@ class BidLostRematchListenerTest {
         BidRejectedEvent event = new BidRejectedEvent(
                 BID_ID, SENDER_ID, "TRAVELER_REJECTED", ANNOUNCEMENT_ID, true);
 
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
         when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
@@ -197,6 +199,7 @@ class BidLostRematchListenerTest {
         BidRejectedEvent event = new BidRejectedEvent(
                 BID_ID, SENDER_ID, "CANCELLED_BY_TRAVELER", ANNOUNCEMENT_ID, true);
 
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
         when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
@@ -224,6 +227,7 @@ class BidLostRematchListenerTest {
         BidRejectedEvent event = new BidRejectedEvent(
                 BID_ID, SENDER_ID, "CANCELLED_BY_TRAVELER", ANNOUNCEMENT_ID, true);
 
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
         when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
         when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
 
@@ -231,5 +235,47 @@ class BidLostRematchListenerTest {
 
         verify(cancellationRepository, never()).save(any());
         verifyNoInteractions(rematchService, eventPublisher);
+    }
+
+    @Test
+    @DisplayName("bid introuvable → pas d'exception, pas de save, pas de generateForCancellations, aucun event publié")
+    void onBidRejected_missingBid_logsAndReturns() {
+        BidRejectedEvent event = new BidRejectedEvent(
+                BID_ID, SENDER_ID, "CANCELLED_BY_TRAVELER", ANNOUNCEMENT_ID, true);
+
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.empty());
+        when(bidRepository.findById(BID_ID)).thenReturn(Optional.empty());
+
+        listener.onBidRejected(event);
+
+        verify(cancellationRepository, never()).save(any());
+        verifyNoInteractions(announcementRepository, rematchService, eventPublisher);
+    }
+
+    @Test
+    @DisplayName("cancellation HANDOVER déjà existante (ex. no-show en cours) → pas de nouvelle cancellation, "
+            + "generateForCancellations non appelé, event publié avec cancellationId null + count 0")
+    void onBidRejected_existingHandoverCancellation_skipsCreationAndPublishesCountZero() {
+        CancellationEntity existing = new CancellationEntity();
+        existing.setBidId(BID_ID);
+        BidRejectedEvent event = new BidRejectedEvent(
+                BID_ID, SENDER_ID, "CANCELLED_BY_TRAVELER", ANNOUNCEMENT_ID, true);
+
+        when(cancellationRepository.findByBidId(BID_ID)).thenReturn(Optional.of(existing));
+
+        listener.onBidRejected(event);
+
+        verify(cancellationRepository, never()).save(any());
+        verifyNoInteractions(bidRepository, announcementRepository, rematchService);
+
+        ArgumentCaptor<BidLostRematchPreparedEvent> preparedCaptor =
+                ArgumentCaptor.forClass(BidLostRematchPreparedEvent.class);
+        verify(eventPublisher).publishEvent(preparedCaptor.capture());
+        BidLostRematchPreparedEvent published = preparedCaptor.getValue();
+        assertThat(published.senderId()).isEqualTo(SENDER_ID);
+        assertThat(published.bidId()).isEqualTo(BID_ID);
+        assertThat(published.cancellationId()).isNull();
+        assertThat(published.suggestionCount()).isEqualTo(0);
+        assertThat(published.cancelledByTraveler()).isTrue();
     }
 }
