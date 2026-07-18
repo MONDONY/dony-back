@@ -2,6 +2,7 @@ package com.dony.api.notifications;
 
 import com.dony.api.auth.UserRepository;
 import com.dony.api.auth.events.UserSuspendedEvent;
+import com.dony.api.cancellation.events.BidLostRematchPreparedEvent;
 import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
@@ -111,9 +112,40 @@ public class NotificationDispatcher {
 
     @EventListener @Async
     public void onBidRejected(BidRejectedEvent event) {
+        if (event.isRematchEligible()) return; // relayé par onBidLostRematchPrepared (X2/X3)
         notifyUser(event.getSenderId(), "Demande refusée",
                 "Le voyageur a refusé votre demande",
                 Map.of("type", "BID_REJECTED", "bidId", event.getBidId().toString()));
+    }
+
+    // Notification unique (BID_REJECTED conservé) pour un bid perdu par annulation/refus voyageur,
+    // avec deep link rematch si des suggestions existent. Même pattern AFTER_COMMIT + @Async que
+    // onTripCancelled : le deep link cancellationId ne doit jamais partir avant que
+    // BidLostRematchListener (cancellation/) ait commité la CancellationEntity + les suggestions.
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async
+    public void onBidLostRematchPrepared(BidLostRematchPreparedEvent event) {
+        String title = event.cancelledByTraveler() ? "Transport annulé" : "Demande refusée";
+        String prefix = event.cancelledByTraveler()
+                ? "Le voyageur a annulé le transport de votre colis"
+                : "Le voyageur a refusé votre demande";
+        int n = event.suggestionCount();
+        // Défense : count > 0 avec cancellationId null ne devrait pas arriver (contrat X2 garantit
+        // cancellationId non-null dès que suggestionCount > 0), mais si ça survient on retombe
+        // sur le corps "remboursement en cours" sans deep link plutôt que de risquer un NPE.
+        if (n > 0 && event.cancellationId() != null) {
+            notifyUser(event.senderId(), title,
+                    prefix + " — remboursement en cours. " + n
+                            + " voyageur" + (n > 1 ? "s" : "") + " alternatif" + (n > 1 ? "s" : "")
+                            + " disponible" + (n > 1 ? "s" : ""),
+                    Map.of("type", "BID_REJECTED",
+                           "bidId", event.bidId().toString(),
+                           "cancellationId", event.cancellationId().toString()));
+        } else {
+            notifyUser(event.senderId(), title,
+                    prefix + " — votre remboursement est en cours",
+                    Map.of("type", "BID_REJECTED", "bidId", event.bidId().toString()));
+        }
     }
 
     // Le deep link cancellationId ne doit pas partir avant le commit de cancelTrip

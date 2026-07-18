@@ -2,6 +2,7 @@ package com.dony.api.notifications;
 
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.cancellation.events.BidLostRematchPreparedEvent;
 import com.dony.api.cancellation.events.DeliveryNoShowReportedEvent;
 import com.dony.api.cancellation.events.TripCancelledEvent;
 import com.dony.api.disputes.events.DisputeOpenedEvent;
@@ -107,7 +108,7 @@ class NotificationDispatcherTest {
     // ── BidRejectedEvent ──────────────────────────────────────────────────────
 
     @Test
-    void onBidRejected_notifiesSender() {
+    void onBidRejected_notEligible_keepsGenericNotification() {
         when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
 
         dispatcher.onBidRejected(new BidRejectedEvent(bidId, senderId, "wrong content"));
@@ -115,6 +116,113 @@ class NotificationDispatcherTest {
         var dataCaptor = ArgumentCaptor.forClass(Map.class);
         verify(fcmService).sendToUser(eq(senderId), eq("Demande refusée"), any(), dataCaptor.capture());
         assertThat(dataCaptor.getValue()).containsEntry("type", "BID_REJECTED");
+    }
+
+    @Test
+    void onBidRejected_rematchEligible_skipsGenericNotification() {
+        BidRejectedEvent event = new BidRejectedEvent(bidId, senderId, "cancelled by traveler", annId, true);
+
+        dispatcher.onBidRejected(event);
+
+        verifyNoInteractions(fcmService, notificationService);
+    }
+
+    // ── BidLostRematchPreparedEvent ───────────────────────────────────────────
+
+    @Test
+    void onBidLostRematchPrepared_cancelWithSuggestions_notifiesWithDeepLink() {
+        UUID cancellationId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, cancellationId, 3, true));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Transport annulé"),
+                eq("Le voyageur a annulé le transport de votre colis — remboursement en cours. "
+                        + "3 voyageurs alternatifs disponibles"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("type", "BID_REJECTED");
+        assertThat(dataCaptor.getValue()).containsEntry("bidId", bidId.toString());
+        assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
+    }
+
+    @Test
+    void onBidLostRematchPrepared_singleSuggestion_usesSingularWording() {
+        UUID cancellationId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, cancellationId, 1, true));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Transport annulé"),
+                eq("Le voyageur a annulé le transport de votre colis — remboursement en cours. "
+                        + "1 voyageur alternatif disponible"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
+    }
+
+    @Test
+    void onBidLostRematchPrepared_cancelZero_refundOnlyBody() {
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, null, 0, true));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Transport annulé"),
+                eq("Le voyageur a annulé le transport de votre colis — votre remboursement est en cours"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("type", "BID_REJECTED");
+        assertThat(dataCaptor.getValue()).containsEntry("bidId", bidId.toString());
+        assertThat(dataCaptor.getValue()).doesNotContainKey("cancellationId");
+    }
+
+    @Test
+    void onBidLostRematchPrepared_rejectWithSuggestions_usesRejectWording() {
+        UUID cancellationId = UUID.randomUUID();
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, cancellationId, 2, false));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Demande refusée"),
+                eq("Le voyageur a refusé votre demande — remboursement en cours. "
+                        + "2 voyageurs alternatifs disponibles"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
+    }
+
+    @Test
+    void onBidLostRematchPrepared_rejectZero_refundOnlyBody() {
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, null, 0, false));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Demande refusée"),
+                eq("Le voyageur a refusé votre demande — votre remboursement est en cours"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).doesNotContainKey("cancellationId");
+    }
+
+    @Test
+    void onBidLostRematchPrepared_countPositiveButNullCancellationId_treatedAsZero() {
+        // Défense : ne devrait pas arriver côté X2, mais si ça arrive on ne doit ni NPE
+        // ni envoyer un deep link cassé — on retombe sur le corps "refund only" sans cancellationId.
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidLostRematchPrepared(
+                new BidLostRematchPreparedEvent(senderId, bidId, null, 2, true));
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Transport annulé"),
+                eq("Le voyageur a annulé le transport de votre colis — votre remboursement est en cours"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).doesNotContainKey("cancellationId");
     }
 
     // ── TripCancelledEvent ────────────────────────────────────────────────────
