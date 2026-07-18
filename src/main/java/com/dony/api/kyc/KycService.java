@@ -29,7 +29,7 @@ public class KycService {
     private final UserRepository userRepository;
     private final AuditService auditService;
 
-    @Value("${dony.kyc.return-url:https://dony.app/kyc/complete}")
+    @Value("${dony.kyc.return-url:https://dony.store/kyc/complete}")
     private String kycReturnUrl;
 
     public KycService(KycRepository kycRepository,

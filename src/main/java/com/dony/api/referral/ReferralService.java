@@ -32,7 +32,7 @@ public class ReferralService {
 
     private static final Logger log = LoggerFactory.getLogger(ReferralService.class);
     private static final int MAX_CODE_RETRIES = 5;
-    private static final String SHARE_URL_PREFIX = "https://dony.app/r/";
+    private static final String SHARE_URL_PREFIX = "https://dony.store/r/";
 
     private final ReferralCodeRepository referralCodeRepository;
     private final ReferralInvitationRepository referralInvitationRepository;
