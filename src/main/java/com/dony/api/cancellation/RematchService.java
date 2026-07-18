@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -105,7 +106,10 @@ public class RematchService {
         List<AnnouncementEntity> candidates = announcementRepository.findAll(spec);
 
         Map<UUID, BigDecimal> ratings = userRepository
-                .findAllById(candidates.stream().map(AnnouncementEntity::getTravelerId).collect(Collectors.toSet()))
+                .findAllById(candidates.stream()
+                        .map(AnnouncementEntity::getTravelerId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet()))
                 .stream()
                 .filter(u -> u.getAverageRating() != null)
                 .collect(Collectors.toMap(u -> u.getId(), u -> u.getAverageRating()));

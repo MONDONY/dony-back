@@ -19,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -114,7 +116,12 @@ public class NotificationDispatcher {
                 Map.of("type", "BID_REJECTED", "bidId", event.getBidId().toString()));
     }
 
-    @EventListener @Async
+    // Le deep link cancellationId ne doit pas partir avant le commit de cancelTrip
+    // (rollback → push mensonger ; race → 404 sur GET /cancellations/{id}/rematch-suggestions).
+    // Pattern reproduit de TripCancelledEventListener (payments) : AFTER_COMMIT + @Async, sans
+    // @Transactional(REQUIRES_NEW) — ce listener ne fait que lire/notifier, pas de refund à isoler.
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async
     public void onTripCancelled(TripCancelledEvent event) {
         if (event.getAffectedSenderIds() == null) return;
         for (UUID senderId : event.getAffectedSenderIds()) {
