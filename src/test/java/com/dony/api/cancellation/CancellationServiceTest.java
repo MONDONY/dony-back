@@ -219,7 +219,8 @@ class CancellationServiceTest {
 
             when(rematchSuggestionRepository.findByCancellationId(any(UUID.class)))
                     .thenReturn(List.of(suggestionEntity));
-            when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+            when(announcementRepository.findAllById(List.of(altAnnouncementId)))
+                    .thenReturn(List.of(altAnnouncement));
 
             CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
 
@@ -538,7 +539,8 @@ class CancellationServiceTest {
             when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
             when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
             when(rematchSuggestionRepository.findByCancellationId(cancellationId)).thenReturn(List.of(suggestion));
-            when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+            when(announcementRepository.findAllById(List.of(altAnnouncementId)))
+                    .thenReturn(List.of(altAnnouncement));
             when(userRepository.findAllById(List.of(altTravelerId))).thenReturn(List.of(altTraveler));
 
             List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
@@ -548,6 +550,102 @@ class CancellationServiceTest {
             assertThat(result.get(0).travelerFirstName()).isEqualTo("Moussa");
             assertThat(result.get(0).travelerRating()).isEqualByComparingTo(BigDecimal.valueOf(4.8));
             assertThat(result.get(0).travelerRatingCount()).isEqualTo(12);
+        }
+
+        @Test
+        @DisplayName("2 suggestions / 2 voyageurs distincts → un seul findAllById par repository (anti N+1)")
+        void getRematchSuggestions_twoSuggestionsTwoTravelers_batchesAnnouncementsAndTravelersInOneCallEach() {
+            UUID cancellationId = UUID.randomUUID();
+            UUID bidId = UUID.randomUUID();
+            UUID announcementId = UUID.randomUUID();
+            UUID userId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+
+            CancellationEntity cancellation = new CancellationEntity();
+            setId(cancellation, cancellationId);
+            cancellation.setBidId(bidId);
+            cancellation.setCancelledBy(userId);
+
+            BidEntity bid = new BidEntity();
+            setId(bid, bidId);
+            bid.setAnnouncementId(announcementId);
+            bid.setSenderId(userId);
+
+            AnnouncementEntity announcement = new AnnouncementEntity();
+            setId(announcement, announcementId);
+            announcement.setTravelerId(travelerId);
+
+            UserEntity caller = new UserEntity();
+            setId(caller, userId);
+
+            UUID altAnnouncementId1 = UUID.randomUUID();
+            UUID altAnnouncementId2 = UUID.randomUUID();
+            UUID altTravelerId1 = UUID.randomUUID();
+            UUID altTravelerId2 = UUID.randomUUID();
+            UUID suggestionId1 = UUID.randomUUID();
+            UUID suggestionId2 = UUID.randomUUID();
+
+            RematchSuggestionEntity suggestion1 = new RematchSuggestionEntity();
+            setId(suggestion1, suggestionId1);
+            suggestion1.setCancellationId(cancellationId);
+            suggestion1.setAnnouncementId(altAnnouncementId1);
+
+            RematchSuggestionEntity suggestion2 = new RematchSuggestionEntity();
+            setId(suggestion2, suggestionId2);
+            suggestion2.setCancellationId(cancellationId);
+            suggestion2.setAnnouncementId(altAnnouncementId2);
+
+            AnnouncementEntity altAnnouncement1 = new AnnouncementEntity();
+            setId(altAnnouncement1, altAnnouncementId1);
+            altAnnouncement1.setTravelerId(altTravelerId1);
+            altAnnouncement1.setDepartureCity("Paris");
+            altAnnouncement1.setArrivalCity("Dakar");
+            altAnnouncement1.setDepartureDate(LocalDate.now().plusDays(3));
+            altAnnouncement1.setAvailableKg(BigDecimal.TEN);
+            altAnnouncement1.setPricePerKg(BigDecimal.valueOf(5));
+
+            AnnouncementEntity altAnnouncement2 = new AnnouncementEntity();
+            setId(altAnnouncement2, altAnnouncementId2);
+            altAnnouncement2.setTravelerId(altTravelerId2);
+            altAnnouncement2.setDepartureCity("Lyon");
+            altAnnouncement2.setArrivalCity("Abidjan");
+            altAnnouncement2.setDepartureDate(LocalDate.now().plusDays(4));
+            altAnnouncement2.setAvailableKg(BigDecimal.valueOf(15));
+            altAnnouncement2.setPricePerKg(BigDecimal.valueOf(6));
+
+            UserEntity altTraveler1 = new UserEntity();
+            setId(altTraveler1, altTravelerId1);
+            altTraveler1.setFirstName("Moussa");
+
+            UserEntity altTraveler2 = new UserEntity();
+            setId(altTraveler2, altTravelerId2);
+            altTraveler2.setFirstName("Fatou");
+
+            when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
+            when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
+            when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(announcement));
+            when(rematchSuggestionRepository.findByCancellationId(cancellationId))
+                    .thenReturn(List.of(suggestion1, suggestion2));
+            // L'ordre d'itération d'un Map (HashMap via Collectors.toMap) n'est pas garanti —
+            // on matche sur any() plutôt que sur une liste précisément ordonnée.
+            when(announcementRepository.findAllById(any()))
+                    .thenReturn(List.of(altAnnouncement1, altAnnouncement2));
+            when(userRepository.findAllById(any()))
+                    .thenReturn(List.of(altTraveler1, altTraveler2));
+
+            List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
+
+            assertThat(result).hasSize(2);
+            assertThat(result).extracting(RematchSuggestionDto::travelerFirstName)
+                    .containsExactlyInAnyOrder("Moussa", "Fatou");
+
+            // Anti N+1 : un seul findAllById pour les annonces, un seul pour les voyageurs —
+            // jamais un findById par suggestion.
+            verify(announcementRepository, times(1)).findAllById(any());
+            verify(userRepository, times(1)).findAllById(any());
+            verify(announcementRepository, never()).findById(altAnnouncementId1);
+            verify(announcementRepository, never()).findById(altAnnouncementId2);
         }
 
         @Test

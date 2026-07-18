@@ -2005,6 +2005,41 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("régression : no-show préexistant PUIS suppression de compte (bulk CANCELLED, "
+                + "sans CancellationEntity) → champs trip cancellation null, pas de faux positif")
+        void toResponse_accountDeletionBulkCancelAfterPreexistingNoShow_tripCancellationFieldsAreNull() {
+            UserEntity traveler = buildTraveler();
+            // Scénario du reviewer : (1) reportSenderNoShow crée une CancellationEntity HANDOVER
+            // (reason=SENDER_NO_SHOW) sur un bid ACCEPTED, l'annonce reste ACTIVE à ce moment-là ;
+            // (2) le voyageur supprime son compte → AccountDeletionListener appelle
+            // AnnouncementRepository#cancelOpenAnnouncementsByUserId, qui bascule l'annonce (et le
+            // bid) en CANCELLED en bulk SANS créer de nouvelle CancellationEntity. La cancellation
+            // no-show préexistante ne doit PAS être exposée comme "trajet annulé".
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setStatus(AnnouncementStatus.CANCELLED);
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            CancellationEntity noShowCancellation = new CancellationEntity();
+            setId(noShowCancellation, UUID.randomUUID());
+            noShowCancellation.setScope(CancellationScope.HANDOVER);
+            noShowCancellation.setReason("SENDER_NO_SHOW");
+            noShowCancellation.setNoShowStatus(CancellationStatus.PENDING_CONFIRMATION);
+            noShowCancellation.setRematchStatus("NONE");
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.empty());
+            when(cancellationRepository.findAllByBidId(BID_ID)).thenReturn(java.util.List.of(noShowCancellation));
+
+            BidResponse resp = bidService.getBidById(BID_ID, TRAVELER_UID);
+
+            assertThat(resp.tripCancellationId()).isNull();
+            assertThat(resp.tripCancellationRematchStatus()).isNull();
+        }
+
+        @Test
         @DisplayName("bid actif sans cancellation → champs trip cancellation null")
         void toResponse_noCancellation_tripCancellationFieldsAreNull() {
             UserEntity traveler = buildTraveler();

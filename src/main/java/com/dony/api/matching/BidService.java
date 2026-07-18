@@ -20,6 +20,7 @@ import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
 import com.dony.api.cancellation.CancellationEntity;
+import com.dony.api.cancellation.CancellationReason;
 import com.dony.api.cancellation.CancellationRepository;
 import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
@@ -853,6 +854,18 @@ public class BidService {
     private static final java.util.Set<BidStatus> PHONE_VISIBLE_STATUSES = java.util.EnumSet.of(
             BidStatus.ACCEPTED, BidStatus.HANDED_OVER, BidStatus.IN_TRANSIT, BidStatus.COMPLETED);
 
+    /** Valeurs programmatiques (non-libres) de {@code CancellationEntity.reason} écrites par les
+     * flux HANDOVER qui n'annulent PAS le trajet entier (no-show expéditeur, annulation après
+     * remise) — cf. {@code CancellationService#reportSenderNoShow} et le flux "cancel after
+     * handover". Sert à exclure ces cancellations quand on détecte la cancellation "trajet
+     * annulé" pour {@link BidResponse#tripCancellationId()} : `reason` y est du texte libre
+     * saisi par le voyageur, donc on ne peut identifier positivement "trajet annulé" que par
+     * élimination des seules autres valeurs jamais écrites sur une cancellation HANDOVER. */
+    private static final java.util.Set<String> NON_TRIP_HANDOVER_REASONS = java.util.Set.of(
+            CancellationReason.SENDER_NO_SHOW.name(),
+            CancellationReason.SENDER_CANCEL_AFTER_HANDOVER.name(),
+            CancellationReason.TRAVELER_CANCEL_AFTER_HANDOVER.name());
+
     /** Numéro révélé en clair seulement si l'offre est acceptée ou au-delà, sinon null. */
     static String phoneForStatus(String phone, BidStatus status) {
         if (phone == null) return null;
@@ -937,15 +950,23 @@ public class BidService {
         // La cancellation "trajet annulé" (RematchService/cancelTrip) est la même ligne
         // HANDOVER que ci-dessus (contrainte UNIQUE(bid_id, scope) : au plus une par bid) —
         // MAIS elle partage son scope/noShowStatus par défaut avec d'autres flux (no-show,
-        // annulation après remise), donc `reason` (texte libre côté cancelTrip) n'est PAS un
-        // discriminant fiable. Le seul site qui passe announcement.status à CANCELLED dans
-        // toute la codebase est CancellationService#cancelTrip — donc announcement.status ==
-        // CANCELLED identifie sans ambiguïté que cette cancellation HANDOVER provient bien de
-        // l'annulation du trajet entier (et non d'un no-show / d'une annulation après remise,
-        // qui laissent l'annonce ACTIVE/FULL).
+        // annulation après remise), donc `reason` seul (texte libre côté cancelTrip) n'est PAS
+        // un discriminant positif fiable. announcement.status == CANCELLED n'est pas suffisant
+        // non plus à lui seul : AnnouncementRepository#cancelOpenAnnouncementsByUserId (bulk,
+        // appelé à la suppression de compte par AccountDeletionListener) passe aussi l'annonce
+        // à CANCELLED — sans créer de CancellationEntity — donc un bid dont la cancellation
+        // HANDOVER préexistante vient d'un no-show ou d'une annulation après remise (announcement
+        // restée ACTIVE/FULL à ce moment-là) peut ensuite se retrouver avec announcement CANCELLED
+        // si son voyageur supprime son compte plus tard. On combine donc les deux signaux :
+        // announcement CANCELLED ET reason qui n'est PAS l'une des constantes programmatiques
+        // des autres flux HANDOVER (SENDER_NO_SHOW, *_CANCEL_AFTER_HANDOVER — les seules valeurs
+        // non-libres jamais écrites sur une cancellation HANDOVER, cf. CancellationService).
         boolean tripWasCancelled = announcement != null && announcement.getStatus() == AnnouncementStatus.CANCELLED;
-        UUID tripCancellationId = tripWasCancelled && cancellation != null ? cancellation.getId() : null;
-        String tripCancellationRematchStatus = tripWasCancelled && cancellation != null
+        boolean isTripCancellation = cancellation != null
+                && cancellation.getReason() != null
+                && !NON_TRIP_HANDOVER_REASONS.contains(cancellation.getReason());
+        UUID tripCancellationId = tripWasCancelled && isTripCancellation ? cancellation.getId() : null;
+        String tripCancellationRematchStatus = tripWasCancelled && isTripCancellation
                 ? cancellation.getRematchStatus()
                 : null;
 

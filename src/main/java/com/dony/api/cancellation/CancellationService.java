@@ -226,8 +226,8 @@ public class CancellationService {
      *  (résolution de l'annonce alternative associée + infos voyageur). Réutilisé par
      *  {@code cancelTrip} (suggestions du 1er expéditeur affecté) et
      *  {@code getRematchSuggestions} (consultation par n'importe quel expéditeur affecté via
-     *  son propre cancellationId). Les voyageurs des annonces alternatives sont batch-chargés
-     *  (un seul {@code findAllById}) — pas de {@code findById} par suggestion. */
+     *  son propre cancellationId). Annonces alternatives ET voyageurs sont chacun batch-chargés
+     *  (un seul {@code findAllById} par type) — pas de {@code findById} par suggestion. */
     private List<RematchSuggestionDto> buildRematchSuggestionDtos(UUID cancellationId) {
         List<RematchSuggestionEntity> suggestionEntities =
                 rematchSuggestionRepository.findByCancellationId(cancellationId);
@@ -235,12 +235,12 @@ public class CancellationService {
             return List.of();
         }
 
-        Map<UUID, AnnouncementEntity> announcementsById = suggestionEntities.stream()
+        List<UUID> announcementIds = suggestionEntities.stream()
                 .map(RematchSuggestionEntity::getAnnouncementId)
                 .distinct()
-                .map(id -> announcementRepository.findById(id))
-                .filter(java.util.Optional::isPresent)
-                .map(java.util.Optional::get)
+                .toList();
+        Map<UUID, AnnouncementEntity> announcementsById = announcementRepository.findAllById(announcementIds)
+                .stream()
                 .collect(java.util.stream.Collectors.toMap(AnnouncementEntity::getId, a -> a));
 
         List<UUID> travelerIds = announcementsById.values().stream()
