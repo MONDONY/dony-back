@@ -50,6 +50,7 @@ class CancellationServiceTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RematchService rematchService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     @InjectMocks private CancellationService cancellationService;
 
@@ -533,6 +534,7 @@ class CancellationServiceTest {
             altTraveler.setFirstName("Moussa");
             altTraveler.setAverageRating(BigDecimal.valueOf(4.8));
             altTraveler.setRatingCount(12);
+            altTraveler.setAvatarUrl("users/avatar-key.jpg");
 
             when(cancellationRepository.findById(cancellationId)).thenReturn(Optional.of(cancellation));
             when(userRepository.findByFirebaseUid("uid")).thenReturn(Optional.of(caller));
@@ -542,6 +544,8 @@ class CancellationServiceTest {
             when(announcementRepository.findAllById(List.of(altAnnouncementId)))
                     .thenReturn(List.of(altAnnouncement));
             when(userRepository.findAllById(List.of(altTravelerId))).thenReturn(List.of(altTraveler));
+            when(storageService.avatarUrl("users/avatar-key.jpg"))
+                    .thenReturn("https://s3.example/presigned-avatar");
 
             List<RematchSuggestionDto> result = cancellationService.getRematchSuggestions(cancellationId, "uid");
 
@@ -550,6 +554,7 @@ class CancellationServiceTest {
             assertThat(result.get(0).travelerFirstName()).isEqualTo("Moussa");
             assertThat(result.get(0).travelerRating()).isEqualByComparingTo(BigDecimal.valueOf(4.8));
             assertThat(result.get(0).travelerRatingCount()).isEqualTo(12);
+            assertThat(result.get(0).travelerAvatarUrl()).isEqualTo("https://s3.example/presigned-avatar");
         }
 
         @Test

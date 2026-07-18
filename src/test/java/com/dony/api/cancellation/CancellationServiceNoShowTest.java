@@ -53,6 +53,7 @@ class CancellationServiceNoShowTest {
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RematchService rematchService;
+    @Mock private com.dony.api.common.StorageService storageService;
 
     private CancellationService service;
 
@@ -68,7 +69,7 @@ class CancellationServiceNoShowTest {
         service = new CancellationService(
                 cancellationRepository, rematchSuggestionRepository,
                 bidRepository, announcementRepository,
-                userRepository, auditService, eventPublisher, commissionProps, rematchService);
+                userRepository, auditService, eventPublisher, commissionProps, rematchService, storageService);
     }
 
     private BidEntity bid(BidStatus status, PaymentMethod pm, LocalDateTime handoverEnd) {

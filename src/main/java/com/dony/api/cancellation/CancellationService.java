@@ -15,6 +15,7 @@ import com.dony.api.cancellation.events.TravelerHighCancellationEvent;
 import com.dony.api.cancellation.events.TravelerNoShowReportedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.StorageService;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.AnnouncementStatus;
@@ -51,6 +52,7 @@ public class CancellationService {
     private final ApplicationEventPublisher eventPublisher;
     private final CommissionProperties commissionProperties;
     private final RematchService rematchService;
+    private final StorageService storageService;
 
     private static final SecureRandom RETURN_CODE_RANDOM = new SecureRandom();
     private static final int MAX_RETURN_CODE_ATTEMPTS = 3;
@@ -63,7 +65,8 @@ public class CancellationService {
                                 AuditService auditService,
                                 ApplicationEventPublisher eventPublisher,
                                 CommissionProperties commissionProperties,
-                                RematchService rematchService) {
+                                RematchService rematchService,
+                                StorageService storageService) {
         this.cancellationRepository = cancellationRepository;
         this.rematchSuggestionRepository = rematchSuggestionRepository;
         this.bidRepository = bidRepository;
@@ -73,6 +76,7 @@ public class CancellationService {
         this.eventPublisher = eventPublisher;
         this.commissionProperties = commissionProperties;
         this.rematchService = rematchService;
+        this.storageService = storageService;
     }
 
     @Transactional
@@ -263,10 +267,14 @@ public class CancellationService {
                     String travelerFirstName = traveler != null ? traveler.getFirstName() : null;
                     java.math.BigDecimal travelerRating = traveler != null ? traveler.getAverageRating() : null;
                     Integer travelerRatingCount = traveler != null ? traveler.getRatingCount() : null;
+                    String travelerAvatarUrl = traveler != null
+                            ? storageService.avatarUrl(traveler.getAvatarUrl())
+                            : null;
                     return new RematchSuggestionDto(s.getId(), a.getId(),
                             a.getDepartureCity(), a.getArrivalCity(),
                             a.getDepartureDate(), a.getAvailableKg(), a.getPricePerKg(),
-                            travelerFirstName, travelerRating, travelerRatingCount);
+                            travelerFirstName, travelerRating, travelerRatingCount,
+                            travelerAvatarUrl);
                 })
                 .filter(s -> s != null)
                 .toList();

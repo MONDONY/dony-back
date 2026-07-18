@@ -14,5 +14,6 @@ public record RematchSuggestionDto(
         BigDecimal pricePerKg,
         String travelerFirstName,
         BigDecimal travelerRating,
-        Integer travelerRatingCount
+        Integer travelerRatingCount,
+        String travelerAvatarUrl
 ) {}
