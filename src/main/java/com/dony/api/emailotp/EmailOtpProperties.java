@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 public class EmailOtpProperties {
 
     private String resendApiKey = "";
-    private String fromAddress = "noreply@dony.app";
+    private String fromAddress = "noreply@dony.store";
     private String otpTemplate = "Ton code dony est : %s. Valable 10 minutes.";
 
     public String getResendApiKey() { return resendApiKey; }

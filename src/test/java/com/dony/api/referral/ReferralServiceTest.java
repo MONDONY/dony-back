@@ -153,7 +153,7 @@ class ReferralServiceTest {
         MyReferralResponse response = referralService.getMyReferral(FIREBASE_UID);
 
         assertThat(response.code()).isEqualTo("JEAN9999");
-        assertThat(response.shareUrl()).isEqualTo("https://dony.app/r/JEAN9999");
+        assertThat(response.shareUrl()).isEqualTo("https://dony.store/r/JEAN9999");
         assertThat(response.totalInvited()).isEqualTo(3);
         assertThat(response.signedUp()).isEqualTo(2);
         assertThat(response.rewarded()).isEqualTo(1);
