@@ -98,3 +98,40 @@ Quand un voyageur annule son trajet (`cancelTrip`), chaque expéditeur affecté 
 - **Discriminant `tripCancellationId` par élimination (`reason` + `announcement.status`) plutôt qu'un champ dédié sur `CancellationEntity`** : la contrainte "aucune migration Flyway" pour cette story interdisait d'ajouter un champ discriminant propre (ex. `cancellationType` enum). Le choix par élimination est documenté comme une dette assumée dans le code (javadoc + commentaires) — un futur ticket pourrait introduire un champ dédié si ce genre de faux positif redevient un problème récurrent.
 - **`@TransactionalEventListener(AFTER_COMMIT)` sans `REQUIRES_NEW` sur `onTripCancelled`** : ce listener ne fait que lire (résoudre les données à notifier) et appeler `notificationService.persist` + `fcmService.sendToUser`, sans muter d'état financier nécessitant une transaction isolée — il suit donc le pattern du listener `TripCancelledEventListener` (payments) plutôt que celui des listeners de commission/wallet qui, eux, ont besoin de `REQUIRES_NEW` pour isoler leurs écritures.
 - **Une seule notification `TRIP_CANCELLED` enrichie plutôt qu'une notification dédiée au rematch** : évite de doubler le bruit de notification pour l'expéditeur (déjà notifié du remboursement) et garde le contrat de notification existant stable — seul le corps/`data` change selon le contexte.
+
+## Extension bid-only (2026-07-18)
+
+Le rematch couvre désormais aussi le cas où le voyageur annule le transport d'un **seul colis** sans annuler son trajet.
+
+### Déclencheurs
+
+- `BidService.cancelBid` initié par le **voyageur** sur un bid `ACCEPTED` ou `PAYMENT_ESCROWED` (statut capturé **avant** la mutation).
+- `BidService.rejectBid` (via `doRejectBid`) initié par le **voyageur** sur un bid payé (`PAYMENT_ESCROWED`, i.e. `!isOffPlatformPending`), hors appels système (`rejectBidBySystem`).
+- Exclus : annulation expéditeur, refus d'une demande non payée (cash/Wave/OM `PENDING`), no-shows, `refuseParcel`, `cancelAfterHandover`.
+
+### Chaîne d'événements
+
+1. `matching/events/BidRejectedEvent` enrichi (additif) : `announcementId` (nullable) + `rematchEligible` (boolean). Constructeur legacy 3-args préservé (`null`, `false`) — les autres producteurs (`BidTimeoutScheduler`, etc.) sont inchangés.
+2. `cancellation/BidLostRematchListener` (`@EventListener` **synchrone**, même transaction que `cancelBid`/`rejectBid`) : si eligible, crée la `CancellationEntity` (reason `BID_CANCELLED_BY_TRAVELER` si `event.reason == "CANCELLED_BY_TRAVELER"`, sinon `BID_REJECTED_AFTER_PAYMENT` ; scope défaut `HANDOVER` ; mêmes champs que `cancelTrip` : `bidId`, `cancelledBy`, `reason`), réutilise `RematchService.generateForCancellations(announcement, List.of(bid), List.of(cancellation))` tel quel, puis publie `cancellation/events/BidLostRematchPreparedEvent(senderId, bidId, cancellationId, suggestionCount, cancelledByTraveler)`.
+3. `notifications/NotificationDispatcher` : `onBidRejected` saute le générique quand `event.isRematchEligible()` ; nouveau `onBidLostRematchPrepared` (`@TransactionalEventListener(AFTER_COMMIT)` + `@Async`, même pattern que `onTripCancelled`) envoie UNE notification type `BID_REJECTED` : titre « Transport annulé » (cancel) ou « Demande refusée » (reject) ; corps « … remboursement en cours. N voyageur(s) alternatif(s) disponible(s) » + `cancellationId` dans `data` si count ≥ 1, sinon « … votre remboursement est en cours » sans `cancellationId`.
+4. `BidService.toResponse` : discriminant étendu — `tripCancellationId`/`tripCancellationRematchStatus` aussi peuplés quand la cancellation HANDOVER du bid porte une reason ∈ `REMATCH_BID_REASONS` (annonce restée ACTIVE). Zéro changement de contrat JSON.
+
+### Pièges et points d'attention
+
+- **Contrainte `UNIQUE(bid_id, scope)` (V173)** : un bid peut déjà avoir une ligne HANDOVER (ex. `reportSenderNoShow` en cours, qui ne change pas le statut du bid). Le listener garde via `cancellationRepository.findByBidId` AVANT tout save : si présent → pas de création ni suggestions, mais publication de `BidLostRematchPreparedEvent(…, cancellationId=null, count=0, …)` pour que l'expéditeur reçoive quand même la notification « remboursement en cours ». Sans cette garde, le save violerait la contrainte → rollback de toute la transaction `cancelBid` → refund AFTER_COMMIT jamais déclenché.
+- **Le listener ne doit JAMAIS lever d'exception** (bid/annonce introuvable → `log.warn` + return) : il tourne dans la transaction du service appelant ; la faire échouer casserait le remboursement.
+- **`cancellationId` nullable dans `BidLostRematchPreparedEvent`** : le dispatcher n'inclut `cancellationId` dans `data` que si `count > 0 && cancellationId != null` (défense : count > 0 avec id null → traité comme count 0).
+- Publication dans une TX active vérifiée (`cancelBid`/`rejectBid` sont `@Transactional`) — sinon l'AFTER_COMMIT serait avalé silencieusement.
+
+### Tests
+
+- Suite complète : `./mvnw test` → **0 échec, BUILD SUCCESS** (un run flake JVM SIGSEGV, retry vert).
+- `BidServiceTest` : 7 cas mutation-sensibles sur le flag `rematchEligible` + 3 cas du discriminant étendu (reasons bid-only sur annonce ACTIVE → peuplés ; `SENDER_NO_SHOW` sur ACTIVE → null).
+- `BidLostRematchListenerTest` (7 cas) : mapping reasons, args exacts de `generateForCancellations`, event publié avec bon count, non-eligible → zéro interaction, collision HANDOVER → skip + event count 0, bid/annonce introuvable → pas d'exception.
+- `NotificationDispatcherTest` (25 cas) : skip du générique quand eligible + non-régression, les 4 corps exacts (cancel/reject × ≥1/0), singulier/pluriel, présence/absence `cancellationId`, cas défensif id null.
+
+### Décisions techniques
+
+- **Réutilisation du type `BID_REJECTED`** (pas de nouveau type notification) : le front route déjà ce type ; l'ajout de `cancellationId` dans `data` suffit au deep link. Une seule notification (la générique est remplacée, pas doublée).
+- **Listener synchrone même-TX dans `cancellation/`** (pas AFTER_COMMIT) : la génération des suggestions doit être atomique avec l'annulation (comme dans `cancelTrip`) ; et la logique de cancellation reste dans son package dédié (règle « Cancellation logic outside cancellation/ » interdite).
+- **Pas de réutilisation de la cancellation no-show préexistante en cas de collision** : sémantique différente (noShowStatus en cours) ; on préfère renoncer aux suggestions et notifier « remboursement en cours » sans deep link.
