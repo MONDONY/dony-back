@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
@@ -226,6 +227,27 @@ class RematchServiceTest {
 
         verify(cancellationRepository, times(1)).save(cancellationWithAlt);
         verify(cancellationRepository, never()).save(cancellationWithoutAlt);
+    }
+
+    @Test
+    @DisplayName("bid GRID (weightKg null) annulé → pas d'exception, suggestions générées sans filtre de poids")
+    void gridBidWithNullWeightKg_generatesSuggestionsWithoutThrowing() {
+        AnnouncementEntity cancelled = cancelledAnnouncement();
+        // Bid en mode GRID : weightKg == null (cf. BidService — "peut être null pour GRID mode").
+        BidEntity gridBid = buildBid(UUID.randomUUID(), null);
+        CancellationEntity cancellation = buildCancellation();
+
+        AnnouncementEntity alt = buildAnnouncement(UUID.randomUUID(), LocalDate.now().plusDays(1));
+
+        when(announcementRepository.findAll(any(Specification.class))).thenReturn(List.of(alt));
+        when(userRepository.findAllById(anyCollection())).thenReturn(List.of());
+
+        Map<UUID, RematchService.RematchInfo> result = assertDoesNotThrow(() ->
+                rematchService.generateForCancellations(cancelled, List.of(gridBid), List.of(cancellation)));
+
+        assertThat(result.get(gridBid.getSenderId()).suggestionCount()).isEqualTo(1);
+        verify(rematchSuggestionRepository, times(1)).save(any(RematchSuggestionEntity.class));
+        assertThat(cancellation.getRematchStatus()).isEqualTo("SUGGESTED");
     }
 
     @Test

@@ -30,6 +30,7 @@ import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -167,6 +168,80 @@ class CancellationServiceTest {
             assertThat(acceptedBid.getStatus()).isEqualTo(BidStatus.CANCELLED);
             assertThat(result.affectedBidsCount()).isEqualTo(1);
             verify(cancellationRepository).save(any(CancellationEntity.class));
+        }
+
+        @Test
+        @DisplayName("délègue à RematchService avec les arguments exacts et restitue ses suggestions dans la réponse")
+        void cancelTrip_delegatesToRematchServiceAndReturnsItsSuggestions() {
+            UserEntity traveler = buildTraveler();
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            UUID senderId = UUID.randomUUID();
+            BidEntity acceptedBid = buildAcceptedBid(senderId);
+            List<BidEntity> affectedBidsList = List.of(acceptedBid);
+            CancellationRequest req = new CancellationRequest(ANNOUNCEMENT_ID, "Vol annulé");
+
+            UUID suggestionId = UUID.randomUUID();
+            UUID altAnnouncementId = UUID.randomUUID();
+
+            when(userRepository.findByFirebaseUid(TRAVELER_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(affectedBidsList);
+            when(userRepository.save(any())).thenReturn(traveler);
+            when(cancellationRepository.save(any(CancellationEntity.class))).thenAnswer(inv -> {
+                CancellationEntity c = inv.getArgument(0);
+                setId(c, UUID.randomUUID());
+                return c;
+            });
+
+            // RematchService renvoie une map connue référençant la cancellation générée par
+            // cancelTrip (récupérée via le 3e argument reçu — on ne peut pas la construire
+            // avant l'appel, son id est assigné dans le stub cancellationRepository.save ci-dessus).
+            when(rematchService.generateForCancellations(any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        List<CancellationEntity> cancellations = inv.getArgument(2);
+                        CancellationEntity firstCancellation = cancellations.get(0);
+                        return Map.of(senderId, new RematchService.RematchInfo(firstCancellation.getId(), 1));
+                    });
+
+            AnnouncementEntity altAnnouncement = new AnnouncementEntity();
+            setId(altAnnouncement, altAnnouncementId);
+            altAnnouncement.setDepartureCity("Paris");
+            altAnnouncement.setArrivalCity("Dakar");
+            altAnnouncement.setDepartureDate(LocalDate.now().plusDays(3));
+            altAnnouncement.setAvailableKg(BigDecimal.TEN);
+            altAnnouncement.setPricePerKg(BigDecimal.valueOf(5));
+
+            RematchSuggestionEntity suggestionEntity = new RematchSuggestionEntity();
+            setId(suggestionEntity, suggestionId);
+            suggestionEntity.setAnnouncementId(altAnnouncementId);
+
+            when(rematchSuggestionRepository.findByCancellationId(any(UUID.class)))
+                    .thenReturn(List.of(suggestionEntity));
+            when(announcementRepository.findById(altAnnouncementId)).thenReturn(Optional.of(altAnnouncement));
+
+            CancellationResponse result = cancellationService.cancelTrip(TRAVELER_UID, req);
+
+            assertThat(result.rematchSuggestions()).hasSize(1);
+            RematchSuggestionDto dto = result.rematchSuggestions().get(0);
+            assertThat(dto.suggestionId()).isEqualTo(suggestionId);
+            assertThat(dto.announcementId()).isEqualTo(altAnnouncementId);
+            assertThat(dto.departureCity()).isEqualTo("Paris");
+            assertThat(dto.arrivalCity()).isEqualTo("Dakar");
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<BidEntity>> bidsCaptor = ArgumentCaptor.forClass(List.class);
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<CancellationEntity>> cancellationsCaptor = ArgumentCaptor.forClass(List.class);
+            ArgumentCaptor<AnnouncementEntity> announcementCaptor = ArgumentCaptor.forClass(AnnouncementEntity.class);
+            verify(rematchService).generateForCancellations(
+                    announcementCaptor.capture(), bidsCaptor.capture(), cancellationsCaptor.capture());
+
+            assertThat(announcementCaptor.getValue()).isSameAs(announcement);
+            assertThat(bidsCaptor.getValue()).isSameAs(affectedBidsList);
+            assertThat(cancellationsCaptor.getValue()).hasSize(1);
+            assertThat(cancellationsCaptor.getValue().get(0).getBidId()).isEqualTo(acceptedBid.getId());
         }
 
         @Test

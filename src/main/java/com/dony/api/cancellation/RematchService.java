@@ -123,20 +123,31 @@ public class RematchService {
      * Package-private (pas privée) pour être exercée directement contre une vraie DB par
      * {@code RematchSpecificationDbTest} — la construction seule ne prouve pas que le SQL
      * généré filtre correctement, il faut l'exécuter via {@code AnnouncementRepository}.
+     * <p>
+     * {@code weightKg} peut être {@code null} (bids en mode GRID — voir
+     * {@code BidService.setWeightKg}, "peut être null pour GRID mode") : dans ce cas le
+     * filtre {@code minAvailableKg} n'est PAS ajouté (pas de contrainte de poids connue),
+     * plutôt que de passer {@code null} à {@code cb.greaterThanOrEqualTo(...)} qui lève une
+     * {@code NullPointerException} à la construction du predicate — ce qui ferait échouer/
+     * rollback toute la transaction {@code cancelTrip} dès qu'un bid GRID actif est affecté.
      */
     static Specification<AnnouncementEntity> buildAlternativesSpec(AnnouncementEntity cancelled,
                                                                      UUID senderId, BigDecimal weightKg,
                                                                      LocalDate from, LocalDate to) {
-        return Specification
+        Specification<AnnouncementEntity> spec = Specification
                 .where(AnnouncementSpecification.hasStatus(AnnouncementStatus.ACTIVE))
                 .and(AnnouncementSpecification.hasDepartureCity(cancelled.getDepartureCity()))
                 .and(AnnouncementSpecification.hasArrivalCity(cancelled.getArrivalCity()))
                 .and(AnnouncementSpecification.departureDateFrom(from))
                 .and(AnnouncementSpecification.departureDateTo(to))
-                .and(AnnouncementSpecification.minAvailableKg(weightKg))
                 .and(AnnouncementSpecification.publicOrOpenSurplus())
                 .and(AnnouncementSpecification.notBlockedBy(senderId))
                 .and((root, query, cb) -> cb.notEqual(root.get("id"), cancelled.getId()))
                 .and((root, query, cb) -> cb.notEqual(root.get("travelerId"), cancelled.getTravelerId()));
+
+        if (weightKg != null) {
+            spec = spec.and(AnnouncementSpecification.minAvailableKg(weightKg));
+        }
+        return spec;
     }
 }

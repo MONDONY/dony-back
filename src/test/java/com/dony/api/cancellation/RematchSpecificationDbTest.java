@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
  * DB-level test (Task B1) : prouve que {@link RematchService#buildAlternativesSpec} filtre
@@ -156,5 +157,30 @@ class RematchSpecificationDbTest {
 
         assertThat(results).extracting(AnnouncementEntity::getId)
                 .doesNotContain(otherCancelled.getId(), draft.getId());
+    }
+
+    @Test
+    @DisplayName("weightKg null (bid GRID) : la Specification s'exécute sans exception et n'applique pas de filtre de capacité")
+    void nullWeightKg_doesNotThrowAndSkipsCapacityFilter() {
+        // Régression : bid.getWeightKg() peut être null en mode GRID (BidService — "peut être
+        // null pour GRID mode"). Passer null à minAvailableKg(...) ferait lever une
+        // NullPointerException à la construction du predicate JPA (cb.greaterThanOrEqualTo
+        // avec un second argument null), rollback toute la transaction cancelTrip. Ce test
+        // exécute la Specification contre une vraie DB (contrairement à RematchServiceTest,
+        // mocké, qui n'exerce jamais le CriteriaBuilder réel) pour prouver le fix.
+        AnnouncementEntity cancelled = persistCancelled(UUID.randomUUID());
+        AnnouncementEntity lowCapacityAlt = persist(UUID.randomUUID(),
+                LocalDate.now(ZoneOffset.UTC).plusDays(1), new BigDecimal("0.5"), AnnouncementStatus.ACTIVE);
+
+        LocalDate from = LocalDate.now(ZoneOffset.UTC);
+        LocalDate to = cancelled.getDepartureDate().plusDays(3);
+        Specification<AnnouncementEntity> spec = RematchService.buildAlternativesSpec(
+                cancelled, UUID.randomUUID(), null, from, to);
+
+        List<AnnouncementEntity> results = assertDoesNotThrow(() -> repository.findAll(spec));
+
+        // Aucun filtre de capacité appliqué → même une annonce à très faible availableKg
+        // (0.5) est retournée, alors qu'elle aurait été exclue avec un weightKg non-null.
+        assertThat(results).extracting(AnnouncementEntity::getId).contains(lowCapacityAlt.getId());
     }
 }
