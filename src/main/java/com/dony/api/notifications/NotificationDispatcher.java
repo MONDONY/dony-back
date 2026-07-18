@@ -126,7 +126,7 @@ public class NotificationDispatcher {
             } else if (info.suggestionCount() > 0) {
                 int n = info.suggestionCount();
                 notifyUser(senderId, "Trajet annulé",
-                        "Le voyageur a annulé son trajet — remboursement en cours. "
+                        "Trajet annulé — remboursement en cours. "
                                 + n + " voyageur" + (n > 1 ? "s" : "") + " alternatif"
                                 + (n > 1 ? "s" : "") + " disponible" + (n > 1 ? "s" : ""),
                         Map.of("type", "TRIP_CANCELLED",

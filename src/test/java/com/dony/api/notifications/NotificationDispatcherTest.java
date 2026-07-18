@@ -155,7 +155,27 @@ class NotificationDispatcherTest {
 
         var dataCaptor = ArgumentCaptor.forClass(Map.class);
         verify(fcmService).sendToUser(eq(senderId), eq("Trajet annulé"),
-                eq("Le voyageur a annulé son trajet — remboursement en cours. 3 voyageurs alternatifs disponibles"),
+                eq("Trajet annulé — remboursement en cours. 3 voyageurs alternatifs disponibles"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("type", "TRIP_CANCELLED");
+        assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
+    }
+
+    @Test
+    void onTripCancelled_withSingleSuggestion_usesSingularWording() {
+        UUID cancellationId = UUID.randomUUID();
+        Map<UUID, TripCancelledEvent.RematchBySenderInfo> rematchBySender = Map.of(
+                senderId, new TripCancelledEvent.RematchBySenderInfo(cancellationId, 1));
+        TripCancelledEvent event = new TripCancelledEvent(
+                annId, travelerId, List.of(senderId), "sick", List.of(bidId),
+                Map.of(), Map.of(), rematchBySender);
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onTripCancelled(event);
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Trajet annulé"),
+                eq("Trajet annulé — remboursement en cours. 1 voyageur alternatif disponible"),
                 dataCaptor.capture());
         assertThat(dataCaptor.getValue()).containsEntry("type", "TRIP_CANCELLED");
         assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
