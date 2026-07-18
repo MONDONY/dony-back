@@ -167,10 +167,15 @@ public class CancellationService {
                 rematchService.generateForCancellations(announcement, affectedBids, cancellations);
 
         // Publish event for notifications (Epic 8) and payment refunds (Story 6.7) — après
-        // la génération des suggestions rematch (Task B2 enrichira cet event avec rematchBySender).
+        // la génération des suggestions rematch. rematchInfo permet à NotificationDispatcher
+        // de rendre la notification TRIP_CANCELLED conditionnelle (deep link si suggestions).
+        Map<UUID, TripCancelledEvent.RematchBySenderInfo> rematchInfo = new HashMap<>();
+        rematchBySender.forEach((senderId, info) -> rematchInfo.put(senderId,
+                new TripCancelledEvent.RematchBySenderInfo(info.cancellationId(), info.suggestionCount())));
+
         eventPublisher.publishEvent(new TripCancelledEvent(
                 request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
-                affectedBidIds, bidPaymentMethods, bidCommissionChargedVia));
+                affectedBidIds, bidPaymentMethods, bidCommissionChargedVia, rematchInfo));
 
         // La réponse HTTP continue de renvoyer les suggestions du PREMIER expéditeur affecté
         // (comportement historique, consommé par l'écran voyageur post-annulation) ; les

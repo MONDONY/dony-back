@@ -118,9 +118,24 @@ public class NotificationDispatcher {
     public void onTripCancelled(TripCancelledEvent event) {
         if (event.getAffectedSenderIds() == null) return;
         for (UUID senderId : event.getAffectedSenderIds()) {
-            notifyUser(senderId, "Trajet annulé",
-                    "Le voyageur a annulé son trajet. Remboursement en cours.",
-                    Map.of("type", "TRIP_CANCELLED"));
+            TripCancelledEvent.RematchBySenderInfo info = event.getRematchBySender().get(senderId);
+            if (info == null) {
+                notifyUser(senderId, "Trajet annulé",
+                        "Le voyageur a annulé son trajet. Remboursement en cours.",
+                        Map.of("type", "TRIP_CANCELLED"));
+            } else if (info.suggestionCount() > 0) {
+                int n = info.suggestionCount();
+                notifyUser(senderId, "Trajet annulé",
+                        "Le voyageur a annulé son trajet — remboursement en cours. "
+                                + n + " voyageur" + (n > 1 ? "s" : "") + " alternatif"
+                                + (n > 1 ? "s" : "") + " disponible" + (n > 1 ? "s" : ""),
+                        Map.of("type", "TRIP_CANCELLED",
+                               "cancellationId", info.cancellationId().toString()));
+            } else {
+                notifyUser(senderId, "Trajet annulé",
+                        "Trajet annulé — Aucun voyageur disponible dans les 72h, votre remboursement est traité",
+                        Map.of("type", "TRIP_CANCELLED"));
+            }
         }
     }
 

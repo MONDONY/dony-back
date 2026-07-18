@@ -141,6 +141,62 @@ class NotificationDispatcherTest {
         verifyNoInteractions(fcmService);
     }
 
+    @Test
+    void onTripCancelled_withSuggestions_notifiesWithDeepLink() {
+        UUID cancellationId = UUID.randomUUID();
+        Map<UUID, TripCancelledEvent.RematchBySenderInfo> rematchBySender = Map.of(
+                senderId, new TripCancelledEvent.RematchBySenderInfo(cancellationId, 3));
+        TripCancelledEvent event = new TripCancelledEvent(
+                annId, travelerId, List.of(senderId), "sick", List.of(bidId),
+                Map.of(), Map.of(), rematchBySender);
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onTripCancelled(event);
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Trajet annulé"),
+                eq("Le voyageur a annulé son trajet — remboursement en cours. 3 voyageurs alternatifs disponibles"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("type", "TRIP_CANCELLED");
+        assertThat(dataCaptor.getValue()).containsEntry("cancellationId", cancellationId.toString());
+    }
+
+    @Test
+    void onTripCancelled_withoutSuggestions_notifiesRefundOnly() {
+        UUID cancellationId = UUID.randomUUID();
+        Map<UUID, TripCancelledEvent.RematchBySenderInfo> rematchBySender = Map.of(
+                senderId, new TripCancelledEvent.RematchBySenderInfo(cancellationId, 0));
+        TripCancelledEvent event = new TripCancelledEvent(
+                annId, travelerId, List.of(senderId), "sick", List.of(bidId),
+                Map.of(), Map.of(), rematchBySender);
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onTripCancelled(event);
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Trajet annulé"),
+                eq("Trajet annulé — Aucun voyageur disponible dans les 72h, votre remboursement est traité"),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).containsEntry("type", "TRIP_CANCELLED");
+        assertThat(dataCaptor.getValue()).doesNotContainKey("cancellationId");
+    }
+
+    @Test
+    void onTripCancelled_missingRematchInfo_keepsLegacyBody() {
+        // Constructeur legacy (5 args) → rematchBySender vide, chemin cancelAfterHandover inchangé
+        TripCancelledEvent event = new TripCancelledEvent(
+                annId, travelerId, List.of(senderId), "sick", List.of(bidId));
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onTripCancelled(event);
+
+        var dataCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(fcmService).sendToUser(eq(senderId), eq("Trajet annulé"),
+                eq("Le voyageur a annulé son trajet. Remboursement en cours."),
+                dataCaptor.capture());
+        assertThat(dataCaptor.getValue()).doesNotContainKey("cancellationId");
+    }
+
     // ── DeliveryConfirmedEvent ────────────────────────────────────────────────
 
     @Test
