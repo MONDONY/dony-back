@@ -4,6 +4,7 @@ import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.matching.dto.AddressDto;
 import com.dony.api.matching.dto.AnnouncementPriceGridItemResponse;
 import com.dony.api.matching.dto.AnnouncementSearchResponse;
@@ -33,15 +34,30 @@ public class AnnouncementSearchMapper {
     private final BidRepository bidRepository;
     private final PriceGridService priceGridService;
     private final StorageService storageService;
+    private final DonyConfigProperties config;
 
     public AnnouncementSearchMapper(UserRepository userRepository,
                                     BidRepository bidRepository,
                                     PriceGridService priceGridService,
-                                    StorageService storageService) {
+                                    StorageService storageService,
+                                    DonyConfigProperties config) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.priceGridService = priceGridService;
         this.storageService = storageService;
+        this.config = config;
+    }
+
+    /**
+     * A trip is "urgent" when its departure falls within the next
+     * {@code dony.urgency.threshold-days} (bounds inclusive, today in UTC).
+     */
+    private boolean computeUrgent(java.time.LocalDate departureDate) {
+        if (departureDate == null) return false;
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
+        int threshold = config.urgency().thresholdDays();
+        return !departureDate.isBefore(today)
+                && !departureDate.isAfter(today.plusDays(threshold));
     }
 
     /**
@@ -99,7 +115,8 @@ public class AnnouncementSearchMapper {
                 gridItems,
                 entity.getHandoverWindowStart(),
                 entity.getHandoverWindowEnd(),
-                isFavorite
+                isFavorite,
+                computeUrgent(entity.getDepartureDate())
         );
     }
 
@@ -152,7 +169,8 @@ public class AnnouncementSearchMapper {
                 gridItems,
                 entity.getHandoverWindowStart(),
                 entity.getHandoverWindowEnd(),
-                isFavorite
+                isFavorite,
+                computeUrgent(entity.getDepartureDate())
         );
     }
 

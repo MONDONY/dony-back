@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.city.CityEntity;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.requests.dto.PackageRequestPhotoResponse;
 import com.dony.api.requests.dto.PackageRequestSearchResponse;
 import com.dony.api.requests.entity.PackageRequestEntity;
@@ -33,15 +34,29 @@ public class PackageRequestSearchMapper {
     private final com.dony.api.city.CityRepository cityRepository;
     private final StorageService storageService;
     private final PackageRequestPhotoService photoService;
+    private final DonyConfigProperties config;
 
     public PackageRequestSearchMapper(UserRepository userRepository,
                                       com.dony.api.city.CityRepository cityRepository,
                                       StorageService storageService,
-                                      PackageRequestPhotoService photoService) {
+                                      PackageRequestPhotoService photoService,
+                                      DonyConfigProperties config) {
         this.userRepository = userRepository;
         this.cityRepository = cityRepository;
         this.storageService = storageService;
         this.photoService = photoService;
+        this.config = config;
+    }
+
+    /**
+     * A request is "urgent" when its {@code desiredDate} falls within the next
+     * {@code dony.urgency.threshold-days} (bounds inclusive, today in UTC).
+     */
+    private boolean computeUrgent(java.time.LocalDate desiredDate) {
+        if (desiredDate == null) return false;
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
+        int threshold = config.urgency().thresholdDays();
+        return !desiredDate.isBefore(today) && !desiredDate.isAfter(today.plusDays(threshold));
     }
 
     /**
@@ -87,7 +102,8 @@ public class PackageRequestSearchMapper {
                 senderProfile,
                 entity.getAcceptedPaymentMethods(),
                 photos,
-                isFavorite
+                isFavorite,
+                computeUrgent(entity.getDesiredDate())
         );
     }
 
@@ -128,7 +144,8 @@ public class PackageRequestSearchMapper {
                 senderProfile,
                 entity.getAcceptedPaymentMethods(),
                 photos,
-                isFavorite
+                isFavorite,
+                computeUrgent(entity.getDesiredDate())
         );
     }
 

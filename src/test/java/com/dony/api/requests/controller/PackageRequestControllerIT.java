@@ -183,7 +183,7 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of(), false);
+        , List.of(), false, false);
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
@@ -211,7 +211,7 @@ class PackageRequestControllerIT {
             new PackageRequestSearchResponse.SenderPublicProfile(
                 UUID.randomUUID(), "Sender", 4.5, 12, true, null),
             java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of(), false);
+        , List.of(), false, false);
         var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
         when(service.search(any(), any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
 
@@ -375,6 +375,80 @@ class PackageRequestControllerIT {
                 .param("radiusKm", "30.0")
                 .with(authentication(authAs("uid-traveler", "TRAVELER"))))
             .andExpect(status().isOk());
+    }
+
+    // ─── Task 3 — filtre urgent ──────────────────────────────────────────────────
+
+    /**
+     * {@code PackageRequestService} est {@code @MockBean} dans cette classe (test de câblage
+     * du contrôleur, pas d'intégration DB réelle — cf. {@code AnnouncementControllerIntegrationTest}
+     * pour l'équivalent avec une vraie base). On ne peut donc pas « seeder » des demandes réelles
+     * et observer un filtrage SQL ici : on vérifie plutôt que le contrôleur construit bien la
+     * Specification qui restreint aux demandes imminentes — {@code urgent(thresholdDays)} — quand
+     * {@code urgent=true}, et ne l'applique pas sinon. Le filtrage réel (SQL + calcul du champ
+     * {@code urgent} sur le DTO) est couvert par {@code PackageRequestSpecificationsTest} et
+     * {@code PackageRequestServiceTest} (mapper réel).
+     */
+    @Test
+    void search_urgentTrue_returnsOnlyImminentRequests() throws Exception {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.search(any(), any(), any()))
+            .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        try (var specMock = org.mockito.Mockito.mockStatic(
+                com.dony.api.requests.specification.PackageRequestSpecifications.class,
+                org.mockito.Mockito.CALLS_REAL_METHODS)) {
+            mockMvc.perform(get("/package-requests")
+                    .param("urgent", "true")
+                    .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+                .andExpect(status().isOk());
+
+            // dony.urgency.threshold-days = 3 dans application-test.yml
+            specMock.verify(() ->
+                com.dony.api.requests.specification.PackageRequestSpecifications.urgent(3));
+        }
+    }
+
+    @Test
+    void search_urgentNotSet_doesNotApplyUrgentSpecification() throws Exception {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.search(any(), any(), any()))
+            .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        try (var specMock = org.mockito.Mockito.mockStatic(
+                com.dony.api.requests.specification.PackageRequestSpecifications.class,
+                org.mockito.Mockito.CALLS_REAL_METHODS)) {
+            mockMvc.perform(get("/package-requests")
+                    .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+                .andExpect(status().isOk());
+
+            specMock.verify(() -> com.dony.api.requests.specification.PackageRequestSpecifications.urgent(anyInt()),
+                org.mockito.Mockito.never());
+        }
+    }
+
+    @Test
+    void get_search_exposesUrgentFieldFromMapper() throws Exception {
+        var searchResp = new PackageRequestSearchResponse(
+            UUID.randomUUID(), "Paris", "Dakar",
+            new BigDecimal("48.85"), new BigDecimal("2.35"),
+            new BigDecimal("14.69"), new BigDecimal("-17.44"),
+            LocalDate.now().plusDays(2), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.dony.api.matching.TransportMode.PLANE,
+            "vetements",
+            new BigDecimal("25"), true, null, "10e", "Plateau",
+            new PackageRequestSearchResponse.SenderPublicProfile(
+                UUID.randomUUID(), "Sender", 4.5, 12, true, null),
+            java.util.Set.of(com.dony.api.payments.cash.PaymentMethod.STRIPE)
+        , List.of(), false, true);
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.search(any(), any(), any())).thenReturn(new PageImpl<>(List.of(searchResp), pageable, 1));
+
+        mockMvc.perform(get("/package-requests")
+                .with(authentication(authAs("uid-traveler", "TRAVELER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].urgent").value(true));
     }
 
     // ─── Task 13 — nouveaux cas IT ──────────────────────────────────────────────

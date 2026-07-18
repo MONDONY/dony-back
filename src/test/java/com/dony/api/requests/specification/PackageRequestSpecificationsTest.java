@@ -222,4 +222,19 @@ class PackageRequestSpecificationsTest {
         assertThat(result).isEqualTo(pred);
         verify(cb).equal(any(), eq(ParcelSize.SMALL));
     }
+
+    @Test
+    @DisplayName("urgent() → between(desiredDate, today, today+thresholdDays)")
+    void urgent_buildsBetweenOnDesiredDate() {
+        Predicate pred = mock(Predicate.class);
+        LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+        int thresholdDays = 3;
+        when(cb.between(any(), eq(today), eq(today.plusDays(thresholdDays)))).thenReturn(pred);
+
+        Specification<PackageRequestEntity> spec = PackageRequestSpecifications.urgent(thresholdDays);
+        Predicate result = spec.toPredicate(root, query, cb);
+
+        assertThat(result).isEqualTo(pred);
+        verify(cb).between(any(), eq(today), eq(today.plusDays(thresholdDays)));
+    }
 }

@@ -37,5 +37,6 @@ public record AnnouncementSearchResponse(
         List<AnnouncementPriceGridItemResponse> priceGridItems,
         LocalDateTime handoverWindowStart,
         LocalDateTime handoverWindowEnd,
-        boolean isFavorite
+        boolean isFavorite,
+        boolean urgent
 ) {}

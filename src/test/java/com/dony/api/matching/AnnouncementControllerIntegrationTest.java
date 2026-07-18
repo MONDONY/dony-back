@@ -118,6 +118,38 @@ class AnnouncementControllerIntegrationTest {
             .andExpect(jsonPath("$.content[0].departureCity").value("Paris"));
     }
 
+    // ─── urgent filter ──────────────────────────────────────────────────────
+
+    @Test
+    void search_urgentTrue_returnsOnlyImminentDepartures() throws Exception {
+        var traveler = seedTraveler("uid-test-traveler-urgent");
+        // Urgente : départ demain (dans la fenêtre [today, today+3] — seuil de test).
+        seedAnnouncementForTravelerWithDate(traveler.getId(), LocalDate.now().plusDays(1));
+        // Non urgente : départ dans 10 jours.
+        seedAnnouncementForTravelerWithDate(traveler.getId(), LocalDate.now().plusDays(10));
+
+        mockMvc.perform(get("/announcements").param("urgent", "true")
+                        .with(authentication(authenticatedAs("uid-test-traveler-urgent"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[*].urgent", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(true))));
+    }
+
+    @Test
+    void search_urgentNotSet_stillExposesUrgentFlagPerAnnouncement() throws Exception {
+        var traveler = seedTraveler("uid-test-traveler-urgent-flag");
+        seedAnnouncementForTravelerWithDate(traveler.getId(), LocalDate.now().plusDays(1));
+        seedAnnouncementForTravelerWithDate(traveler.getId(), LocalDate.now().plusDays(10));
+
+        // Tri par défaut = date ASC : le trajet urgent (départ+1j) apparaît avant le non-urgent (départ+10j).
+        mockMvc.perform(get("/announcements")
+                        .with(authentication(authenticatedAs("uid-test-traveler-urgent-flag"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].urgent").value(true))
+                .andExpect(jsonPath("$.content[1].urgent").value(false));
+    }
+
     // ─── Create — transportMode validation ────────────────────────────────────
 
     @Test
@@ -514,6 +546,27 @@ class AnnouncementControllerIntegrationTest {
         e.setTotalKg(new BigDecimal("8"));
         e.setPricePerKg(new BigDecimal("12"));
         e.setStatus(status);
+        e.setTransportMode(TransportMode.PLANE);
+        e.setPickupAddressLabel("Test pickup");
+        e.setPickupLat(BigDecimal.valueOf(48.8566));
+        e.setPickupLng(BigDecimal.valueOf(2.3522));
+        e.setDeliveryAddressLabel("Test delivery");
+        e.setDeliveryLat(BigDecimal.valueOf(14.6928));
+        e.setDeliveryLng(BigDecimal.valueOf(-17.4467));
+        return announcementRepository.save(e);
+    }
+
+    /** Comme {@link #seedAnnouncementForTraveler} mais avec une date de départ paramétrable (filtre urgent). */
+    private AnnouncementEntity seedAnnouncementForTravelerWithDate(UUID travelerId, LocalDate departureDate) {
+        AnnouncementEntity e = new AnnouncementEntity();
+        e.setTravelerId(travelerId);
+        e.setDepartureCity("Paris");
+        e.setArrivalCity("Dakar");
+        e.setDepartureDate(departureDate);
+        e.setAvailableKg(new BigDecimal("8"));
+        e.setTotalKg(new BigDecimal("8"));
+        e.setPricePerKg(new BigDecimal("12"));
+        e.setStatus(AnnouncementStatus.ACTIVE);
         e.setTransportMode(TransportMode.PLANE);
         e.setPickupAddressLabel("Test pickup");
         e.setPickupLat(BigDecimal.valueOf(48.8566));

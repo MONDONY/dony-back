@@ -55,6 +55,8 @@ dony:
     resend-api-key: "test-resend-key"
     from-address: "noreply@test.dony.app"
     otp-template: "Test code: %s"
+  urgency:
+    threshold-days: 3
   kyc:
     enforce: false
   stripe:

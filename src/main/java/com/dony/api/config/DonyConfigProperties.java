@@ -12,9 +12,24 @@ import java.math.BigDecimal;
 @ConfigurationProperties(prefix = "dony")
 public record DonyConfigProperties(
     Commission commission,
-    Limits limits
+    Limits limits,
+    Urgency urgency
 ) {
+    public DonyConfigProperties {
+        if (urgency == null) {
+            urgency = new Urgency(null);
+        }
+    }
+
     public record Commission(BigDecimal rate) {}
+
+    public record Urgency(Integer thresholdDays) {
+        public Urgency {
+            if (thresholdDays == null) {
+                thresholdDays = 3;
+            }
+        }
+    }
 
     public record Limits(NonPro nonPro, Drafts drafts) {
         public record NonPro(int monthlyAnnouncements) {}

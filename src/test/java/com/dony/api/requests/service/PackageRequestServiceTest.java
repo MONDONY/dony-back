@@ -5,6 +5,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
+import com.dony.api.config.DonyConfigProperties;
 import com.dony.api.favorites.FavoriteRepository;
 import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.matching.TransportMode;
@@ -49,6 +50,9 @@ class PackageRequestServiceTest {
     @Mock private StorageService storageService;
     @Mock private PackageRequestPhotoService photoService;
     @Mock private FavoriteRepository favoriteRepository;
+    /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (dony.urgency.threshold-days). */
+    private final DonyConfigProperties donyConfig =
+            new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3));
     private PackageRequestService service;
 
     private UserEntity sender;
@@ -91,7 +95,7 @@ class PackageRequestServiceTest {
         lenient().when(cityRepository.findByNamesIgnoreCaseBatch(any())).thenReturn(java.util.Map.of());
         // Real mapper wired to the same mocks so SearchTests assertions remain valid
         PackageRequestSearchMapper realMapper = new PackageRequestSearchMapper(
-                userRepository, cityRepository, storageService, photoService);
+                userRepository, cityRepository, storageService, photoService, donyConfig);
         service = new PackageRequestService(
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
@@ -818,6 +822,134 @@ class PackageRequestServiceTest {
 
             verify(photoService, times(1)).activePhotosBatch(anyCollection());
             verify(photoService, never()).activePhotos(any());
+        }
+
+        // ─── urgent field (Task 3) ──────────────────────────────────────────────
+
+        @Test @DisplayName("desiredDate dans [today, today+seuil] → urgent=true")
+        void search_desiredDateWithinThreshold_urgentTrue() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC).plusDays(2)); // seuil de test = 3
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isTrue();
+        }
+
+        @Test @DisplayName("desiredDate au-delà de today+seuil → urgent=false")
+        void search_desiredDateBeyondThreshold_urgentFalse() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC).plusDays(9)); // seuil de test = 3
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isFalse();
+        }
+
+        @Test @DisplayName("desiredDate = today (UTC) → urgent=true")
+        void search_desiredDateToday_urgentTrue() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isTrue();
+        }
+
+        @Test @DisplayName("desiredDate = today+3 (borne exacte du seuil) → urgent=true")
+        void search_desiredDateAtThresholdBoundary_urgentTrue() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC).plusDays(3));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isTrue();
+        }
+
+        @Test @DisplayName("desiredDate = today+4 (juste après le seuil) → urgent=false")
+        void search_desiredDateJustBeyondThreshold_urgentFalse() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC).plusDays(4));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isFalse();
+        }
+
+        @Test @DisplayName("desiredDate = today-1 (passé) → urgent=false")
+        void search_desiredDateInPast_urgentFalse() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(LocalDate.now(java.time.ZoneOffset.UTC).minusDays(1));
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isFalse();
+        }
+
+        @Test @DisplayName("desiredDate = null → urgent=false")
+        void search_desiredDateNull_urgentFalse() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            entity.setDesiredDate(null);
+            when(repository.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                                    any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(favoriteRepository.findTargetIds(any(), any())).thenReturn(List.of());
+
+            var result = service.search(
+                org.springframework.data.jpa.domain.Specification.where(null),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                SENDER_ID
+            );
+
+            assertThat(result.getContent().get(0).urgent()).isFalse();
         }
     }
 

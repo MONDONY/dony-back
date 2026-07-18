@@ -127,7 +127,7 @@ public class AnnouncementService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber + '_' + #viewerFirebaseUid")
+    @Cacheable(value = "announcements-search", key = "#departureCity + '_' + #arrivalCity + '_' + #departureDateFrom + '_' + #departureDateTo + '_' + #minAvailableKg + '_' + #maxAvailableKg + '_' + #maxPricePerKg + '_' + #minRating + '_' + #kiloProOnly + '_' + #weekendOnly + '_' + #transportMode + '_' + #kycVerifiedOnly + '_' + #contentType + '_' + #userLat + '_' + #userLng + '_' + #radiusKm + '_' + #sortBy + '_' + #sortDir + '_' + #pageable.pageNumber + '_' + #viewerFirebaseUid + '_' + #urgent")
     public Page<AnnouncementSearchResponse> searchAnnouncements(
             String departureCity, String arrivalCity,
             LocalDate departureDateFrom, LocalDate departureDateTo,
@@ -137,7 +137,7 @@ public class AnnouncementService {
             String transportMode, Boolean kycVerifiedOnly, String contentType,
             Double userLat, Double userLng, Double radiusKm,
             String sortBy, String sortDir, Pageable pageable,
-            String viewerFirebaseUid) {
+            String viewerFirebaseUid, Boolean urgent) {
 
         // Confidentialité v2 — exclure (dans les deux sens) les voyageurs en relation
         // de blocage avec le viewer. Le firebaseUid est intégré à la clé de cache pour
@@ -158,10 +158,21 @@ public class AnnouncementService {
             spec = spec.and(AnnouncementSpecification.hasDepartureCity(departureCity));
         if (arrivalCity != null && !arrivalCity.isBlank())
             spec = spec.and(AnnouncementSpecification.hasArrivalCity(arrivalCity));
-        if (departureDateFrom != null)
-            spec = spec.and(AnnouncementSpecification.departureDateFrom(departureDateFrom));
-        if (departureDateTo != null)
-            spec = spec.and(AnnouncementSpecification.departureDateTo(departureDateTo));
+        // urgent=true restreint la fenêtre de départ à [today, today+seuil] (UTC) ;
+        // combiné à un filtre de date explicite, on applique l'intersection des deux bornes.
+        LocalDate effectiveFrom = departureDateFrom;
+        LocalDate effectiveTo = departureDateTo;
+        if (Boolean.TRUE.equals(urgent)) {
+            LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+            LocalDate urgentTo = today.plusDays(config.urgency().thresholdDays());
+            effectiveFrom = (effectiveFrom == null || effectiveFrom.isBefore(today)) ? today : effectiveFrom;
+            effectiveTo = (effectiveTo == null || effectiveTo.isAfter(urgentTo)) ? urgentTo : effectiveTo;
+        }
+
+        if (effectiveFrom != null)
+            spec = spec.and(AnnouncementSpecification.departureDateFrom(effectiveFrom));
+        if (effectiveTo != null)
+            spec = spec.and(AnnouncementSpecification.departureDateTo(effectiveTo));
         if (minAvailableKg != null)
             spec = spec.and(AnnouncementSpecification.minAvailableKg(minAvailableKg));
         if (maxAvailableKg != null)
