@@ -6,6 +6,7 @@ import com.dony.api.auth.UserRepository;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
@@ -57,6 +58,7 @@ class PaymentServiceTest {
     @Mock PaymentRepository paymentRepository;
     @Mock AuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock CurrencyRegistry currencyRegistry;
 
     PaymentService service;
 
@@ -67,13 +69,17 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Utilisée uniquement par createNegotiationEscrow (MinorUnits.toMinor sur "EUR") ;
+        // lenient() car la plupart des tests de cette classe ne l'exercent pas.
+        lenient().when(currencyRegistry.minorUnitOf(anyString())).thenReturn(2);
         service = new PaymentService(
                 userRepository, bidRepository, announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class),
-                PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.dony.api.promo.PromoService.class), new StripeGatewayImpl());
+                PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.dony.api.promo.PromoService.class), new StripeGatewayImpl(),
+                currencyRegistry);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

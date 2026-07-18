@@ -3,6 +3,7 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.promo.PromoService;
 import com.dony.api.config.StripeConnectProperties;
@@ -64,7 +65,8 @@ class PaymentServiceTestFactory {
                 mock(AdminAlertService.class),
                 stubbedResolver(),
                 mock(PromoService.class),
-                new StripeGatewayImpl()
+                new StripeGatewayImpl(),
+                mock(CurrencyRegistry.class)
         );
     }
 
@@ -96,7 +98,8 @@ class PaymentServiceTestFactory {
                 adminAlert,
                 stubbedResolver(),
                 mock(PromoService.class),
-                new StripeGatewayImpl()
+                new StripeGatewayImpl(),
+                mock(CurrencyRegistry.class)
         );
     }
 }

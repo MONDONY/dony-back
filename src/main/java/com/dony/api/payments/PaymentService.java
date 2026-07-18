@@ -7,6 +7,9 @@ import com.dony.api.common.AuditService;
 import com.dony.api.common.CommissionRateResolver;
 import com.dony.api.common.DonyBusinessException;
 import com.dony.api.common.stripe.AdminAlertService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.promo.PromoService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.payments.exceptions.TravelerNotEligibleForPaymentException;
@@ -76,6 +79,7 @@ public class PaymentService {
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
     private final StripeGateway stripeGateway;
+    private final CurrencyRegistry currencyRegistry;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -88,7 +92,8 @@ public class PaymentService {
                           AdminAlertService adminAlert,
                           CommissionRateResolver commissionRateResolver,
                           PromoService promoService,
-                          StripeGateway stripeGateway) {
+                          StripeGateway stripeGateway,
+                          CurrencyRegistry currencyRegistry) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
@@ -101,6 +106,7 @@ public class PaymentService {
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
         this.stripeGateway = stripeGateway;
+        this.currencyRegistry = currencyRegistry;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -1403,7 +1409,7 @@ public class PaymentService {
             String customerId = ensureStripeCustomer(sender);
 
             PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                    .setAmount(b.grossCents())                        // gross, pas net
+                    .setAmount(MinorUnits.toMinor(new Money(b.gross(), "EUR"), currencyRegistry)) // gross, pas net
                     .setCurrency("eur")
                     .setCustomer(customerId)
                     .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)

@@ -62,7 +62,8 @@ class EphemeralKeyServiceTest {
                 mock(com.dony.api.common.stripe.AdminAlertService.class),
                 PaymentServiceTestFactory.stubbedResolver(),
                 mock(com.dony.api.promo.PromoService.class),
-                stripeGateway);
+                stripeGateway,
+                mock(com.dony.api.common.money.CurrencyRegistry.class));
     }
 
     private void setId(Object entity, UUID id) {
