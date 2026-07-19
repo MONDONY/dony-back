@@ -73,12 +73,21 @@ public class GeniusPayWebhookController {
         }
 
         // Anti-rejeu : check-then-act (même principe que StripeWebhookIngestService.ingest()).
-        if (processedEventRepository.existsById(reference)) {
-            log.info("GeniusPay webhook: référence {} déjà traitée (rejeu), no-op", reference);
+        // Clé composite "event:reference" (et non reference seule) : le contrat exact de GeniusPay
+        // n'est pas vérifiable depuis le code (webhook terminal unique vs plusieurs events pour la
+        // même référence, ex. payment.pending puis payment.success). Avec reference seule, un premier
+        // webhook non-terminal marquerait la référence comme "traitée" et bloquerait silencieusement
+        // le payment.success qui doit créditer le wallet. La clé composite garde la même colonne
+        // external_reference (VARCHAR(255), pas de migration nécessaire) mais y stocke "event:reference"
+        // pour que deux events différents sur la même référence restent distincts, tout en bloquant
+        // toujours un rejeu exact (même event + même référence).
+        String dedupKey = event + ":" + reference;
+        if (processedEventRepository.existsById(dedupKey)) {
+            log.info("GeniusPay webhook: event {} pour référence {} déjà traité (rejeu), no-op", event, reference);
             return ResponseEntity.ok().build();
         }
         ProcessedGeniusPayEventEntity processed = new ProcessedGeniusPayEventEntity();
-        processed.setExternalReference(reference);
+        processed.setExternalReference(dedupKey);
         processed.setProcessedAt(LocalDateTime.now(ZoneOffset.UTC));
         processedEventRepository.save(processed);
 
@@ -91,6 +100,14 @@ public class GeniusPayWebhookController {
         topup.setWebhookReceivedAt(LocalDateTime.now(ZoneOffset.UTC));
 
         if ("payment.success".equals(event)) {
+            // Défense en profondeur : même si la clé de dédup ci-dessus laissait passer un doublon
+            // (ex. libellés d'event légèrement différents entre deux webhooks GeniusPay pour le même
+            // succès), on ne recrédite jamais un topup qui n'est plus PENDING.
+            if (!"PENDING".equals(topup.getStatus())) {
+                log.info("GeniusPay webhook: topup {} déjà au statut {} (≠ PENDING), pas de nouveau crédit",
+                        topup.getId(), topup.getStatus());
+                return ResponseEntity.ok().build();
+            }
             topup.setStatus("COMPLETED");
             topupRequestRepository.save(topup);
             walletService.credit(topup.getUserId(), topup.getAmountEur(),

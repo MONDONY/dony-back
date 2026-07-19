@@ -58,7 +58,7 @@ class GeniusPayWebhookControllerTest {
         topup.setUserId(userId);
         topup.setAmountEur(new BigDecimal("10.00"));
         topup.setCurrency("XOF");
-        when(processedEventRepository.existsById("MTX-1")).thenReturn(false);
+        when(processedEventRepository.existsById("payment.success:MTX-1")).thenReturn(false);
         when(topupRequestRepository.findByExternalReference("MTX-1")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
@@ -73,7 +73,7 @@ class GeniusPayWebhookControllerTest {
     @Test
     void replayedEvent_isNoOp() throws Exception {
         String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-2\"}}}";
-        when(processedEventRepository.existsById("MTX-2")).thenReturn(true);
+        when(processedEventRepository.existsById("payment.success:MTX-2")).thenReturn(true);
 
         mockMvc.perform(post("/webhooks/genius-pay")
                         .header("X-GeniusPay-Signature", sign(payload))
@@ -87,7 +87,7 @@ class GeniusPayWebhookControllerTest {
     void paymentFailed_marksTopupFailed() throws Exception {
         String payload = "{\"event\":\"payment.failed\",\"data\":{\"transaction\":{\"reference\":\"MTX-3\"}}}";
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
-        when(processedEventRepository.existsById("MTX-3")).thenReturn(false);
+        when(processedEventRepository.existsById("payment.failed:MTX-3")).thenReturn(false);
         when(topupRequestRepository.findByExternalReference("MTX-3")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
@@ -97,5 +97,58 @@ class GeniusPayWebhookControllerTest {
 
         verifyNoInteractions(walletService);
         verify(topupRequestRepository).save(argThat(t -> "FAILED".equals(t.getStatus())));
+    }
+
+    /**
+     * Partie 1 du fix revue finale : un événement non-terminal (payment.pending) déjà vu pour une
+     * référence ne doit JAMAIS bloquer le payment.success qui suit pour la MÊME référence, car la
+     * clé de dédup est désormais composite ("event:reference") et non plus la référence seule.
+     */
+    @Test
+    void pendingAlreadySeen_thenSuccess_stillCreditsWallet() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-4\"}}}";
+        WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
+        topup.setUserId(userId);
+        topup.setAmountEur(new BigDecimal("15.00"));
+        topup.setCurrency("XOF");
+        // Un payment.pending pour MTX-4 a déjà été traité et marqué avec sa propre clé composite.
+        when(processedEventRepository.existsById("payment.pending:MTX-4")).thenReturn(true);
+        // Le payment.success a une clé composite DIFFÉRENTE, jamais vue.
+        when(processedEventRepository.existsById("payment.success:MTX-4")).thenReturn(false);
+        when(topupRequestRepository.findByExternalReference("MTX-4")).thenReturn(Optional.of(topup));
+
+        mockMvc.perform(post("/webhooks/genius-pay")
+                        .header("X-GeniusPay-Signature", sign(payload))
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        verify(walletService).credit(eq(userId), eq(new BigDecimal("15.00")),
+                eq(WalletTransactionType.TOP_UP), eq("MTX-4"), eq("geniuspay-MTX-4"));
+    }
+
+    /**
+     * Partie 2 du fix revue finale : défense en profondeur. Même si la clé de dédup composite
+     * laissait passer un doublon (ex. libellés d'event légèrement différents entre deux webhooks
+     * GeniusPay pour le même succès), un topup déjà COMPLETED ne doit jamais être re-crédité.
+     */
+    @Test
+    void topupAlreadyCompleted_secondSuccessEvent_doesNotRecredit() throws Exception {
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-5\"}}}";
+        WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
+        topup.setUserId(UUID.randomUUID());
+        topup.setAmountEur(new BigDecimal("20.00"));
+        topup.setCurrency("XOF");
+        topup.setStatus("COMPLETED");
+        // La clé de dédup n'a pas bloqué ce webhook (ex. rejeu non détecté pour une raison quelconque).
+        when(processedEventRepository.existsById("payment.success:MTX-5")).thenReturn(false);
+        when(topupRequestRepository.findByExternalReference("MTX-5")).thenReturn(Optional.of(topup));
+
+        mockMvc.perform(post("/webhooks/genius-pay")
+                        .header("X-GeniusPay-Signature", sign(payload))
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(walletService);
     }
 }
