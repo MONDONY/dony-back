@@ -66,6 +66,11 @@ class WalletTopupOrchestratorTest {
 
         WalletTopupResponse response = orchestrator.initiate(userId, request);
 
+        // Chaîne exacte : 6559.57 XOF, minorUnitOf("XOF")=0 -> MinorUnits.toMinor arrondit
+        // HALF_UP à 6560, puis MoneyRounding.roundTransactionalMinor(6560, increment=5) = 6560
+        // (déjà multiple de 5). C'est ce montant qui bouge de l'argent réel côté GeniusPay.
+        long expectedAmountMinor = 6560L;
+
         assertThat(response.getRedirectUrl()).isEqualTo("https://wave.com/pay/xxx");
         ArgumentCaptor<WalletTopupRequestEntity> captor = ArgumentCaptor.forClass(WalletTopupRequestEntity.class);
         verify(topupRequestRepository, times(2)).save(captor.capture());
@@ -73,6 +78,12 @@ class WalletTopupOrchestratorTest {
         assertThat(saved.getCurrency()).isEqualTo("XOF");
         assertThat(saved.getExternalReference()).isEqualTo("MTX-TEST");
         assertThat(saved.getAmountEur()).isEqualByComparingTo("10.00");
+        assertThat(saved.getAmountMinor()).isEqualTo(expectedAmountMinor);
+
+        ArgumentCaptor<Long> amountMinorCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(geniusPayClient).createPayment(
+                amountMinorCaptor.capture(), eq("XOF"), eq("wave"), eq("+221771234567"), anyString());
+        assertThat(amountMinorCaptor.getValue()).isEqualTo(expectedAmountMinor);
     }
 
     @Test
@@ -124,13 +135,19 @@ class WalletTopupOrchestratorTest {
     }
 
     @Test
-    void mobileMoneyTopup_unsupportedCurrencyCountry_throws422() {
+    void mobileMoneyTopup_currencyNotConvertible_throws422() {
         UUID userId = UUID.randomUUID();
         WalletTopupRequest request = new WalletTopupRequest();
         request.setAmount(new BigDecimal("10.00"));
         request.setPaymentMethod("WAVE");
-        request.setCountryCode("US"); // hors zone CFA
-        request.setPhoneNumber("+15551234567");
+        request.setCountryCode("SN"); // couvert par GeniusPayCoverage + CountryCurrencies (XOF)
+        request.setPhoneNumber("+221771234567");
+
+        // Passe le gate de couverture (SN/WAVE supporté) et la résolution de devise
+        // (SN -> XOF), mais aucune parité FX en base pour XOF : doit lever
+        // currency-not-convertible, jamais atteindre GeniusPay.
+        when(peggedFxRateProvider.convert(eq(new Money(new BigDecimal("10.00"), "EUR")), eq("XOF")))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orchestrator.initiate(userId, request))
                 .isInstanceOf(DonyBusinessException.class);
