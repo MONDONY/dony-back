@@ -148,12 +148,51 @@ class AdminPaymentControllerTest {
             piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
             trStatic.when(() -> Transfer.create(any(TransferCreateParams.class))).thenReturn(mock(Transfer.class));
 
+            assertThat(p.getSettlementCurrency()).isNull(); // sanity: starts NULL before the call
+
             controller.forceRelease(paymentId);
 
             verify(pi).capture();
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
         verify(eventPublisher).publishEvent(any(PaymentReleasedEvent.class));
+
+        // The PI was still requires_capture, so this force-release performed the capture itself,
+        // bypassing the normal markCapturedIfEscrow atomic settlement write — the settlement
+        // columns must be backfilled here rather than left permanently NULL.
+        assertThat(p.getSettlementCurrency()).isEqualTo("EUR");
+        assertThat(p.getSettlementAmountMinor()).isEqualTo(10000L); // 100.00 EUR
+        assertThat(p.getSettlementFxRate()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(p.getSettlementRateSource()).isEqualTo("NONE");
+    }
+
+    @Test
+    void thread_payment_capture_does_not_clobber_existing_settlement() throws StripeException {
+        // If the payment was already settled through the normal markCapturedIfEscrow flow,
+        // the force-release backfill must be a no-op — never overwrite real settlement data.
+        PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_held");
+        p.setSettlementCurrency("EUR");
+        p.setSettlementAmountMinor(9999L);
+        p.setSettlementFxRate(new BigDecimal("1.23456789"));
+        p.setSettlementRateSource("ECB");
+        when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
+        stubResolutionChain("acct_traveler");
+        when(paymentRepository.markReleasedIfEscrow(eq(paymentId), any())).thenReturn(1);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class);
+             MockedStatic<Transfer> trStatic = mockStatic(Transfer.class)) {
+            PaymentIntent pi = mock(PaymentIntent.class);
+            when(pi.getStatus()).thenReturn("requires_capture");
+            when(pi.capture()).thenReturn(pi);
+            piStatic.when(() -> PaymentIntent.retrieve("pi_xxx")).thenReturn(pi);
+            trStatic.when(() -> Transfer.create(any(TransferCreateParams.class))).thenReturn(mock(Transfer.class));
+
+            controller.forceRelease(paymentId);
+        }
+
+        assertThat(p.getSettlementAmountMinor()).isEqualTo(9999L);
+        assertThat(p.getSettlementFxRate()).isEqualByComparingTo(new BigDecimal("1.23456789"));
+        assertThat(p.getSettlementRateSource()).isEqualTo("ECB");
     }
 
     @Test
@@ -176,6 +215,11 @@ class AdminPaymentControllerTest {
             verify(pi).capture();
             trStatic.verifyNoInteractions();
         }
+        // Legacy branch also captures directly — settlement backfill must apply here too.
+        assertThat(p.getSettlementCurrency()).isEqualTo("EUR");
+        assertThat(p.getSettlementAmountMinor()).isEqualTo(10000L);
+        assertThat(p.getSettlementFxRate()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(p.getSettlementRateSource()).isEqualTo("NONE");
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
     }
 

@@ -242,6 +242,18 @@ public class AdminPaymentController {
         payment.setStatus(PaymentStatus.RELEASED);
         payment.setEscrowReleasedAt(LocalDateTime.now(ZoneOffset.UTC));
 
+        // If the PI was still requires_capture above, this force-release performed the capture
+        // itself — outside the normal markCapturedIfEscrow atomic settlement write. Backfill the
+        // settlement columns here so they're never left NULL for a RELEASED payment. No-op if
+        // the payment was already captured through the normal flow (settlement already set).
+        if (payment.getSettlementCurrency() == null) {
+            payment.setSettlementCurrency("EUR");
+            payment.setSettlementAmountMinor(
+                    MinorUnits.toMinorExact(new Money(payment.getAmount(), "EUR"), currencyRegistry));
+            payment.setSettlementFxRate(BigDecimal.ONE);
+            payment.setSettlementRateSource("NONE");
+        }
+
         // Resolve any open ESCROW_J48_TIMEOUT alerts for this payment
         resolveRelatedAlerts(id);
 
