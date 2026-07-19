@@ -190,6 +190,38 @@ class PackageRequestServiceTest {
                 .hasMessageContaining("max-open-reached");
         }
 
+        @Test @DisplayName("acceptedPaymentMethods contient WAVE → 422 mobile money retiré")
+        void create_waveAccepted_throws422() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            PackageRequestCreateRequest req = new PackageRequestCreateRequest(
+                "Paris", "Dakar",
+                LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.WAVE)
+            , List.of());
+
+            assertThatThrownBy(() -> service.create(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("mobile-money-payment-retired");
+        }
+
+        @Test @DisplayName("acceptedPaymentMethods contient ORANGE_MONEY → 422 mobile money retiré")
+        void create_orangeMoneyAccepted_throws422() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            PackageRequestCreateRequest req = new PackageRequestCreateRequest(
+                "Paris", "Dakar",
+                LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements",
+                null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.ORANGE_MONEY)
+            , List.of());
+
+            assertThatThrownBy(() -> service.create(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("mobile-money-payment-retired");
+        }
+
         @Test @DisplayName("desired_date > 90j → 422")
         void create_desiredDateTooFar_throws422() {
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));

@@ -9,6 +9,7 @@ import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.favorites.FavoriteRepository;
 import com.dony.api.favorites.FavoriteTargetType;
 import com.dony.api.payments.cash.CommissionProperties;
+import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
 import com.dony.api.requests.dto.*;
 import com.dony.api.requests.entity.*;
@@ -103,6 +104,21 @@ public class PackageRequestService {
      *   <li>If {@code !negotiable}, a budget is mandatory (HTTP 422 otherwise).</li>
      * </ul>
      */
+    /**
+     * Le paiement mobile money est retiré des nouveaux envois (voir
+     * mobile-money-bid-payment-retired dans BidService) — les demandes ne
+     * peuvent donc plus le déclarer comme mode accepté, sinon le flux de
+     * paiement échouerait après acceptation.
+     */
+    private static void rejectMobileMoneyMethods(Set<PaymentMethod> methods) {
+        if (methods != null
+                && (methods.contains(PaymentMethod.WAVE)
+                    || methods.contains(PaymentMethod.ORANGE_MONEY))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/mobile-money-payment-retired");
+        }
+    }
+
     @Transactional
     public PackageRequestEntity createAndReturnEntity(UUID senderId, PackageRequestCreateRequest req) {
         UserEntity sender = userRepository.findById(senderId)
@@ -111,6 +127,7 @@ public class PackageRequestService {
         if (sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
         }
+        rejectMobileMoneyMethods(req.acceptedPaymentMethods());
         if (!req.negotiable() && req.totalBudgetEur() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "request/target-price-required-firm");
@@ -194,6 +211,7 @@ public class PackageRequestService {
             && entity.getStatus() != PackageRequestStatus.NEGOTIATING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
         }
+        rejectMobileMoneyMethods(req.acceptedPaymentMethods());
         if (!req.negotiable() && req.totalBudgetEur() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "request/target-price-required-firm");
