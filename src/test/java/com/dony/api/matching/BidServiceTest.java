@@ -627,8 +627,8 @@ class BidServiceTest {
         }
 
         @Test
-        @DisplayName("paymentMethod=WAVE + annonce accepte WAVE + phone/country fournis → bid créé avec WAVE")
-        void createBid_wave_accepted_setsMobileMoneyOnBid() {
+        @DisplayName("paymentMethod=WAVE → 422 mobile-money-bid-payment-retired (retiré)")
+        void createBid_wave_isRejectedAsRetired() {
             UserEntity sender = buildSender();
             AnnouncementEntity announcement = buildAnnouncement();
             announcement.setAcceptedPaymentMethods(
@@ -637,39 +637,6 @@ class BidServiceTest {
 
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
-                    .thenReturn(false);
-            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
-                BidEntity b = inv.getArgument(0);
-                setId(b, BID_ID);
-                return b;
-            });
-
-            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
-                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
-                    true, "WAVE", "+221771234567", "SN", null, null, null);
-
-            BidResponse result = bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest);
-
-            assertThat(result.paymentMethod()).isEqualTo("WAVE");
-            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
-            verify(bidRepository).save(captor.capture());
-            assertThat(captor.getValue().getPaymentMethod())
-                    .isEqualTo(com.dony.api.payments.cash.PaymentMethod.WAVE);
-            assertThat(captor.getValue().getMobileMoneyPhone()).isEqualTo("+221771234567");
-            assertThat(captor.getValue().getMobileMoneyCountryCode()).isEqualTo("SN");
-        }
-
-        @Test
-        @DisplayName("paymentMethod=WAVE + annonce n'accepte pas WAVE → 422 UNPROCESSABLE_ENTITY")
-        void createBid_waveNotAcceptedByAnnouncement_throwsUnprocessable() {
-            UserEntity sender = buildSender();
-            AnnouncementEntity announcement = buildAnnouncement(); // default = STRIPE only
-
-            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
-                    .thenReturn(false);
 
             BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
@@ -680,13 +647,35 @@ class BidServiceTest {
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-not-accepted");
+                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-bid-payment-retired");
                     });
         }
 
         @Test
-        @DisplayName("paymentMethod=ORANGE_MONEY + phone manquant → 422 UNPROCESSABLE_ENTITY")
-        void createBid_orangeMoney_missingPhone_throwsUnprocessable() {
+        @DisplayName("paymentMethod=WAVE, même si l'annonce l'accepterait → 422 retiré (avant tout autre check)")
+        void createBid_waveEvenIfAnnouncementWouldAccept_isRejectedAsRetiredFirst() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement(); // default = STRIPE only, sans importance ici
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
+                    true, "WAVE", "+221771234567", "SN", null, null, null);
+
+            assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, waveReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-bid-payment-retired");
+                    });
+        }
+
+        @Test
+        @DisplayName("paymentMethod=ORANGE_MONEY, même sans phone → 422 retiré (avant le check phone)")
+        void createBid_orangeMoneyEvenWithoutPhone_isRejectedAsRetiredFirst() {
             UserEntity sender = buildSender();
             AnnouncementEntity announcement = buildAnnouncement();
             announcement.setAcceptedPaymentMethods(
@@ -694,8 +683,6 @@ class BidServiceTest {
 
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
-                    .thenReturn(false);
 
             BidRequest omReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
@@ -706,7 +693,7 @@ class BidServiceTest {
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-phone-required");
+                        assertThat(ex.getErrorCode()).isEqualTo("mobile-money-bid-payment-retired");
                     });
         }
 
