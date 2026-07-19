@@ -113,7 +113,7 @@ public class AdminPaymentController {
             return ResponseEntity.ok(Page.empty(PageRequest.of(page, size)));
         }
         Page<PaymentEntity> raw = paymentRepository.findAdminFiltered(status, dateFrom, dateTo, PageRequest.of(page, size));
-        return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
+        return ResponseEntity.ok(raw.map(p -> AdminPaymentListItemResponse.from(p, currencyRegistry)));
     }
 
     @GetMapping("/{id}")
@@ -121,7 +121,7 @@ public class AdminPaymentController {
         PaymentEntity p = paymentRepository.findById(id)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "payment-not-found", "Not Found", "Paiement introuvable"));
-        return ResponseEntity.ok(AdminPaymentDetailResponse.from(p));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(p, currencyRegistry));
     }
 
     /**
@@ -267,7 +267,7 @@ public class AdminPaymentController {
         log.info("Admin force-released escrow for payment {} (bid={}, PI={})",
                 id, bidId, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment, currencyRegistry));
     }
 
     /**
@@ -351,7 +351,7 @@ public class AdminPaymentController {
 
         log.info("Admin refunded escrow for payment {} (PI={})", id, payment.getStripePaymentIntentId());
 
-        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment));
+        return ResponseEntity.ok(AdminPaymentDetailResponse.from(payment, currencyRegistry));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

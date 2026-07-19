@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.auth.UserEntity;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.matching.dto.AnnouncementRevenueRow;
 import com.dony.api.matching.dto.ProAnalyticsResponse;
 import com.dony.api.payments.PaymentRepository;
@@ -28,9 +29,11 @@ class ProAnalyticsServiceTest {
     @Mock AnnouncementRepository announcementRepository;
     @Mock BidRepository bidRepository;
     @Mock PaymentRepository paymentRepository;
+    @Mock CurrencyRegistry currencyRegistry;
 
     private ProAnalyticsService service() {
-        return new ProAnalyticsService(announcementRepository, bidRepository, paymentRepository);
+        lenient().when(currencyRegistry.minorUnitOf(any())).thenReturn(2);
+        return new ProAnalyticsService(announcementRepository, bidRepository, paymentRepository, currencyRegistry);
     }
 
     /** Stubs communs des KPI non liés aux transactions (revenus/trajets/colis/acceptation). */

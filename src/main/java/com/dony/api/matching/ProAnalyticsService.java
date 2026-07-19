@@ -1,6 +1,9 @@
 package com.dony.api.matching;
 
 import com.dony.api.auth.UserEntity;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.matching.dto.ProAnalyticsResponse;
 import com.dony.api.matching.dto.ProAnalyticsResponse.KpiDto;
 import com.dony.api.matching.dto.ProAnalyticsResponse.TransactionRowDto;
@@ -27,15 +30,18 @@ public class ProAnalyticsService {
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
     private final PaymentRepository paymentRepository;
+    private final CurrencyRegistry currencyRegistry;
 
     public ProAnalyticsService(
             AnnouncementRepository announcementRepository,
             BidRepository bidRepository,
-            PaymentRepository paymentRepository
+            PaymentRepository paymentRepository,
+            CurrencyRegistry currencyRegistry
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -157,7 +163,7 @@ public class ProAnalyticsService {
     }
 
     private long toCents(BigDecimal euros) {
-        return euros.multiply(BigDecimal.valueOf(100)).longValue();
+        return MinorUnits.toMinor(new Money(euros, "EUR"), currencyRegistry);
     }
 
     private LocalDateTime[] periodRange(String period) {

@@ -1,5 +1,8 @@
 package com.dony.api.admin.dto;
 
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.payments.PaymentEntity;
 
 import java.time.LocalDateTime;
@@ -18,17 +21,17 @@ public record AdminPaymentDetailResponse(
         LocalDateTime escrowReleasedAt,
         boolean disputed
 ) {
-    public static AdminPaymentDetailResponse from(PaymentEntity p) {
+    public static AdminPaymentDetailResponse from(PaymentEntity p, CurrencyRegistry registry) {
         return new AdminPaymentDetailResponse(
                 p.getId(),
                 p.getBidId(),
                 p.getStatus().name(),
                 "STRIPE",
-                p.getAmount().multiply(java.math.BigDecimal.valueOf(100)).longValue(),
-                p.getCommissionAmount().multiply(java.math.BigDecimal.valueOf(100)).longValue(),
+                MinorUnits.toMinor(new Money(p.getAmount(), "EUR"), registry),
+                MinorUnits.toMinor(new Money(p.getCommissionAmount(), "EUR"), registry),
                 p.getCreatedAt(),
                 p.getRefundedAmount() != null
-                        ? p.getRefundedAmount().multiply(java.math.BigDecimal.valueOf(100)).longValue()
+                        ? MinorUnits.toMinor(new Money(p.getRefundedAmount(), "EUR"), registry)
                         : 0L,
                 p.getStripePaymentIntentId(),
                 p.getEscrowReleasedAt(),
