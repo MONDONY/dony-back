@@ -99,26 +99,25 @@ class WalletControllerIT {
     }
 
     @Test
-    void topup_wave_returnsRedirectUrl() throws Exception {
+    void topup_wave_returns422MobileMoneyTopupRetired() throws Exception {
         mockMvc.perform(post("/wallet/topup")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                     Map.of("amount", 10.00, "paymentMethod", "WAVE")))
                 .with(authentication(authAs(FIREBASE_UID, "SENDER"))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.redirectUrl").exists())
-            .andExpect(jsonPath("$.clientSecret").doesNotExist());
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.code").value("mobile-money-topup-retired"));
     }
 
     @Test
-    void topup_orangeMoney_returnsRedirectUrl() throws Exception {
+    void topup_orangeMoney_returns422MobileMoneyTopupRetired() throws Exception {
         mockMvc.perform(post("/wallet/topup")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                     Map.of("amount", 20.00, "paymentMethod", "ORANGE_MONEY")))
                 .with(authentication(authAs(FIREBASE_UID, "TRAVELER"))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.redirectUrl").exists());
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.code").value("mobile-money-topup-retired"));
     }
 
     @Test
