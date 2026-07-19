@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.Where;
 import org.hibernate.type.SqlTypes;
@@ -15,7 +16,21 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * {@code @DynamicUpdate} — {@link PaymentRepository#markCapturedIfEscrow} performs a bulk
+ * {@code @Modifying} JPQL UPDATE on {@code captured_at} and the 4 {@code settlement_*} columns
+ * that bypasses the persistence context, so any {@code PaymentEntity} reference loaded before
+ * that call is left stale in memory on those fields. Without {@code @DynamicUpdate}, a
+ * subsequent plain {@code save()} on that stale reference (e.g.
+ * {@code NegotiationCaptureListener} persisting {@code stripeChargeId} right after capture)
+ * emits a full-column UPDATE that writes the stale in-memory nulls back over the DB row,
+ * silently undoing the atomic capture write. {@code @DynamicUpdate} makes Hibernate generate
+ * the UPDATE from its dirty-checking snapshot instead, so only genuinely-modified columns
+ * (here, only {@code stripe_charge_id}) are included — see
+ * {@code PaymentRepositoryMarkCapturedIfEscrowTest#staleEntitySaveAfterBulkCaptureUpdateDoesNotClobberSettlementColumns}.
+ */
 @Entity
+@DynamicUpdate
 @Table(name = "payments")
 @Where(clause = "deleted_at IS NULL")
 public class PaymentEntity extends BaseEntity {

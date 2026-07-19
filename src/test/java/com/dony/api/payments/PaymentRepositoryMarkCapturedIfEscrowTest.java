@@ -83,6 +83,47 @@ class PaymentRepositoryMarkCapturedIfEscrowTest {
         assertThat(reloaded.getSettlementRateSource()).isEqualTo("NONE");
     }
 
+    /**
+     * Task 11 fix-forward — reproduces the exact stale-entity-save bug from
+     * {@code NegotiationCaptureListener}: after {@code markCapturedIfEscrow}'s bulk UPDATE
+     * commits the 5 columns atomically, the SAME in-memory {@code PaymentEntity} reference
+     * (fetched BEFORE the bulk UPDATE, so still holding stale nulls for {@code capturedAt}
+     * and the 4 settlement columns) has only {@code stripeChargeId} set on it and is saved.
+     *
+     * <p>Without {@code @DynamicUpdate} on {@code PaymentEntity}, Hibernate emits a
+     * full-column UPDATE that pushes those stale in-memory nulls back over the DB row,
+     * silently wiping out what the bulk UPDATE just set. With {@code @DynamicUpdate},
+     * Hibernate's dirty-checking excludes the untouched columns from the generated SQL, so
+     * only {@code stripe_charge_id} is written and the settlement columns survive.
+     *
+     * <p>This test is RED before {@code @DynamicUpdate} is added to {@code PaymentEntity} and
+     * GREEN after.
+     */
+    @Test
+    void staleEntitySaveAfterBulkCaptureUpdateDoesNotClobberSettlementColumns() {
+        PaymentEntity payment = persistEscrowPayment(); // managed ref, capturedAt=null, settlement=null
+
+        int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now(),
+                "EUR", 3000L, BigDecimal.ONE, "NONE");
+        assertThat(updated).isEqualTo(1);
+
+        // Simulates NegotiationCaptureListener: same stale reference as before the bulk UPDATE,
+        // only stripeChargeId is mutated, then saved — must NOT full-column-overwrite the rest.
+        payment.setStripeChargeId("ch_test");
+        paymentRepository.save(payment);
+        em.flush();
+
+        em.clear();
+        PaymentEntity reloaded = paymentRepository.findById(payment.getId()).orElseThrow();
+
+        assertThat(reloaded.getStripeChargeId()).isEqualTo("ch_test");
+        assertThat(reloaded.getCapturedAt()).isNotNull();
+        assertThat(reloaded.getSettlementCurrency()).isEqualTo("EUR");
+        assertThat(reloaded.getSettlementAmountMinor()).isEqualTo(3000L);
+        assertThat(reloaded.getSettlementFxRate()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(reloaded.getSettlementRateSource()).isEqualTo("NONE");
+    }
+
     @Test
     void doesNotCaptureAndLeavesSettlementNullWhenNotInEscrow() {
         PaymentEntity payment = persistEscrowPayment();
