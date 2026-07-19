@@ -327,12 +327,6 @@ public class BidService {
         bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
 
-        if (pm == PaymentMethod.WAVE
-                || pm == PaymentMethod.ORANGE_MONEY) {
-            bid.setMobileMoneyPhone(request.phoneNumber());
-            bid.setMobileMoneyCountryCode(request.countryCode());
-        }
-
         // Code promo stocké brut (validation + rachat au moment du paiement).
         if (request.promoCode() != null && !request.promoCode().isBlank()) {
             bid.setPromoCode(request.promoCode().strip());
