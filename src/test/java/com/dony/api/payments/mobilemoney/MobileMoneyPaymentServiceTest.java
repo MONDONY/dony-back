@@ -2,10 +2,15 @@ package com.dony.api.payments.mobilemoney;
 
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.Money;
+import com.dony.api.common.money.MoneyConversion;
+import com.dony.api.common.money.PeggedFxRateProvider;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.mobilemoney.events.BidPaidByMobileMoneyEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +43,9 @@ class MobileMoneyPaymentServiceTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private ApplicationEventPublisher events;
     @Mock private AuditService auditService;
+    @Mock private CashCommissionService cashCommissionService;
+    @Mock private PeggedFxRateProvider peggedFxRateProvider;
+    @Mock private CurrencyRegistry currencyRegistry;
 
     @InjectMocks private MobileMoneyPaymentService service;
 
@@ -51,6 +59,20 @@ class MobileMoneyPaymentServiceTest {
         when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         when(registry.isMobileMoneyProvider(PaymentMethod.WAVE)).thenReturn(true);
         when(registry.isMobileMoneyProvider(PaymentMethod.CASH)).thenReturn(false);
+
+        // Task 12 : initiate() calcule désormais le net du bid, convertit vers la devise
+        // du wallet (CI → XOF) et gèle le montant local — ces mocks fournissent le chemin
+        // heureux par défaut pour les tests qui ne portent pas spécifiquement sur ce calcul
+        // (le détail arithmétique est couvert par MobileMoneyInitiateCurrencyTest).
+        lenient().when(cashCommissionService.computeBidNet(any(), any())).thenReturn(new BigDecimal("60.00"));
+        lenient().when(peggedFxRateProvider.convert(any(Money.class), eq("XOF"))).thenAnswer(inv -> {
+            Money source = inv.getArgument(0);
+            BigDecimal peg = new BigDecimal("655.957");
+            return Optional.of(new MoneyConversion(source,
+                    new Money(source.amount().multiply(peg), "XOF"), peg, "PEGGED"));
+        });
+        lenient().when(currencyRegistry.minorUnitOf("XOF")).thenReturn(0);
+        lenient().when(currencyRegistry.roundingIncrementOf("XOF")).thenReturn(5);
     }
 
     @Test

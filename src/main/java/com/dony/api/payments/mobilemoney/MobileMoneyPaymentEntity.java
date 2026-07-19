@@ -32,7 +32,7 @@ public class MobileMoneyPaymentEntity extends BaseEntity {
     private BigDecimal amount;
 
     @Column(name = "currency", nullable = false, length = 3)
-    private String currency = "XOF";
+    private String currency;
 
     @Column(name = "external_reference", length = 255, unique = true)
     private String externalReference;

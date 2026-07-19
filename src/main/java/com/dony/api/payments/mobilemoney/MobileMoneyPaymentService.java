@@ -2,9 +2,17 @@ package com.dony.api.payments.mobilemoney;
 
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.money.CountryCurrencies;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
+import com.dony.api.common.money.MoneyConversion;
+import com.dony.api.common.money.MoneyRounding;
+import com.dony.api.common.money.PeggedFxRateProvider;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
+import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.mobilemoney.events.BidPaidByMobileMoneyEvent;
 import org.slf4j.Logger;
@@ -32,19 +40,28 @@ public class MobileMoneyPaymentService {
     private final AnnouncementRepository announcementRepository;
     private final ApplicationEventPublisher events;
     private final AuditService auditService;
+    private final CashCommissionService cashCommissionService;
+    private final PeggedFxRateProvider peggedFxRateProvider;
+    private final CurrencyRegistry currencyRegistry;
 
     public MobileMoneyPaymentService(MobileMoneyPaymentRepository repository,
                                      MobileMoneyGatewayRegistry registry,
                                      BidRepository bidRepository,
                                      AnnouncementRepository announcementRepository,
                                      ApplicationEventPublisher events,
-                                     AuditService auditService) {
+                                     AuditService auditService,
+                                     CashCommissionService cashCommissionService,
+                                     PeggedFxRateProvider peggedFxRateProvider,
+                                     CurrencyRegistry currencyRegistry) {
         this.repository             = repository;
         this.registry               = registry;
         this.bidRepository          = bidRepository;
         this.announcementRepository = announcementRepository;
         this.events                 = events;
         this.auditService           = auditService;
+        this.cashCommissionService  = cashCommissionService;
+        this.peggedFxRateProvider   = peggedFxRateProvider;
+        this.currencyRegistry       = currencyRegistry;
     }
 
     /**
@@ -91,10 +108,30 @@ public class MobileMoneyPaymentService {
         UUID travelerId = announcement.getTravelerId();
 
         MobileMoneyGateway gateway = registry.getGateway(pm);
-        BigDecimal amount = bid.getDeclaredValueEur();
+
+        // CORRECTIF (audit F1) : le principal MM = NET du bid (ce que l'expéditeur
+        // paie au voyageur), plus jamais declaredValueEur (valeur d'assurance).
+        BigDecimal netEur = cashCommissionService.computeBidNet(bid, announcement);
+
+        // CORRECTIF (audit F4, règle R4) : devise du wallet ciblé, plus de XOF en dur.
+        String walletCurrency = CountryCurrencies.forCountry(bid.getMobileMoneyCountryCode())
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "unsupported-mm-country", "Unsupported Mobile Money Country",
+                        "Pays non couvert par le mobile money : " + bid.getMobileMoneyCountryCode()));
+
+        // Gel du montant local (règle R2) : parité en base + arrondi transactionnel.
+        MoneyConversion conv = peggedFxRateProvider.convert(new Money(netEur, "EUR"), walletCurrency)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "currency-not-convertible", "Currency Not Convertible",
+                        "Aucune parité en base pour " + walletCurrency));
+        long amountMinor = MoneyRounding.roundTransactionalMinor(
+                MinorUnits.toMinor(conv.target(), currencyRegistry),
+                currencyRegistry.roundingIncrementOf(walletCurrency));
+        BigDecimal localAmount = MinorUnits.fromMinor(amountMinor, walletCurrency, currencyRegistry).amount();
 
         MobileMoneyPaymentRequest req = new MobileMoneyPaymentRequest(
-                bidId, bid.getMobileMoneyPhone(), bid.getMobileMoneyCountryCode(), amount, "XOF");
+                bidId, bid.getMobileMoneyPhone(), bid.getMobileMoneyCountryCode(),
+                localAmount, walletCurrency);
 
         MobileMoneyLinkResult result = gateway.generatePaymentLink(req);
 
@@ -104,12 +141,22 @@ public class MobileMoneyPaymentService {
         entity.setProvider(pm.name());
         entity.setCountryCode(bid.getMobileMoneyCountryCode());
         entity.setPhoneNumber(bid.getMobileMoneyPhone());
-        entity.setAmount(amount);
-        entity.setCurrency("XOF");
+        entity.setAmount(netEur);                 // EUR contractuel
+        entity.setCurrency(walletCurrency);        // devise du wallet (R4)
+        entity.setAmountMinor(amountMinor);        // montant local GELÉ (R2)
+        entity.setFxRate(conv.rate());
+        entity.setRateSource(conv.rateSource());
         entity.setExternalReference(result.externalReference());
         entity.setPaymentLink(result.paymentLink());
         entity.setStatus("PENDING");
         entity.setExpiresAt(result.expiresAt());
+
+        auditService.log("MM_PAYMENT", bidId, "AMOUNT_FROZEN", callerId,
+                Map.of("amountEur", netEur.toPlainString(),
+                       "amountMinor", String.valueOf(amountMinor),
+                       "currency", walletCurrency,
+                       "fxRate", conv.rate().toPlainString(),
+                       "rateSource", conv.rateSource()));
 
         return repository.save(entity);
     }

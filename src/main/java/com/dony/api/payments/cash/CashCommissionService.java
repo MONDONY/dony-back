@@ -152,6 +152,18 @@ public class CashCommissionService {
             rate = commissionRateResolver.resolve(announcement.getTravelerId(), bid.getSenderId());
         }
         bid.setCommissionRate(rate);
+        BigDecimal cashAmount = computeBidNet(bid, announcement);
+        return computeCommission(cashAmount, rate);
+    }
+
+    /**
+     * Base nette d'un bid = part kilo (weightKg × pricePerKg, null-safe mode GRID)
+     * + part grille (somme des articles). Alignée sur le calcul net de BidService.
+     * Réutilisée par le flux Mobile Money (principal payé par l'expéditeur) : voir
+     * audit F1 — {@code MobileMoneyPaymentService.initiate} chargeait auparavant
+     * {@code declaredValueEur} (valeur d'assurance), plus jamais ce montant.
+     */
+    public BigDecimal computeBidNet(BidEntity bid, AnnouncementEntity announcement) {
         // Base de commission = part kilo (poids × prix/kg, null en mode GRID pur)
         // + part grille (somme des articles du bid). Aligné sur le calcul net de
         // BidService — sans quoi un bid grille (weightKg null) provoquait un NPE.
@@ -161,8 +173,7 @@ public class CashCommissionService {
         BigDecimal gridNet = bidGridItemRepository.findByBidId(bid.getId()).stream()
                 .map(i -> i.getUnitPriceNetSnapshot().multiply(BigDecimal.valueOf(i.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal cashAmount = kgNet.add(gridNet);
-        return computeCommission(cashAmount, rate);
+        return kgNet.add(gridNet);
     }
 
     // --- Card registration ---

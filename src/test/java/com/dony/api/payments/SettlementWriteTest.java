@@ -1,6 +1,9 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.PeggedFxRateProvider;
+import com.dony.api.payments.cash.CashCommissionService;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.mobilemoney.MobileMoneyGateway;
 import com.dony.api.payments.mobilemoney.MobileMoneyGatewayRegistry;
@@ -49,11 +52,15 @@ class SettlementWriteTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private ApplicationEventPublisher events;
     @Mock private AuditService auditService;
+    @Mock private CashCommissionService cashCommissionService;
+    @Mock private PeggedFxRateProvider peggedFxRateProvider;
+    @Mock private CurrencyRegistry currencyRegistry;
 
     @Test
     void mobileMoneyWebhook_confirmed_setsSettledAmountMinorFromFrozenAmount() {
         MobileMoneyPaymentService service = new MobileMoneyPaymentService(
-                mmRepository, mmRegistry, bidRepository, announcementRepository, events, auditService);
+                mmRepository, mmRegistry, bidRepository, announcementRepository, events, auditService,
+                cashCommissionService, peggedFxRateProvider, currencyRegistry);
 
         String payload = "{\"reference\":\"wave_ref_settlement\",\"status\":\"SUCCEEDED\"}";
         String signature = "sig";
@@ -81,7 +88,8 @@ class SettlementWriteTest {
     @Test
     void mobileMoneyWebhook_notConfirmed_doesNotSetSettledAmountMinor() {
         MobileMoneyPaymentService service = new MobileMoneyPaymentService(
-                mmRepository, mmRegistry, bidRepository, announcementRepository, events, auditService);
+                mmRepository, mmRegistry, bidRepository, announcementRepository, events, auditService,
+                cashCommissionService, peggedFxRateProvider, currencyRegistry);
 
         String payload = "{\"reference\":\"wave_ref_fail\",\"status\":\"FAILED\"}";
         String signature = "sig";
