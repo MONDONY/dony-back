@@ -277,6 +277,12 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             CommissionStatus commissionStatus, LocalDateTime before);
 
     /**
+     * Créances de commission : bids dont le prélèvement automatique a échoué
+     * (ni wallet ni carte disponible) — visibilité admin pour recouvrement manuel.
+     */
+    List<BidEntity> findByCommissionStatus(CommissionStatus commissionStatus);
+
+    /**
      * True if there is at least one active (in-flight) transaction between two users,
      * in either direction (sender↔traveler). Used to prevent blocking a user mid-deal.
      */
