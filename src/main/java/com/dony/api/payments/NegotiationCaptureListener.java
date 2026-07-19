@@ -1,6 +1,9 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -13,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 
@@ -53,11 +57,14 @@ public class NegotiationCaptureListener {
 
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
+    private final CurrencyRegistry currencyRegistry;
 
     public NegotiationCaptureListener(PaymentRepository paymentRepository,
-                                      AuditService auditService) {
+                                      AuditService auditService,
+                                      CurrencyRegistry currencyRegistry) {
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -86,7 +93,12 @@ public class NegotiationCaptureListener {
         try {
             // Atomic capture-once guard: sets captured_at, keeps the status ESCROW so the
             // delivery release (which requires status==ESCROW) still fires later.
-            int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now());
+            // Also sets the 4 settlement_* columns (spec devise §4.1) in the same atomic write —
+            // le flux Stripe règle en EUR au moment de la capture, source NONE = pas de conversion.
+            long settlementAmountMinor = MinorUnits.toMinorExact(
+                    new Money(payment.getAmount(), "EUR"), currencyRegistry);
+            int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now(),
+                    "EUR", settlementAmountMinor, BigDecimal.ONE, "NONE");
             if (updated == 0) {
                 log.info("Negotiation payment {} already captured — skipping", payment.getId());
                 return;

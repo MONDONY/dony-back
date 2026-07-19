@@ -1,6 +1,7 @@
 package com.dony.api.payments;
 
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.payments.events.PaymentEscrowReadyEvent;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -26,6 +27,7 @@ class NegotiationCaptureListenerTest {
 
     @Mock private PaymentRepository paymentRepository;
     @Mock private AuditService auditService;
+    @Mock private CurrencyRegistry currencyRegistry;
 
     private NegotiationCaptureListener listener;
 
@@ -34,7 +36,8 @@ class NegotiationCaptureListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new NegotiationCaptureListener(paymentRepository, auditService);
+        listener = new NegotiationCaptureListener(paymentRepository, auditService, currencyRegistry);
+        lenient().when(currencyRegistry.minorUnitOf("EUR")).thenReturn(2);
     }
 
     private PaymentEscrowReadyEvent event() {
@@ -67,7 +70,7 @@ class NegotiationCaptureListenerTest {
     void captures_held_PI_when_escrow_ready() throws StripeException {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_existing");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -86,7 +89,7 @@ class NegotiationCaptureListenerTest {
     void persists_charge_id_when_absent() throws StripeException {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, null);
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -106,7 +109,7 @@ class NegotiationCaptureListenerTest {
         // An already-captured PI (e.g. admin/manual capture) must not be captured again.
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_existing");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);
@@ -129,7 +132,7 @@ class NegotiationCaptureListenerTest {
             listener.onEscrowReady(event());
             mocked.verifyNoInteractions();
         }
-        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any());
+        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any());
         verifyNoInteractions(auditService);
     }
 
@@ -138,7 +141,7 @@ class NegotiationCaptureListenerTest {
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.empty());
         assertThatNoException().isThrownBy(() -> listener.onEscrowReady(event()));
         verifyNoInteractions(auditService);
-        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any());
+        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any());
     }
 
     @Test
@@ -150,7 +153,7 @@ class NegotiationCaptureListenerTest {
             listener.onEscrowReady(event());
             mocked.verifyNoInteractions();
         }
-        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any());
+        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any());
         verifyNoInteractions(auditService);
     }
 
@@ -164,14 +167,14 @@ class NegotiationCaptureListenerTest {
             listener.onEscrowReady(event());
             mocked.verifyNoInteractions();
         }
-        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any());
+        verify(paymentRepository, never()).markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any());
     }
 
     @Test
     void skips_when_already_captured_by_concurrent_run() {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(0); // lost the CAS race
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(0); // lost the CAS race
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             listener.onEscrowReady(event());
@@ -184,7 +187,7 @@ class NegotiationCaptureListenerTest {
     void capture_failure_is_logged_not_thrown() throws StripeException {
         PaymentEntity p = threadPayment(PaymentStatus.ESCROW, false, "ch_x");
         when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(p));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
             PaymentIntent pi = mock(PaymentIntent.class);

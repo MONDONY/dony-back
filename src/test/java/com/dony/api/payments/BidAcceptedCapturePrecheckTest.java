@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
@@ -41,6 +42,7 @@ class BidAcceptedCapturePrecheckTest {
     @Mock private AuditService auditService;
     @Mock private UserRepository userRepository;
     @Mock private BidRepository bidRepository;
+    @Mock private CurrencyRegistry currencyRegistry;
     private BidAcceptedEventListener listener;
 
     private final UUID travelerId = UUID.randomUUID();
@@ -48,7 +50,8 @@ class BidAcceptedCapturePrecheckTest {
 
     @BeforeEach
     void setUp() {
-        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository);
+        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository, currencyRegistry);
+        lenient().when(currencyRegistry.minorUnitOf("EUR")).thenReturn(2);
     }
 
     private PaymentEntity escrowPayment() {
@@ -76,7 +79,7 @@ class BidAcceptedCapturePrecheckTest {
 
         PaymentEntity payment = escrowPayment();
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
 
         UserEntity traveler = new UserEntity();
         traveler.setStripeAccountId("acct_ok");

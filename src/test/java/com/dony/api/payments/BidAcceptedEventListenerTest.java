@@ -4,6 +4,7 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
@@ -35,13 +36,15 @@ class BidAcceptedEventListenerTest {
     @Mock private AuditService auditService;
     @Mock private UserRepository userRepository;
     @Mock private BidRepository bidRepository;
+    @Mock private CurrencyRegistry currencyRegistry;
     private BidAcceptedEventListener listener;
 
     private final UUID travelerId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository);
+        listener = new BidAcceptedEventListener(paymentRepository, auditService, userRepository, bidRepository, currencyRegistry);
+        lenient().when(currencyRegistry.minorUnitOf("EUR")).thenReturn(2);
     }
 
     private PaymentEntity paymentFor(UUID bidId, PaymentStatus status, boolean legacy) {
@@ -84,7 +87,7 @@ class BidAcceptedEventListenerTest {
         stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
@@ -142,7 +145,7 @@ class BidAcceptedEventListenerTest {
         stubStripeBid(bidId);
         PaymentEntity payment = paymentFor(bidId, PaymentStatus.ESCROW, false);
         when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.of(payment));
-        when(paymentRepository.markCapturedIfEscrow(any(), any())).thenReturn(1);
+        when(paymentRepository.markCapturedIfEscrow(any(), any(), any(), anyLong(), any(), any())).thenReturn(1);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(eligibleTraveler()));
 
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {

@@ -4,6 +4,9 @@ import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
@@ -19,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -43,15 +47,18 @@ public class BidAcceptedEventListener {
     private final AuditService auditService;
     private final UserRepository userRepository;
     private final BidRepository bidRepository;
+    private final CurrencyRegistry currencyRegistry;
 
     public BidAcceptedEventListener(PaymentRepository paymentRepository,
                                     AuditService auditService,
                                     UserRepository userRepository,
-                                    BidRepository bidRepository) {
+                                    BidRepository bidRepository,
+                                    CurrencyRegistry currencyRegistry) {
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -123,7 +130,12 @@ public class BidAcceptedEventListener {
         }
 
         try {
-            int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now());
+            // Règlement constaté (spec devise §4.1) : le flux Stripe règle en EUR
+            // au moment de la capture. Source NONE = pas de conversion.
+            long settlementAmountMinor = MinorUnits.toMinorExact(
+                    new Money(payment.getAmount(), "EUR"), currencyRegistry);
+            int updated = paymentRepository.markCapturedIfEscrow(payment.getId(), Instant.now(),
+                    "EUR", settlementAmountMinor, BigDecimal.ONE, "NONE");
             if (updated == 0) {
                 log.info("Payment {} already captured or not in ESCROW — skipping", payment.getId());
                 return;

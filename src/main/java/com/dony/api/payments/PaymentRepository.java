@@ -47,10 +47,32 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     /**
      * Atomic capture-once CAS guard. Returns 1 if the row was updated (first capture),
      * 0 if already captured or not in ESCROW status.
+     *
+     * <p>Also sets the 4 settlement_* columns (spec devise §4.1) in the SAME atomic bulk
+     * UPDATE as {@code captured_at}. This is deliberate: the caller loads the
+     * {@code PaymentEntity} BEFORE calling this method, so its in-memory {@code capturedAt}
+     * (and any other field) is stale w.r.t. this write. Setting the settlement fields on the
+     * loaded entity and then calling {@code save(...)} would push that staleness back over the
+     * DB row — silently undoing this method's double-capture protection (CLAUDE.md rule #19).
+     * {@code settlementAmountMinor} cannot be computed in JPQL (needs
+     * {@code MinorUnits.toMinorExact}, a Java-side conversion reading the currency registry) —
+     * it must be pre-computed by the caller and passed in.
      */
     @Modifying
-    @Query("UPDATE PaymentEntity p SET p.capturedAt = :now WHERE p.id = :id AND p.capturedAt IS NULL AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
-    int markCapturedIfEscrow(@Param("id") UUID id, @Param("now") Instant now);
+    @Query("""
+        UPDATE PaymentEntity p
+           SET p.capturedAt = :now,
+               p.settlementCurrency = :settlementCurrency,
+               p.settlementAmountMinor = :settlementAmountMinor,
+               p.settlementFxRate = :settlementFxRate,
+               p.settlementRateSource = :settlementRateSource
+         WHERE p.id = :id AND p.capturedAt IS NULL AND p.status = com.dony.api.payments.PaymentStatus.ESCROW
+        """)
+    int markCapturedIfEscrow(@Param("id") UUID id, @Param("now") Instant now,
+                              @Param("settlementCurrency") String settlementCurrency,
+                              @Param("settlementAmountMinor") long settlementAmountMinor,
+                              @Param("settlementFxRate") java.math.BigDecimal settlementFxRate,
+                              @Param("settlementRateSource") String settlementRateSource);
 
     /**
      * Atomic status transition ESCROW → REFUNDED.
