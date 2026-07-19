@@ -62,7 +62,11 @@ class SettlementColumnsTest {
     void backfilledRowsAreAllOrNone() {
         Integer partial = jdbc.queryForObject("""
             SELECT count(*) FROM payments
-             WHERE (settlement_currency IS NULL) <> (settlement_amount_minor IS NULL)
+             WHERE NOT (
+               (settlement_currency IS NULL) = (settlement_amount_minor IS NULL)
+               AND (settlement_currency IS NULL) = (settlement_rate_source IS NULL)
+               AND (settlement_currency IS NULL) = (settlement_fx_rate IS NULL)
+             )
             """, Integer.class);
         assertThat(partial).isZero();
     }
