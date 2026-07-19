@@ -104,6 +104,10 @@ public class SecurityConfig {
                     // MM webhooks: no Firebase token (provider-to-server call). Security is
                     // enforced via HMAC signature verification in MobileMoneyPaymentService.
                     "/webhooks/mobile-money/**",
+                    // GeniusPay webhook (recharge wallet) : no Firebase token (provider-to-server
+                    // call). Security enforced via HMAC signature verification in
+                    // GeniusPaySignatureVerifier.
+                    "/webhooks/genius-pay",
                     // Public shareable traveler profile (minimal, no-auth)
                     "/public/**",
                     // Admin bootstrap: initial configuration without auth

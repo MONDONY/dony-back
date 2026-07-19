@@ -99,6 +99,11 @@ dony:
       api-url: https://om-stub.test
       webhook-secret: test-om-secret
     link-expiry-minutes: 30
+  geniuspay:
+    api-key: test-geniuspay-key
+    api-secret: test-geniuspay-secret
+    base-url: https://geniuspay-stub.test
+    webhook-secret: whsec_test_fixture
 
 app:
   encryption:
