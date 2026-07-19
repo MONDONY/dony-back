@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
@@ -17,9 +18,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Integration test: proves the referral reward actually lands in the spendable wallet,
  * exercising the V121 CHECK-constraint update (REFERRAL_REWARD type) against the real
  * (H2/PostgreSQL-mode) schema, plus the AFTER_COMMIT event listener wiring.
+ *
+ * <p>Flyway is disabled under the {@code test} profile, so the {@code currencies} table
+ * is empty by default; {@link com.dony.api.common.money.CurrencyRegistry#minorUnitOf(String)}
+ * needs at least an EUR row to resolve minor units for wallet credits. Seed it here the same
+ * way {@code CurrencyControllerIntegrationTest} does.
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@Sql("classpath:sql/insert-test-currencies.sql")
 class ReferralRewardWalletIT {
 
     @Autowired private WalletService walletService;

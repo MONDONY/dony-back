@@ -66,8 +66,15 @@ class PaymentServiceTestFactory {
                 stubbedResolver(),
                 mock(PromoService.class),
                 new StripeGatewayImpl(),
-                mock(CurrencyRegistry.class)
+                stubbedCurrencyRegistry()
         );
+    }
+
+    /** Registre de devises mocké, stubé sur 2 décimales (EUR) — suffisant pour les tests. */
+    static CurrencyRegistry stubbedCurrencyRegistry() {
+        CurrencyRegistry currencyRegistry = mock(CurrencyRegistry.class);
+        lenient().when(currencyRegistry.minorUnitOf(any())).thenReturn(2);
+        return currencyRegistry;
     }
 
     /** Résolveur de taux mocké, stubé au taux global 12 % (suffisant pour les tests). */
@@ -99,7 +106,7 @@ class PaymentServiceTestFactory {
                 stubbedResolver(),
                 mock(PromoService.class),
                 new StripeGatewayImpl(),
-                mock(CurrencyRegistry.class)
+                stubbedCurrencyRegistry()
         );
     }
 }
