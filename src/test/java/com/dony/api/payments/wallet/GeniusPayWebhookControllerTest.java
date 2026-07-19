@@ -13,6 +13,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,24 +29,31 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class GeniusPayWebhookControllerTest {
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private GeniusPayProperties props; // valeurs test/application-test.yml — voir Step 7
+    @Autowired private GeniusPayProperties props; // valeurs test/application-test.yml
 
     @MockBean private ProcessedGeniusPayEventRepository processedEventRepository;
     @MockBean private WalletTopupRequestRepository topupRequestRepository;
     @MockBean private WalletService walletService;
 
-    private String sign(String payload) throws Exception {
+    private String nowTimestamp() {
+        return String.valueOf(Instant.now().getEpochSecond());
+    }
+
+    // Signature réelle GeniusPay : HMAC-SHA256(timestamp + "." + payload, secret).
+    private String sign(String payload, String timestamp) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(props.webhookSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+        String data = timestamp + "." + payload;
+        return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
     void invalidSignature_returns401() throws Exception {
-        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-1\"}}}";
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"reference\":\"MTX-1\"}}";
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", "wrong")
+                        .header("X-Webhook-Signature", "wrong")
+                        .header("X-Webhook-Timestamp", nowTimestamp())
                         .content(payload))
                 .andExpect(status().isUnauthorized());
     }
@@ -53,7 +61,8 @@ class GeniusPayWebhookControllerTest {
     @Test
     void validSignature_paymentSuccess_creditsWallet() throws Exception {
         UUID userId = UUID.randomUUID();
-        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-1\"}}}";
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"reference\":\"MTX-1\"}}";
+        String timestamp = nowTimestamp();
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
         topup.setUserId(userId);
         topup.setAmountEur(new BigDecimal("10.00"));
@@ -62,7 +71,8 @@ class GeniusPayWebhookControllerTest {
         when(topupRequestRepository.findByExternalReference("MTX-1")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", sign(payload))
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
                         .content(payload))
                 .andExpect(status().isOk());
 
@@ -72,11 +82,13 @@ class GeniusPayWebhookControllerTest {
 
     @Test
     void replayedEvent_isNoOp() throws Exception {
-        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-2\"}}}";
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"reference\":\"MTX-2\"}}";
+        String timestamp = nowTimestamp();
         when(processedEventRepository.existsById("payment.success:MTX-2")).thenReturn(true);
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", sign(payload))
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
                         .content(payload))
                 .andExpect(status().isOk());
 
@@ -85,13 +97,15 @@ class GeniusPayWebhookControllerTest {
 
     @Test
     void paymentFailed_marksTopupFailed() throws Exception {
-        String payload = "{\"event\":\"payment.failed\",\"data\":{\"transaction\":{\"reference\":\"MTX-3\"}}}";
+        String payload = "{\"event\":\"payment.failed\",\"data\":{\"reference\":\"MTX-3\"}}";
+        String timestamp = nowTimestamp();
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
         when(processedEventRepository.existsById("payment.failed:MTX-3")).thenReturn(false);
         when(topupRequestRepository.findByExternalReference("MTX-3")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", sign(payload))
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
                         .content(payload))
                 .andExpect(status().isOk());
 
@@ -107,7 +121,8 @@ class GeniusPayWebhookControllerTest {
     @Test
     void pendingAlreadySeen_thenSuccess_stillCreditsWallet() throws Exception {
         UUID userId = UUID.randomUUID();
-        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-4\"}}}";
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"reference\":\"MTX-4\"}}";
+        String timestamp = nowTimestamp();
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
         topup.setUserId(userId);
         topup.setAmountEur(new BigDecimal("15.00"));
@@ -119,7 +134,8 @@ class GeniusPayWebhookControllerTest {
         when(topupRequestRepository.findByExternalReference("MTX-4")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", sign(payload))
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
                         .content(payload))
                 .andExpect(status().isOk());
 
@@ -134,7 +150,8 @@ class GeniusPayWebhookControllerTest {
      */
     @Test
     void topupAlreadyCompleted_secondSuccessEvent_doesNotRecredit() throws Exception {
-        String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-5\"}}}";
+        String payload = "{\"event\":\"payment.success\",\"data\":{\"reference\":\"MTX-5\"}}";
+        String timestamp = nowTimestamp();
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
         topup.setUserId(UUID.randomUUID());
         topup.setAmountEur(new BigDecimal("20.00"));
@@ -145,10 +162,28 @@ class GeniusPayWebhookControllerTest {
         when(topupRequestRepository.findByExternalReference("MTX-5")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
-                        .header("X-GeniusPay-Signature", sign(payload))
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
                         .content(payload))
                 .andExpect(status().isOk());
 
         verifyNoInteractions(walletService);
+    }
+
+    @Test
+    void webhookTestEvent_fromDashboard_isNoOp() throws Exception {
+        // Bouton "Tester" du dashboard GeniusPay : event webhook.test, pas de data.reference.
+        String payload = "{\"event\":\"webhook.test\",\"data\":{\"object\":\"webhook.test\","
+                + "\"message\":\"This is a test webhook\"}}";
+        String timestamp = nowTimestamp();
+
+        mockMvc.perform(post("/webhooks/genius-pay")
+                        .header("X-Webhook-Signature", sign(payload, timestamp))
+                        .header("X-Webhook-Timestamp", timestamp)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(walletService);
+        verifyNoInteractions(topupRequestRepository);
     }
 }

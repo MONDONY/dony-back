@@ -48,10 +48,11 @@ public class GeniusPayWebhookController {
     @PostMapping("/webhooks/genius-pay")
     @Transactional
     public ResponseEntity<Void> handleWebhook(
-            @RequestHeader(value = "X-GeniusPay-Signature", required = false) String signature,
+            @RequestHeader(value = "X-Webhook-Signature", required = false) String signature,
+            @RequestHeader(value = "X-Webhook-Timestamp", required = false) String timestamp,
             @RequestBody String rawPayload) {
 
-        if (!signatureVerifier.verify(rawPayload, signature)) {
+        if (!signatureVerifier.verify(rawPayload, signature, timestamp)) {
             throw new DonyBusinessException(HttpStatus.UNAUTHORIZED,
                     "invalid-geniuspay-signature", "Invalid Signature",
                     "Signature webhook GeniusPay invalide");
@@ -66,7 +67,9 @@ public class GeniusPayWebhookController {
         }
 
         String event = node.path("event").asText(null);
-        String reference = node.path("data").path("transaction").path("reference").asText(null);
+        // Référence directement sur data.reference (pas de wrapper "transaction" —
+        // confirmé par la doc officielle GeniusPay, guide webhook 2026-07-19).
+        String reference = node.path("data").path("reference").asText(null);
         if (reference == null) {
             log.warn("GeniusPay webhook: aucune référence extraite, event={}", event);
             return ResponseEntity.ok().build();
