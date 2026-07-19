@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -31,11 +33,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Sql("classpath:sql/insert-test-currencies.sql")
 class WalletControllerIT {
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @MockBean UserRepository userRepository;
+    @MockBean GeniusPayClient geniusPayClient;
 
     private static final UUID USER_UUID = UUID.randomUUID();
     private static final String FIREBASE_UID = "uid-test-wallet";
@@ -100,10 +104,14 @@ class WalletControllerIT {
 
     @Test
     void topup_wave_returnsRedirectUrl() throws Exception {
+        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString()))
+            .thenReturn(new GeniusPayPaymentResult("MTX-TEST-WAVE", "https://wave.com/pay/test"));
+
         mockMvc.perform(post("/wallet/topup")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    Map.of("amount", 10.00, "paymentMethod", "WAVE")))
+                    Map.of("amount", 10.00, "paymentMethod", "WAVE",
+                        "countryCode", "SN", "phoneNumber", "+221771234567")))
                 .with(authentication(authAs(FIREBASE_UID, "SENDER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.redirectUrl").exists())
@@ -112,10 +120,14 @@ class WalletControllerIT {
 
     @Test
     void topup_orangeMoney_returnsRedirectUrl() throws Exception {
+        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString()))
+            .thenReturn(new GeniusPayPaymentResult("MTX-TEST-OM", "https://orange.com/pay/test"));
+
         mockMvc.perform(post("/wallet/topup")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    Map.of("amount", 20.00, "paymentMethod", "ORANGE_MONEY")))
+                    Map.of("amount", 20.00, "paymentMethod", "ORANGE_MONEY",
+                        "countryCode", "SN", "phoneNumber", "+221771234567")))
                 .with(authentication(authAs(FIREBASE_UID, "TRAVELER"))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.redirectUrl").exists());
