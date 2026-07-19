@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 
@@ -11,8 +13,14 @@ import java.math.BigDecimal;
 @Table(name = "currencies")
 public class CurrencyEntity {
 
+    // V176 declares this column CHAR(3) (bpchar in Postgres), not VARCHAR — a bare
+    // String field defaults to Types#VARCHAR, which fails Hibernate's schema
+    // validator (ddl-auto: validate, used by the e2e/Cucumber profile against a real
+    // Postgres) with "wrong column type ... found bpchar, expecting varchar(3)".
+    // @JdbcTypeCode(SqlTypes.CHAR) makes Hibernate map/validate this as CHAR to match.
     @Id
-    @Column(name = "code", length = 3)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "code", length = 3, columnDefinition = "CHAR(3)")
     private String code;
 
     @Column(name = "numeric_code", nullable = false)

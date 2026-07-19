@@ -52,6 +52,20 @@ public class MobileMoneyPaymentEntity extends BaseEntity {
     @Column(name = "webhook_received_at")
     private LocalDateTime webhookReceivedAt;
 
+    /** Montant GELÉ en devise locale, unités mineures (règle R2 — écrit avant l'écran de confirmation). */
+    @Column(name = "amount_minor")
+    private Long amountMinor;
+
+    @Column(name = "fx_rate", precision = 18, scale = 8)
+    private BigDecimal fxRate;
+
+    @Column(name = "rate_source", length = 16)
+    private String rateSource;
+
+    /** Constaté au callback PSP. Stub actuel : = amountMinor ; PSP réel : montant rapporté. */
+    @Column(name = "settled_amount_minor")
+    private Long settledAmountMinor;
+
     // Getters / Setters
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
@@ -79,4 +93,13 @@ public class MobileMoneyPaymentEntity extends BaseEntity {
     public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
     public LocalDateTime getWebhookReceivedAt() { return webhookReceivedAt; }
     public void setWebhookReceivedAt(LocalDateTime webhookReceivedAt) { this.webhookReceivedAt = webhookReceivedAt; }
+
+    public Long getAmountMinor() { return amountMinor; }
+    public void setAmountMinor(Long amountMinor) { this.amountMinor = amountMinor; }
+    public BigDecimal getFxRate() { return fxRate; }
+    public void setFxRate(BigDecimal fxRate) { this.fxRate = fxRate; }
+    public String getRateSource() { return rateSource; }
+    public void setRateSource(String rateSource) { this.rateSource = rateSource; }
+    public Long getSettledAmountMinor() { return settledAmountMinor; }
+    public void setSettledAmountMinor(Long settledAmountMinor) { this.settledAmountMinor = settledAmountMinor; }
 }

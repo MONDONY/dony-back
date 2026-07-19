@@ -6,7 +6,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.Where;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -60,6 +62,22 @@ public class PaymentEntity extends BaseEntity {
     @Column(name = "disputed", nullable = false)
     private boolean disputed = false;
 
+    // V177 declares this column CHAR(3) (bpchar in Postgres, like currencies.code —
+    // see CurrencyEntity). @JdbcTypeCode(SqlTypes.CHAR) matches that for Hibernate's
+    // schema validator (ddl-auto: validate under the e2e profile / real Postgres).
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "settlement_currency", length = 3, columnDefinition = "CHAR(3)")
+    private String settlementCurrency;
+
+    @Column(name = "settlement_amount_minor")
+    private Long settlementAmountMinor;
+
+    @Column(name = "settlement_fx_rate", precision = 18, scale = 8)
+    private BigDecimal settlementFxRate;
+
+    @Column(name = "settlement_rate_source", length = 16)
+    private String settlementRateSource;
+
     public UUID getBidId() { return bidId; }
     public void setBidId(UUID bidId) { this.bidId = bidId; }
 
@@ -95,4 +113,16 @@ public class PaymentEntity extends BaseEntity {
 
     public boolean isDisputed() { return disputed; }
     public void setDisputed(boolean disputed) { this.disputed = disputed; }
+
+    public String getSettlementCurrency() { return settlementCurrency; }
+    public void setSettlementCurrency(String settlementCurrency) { this.settlementCurrency = settlementCurrency; }
+
+    public Long getSettlementAmountMinor() { return settlementAmountMinor; }
+    public void setSettlementAmountMinor(Long settlementAmountMinor) { this.settlementAmountMinor = settlementAmountMinor; }
+
+    public BigDecimal getSettlementFxRate() { return settlementFxRate; }
+    public void setSettlementFxRate(BigDecimal settlementFxRate) { this.settlementFxRate = settlementFxRate; }
+
+    public String getSettlementRateSource() { return settlementRateSource; }
+    public void setSettlementRateSource(String settlementRateSource) { this.settlementRateSource = settlementRateSource; }
 }
