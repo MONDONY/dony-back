@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -38,6 +39,7 @@ class WalletTopupOrchestratorTest {
     void setUp() {
         orchestrator = new WalletTopupOrchestrator(
                 currencyRegistry, peggedFxRateProvider, topupRequestRepository, geniusPayClient);
+        ReflectionTestUtils.setField(orchestrator, "appBaseUrl", "https://api.dony.app");
     }
 
     private WalletTopupRequest waveRequest(String amount) {
@@ -61,7 +63,8 @@ class WalletTopupOrchestratorTest {
                         new BigDecimal("655.957"), "PEGGED")));
         lenient().when(currencyRegistry.minorUnitOf("XOF")).thenReturn(0);
         lenient().when(currencyRegistry.roundingIncrementOf("XOF")).thenReturn(5);
-        when(geniusPayClient.createPayment(anyLong(), eq("XOF"), eq("wave"), eq("+221771234567"), anyString()))
+        when(geniusPayClient.createPayment(anyLong(), eq("XOF"), eq("wave"), eq("+221771234567"), anyString(),
+                anyString(), anyString()))
                 .thenReturn(new GeniusPayPaymentResult("MTX-TEST", "https://wave.com/pay/xxx"));
 
         WalletTopupResponse response = orchestrator.initiate(userId, request);
@@ -82,7 +85,8 @@ class WalletTopupOrchestratorTest {
 
         ArgumentCaptor<Long> amountMinorCaptor = ArgumentCaptor.forClass(Long.class);
         verify(geniusPayClient).createPayment(
-                amountMinorCaptor.capture(), eq("XOF"), eq("wave"), eq("+221771234567"), anyString());
+                amountMinorCaptor.capture(), eq("XOF"), eq("wave"), eq("+221771234567"), anyString(),
+                anyString(), anyString());
         assertThat(amountMinorCaptor.getValue()).isEqualTo(expectedAmountMinor);
     }
 
@@ -96,7 +100,8 @@ class WalletTopupOrchestratorTest {
                         new BigDecimal("655.957"), "PEGGED")));
         lenient().when(currencyRegistry.minorUnitOf("XOF")).thenReturn(0);
         lenient().when(currencyRegistry.roundingIncrementOf("XOF")).thenReturn(5);
-        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString()))
+        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString()))
                 .thenThrow(new DonyBusinessException(
                         org.springframework.http.HttpStatus.BAD_GATEWAY, "geniuspay-error", "err", "err"));
 

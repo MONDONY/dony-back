@@ -51,7 +51,9 @@ class GeniusPayClientTest {
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
-        GeniusPayPaymentResult result = client.createPayment(6560L, "XOF", "wave", "+221771234567", "Recharge wallet dony");
+        GeniusPayPaymentResult result = client.createPayment(6560L, "XOF", "wave", "+221771234567",
+                "Recharge wallet dony", "https://api.dony.app/api/v1/payments/geniuspay/return?status=success",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=error");
 
         assertThat(result.reference()).isEqualTo("MTX-A1B2C3D4E5");
         assertThat(result.paymentUrl()).isEqualTo("https://wave.com/pay/xxx");
@@ -66,12 +68,18 @@ class GeniusPayClientTest {
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), captor.capture(), eq(Map.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
-        client.createPayment(6560L, "XOF", "wave", "+221771234567", "Recharge wallet dony");
+        client.createPayment(6560L, "XOF", "wave", "+221771234567", "Recharge wallet dony",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=success",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=error");
 
         Map<String, Object> sentBody = (Map<String, Object>) captor.getValue().getBody();
         assertThat(sentBody).containsEntry("payment_method", "wave");
         assertThat(sentBody).containsEntry("amount", 6560L);
         assertThat(sentBody).containsEntry("currency", "XOF");
+        assertThat(sentBody).containsEntry("success_url",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=success");
+        assertThat(sentBody).containsEntry("error_url",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=error");
         assertThat(captor.getValue().getHeaders().getFirst("X-API-Key")).isEqualTo("pk_sandbox_test");
         assertThat(captor.getValue().getHeaders().getFirst("X-API-Secret")).isEqualTo("sk_sandbox_test");
     }
@@ -83,7 +91,9 @@ class GeniusPayClientTest {
                         org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                         "Unprocessable", null, null, null));
 
-        assertThatThrownBy(() -> client.createPayment(6560L, "XOF", "wave", "+221771234567", "desc"))
+        assertThatThrownBy(() -> client.createPayment(6560L, "XOF", "wave", "+221771234567", "desc",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=success",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=error"))
                 .isInstanceOf(DonyBusinessException.class);
     }
 
@@ -92,7 +102,9 @@ class GeniusPayClientTest {
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class)))
                 .thenThrow(new ResourceAccessException("timeout"));
 
-        assertThatThrownBy(() -> client.createPayment(6560L, "XOF", "wave", "+221771234567", "desc"))
+        assertThatThrownBy(() -> client.createPayment(6560L, "XOF", "wave", "+221771234567", "desc",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=success",
+                "https://api.dony.app/api/v1/payments/geniuspay/return?status=error"))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                         .isEqualTo(org.springframework.http.HttpStatus.GATEWAY_TIMEOUT));

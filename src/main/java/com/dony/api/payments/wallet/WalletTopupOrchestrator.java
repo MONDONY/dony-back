@@ -12,6 +12,7 @@ import com.dony.api.payments.wallet.dto.WalletTopupRequest;
 import com.dony.api.payments.wallet.dto.WalletTopupResponse;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.PaymentIntentCreateParams;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +26,9 @@ public class WalletTopupOrchestrator {
     private final PeggedFxRateProvider peggedFxRateProvider;
     private final WalletTopupRequestRepository topupRequestRepository;
     private final GeniusPayClient geniusPayClient;
+
+    @Value("${app.base-url}")
+    private String appBaseUrl;
 
     public WalletTopupOrchestrator(CurrencyRegistry currencyRegistry,
                                    PeggedFxRateProvider peggedFxRateProvider,
@@ -109,9 +113,14 @@ public class WalletTopupOrchestrator {
         entity.setStatus("PENDING");
         topupRequestRepository.save(entity);
 
+        // GeniusPay n'accepte que des URLs http(s) (jamais un schéma custom "dony://") —
+        // la page de rebond GeniusPayReturnController redirige ensuite vers l'app.
+        String successUrl = appBaseUrl + "/api/v1/payments/geniuspay/return?status=success";
+        String errorUrl = appBaseUrl + "/api/v1/payments/geniuspay/return?status=error";
+
         GeniusPayPaymentResult result = geniusPayClient.createPayment(
                 amountMinor, walletCurrency, toGeniusPayMethod(provider), phoneNumber,
-                "Recharge wallet dony");
+                "Recharge wallet dony", successUrl, errorUrl);
 
         entity.setExternalReference(result.reference());
         topupRequestRepository.save(entity);

@@ -41,7 +41,8 @@ public class GeniusPayClient {
 
     @SuppressWarnings("unchecked")
     public GeniusPayPaymentResult createPayment(long amountMinor, String currency, String paymentMethod,
-                                                String phoneNumber, String description) {
+                                                String phoneNumber, String description,
+                                                String successUrl, String errorUrl) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-API-Key", props.apiKey());
         headers.set("X-API-Secret", props.apiSecret());
@@ -53,6 +54,11 @@ public class GeniusPayClient {
         body.put("payment_method", paymentMethod);
         body.put("description", description);
         body.put("customer", Map.of("phone", phoneNumber));
+        // GeniusPay n'accepte que des URLs http(s) (un schéma custom type "dony://"
+        // est rejeté) — le retour vers l'app passe donc par une page de rebond
+        // HTTPS (GeniusPayReturnController) qui redirige ensuite vers dony://.
+        body.put("success_url", successUrl);
+        body.put("error_url", errorUrl);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 

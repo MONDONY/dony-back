@@ -104,7 +104,8 @@ class WalletControllerIT {
 
     @Test
     void topup_wave_returnsRedirectUrl() throws Exception {
-        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString()))
+        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString()))
             .thenReturn(new GeniusPayPaymentResult("MTX-TEST-WAVE", "https://wave.com/pay/test"));
 
         mockMvc.perform(post("/wallet/topup")
@@ -120,7 +121,8 @@ class WalletControllerIT {
 
     @Test
     void topup_orangeMoney_returnsRedirectUrl() throws Exception {
-        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString()))
+        when(geniusPayClient.createPayment(anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString()))
             .thenReturn(new GeniusPayPaymentResult("MTX-TEST-OM", "https://orange.com/pay/test"));
 
         mockMvc.perform(post("/wallet/topup")

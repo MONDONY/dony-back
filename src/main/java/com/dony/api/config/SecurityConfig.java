@@ -99,6 +99,10 @@ public class SecurityConfig {
                     // Stripe redirige ici après onboarding — pas de token Firebase (browser Stripe)
                     "/payments/onboarding/return",
                     "/payments/onboarding/refresh",
+                    // GeniusPay checkout return (page de rebond HTTPS -> deep link dony://) :
+                    // aucune donnée sensible, ne crédite jamais le wallet (le webhook reste
+                    // la seule source de vérité).
+                    "/payments/geniuspay/return",
                     // Public traveler profile: list active/full announcements without auth
                     "/travelers/*/announcements",
                     // MM webhooks: no Firebase token (provider-to-server call). Security is
