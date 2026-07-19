@@ -60,12 +60,15 @@ public class AdminCommissionDebtController {
 
         UUID travelerId = announcement != null ? announcement.getTravelerId() : null;
 
-        // Montant dû recalculé au taux figé sur le bid (fixé lors de la tentative de
-        // prélèvement) — computeBidCommission(bid, announcement) re-fige/relit ce taux
-        // sans effet de bord persisté ici (pas de bidRepo.save). Si l'annonce est
-        // introuvable (supprimée), on ne peut pas recalculer la base nette → montant null.
-        BigDecimal amountOwedEur = announcement != null
-                ? cashCommissionService.computeBidCommission(bid, announcement)
+        // Montant dû calculé au taux FIGÉ du bid (snapshot persisted lors de la tentative
+        // de prélèvement échouée). Utilise bid.getCommissionRate() au lieu de re-résoudre
+        // la tarification en direct (qui changerait si le taux global ou overrides changent).
+        // Si l'annonce est introuvable (supprimée), on ne peut pas recalculer la base nette
+        // → montant null.
+        BigDecimal amountOwedEur = announcement != null && bid.getCommissionRate() != null
+                ? cashCommissionService.computeCommission(
+                    cashCommissionService.computeBidNet(bid, announcement),
+                    bid.getCommissionRate())
                 : null;
 
         return new CommissionDebtResponse(

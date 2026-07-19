@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -113,7 +114,10 @@ class AdminCommissionDebtControllerTest {
 
         when(bidRepo.findByCommissionStatus(CommissionStatus.FAILED)).thenReturn(List.of(bid));
         when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(ann));
-        when(cashCommissionService.computeBidCommission(bid, ann)).thenReturn(new BigDecimal("12.00"));
+        // Mock computeBidNet to return 100 EUR, then computeCommission(100, 0.12) returns 12.00
+        when(cashCommissionService.computeBidNet(bid, ann)).thenReturn(new BigDecimal("100"));
+        when(cashCommissionService.computeCommission(any(BigDecimal.class), any(BigDecimal.class)))
+            .thenReturn(new BigDecimal("12.00"));
 
         mockMvc.perform(get("/admin/commission-debts")
                         .with(authentication(asAdmin())))
