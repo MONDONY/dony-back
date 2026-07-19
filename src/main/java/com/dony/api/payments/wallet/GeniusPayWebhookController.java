@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,16 +72,15 @@ public class GeniusPayWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        // Anti-rejeu : insert-first-then-process (même principe que processed_stripe_events).
-        ProcessedGeniusPayEventEntity processed = new ProcessedGeniusPayEventEntity();
-        processed.setExternalReference(reference);
-        processed.setProcessedAt(LocalDateTime.now(ZoneOffset.UTC));
-        try {
-            processedEventRepository.saveAndFlush(processed);
-        } catch (DataIntegrityViolationException e) {
+        // Anti-rejeu : check-then-act (même principe que StripeWebhookIngestService.ingest()).
+        if (processedEventRepository.existsById(reference)) {
             log.info("GeniusPay webhook: référence {} déjà traitée (rejeu), no-op", reference);
             return ResponseEntity.ok().build();
         }
+        ProcessedGeniusPayEventEntity processed = new ProcessedGeniusPayEventEntity();
+        processed.setExternalReference(reference);
+        processed.setProcessedAt(LocalDateTime.now(ZoneOffset.UTC));
+        processedEventRepository.save(processed);
 
         var topupOpt = topupRequestRepository.findByExternalReference(reference);
         if (topupOpt.isEmpty()) {
