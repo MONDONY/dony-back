@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
 import com.dony.api.payments.wallet.WalletService;
@@ -39,11 +40,13 @@ class PaymentStripeWebhookHandlerTest {
     @Mock CashCommissionWebhookHandler cashHandler;
     @Mock ChargebackService chargebackService;
     @Mock WalletService walletService;
+    @Mock CurrencyRegistry currencyRegistry;
     PaymentStripeWebhookHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new ObjectMapper());
+        org.mockito.Mockito.lenient().when(currencyRegistry.minorUnitOf(org.mockito.ArgumentMatchers.anyString())).thenReturn(2);
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new ObjectMapper(), currencyRegistry);
     }
 
     private Event buildEvent(String type) {

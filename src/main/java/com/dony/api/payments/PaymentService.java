@@ -911,7 +911,8 @@ public class PaymentService {
                 }
                 // Montants Stripe en cents → EUR scale 2. amount_refunded est CUMULÉ et
                 // ABSOLU : rejouer le même webhook réécrit la même valeur (idempotent).
-                BigDecimal refunded = BigDecimal.valueOf(amountRefundedCents, 2);
+                BigDecimal refunded = MinorUnits
+                        .fromMinor(amountRefundedCents, "EUR", currencyRegistry).amount();
                 boolean fullRefund = amountRefundedCents >= amountCents;
                 // compareTo (et non equals) : insensible à l'échelle BigDecimal — la valeur
                 // relue depuis NUMERIC(10,2) peut différer d'échelle sans changer de montant.

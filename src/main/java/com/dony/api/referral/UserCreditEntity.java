@@ -27,6 +27,8 @@ public class UserCreditEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    // DEVISE (spec devise §5.3) : cents EUR implicites. Si un jour exposé
+    // multi-devise, passer la frontière via MinorUnits — jamais de ×100/÷100.
     @Column(name = "amount_cents", nullable = false)
     private int amountCents;
 

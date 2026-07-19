@@ -48,6 +48,8 @@ public class DisputeEntity extends BaseEntity {
     @Column(name = "beneficiary_user_id")
     private UUID beneficiaryUserId;
 
+    // DEVISE (spec devise §5.3) : cents EUR implicites. Si un jour exposé
+    // multi-devise, passer la frontière via MinorUnits — jamais de ×100/÷100.
     @Column(name = "guarantee_amount_cents")
     private Long guaranteeAmountCents;
 

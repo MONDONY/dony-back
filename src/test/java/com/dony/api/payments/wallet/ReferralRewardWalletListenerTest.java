@@ -1,5 +1,6 @@
 package com.dony.api.payments.wallet;
 
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.referral.events.ReferralRewardGrantedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,13 +14,17 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ReferralRewardWalletListener — unit tests")
 class ReferralRewardWalletListenerTest {
 
     @Mock private WalletService walletService;
+    @Mock private CurrencyRegistry currencyRegistry;
 
     private ReferralRewardWalletListener listener;
 
@@ -28,7 +33,8 @@ class ReferralRewardWalletListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new ReferralRewardWalletListener(walletService);
+        lenient().when(currencyRegistry.minorUnitOf(anyString())).thenReturn(2);
+        listener = new ReferralRewardWalletListener(walletService, currencyRegistry);
     }
 
     @Test

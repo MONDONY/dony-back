@@ -1,5 +1,7 @@
 package com.dony.api.payments;
 
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
 import com.dony.api.common.stripe.StripeWebhookHandler;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.chargeback.ChargebackService;
@@ -15,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -54,17 +55,20 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
     private final ChargebackService chargebackService;
     private final WalletService walletService;
     private final ObjectMapper objectMapper;
+    private final CurrencyRegistry currencyRegistry;
 
     public PaymentStripeWebhookHandler(PaymentService paymentService,
                                         CashCommissionWebhookHandler cashHandler,
                                         ChargebackService chargebackService,
                                         WalletService walletService,
-                                        ObjectMapper objectMapper) {
+                                        ObjectMapper objectMapper,
+                                        CurrencyRegistry currencyRegistry) {
         this.paymentService = paymentService;
         this.cashHandler = cashHandler;
         this.chargebackService = chargebackService;
         this.walletService = walletService;
         this.objectMapper = objectMapper;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @Override
@@ -94,8 +98,8 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
                         return;
                     }
                     UUID userId = UUID.fromString(rawUserId);
-                    BigDecimal amount = BigDecimal.valueOf(pi.getAmount())
-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    BigDecimal amount = MinorUnits
+                        .fromMinor(pi.getAmount(), "EUR", currencyRegistry).amount();
                     walletService.credit(userId, amount, WalletTransactionType.TOP_UP,
                         pi.getId(), "stripe-" + pi.getId());
                 } else {

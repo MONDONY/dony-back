@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.common.money.CurrencyRegistry;
 import com.dony.api.payments.chargeback.ChargebackService;
 import com.dony.api.payments.cash.CashCommissionWebhookHandler;
 import com.dony.api.payments.wallet.WalletService;
@@ -21,11 +22,12 @@ class PaymentStripeWebhookHandlerNewEventsTest {
     @Mock CashCommissionWebhookHandler cashHandler;
     @Mock ChargebackService chargebackService;
     @Mock WalletService walletService;
+    @Mock CurrencyRegistry currencyRegistry;
     PaymentStripeWebhookHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new com.fasterxml.jackson.databind.ObjectMapper());
+        handler = new PaymentStripeWebhookHandler(paymentService, cashHandler, chargebackService, walletService, new com.fasterxml.jackson.databind.ObjectMapper(), currencyRegistry);
     }
 
     private Event evt(String type) {

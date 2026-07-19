@@ -1,5 +1,7 @@
 package com.dony.api.payments.wallet;
 
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
 import com.dony.api.referral.events.ReferralRewardGrantedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,16 +30,19 @@ public class ReferralRewardWalletListener {
     private static final Logger log = LoggerFactory.getLogger(ReferralRewardWalletListener.class);
 
     private final WalletService walletService;
+    private final CurrencyRegistry currencyRegistry;
 
-    public ReferralRewardWalletListener(WalletService walletService) {
+    public ReferralRewardWalletListener(WalletService walletService, CurrencyRegistry currencyRegistry) {
         this.walletService = walletService;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onReferralRewardGranted(ReferralRewardGrantedEvent event) {
         // user_credits stores cents; the wallet stores euros as DECIMAL(10,2).
-        BigDecimal amountEur = BigDecimal.valueOf(event.amountCents()).movePointLeft(2);
+        BigDecimal amountEur = MinorUnits
+                .fromMinor(event.amountCents(), "EUR", currencyRegistry).amount();
         String idempotencyKey = "referral-reward-" + event.invitationId();
 
         walletService.credit(

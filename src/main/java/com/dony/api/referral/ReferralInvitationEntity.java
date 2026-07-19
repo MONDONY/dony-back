@@ -36,6 +36,8 @@ public class ReferralInvitationEntity extends BaseEntity {
     @Column(name = "rewarded_at")
     private LocalDateTime rewardedAt;
 
+    // DEVISE (spec devise §5.3) : cents EUR implicites. Si un jour exposé
+    // multi-devise, passer la frontière via MinorUnits — jamais de ×100/÷100.
     @Column(name = "credit_amount_cents")
     private Integer creditAmountCents;
 
