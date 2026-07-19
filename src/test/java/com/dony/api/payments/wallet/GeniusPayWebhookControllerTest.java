@@ -58,7 +58,7 @@ class GeniusPayWebhookControllerTest {
         topup.setUserId(userId);
         topup.setAmountEur(new BigDecimal("10.00"));
         topup.setCurrency("XOF");
-        when(processedEventRepository.save(any())).thenReturn(new ProcessedGeniusPayEventEntity());
+        when(processedEventRepository.saveAndFlush(any())).thenReturn(new ProcessedGeniusPayEventEntity());
         when(topupRequestRepository.findByExternalReference("MTX-1")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
@@ -73,7 +73,7 @@ class GeniusPayWebhookControllerTest {
     @Test
     void replayedEvent_isNoOp() throws Exception {
         String payload = "{\"event\":\"payment.success\",\"data\":{\"transaction\":{\"reference\":\"MTX-2\"}}}";
-        when(processedEventRepository.save(any()))
+        when(processedEventRepository.saveAndFlush(any()))
                 .thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate"));
 
         mockMvc.perform(post("/webhooks/genius-pay")
@@ -88,7 +88,7 @@ class GeniusPayWebhookControllerTest {
     void paymentFailed_marksTopupFailed() throws Exception {
         String payload = "{\"event\":\"payment.failed\",\"data\":{\"transaction\":{\"reference\":\"MTX-3\"}}}";
         WalletTopupRequestEntity topup = new WalletTopupRequestEntity();
-        when(processedEventRepository.save(any())).thenReturn(new ProcessedGeniusPayEventEntity());
+        when(processedEventRepository.saveAndFlush(any())).thenReturn(new ProcessedGeniusPayEventEntity());
         when(topupRequestRepository.findByExternalReference("MTX-3")).thenReturn(Optional.of(topup));
 
         mockMvc.perform(post("/webhooks/genius-pay")
@@ -97,5 +97,6 @@ class GeniusPayWebhookControllerTest {
                 .andExpect(status().isOk());
 
         verifyNoInteractions(walletService);
+        verify(topupRequestRepository).save(argThat(t -> "FAILED".equals(t.getStatus())));
     }
 }

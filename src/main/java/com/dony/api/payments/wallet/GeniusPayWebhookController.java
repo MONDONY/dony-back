@@ -78,7 +78,7 @@ public class GeniusPayWebhookController {
         processed.setExternalReference(reference);
         processed.setProcessedAt(LocalDateTime.now(ZoneOffset.UTC));
         try {
-            processedEventRepository.save(processed);
+            processedEventRepository.saveAndFlush(processed);
         } catch (DataIntegrityViolationException e) {
             log.info("GeniusPay webhook: référence {} déjà traitée (rejeu), no-op", reference);
             return ResponseEntity.ok().build();
