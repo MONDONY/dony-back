@@ -172,6 +172,11 @@ dony:
       api-url: ${ORANGE_MONEY_API_URL:https://api.orange.com/orange-money-webpay/v1}
       webhook-secret: ${ORANGE_MONEY_WEBHOOK_SECRET:}
     link-expiry-minutes: ${DONY_MOBILEMONEY_LINK_EXPIRY_MINUTES:30}
+  geniuspay:
+    api-key: ${GENIUSPAY_API_KEY:}
+    api-secret: ${GENIUSPAY_API_SECRET:}
+    base-url: ${GENIUSPAY_BASE_URL:https://pay.genius.ci/api/v1/merchant}
+    webhook-secret: ${GENIUSPAY_WEBHOOK_SECRET:}
   email:
     resend-api-key: ${RESEND_API_KEY:}
     from-address: ${DONY_EMAIL_FROM_ADDRESS:noreply@dony.store}
