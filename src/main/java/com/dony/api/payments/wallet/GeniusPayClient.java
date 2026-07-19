@@ -67,7 +67,7 @@ public class GeniusPayClient {
             }
             Map<String, Object> data = (Map<String, Object>) result.get("data");
             String reference = (String) data.get("reference");
-            String paymentUrl = (String) data.get("payment_url");
+            String paymentUrl = (String) data.get("checkout_url");
             return new GeniusPayPaymentResult(reference, paymentUrl);
         } catch (HttpClientErrorException | HttpServerErrorException e) {
             log.error("GeniusPay createPayment HTTP error: {} — {}", e.getStatusCode(), e.getResponseBodyAsString());

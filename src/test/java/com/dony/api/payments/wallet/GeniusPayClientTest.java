@@ -45,7 +45,7 @@ class GeniusPayClientTest {
                         "reference", "MTX-A1B2C3D4E5",
                         "amount", 6560,
                         "status", "pending",
-                        "payment_url", "https://wave.com/pay/xxx",
+                        "checkout_url", "https://wave.com/pay/xxx",
                         "gateway", "wave",
                         "environment", "sandbox"));
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class)))
@@ -62,7 +62,7 @@ class GeniusPayClientTest {
     void createPayment_sendsDirectModeWithExplicitPaymentMethod() {
         ArgumentCaptor<HttpEntity> captor = ArgumentCaptor.forClass(HttpEntity.class);
         Map<String, Object> body = Map.of("success", true, "data", Map.of(
-                "reference", "MTX-X", "payment_url", "https://wave.com/pay/x"));
+                "reference", "MTX-X", "checkout_url", "https://wave.com/pay/x"));
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), captor.capture(), eq(Map.class)))
                 .thenReturn(ResponseEntity.ok(body));
 
