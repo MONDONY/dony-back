@@ -66,6 +66,7 @@ class CashCommissionServiceTest {
     @Mock private CommissionRateResolver commissionRateResolver;
     @Mock private com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
     @Mock private com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
+    @Mock private com.dony.api.common.money.CurrencyRegistry currencyRegistry;
 
     private final CommissionProperties props =
             new CommissionProperties(new BigDecimal("0.12"), new BigDecimal("1.00"), 24);
@@ -77,9 +78,11 @@ class CashCommissionServiceTest {
         lenient().when(commissionRateResolver.resolve(any(), any())).thenReturn(new BigDecimal("0.12"));
         lenient().when(commissionRateResolver.resolve(any())).thenReturn(new BigDecimal("0.12"));
         lenient().when(bidGridItemRepository.findByBidId(any())).thenReturn(java.util.List.of());
+        lenient().when(currencyRegistry.minorUnitOf(any())).thenReturn(2);
         service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events,
                 walletService, walletTransactionRepository, auditService, commissionRateResolver,
-                negotiationThreadRepository, new StripeCashGatewayImpl(), bidGridItemRepository);
+                negotiationThreadRepository, new StripeCashGatewayImpl(), bidGridItemRepository,
+                currencyRegistry);
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 

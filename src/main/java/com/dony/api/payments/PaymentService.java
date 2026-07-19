@@ -438,7 +438,7 @@ public class PaymentService {
         }
         BigDecimal amount = totalNet.multiply(BigDecimal.ONE.add(rate)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal commission = totalNet.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        long amountCents = amount.multiply(BigDecimal.valueOf(100)).longValue();
+        long amountCents = MinorUnits.toMinorExact(new Money(amount, "EUR"), currencyRegistry);
 
         try {
             // Compatibilité comptes legacy : avant cette fix, certains comptes Stripe Connect
@@ -447,7 +447,7 @@ public class PaymentService {
             // On la demande de manière idempotente : si déjà active, no-op.
             ensureCardPaymentsCapability(traveler.getStripeAccountId());
 
-            long commissionCents = commission.multiply(BigDecimal.valueOf(100)).longValue();
+            long commissionCents = MinorUnits.toMinorExact(new Money(commission, "EUR"), currencyRegistry);
 
             // Customer attaché : rend les cartes réutilisables (DonyPaymentSheet).
             // Sans effet sur l'escrow (separate charges & transfers inchangé).

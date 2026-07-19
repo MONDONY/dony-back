@@ -44,13 +44,15 @@ class DeliveryEventListenerTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private BidRepository bidRepository;
     @Mock private AdminAlertService adminAlert;
+    @Mock private com.dony.api.common.money.CurrencyRegistry currencyRegistry;
 
     private DeliveryEventListener listener;
 
     @BeforeEach
     void setUp() {
+        lenient().when(currencyRegistry.minorUnitOf(anyString())).thenReturn(2);
         listener = new DeliveryEventListener(paymentRepository, userRepository,
-                auditService, eventPublisher, bidRepository, adminAlert);
+                auditService, eventPublisher, bidRepository, adminAlert, currencyRegistry);
     }
 
     private PaymentEntity payment(boolean legacy, PaymentStatus status, String chargeId) {

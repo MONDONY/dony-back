@@ -156,6 +156,8 @@ public class BidService {
 
         String promoLabel = null;
         if (promoApplied) {
+            // NOTE devise : rate×100 = pourcentage d'affichage, pas un montant monétaire.
+            // Ne PAS migrer vers MinorUnits (spec devise §5.3, exclusion explicite).
             long pct = rate.multiply(java.math.BigDecimal.valueOf(100)).longValue();
             promoLabel = "Code " + promoCode.toUpperCase() + " : " + pct + " % de commission";
         }

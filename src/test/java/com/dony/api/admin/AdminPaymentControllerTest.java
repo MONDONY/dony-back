@@ -53,6 +53,7 @@ class AdminPaymentControllerTest {
     @Mock private UserRepository userRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private ChargebackRepository chargebackRepository;
+    @Mock private com.dony.api.common.money.CurrencyRegistry currencyRegistry;
 
     private AdminPaymentController controller;
 
@@ -65,8 +66,10 @@ class AdminPaymentControllerTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(currencyRegistry.minorUnitOf(any())).thenReturn(2);
         controller = new AdminPaymentController(paymentRepository, adminAlertRepository, auditService,
-                bidRepository, announcementRepository, userRepository, eventPublisher, chargebackRepository);
+                bidRepository, announcementRepository, userRepository, eventPublisher, chargebackRepository,
+                currencyRegistry);
     }
 
     private PaymentEntity threadPayment(PaymentStatus status, boolean legacy, String chargeId) {

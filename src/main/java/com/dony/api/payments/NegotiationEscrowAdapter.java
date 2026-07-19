@@ -1,5 +1,8 @@
 package com.dony.api.payments;
 
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.requests.NegotiationEscrowPort;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -24,10 +27,13 @@ public class NegotiationEscrowAdapter implements NegotiationEscrowPort {
 
     private final PaymentRepository paymentRepository;
     private final PaymentService paymentService;
+    private final CurrencyRegistry currencyRegistry;
 
-    public NegotiationEscrowAdapter(PaymentRepository paymentRepository, PaymentService paymentService) {
+    public NegotiationEscrowAdapter(PaymentRepository paymentRepository, PaymentService paymentService,
+                                     CurrencyRegistry currencyRegistry) {
         this.paymentRepository = paymentRepository;
         this.paymentService = paymentService;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @Override
@@ -63,10 +69,7 @@ public class NegotiationEscrowAdapter implements NegotiationEscrowPort {
             if (payment.getAmount() == null || pi.getAmount() == null) {
                 return false;
             }
-            long expectedCents = payment.getAmount()
-                .multiply(java.math.BigDecimal.valueOf(100))
-                .setScale(0, java.math.RoundingMode.HALF_UP)
-                .longValueExact();
+            long expectedCents = MinorUnits.toMinor(new Money(payment.getAmount(), "EUR"), currencyRegistry);
             return pi.getAmount() == expectedCents;
         } catch (StripeException e) {
             log.warn("Negotiation escrow verify failed (thread={}, pi={}): {}",

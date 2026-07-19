@@ -13,6 +13,9 @@ import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.CapacityUnit;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.payments.cash.dto.AcceptBidResponse;
 import com.dony.api.payments.cash.dto.AcceptanceStatusDto;
 import com.dony.api.payments.cash.dto.CommissionMethodResponse;
@@ -82,6 +85,7 @@ public class CashCommissionService {
     private final com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
     private final StripeCashGateway stripeCashGateway;
     private final com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
+    private final CurrencyRegistry currencyRegistry;
     private Clock clock = Clock.systemUTC();
 
     public CashCommissionService(CommissionProperties props,
@@ -95,7 +99,8 @@ public class CashCommissionService {
                                  CommissionRateResolver commissionRateResolver,
                                  com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository,
                                  StripeCashGateway stripeCashGateway,
-                                 com.dony.api.matching.BidGridItemRepository bidGridItemRepository) {
+                                 com.dony.api.matching.BidGridItemRepository bidGridItemRepository,
+                                 CurrencyRegistry currencyRegistry) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
@@ -108,6 +113,7 @@ public class CashCommissionService {
         this.negotiationThreadRepository = negotiationThreadRepository;
         this.stripeCashGateway = stripeCashGateway;
         this.bidGridItemRepository = bidGridItemRepository;
+        this.currencyRegistry = currencyRegistry;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -274,7 +280,7 @@ public class CashCommissionService {
 
         AnnouncementEntity announcement = announcementRepo.findById(bid.getAnnouncementId()).orElseThrow();
         BigDecimal commission = computeBidCommission(bid, announcement);
-        long amountCents = commission.multiply(new BigDecimal(100)).longValueExact();
+        long amountCents = MinorUnits.toMinorExact(new Money(commission, "EUR"), currencyRegistry);
         String idempotencyKey = "bid_accept_" + bid.getId() + "_v" + bid.getCommissionRetryCount();
 
         try {
@@ -458,7 +464,7 @@ public class CashCommissionService {
         // 2) Fallback carte off-session
         UserEntity traveler = userRepo.findById(travelerId).orElseThrow();
         if (traveler.getCommissionPaymentMethodId() != null) {
-            long amountCents = commission.multiply(new BigDecimal(100)).longValueExact();
+            long amountCents = MinorUnits.toMinorExact(new Money(commission, "EUR"), currencyRegistry);
             String idempotencyKey = "nego_commission_" + threadId;
             try {
                 PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()

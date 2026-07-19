@@ -3,6 +3,9 @@ package com.dony.api.payments;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
@@ -56,19 +59,22 @@ public class DeliveryEventListener {
     private final ApplicationEventPublisher eventPublisher;
     private final BidRepository bidRepository;
     private final AdminAlertService adminAlert;
+    private final CurrencyRegistry currencyRegistry;
 
     public DeliveryEventListener(PaymentRepository paymentRepository,
                                  UserRepository userRepository,
                                  AuditService auditService,
                                  ApplicationEventPublisher eventPublisher,
                                  BidRepository bidRepository,
-                                 AdminAlertService adminAlert) {
+                                 AdminAlertService adminAlert,
+                                 CurrencyRegistry currencyRegistry) {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.bidRepository = bidRepository;
         this.adminAlert = adminAlert;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -203,7 +209,7 @@ public class DeliveryEventListener {
         //     net = total - commission - transferFees
         // Pour l'instant on assume Transfers EUR gratuits (zone SEPA / hypothèse MVP).
         BigDecimal net = payment.getAmount().subtract(payment.getCommissionAmount());
-        long netCents = net.multiply(BigDecimal.valueOf(100)).longValueExact();
+        long netCents = MinorUnits.toMinorExact(new Money(net, "EUR"), currencyRegistry);
 
         TransferCreateParams.Builder builder = TransferCreateParams.builder()
                 .setAmount(netCents)

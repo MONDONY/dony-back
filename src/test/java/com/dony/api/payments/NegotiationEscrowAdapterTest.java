@@ -16,8 +16,14 @@ class NegotiationEscrowAdapterTest {
 
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
     private final PaymentService paymentService = mock(PaymentService.class);
+    private final com.dony.api.common.money.CurrencyRegistry currencyRegistry =
+        mock(com.dony.api.common.money.CurrencyRegistry.class);
     private final NegotiationEscrowAdapter adapter =
-        new NegotiationEscrowAdapter(paymentRepository, paymentService);
+        new NegotiationEscrowAdapter(paymentRepository, paymentService, currencyRegistry);
+
+    {
+        when(currencyRegistry.minorUnitOf(anyString())).thenReturn(2);
+    }
 
     private final UUID THREAD = UUID.randomUUID();
 

@@ -7,6 +7,9 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
+import com.dony.api.common.money.CurrencyRegistry;
+import com.dony.api.common.money.MinorUnits;
+import com.dony.api.common.money.Money;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
@@ -74,6 +77,7 @@ public class AdminPaymentController {
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ChargebackRepository chargebackRepository;
+    private final CurrencyRegistry currencyRegistry;
 
     public AdminPaymentController(PaymentRepository paymentRepository,
                                   AdminAlertRepository adminAlertRepository,
@@ -82,7 +86,8 @@ public class AdminPaymentController {
                                   AnnouncementRepository announcementRepository,
                                   UserRepository userRepository,
                                   ApplicationEventPublisher eventPublisher,
-                                  ChargebackRepository chargebackRepository) {
+                                  ChargebackRepository chargebackRepository,
+                                  CurrencyRegistry currencyRegistry) {
         this.paymentRepository = paymentRepository;
         this.adminAlertRepository = adminAlertRepository;
         this.auditService = auditService;
@@ -91,6 +96,7 @@ public class AdminPaymentController {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.chargebackRepository = chargebackRepository;
+        this.currencyRegistry = currencyRegistry;
     }
 
     @GetMapping
@@ -208,7 +214,7 @@ public class AdminPaymentController {
                         : pi.getLatestCharge();
 
                 BigDecimal net = payment.getAmount().subtract(payment.getCommissionAmount());
-                long netCents = net.multiply(BigDecimal.valueOf(100)).longValueExact();
+                long netCents = MinorUnits.toMinorExact(new Money(net, "EUR"), currencyRegistry);
 
                 TransferCreateParams.Builder builder = TransferCreateParams.builder()
                         .setAmount(netCents)
