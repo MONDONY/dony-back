@@ -154,6 +154,11 @@ public class MobileMoneyPaymentService {
 
         if (gateway.isPaymentConfirmed(rawPayload)) {
             payment.setStatus("COMPLETED");
+            // Règlement constaté (spec devise §4.3). Stub : le gateway ne rapporte pas
+            // encore le montant réellement débité → on constate le montant gelé
+            // (amountMinor, posé à l'initiation — cf. règle R2). Au branchement d'un
+            // PSP réel (Task 12) : remplacer par le montant effectivement rapporté par le PSP.
+            payment.setSettledAmountMinor(payment.getAmountMinor());
             repository.save(payment);
             auditService.log(
                     "MM_PAYMENT",
