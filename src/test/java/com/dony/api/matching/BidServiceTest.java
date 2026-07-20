@@ -606,6 +606,59 @@ class BidServiceTest {
         }
 
         @Test
+        @DisplayName("paymentMethod=STRIPE + annonce n'accepte pas la carte → 422 card-not-accepted")
+        void createBid_stripeNotAcceptedByAnnouncement_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.CASH));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            BidRequest stripeReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+                    "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "STRIPE", null, null, null, null, null);
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, stripeReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("card-not-accepted");
+                    });
+        }
+
+        @Test
+        @DisplayName("paymentMethod omis (défaut STRIPE) + annonce cash-only → 422 card-not-accepted")
+        void createBid_noPaymentMethodDefaultsToStripe_cashOnlyAnnouncement_throwsUnprocessable() {
+            UserEntity sender = buildSender();
+            AnnouncementEntity announcement = buildAnnouncement();
+            announcement.setAcceptedPaymentMethods(
+                    java.util.EnumSet.of(com.dony.api.payments.cash.PaymentMethod.CASH));
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+
+            // paymentMethod = null → défaut STRIPE (comportement existant) → doit être rejeté
+            // sur une annonce cash-only, pas silencieusement accepté.
+            BidRequest noMethodReq = buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100));
+
+            assertThatThrownBy(() -> bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID, noMethodReq, httpRequest))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("card-not-accepted");
+                    });
+        }
+
+        @Test
         @DisplayName("paymentMethod invalide → 422 UNPROCESSABLE_ENTITY")
         void createBid_invalidPaymentMethod_throwsUnprocessable() {
             UserEntity sender = buildSender();

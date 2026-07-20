@@ -16,6 +16,7 @@ import com.dony.api.matching.dto.AnnouncementDetailResponse;
 import com.dony.api.matching.dto.AnnouncementRequest;
 import com.dony.api.matching.dto.AnnouncementResponse;
 import com.dony.api.matching.events.AnnouncementDeletedEvent;
+import com.dony.api.payments.cash.PaymentMethod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -167,6 +168,28 @@ class AnnouncementServiceTest {
                 null, null,
                 departure.atTime(8, 0), departure.atTime(9, 0),
                 true
+        );
+    }
+
+    /**
+     * Variante de {@link #buildRequest()} paramétrée sur les modes de paiement déclarés
+     * (Task 2 — gate Stripe conditionnel). {@code methods == null} exerce le défaut de
+     * {@code resolvePaymentMethods}.
+     */
+    private AnnouncementRequest requestWithPaymentMethods(java.util.Set<PaymentMethod> methods) {
+        LocalDate departure = LocalDate.now().plusDays(10);
+        return new AnnouncementRequest(
+                "Paris", "Dakar",
+                departure,
+                LocalTime.of(10, 0), LocalTime.of(22, 0),
+                new AddressDto("CDG Terminal 2E", 49.009, 2.547),
+                new AddressDto("Aéroport LSS", 14.739, -17.490),
+                BigDecimal.valueOf(20), BigDecimal.valueOf(5),
+                TransportMode.PLANE,
+                null, null, null, methods, null, null,
+                null, null,
+                departure.atTime(8, 0), departure.atTime(9, 0),
+                null
         );
     }
 
@@ -355,7 +378,7 @@ class AnnouncementServiceTest {
         }
 
         @Test
-        @DisplayName("compte Stripe non configuré → 403 stripe-onboarding-incomplete")
+        @DisplayName("STRIPE déclaré explicitement + compte Stripe non configuré → 403 stripe-onboarding-incomplete")
         void create_stripeNotOnboarded_throwsForbidden() throws Exception {
             UserEntity traveler = buildTraveler();
             traveler.setKycStatus(KycStatus.VERIFIED);
@@ -366,13 +389,108 @@ class AnnouncementServiceTest {
             enforceField.setAccessible(true);
             enforceField.set(announcementService, true);
 
-            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, buildRequest()))
+            // Task 2 : le défaut de resolvePaymentMethods n'inclut plus STRIPE pour un compte
+            // non onboardé — il faut le déclarer explicitement pour exercer le gate.
+            AnnouncementRequest req = requestWithPaymentMethods(
+                    java.util.Set.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
                         DonyBusinessException ex = (DonyBusinessException) e;
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                         assertThat(ex.getErrorCode()).isEqualTo("stripe-onboarding-incomplete");
                     });
+        }
+
+        @Test
+        @DisplayName("Task 2 — cash-only sans Stripe → succès (D3/D4, voyageur universel)")
+        void createAnnouncement_cashOnly_withoutStripe_succeeds() throws Exception {
+            UserEntity traveler = buildTraveler();
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            Field enforceField = AnnouncementService.class.getDeclaredField("enforceStripeOnboarding");
+            enforceField.setAccessible(true);
+            enforceField.set(announcementService, true);
+
+            AnnouncementRequest req = requestWithPaymentMethods(java.util.Set.of(PaymentMethod.CASH));
+
+            AnnouncementResponse resp = announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(resp.acceptedPaymentMethods()).containsExactly("CASH");
+        }
+
+        @Test
+        @DisplayName("Task 2 — STRIPE déclaré sans compte Stripe → 403 stripe-onboarding-incomplete")
+        void createAnnouncement_declaringStripe_withoutStripeAccount_throws403() throws Exception {
+            UserEntity traveler = buildTraveler();
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+
+            Field enforceField = AnnouncementService.class.getDeclaredField("enforceStripeOnboarding");
+            enforceField.setAccessible(true);
+            enforceField.set(announcementService, true);
+
+            AnnouncementRequest req = requestWithPaymentMethods(
+                    java.util.Set.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+
+            assertThatThrownBy(() -> announcementService.createAnnouncement(FIREBASE_UID, req))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", "stripe-onboarding-incomplete");
+        }
+
+        @Test
+        @DisplayName("Task 2 — défaut sans méthode déclarée + Stripe non onboardé → CASH seul")
+        void resolvePaymentMethods_defaultsToCash_whenStripeNotOnboarded() {
+            UserEntity traveler = buildTraveler();
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementRequest req = requestWithPaymentMethods(null);
+
+            AnnouncementResponse resp = announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(resp.acceptedPaymentMethods()).containsExactly("CASH");
+        }
+
+        @Test
+        @DisplayName("Task 2 — défaut sans méthode déclarée + Stripe onboardé → STRIPE + CASH")
+        void resolvePaymentMethods_defaultsToStripeAndCash_whenOnboarded() {
+            UserEntity traveler = buildTraveler();
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+            traveler.setKycStatus(KycStatus.VERIFIED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(traveler));
+            when(announcementRepository.save(any())).thenAnswer(inv -> {
+                AnnouncementEntity a = inv.getArgument(0);
+                setId(a, ANNOUNCEMENT_ID);
+                return a;
+            });
+            when(bidRepository.countVisibleByAnnouncementId(any())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(any(), any())).thenReturn(0L);
+
+            AnnouncementRequest req = requestWithPaymentMethods(null);
+
+            AnnouncementResponse resp = announcementService.createAnnouncement(FIREBASE_UID, req);
+
+            assertThat(resp.acceptedPaymentMethods()).containsExactlyInAnyOrder("STRIPE", "CASH");
         }
 
         @Test
@@ -1921,6 +2039,31 @@ class AnnouncementServiceTest {
                         DonyBusinessException ex = (DonyBusinessException) e;
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                         assertThat(ex.getErrorCode()).isEqualTo("kyc-not-verified");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Task 2 — brouillon déclarant STRIPE, compte Stripe non configuré → 403 à la publication")
+        void publishAnnouncement_draftDeclaringStripe_withoutStripeAccount_throws403() throws Exception {
+            UserEntity user = verifiedProUser();
+            user.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+            AnnouncementEntity draft = draftEntityOwnedBy(user);
+            // Un brouillon peut déclarer STRIPE sans compte — le check tombe à la publication.
+            draft.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+
+            Field enforceField = AnnouncementService.class.getDeclaredField("enforceStripeOnboarding");
+            enforceField.setAccessible(true);
+            enforceField.set(announcementService, true);
+
+            assertThatThrownBy(() -> announcementService.publishAnnouncement(draft.getId(), FIREBASE_UID))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("stripe-onboarding-incomplete");
                     });
             verify(announcementRepository, never()).save(any());
         }

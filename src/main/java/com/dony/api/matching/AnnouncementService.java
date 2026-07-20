@@ -328,21 +328,17 @@ public class AnnouncementService {
             assertCanPublish(user);
         }
 
-        if (enforceStripeOnboarding && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "stripe-onboarding-incomplete",
-                    "Stripe Onboarding Incomplete",
-                    "Vous devez compléter la configuration de votre compte bancaire pour publier un trajet"
-            );
-        }
-
         if (!user.getRoles().contains(Role.TRAVELER)) {
             user.getRoles().add(Role.TRAVELER);
             userRepository.save(user);
         }
 
         Set<PaymentMethod> paymentMethods = resolvePaymentMethods(request.acceptedPaymentMethods(), user);
+
+        if (!isDraft) {
+            // La capacité « carte » exige Stripe Connect ; le cash-only est libre.
+            assertStripeCapability(user, paymentMethods);
+        }
 
         AnnouncementEntity announcement = new AnnouncementEntity();
         announcement.setTravelerId(user.getId());
@@ -740,7 +736,11 @@ public class AnnouncementService {
         if (request.refusedTypes() != null)
             announcement.setRefusedTypes(ContentCategoryNormalizer.normalizeList(request.refusedTypes()));
         if (request.acceptedPaymentMethods() != null) {
-            announcement.setAcceptedPaymentMethods(resolvePaymentMethods(request.acceptedPaymentMethods(), user));
+            Set<PaymentMethod> updatedMethods = resolvePaymentMethods(request.acceptedPaymentMethods(), user);
+            if (announcement.getStatus() != AnnouncementStatus.DRAFT) {
+                assertStripeCapability(user, updatedMethods);
+            }
+            announcement.setAcceptedPaymentMethods(updatedMethods);
         }
         if (request.capacityUnit() != null) {
             announcement.setCapacityUnit(request.capacityUnit());
@@ -847,6 +847,7 @@ public class AnnouncementService {
         }
 
         assertCanPublish(user);
+        assertStripeCapability(user, announcement.getAcceptedPaymentMethods());
 
         if (announcement.getDepartureDate() != null
                 && announcement.getDepartureDate().isBefore(LocalDate.now())) {
@@ -902,6 +903,24 @@ public class AnnouncementService {
                                 + " annonces ce mois-ci. Passez en PRO pour continuer."
                 );
             }
+        }
+    }
+
+    /**
+     * La capacité « accepter la carte » exige un onboarding Stripe Connect complet.
+     * Un trajet cash-only est publiable sans compte Stripe (D3/D4 — spec
+     * voyageur-universel). Gouverné par dony.stripe.enforce (kill-switch).
+     */
+    private void assertStripeCapability(UserEntity user, Set<PaymentMethod> methods) {
+        if (enforceStripeOnboarding
+                && methods.contains(PaymentMethod.STRIPE)
+                && user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
+            throw new DonyBusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "stripe-onboarding-incomplete",
+                    "Stripe Onboarding Incomplete",
+                    "Connectez votre compte bancaire pour accepter la carte, "
+                    + "ou publiez votre trajet en espèces uniquement");
         }
     }
 
@@ -1068,7 +1087,11 @@ public class AnnouncementService {
 
     private Set<PaymentMethod> resolvePaymentMethods(Set<PaymentMethod> requested, UserEntity traveler) {
         if (requested == null || requested.isEmpty()) {
-            return EnumSet.of(PaymentMethod.STRIPE);
+            // Défaut aligné sur la capacité réelle : jamais STRIPE pour un
+            // voyageur sans onboarding complet (le trajet serait invendable).
+            return traveler.getStripeAccountStatus() == StripeAccountStatus.ONBOARDING_COMPLETE
+                    ? EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH)
+                    : EnumSet.of(PaymentMethod.CASH);
         }
         // La vérification de la capacité de paiement de la commission (wallet ou carte)
         // est reportée à l'acceptation du bid (CashCommissionService.acceptCashBid).

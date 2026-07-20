@@ -303,6 +303,13 @@ public class BidService {
                     "Cette annonce n'accepte pas le paiement en espèces");
         }
 
+        if (pm == PaymentMethod.STRIPE
+                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "card-not-accepted", "Card Not Accepted",
+                    "Cette annonce n'accepte pas le paiement par carte");
+        }
+
         if (pm == PaymentMethod.WAVE || pm == PaymentMethod.ORANGE_MONEY) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "mobile-money-bid-payment-retired", "Mobile Money Bid Payment Retired",
