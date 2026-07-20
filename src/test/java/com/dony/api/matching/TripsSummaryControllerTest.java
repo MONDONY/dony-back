@@ -49,16 +49,33 @@ class TripsSummaryControllerTest {
     void returns_summary_for_traveler() {
         UserEntity user = travelerUser();
         when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.of(user));
-        when(service.computeSummary(user)).thenReturn(
-                new TripsSummaryDto(3, new BigDecimal("19.0"), new BigDecimal("152.46")));
+        when(service.computeSummary(user, "30d")).thenReturn(
+                TripsSummaryDto.of(3, new BigDecimal("19.0"), new BigDecimal("152.46"),
+                        2, 5, "30d"));
 
-        ResponseEntity<TripsSummaryDto> response = controller.getMyTripsSummary();
+        ResponseEntity<TripsSummaryDto> response = controller.getMyTripsSummary("30d");
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().activeTrips()).isEqualTo(3);
         assertThat(response.getBody().kgSoldThisMonth()).isEqualByComparingTo(new BigDecimal("19.0"));
         assertThat(response.getBody().revenueThisMonth()).isEqualByComparingTo(new BigDecimal("152.46"));
+        assertThat(response.getBody().tripsPublished()).isEqualTo(2);
+        assertThat(response.getBody().parcelsSent()).isEqualTo(5);
+    }
+
+    @Test
+    void passes_requested_period_to_the_service() {
+        UserEntity user = travelerUser();
+        when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.of(user));
+        when(service.computeSummary(user, "12m")).thenReturn(
+                TripsSummaryDto.of(3, new BigDecimal("40.0"), new BigDecimal("900.00"),
+                        12, 30, "12m"));
+
+        ResponseEntity<TripsSummaryDto> response = controller.getMyTripsSummary("12m");
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().period()).isEqualTo("12m");
     }
 
     @Test
@@ -66,7 +83,7 @@ class TripsSummaryControllerTest {
         UserEntity user = senderUser();
         when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> controller.getMyTripsSummary())
+        assertThatThrownBy(() -> controller.getMyTripsSummary("30d"))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus().value()).isEqualTo(403));
     }
@@ -75,7 +92,7 @@ class TripsSummaryControllerTest {
     void returns_404_when_user_not_found() {
         when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> controller.getMyTripsSummary())
+        assertThatThrownBy(() -> controller.getMyTripsSummary("30d"))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus().value()).isEqualTo(404));
     }
@@ -84,7 +101,7 @@ class TripsSummaryControllerTest {
     void returns_401_when_no_authentication() {
         SecurityContextHolder.clearContext();
 
-        assertThatThrownBy(() -> controller.getMyTripsSummary())
+        assertThatThrownBy(() -> controller.getMyTripsSummary("30d"))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus().value()).isEqualTo(401));
     }
