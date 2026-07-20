@@ -26,8 +26,9 @@ public class AuthSteps extends AbstractSteps {
 
     /**
      * Simulates a completed KYC + Stripe Connect onboarding for the current user.
-     * Real KYC/Stripe flows aren't run in E2E, and activateTravelerRole() hard-requires
-     * both (independent of the dony.kyc.enforce flag) — so this is the test bridge.
+     * Real KYC/Stripe flows aren't run in E2E. Note: activateTravelerRole() no longer
+     * gates on KYC/Stripe (universal traveler role, Task 4) — this step remains as a
+     * test bridge for scenarios that still assert on a fully onboarded user.
      */
     @Etantdonné("mon KYC est vérifié et mon compte Stripe est complet")
     public void givenKycAndStripeComplete() {
@@ -44,6 +45,16 @@ public class AuthSteps extends AbstractSteps {
                 "phoneNumber", phone,
                 "roles", Set.of("TRAVELER")
         )).post("/auth/register"));
+        // Depuis le voyageur universel (Stripe = capacité optionnelle), un trajet
+        // publié sans Stripe complet est cash-only par défaut — la plupart des
+        // scénarios e2e déposent un bid sans préciser de méthode (défaut STRIPE)
+        // et n'ont pas vocation à tester ce cas-là. On onboarde Stripe par défaut
+        // ici ; les scénarios qui testent explicitement l'absence de carte
+        // utilisent leurs propres steps dédiés (ex. TestDataSteps).
+        jdbcTemplate.update(
+                "UPDATE users SET stripe_account_status = 'ONBOARDING_COMPLETE', "
+                        + "stripe_account_id = ? WHERE firebase_uid = ?",
+                "acct_test_" + uid, uid);
         // Test travelers accept non-KYC-verified senders so bids aren't blocked by
         // the default contactKycOnly=true preference (real KYC isn't run in E2E).
         asCurrentUser().body(Map.of("contactKycOnly", false)).put("/auth/me/privacy-settings");
@@ -64,8 +75,10 @@ public class AuthSteps extends AbstractSteps {
 
     @Quand("j'active mon rôle voyageur")
     public void whenActivateTraveler() {
-        // Registration always grants SENDER only; TRAVELER is obtained via this
-        // explicit activation (POST /users/me/roles/traveler/activate, requires SENDER).
+        // Registration already grants both SENDER and TRAVELER (universal traveler
+        // role, Task 1). This endpoint is kept for backward compatibility with
+        // already-deployed app versions — activation is now idempotent (no-op if the
+        // user already has TRAVELER, e.g. via migration V176 backfill).
         ctx.setCurrentUser(ctx.getCurrentUid(), "ROLE_SENDER");
         store(asCurrentUser().post("/users/me/roles/traveler/activate"));
     }

@@ -73,22 +73,21 @@ class UserRoleControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("KYC non vérifié → 409 avec code traveler-upgrade-requirements-missing")
-    void activate_returns409_whenKycNotVerified() throws Exception {
+    @DisplayName("KYC non vérifié → 200, activation réussit quand même (rôle universel, gate retiré)")
+    void activate_returns200_whenKycNotVerified() throws Exception {
         mockMvc.perform(post("/users/me/roles/traveler/activate")
                         .with(authentication(auth(UID_NO_KYC, "ROLE_SENDER"))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("traveler-upgrade-requirements-missing"))
-                .andExpect(jsonPath("$.missingRequirements", hasItem("KYC_NOT_VERIFIED")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roles", hasItem("TRAVELER")));
     }
 
     @Test
-    @DisplayName("Stripe non complété → 409 avec STRIPE_ACCOUNT_NOT_COMPLETE")
-    void activate_returns409_whenStripeNotComplete() throws Exception {
+    @DisplayName("Stripe non complété → 200, activation réussit quand même (rôle universel, gate retiré)")
+    void activate_returns200_whenStripeNotComplete() throws Exception {
         mockMvc.perform(post("/users/me/roles/traveler/activate")
                         .with(authentication(auth(UID_NO_STRIPE, "ROLE_SENDER"))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.missingRequirements", hasItem("STRIPE_ACCOUNT_NOT_COMPLETE")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roles", hasItem("TRAVELER")));
     }
 
     @Test

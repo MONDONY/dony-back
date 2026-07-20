@@ -1,24 +1,19 @@
 package com.dony.api.auth;
 
 import com.dony.api.auth.dto.UserResponse;
-import com.dony.api.auth.events.UserBecameTravelerEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.auth.KycStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.lang.reflect.Field;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -40,7 +35,6 @@ class UserRoleServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
-    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private UserRoleService userRoleService;
 
@@ -59,8 +53,8 @@ class UserRoleServiceTest {
     }
 
     @Test
-    @DisplayName("succès : ajoute TRAVELER, sauvegarde, publie event, audite")
-    void activateTraveler_success_addsRole_publishesEvent_audits() {
+    @DisplayName("succès : ajoute TRAVELER, sauvegarde, audite")
+    void activateTraveler_success_addsRole_audits() {
         when(userRepository.save(user)).thenReturn(user);
 
         UserResponse result = userRoleService.activateTravelerRole("uid-1");
@@ -69,11 +63,6 @@ class UserRoleServiceTest {
         verify(userRepository).save(user);
         verify(auditService).log(eq("USER"), eq(user.getId()), eq("USER_ROLE_ADDED"),
                 eq(user.getId()), eq(Map.of("role", "TRAVELER")));
-
-        ArgumentCaptor<UserBecameTravelerEvent> eventCaptor =
-                ArgumentCaptor.forClass(UserBecameTravelerEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().getUserId()).isEqualTo(user.getId());
 
         assertThat(result.roles()).containsExactlyInAnyOrder("SENDER", "TRAVELER");
     }
@@ -86,52 +75,20 @@ class UserRoleServiceTest {
         userRoleService.activateTravelerRole("uid-1");
 
         verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditService, eventPublisher);
+        verifyNoInteractions(auditService);
     }
 
     @Test
-    @DisplayName("KYC non vérifié → 409 avec KYC_NOT_VERIFIED dans missingRequirements")
-    void activateTraveler_failsWithoutKyc() {
-        user.setKycStatus(KycStatus.PENDING);
-
-        assertThatThrownBy(() -> userRoleService.activateTravelerRole("uid-1"))
-                .isInstanceOf(DonyBusinessException.class)
-                .satisfies(e -> {
-                    DonyBusinessException ex = (DonyBusinessException) e;
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                    assertThat(ex.getErrorCode()).isEqualTo("traveler-upgrade-requirements-missing");
-                    assertThat((List<String>) ex.getProperties().get("missingRequirements"))
-                            .containsExactly("KYC_NOT_VERIFIED");
-                });
-    }
-
-    @Test
-    @DisplayName("Stripe non complété → 409 avec STRIPE_ACCOUNT_NOT_COMPLETE")
-    void activateTraveler_failsWithoutStripe() {
-        user.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
-
-        assertThatThrownBy(() -> userRoleService.activateTravelerRole("uid-1"))
-                .isInstanceOf(DonyBusinessException.class)
-                .satisfies(e -> {
-                    DonyBusinessException ex = (DonyBusinessException) e;
-                    assertThat((List<String>) ex.getProperties().get("missingRequirements"))
-                            .containsExactly("STRIPE_ACCOUNT_NOT_COMPLETE");
-                });
-    }
-
-    @Test
-    @DisplayName("KYC + Stripe manquants → liste les deux dans missingRequirements")
-    void activateTraveler_failsWithBoth_listsAllMissing() {
+    @DisplayName("sans KYC ni Stripe → activation réussit quand même (rôle universel, gate retiré)")
+    void activateTravelerRole_withoutKycOrStripe_succeedsIdempotently() {
         user.setKycStatus(KycStatus.NOT_STARTED);
         user.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+        user.getRoles().remove(Role.TRAVELER); // simulate ancien compte pré-migration
+        when(userRepository.save(user)).thenReturn(user);
 
-        assertThatThrownBy(() -> userRoleService.activateTravelerRole("uid-1"))
-                .isInstanceOf(DonyBusinessException.class)
-                .satisfies(e -> {
-                    DonyBusinessException ex = (DonyBusinessException) e;
-                    assertThat((List<String>) ex.getProperties().get("missingRequirements"))
-                            .containsExactlyInAnyOrder("KYC_NOT_VERIFIED", "STRIPE_ACCOUNT_NOT_COMPLETE");
-                });
+        UserResponse resp = userRoleService.activateTravelerRole("uid-1");
+
+        assertThat(resp.roles()).contains("TRAVELER");
     }
 
     // ─── deactivateTravelerRole ───────────────────────────────────────────────
