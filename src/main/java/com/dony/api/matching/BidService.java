@@ -303,20 +303,11 @@ public class BidService {
                     "Cette annonce n'accepte pas le paiement en espèces");
         }
 
-        if ((pm == PaymentMethod.WAVE
-                || pm == PaymentMethod.ORANGE_MONEY)
-                && !announcement.getAcceptedPaymentMethods().contains(pm)) {
+        if (pm == PaymentMethod.WAVE || pm == PaymentMethod.ORANGE_MONEY) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "mobile-money-not-accepted", "Mobile Money Not Accepted",
-                    "Cette annonce n'accepte pas le paiement " + pm.name());
-        }
-
-        if ((pm == PaymentMethod.WAVE
-                || pm == PaymentMethod.ORANGE_MONEY)
-                && (request.phoneNumber() == null || request.countryCode() == null)) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "mobile-money-phone-required", "Phone Required",
-                    "Le numéro de téléphone et le pays sont requis pour le paiement Mobile Money");
+                    "mobile-money-bid-payment-retired", "Mobile Money Bid Payment Retired",
+                    "Le paiement mobile money direct par l'expéditeur n'est plus disponible "
+                    + "pour les nouveaux envois. Choisissez Cash ou Carte bancaire.");
         }
 
         String clientIp = resolveClientIp(httpRequest);
@@ -335,12 +326,6 @@ public class BidService {
         bid.setDisclaimerSignedIp(clientIp);
         bid.setPaymentMethod(pm);
         bid.setStatus(BidStatus.PENDING);
-
-        if (pm == PaymentMethod.WAVE
-                || pm == PaymentMethod.ORANGE_MONEY) {
-            bid.setMobileMoneyPhone(request.phoneNumber());
-            bid.setMobileMoneyCountryCode(request.countryCode());
-        }
 
         // Code promo stocké brut (validation + rachat au moment du paiement).
         if (request.promoCode() != null && !request.promoCode().isBlank()) {
