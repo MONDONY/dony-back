@@ -6,6 +6,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.StatsPeriod;
 import com.dony.api.matching.TripsSummaryService;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +44,7 @@ class TravelerStatsListenerTest {
     void setUp() {
         listener = new TravelerStatsListener(userRepository, bidRepository,
                 announcementRepository, auditService, cacheManager);
-        lenient().when(cacheManager.getCache("trips-summary")).thenReturn(tripsSummaryCache);
+        lenient().when(cacheManager.getCache(TripsSummaryService.CACHE_NAME)).thenReturn(tripsSummaryCache);
     }
 
     private static void setEntityId(Object entity, UUID id) {
@@ -232,8 +233,8 @@ class TravelerStatsListenerTest {
 
         // La clé inclut la période : chaque entrée du voyageur doit être évincée,
         // sinon un seul intervalle refléterait la livraison.
-        for (String period : TripsSummaryService.SUPPORTED_PERIODS) {
-            verify(tripsSummaryCache).evict(travelerId + "-" + period);
+        for (StatsPeriod period : StatsPeriod.values()) {
+            verify(tripsSummaryCache).evict(StatsPeriod.cacheKey(travelerId, period));
         }
     }
 

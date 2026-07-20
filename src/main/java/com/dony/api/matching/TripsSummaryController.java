@@ -38,8 +38,7 @@ public class TripsSummaryController {
      */
     @GetMapping("/me/trips-summary")
     public ResponseEntity<TripsSummaryDto> getMyTripsSummary(
-            @RequestParam(required = false, defaultValue = TripsSummaryService.DEFAULT_PERIOD)
-            String period) {
+            @RequestParam(required = false) String period) {
         String firebaseUid = requireFirebaseUid();
 
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
@@ -54,7 +53,8 @@ public class TripsSummaryController {
                     "Réservé aux voyageurs.");
         }
 
-        return ResponseEntity.ok(tripsSummaryService.computeSummary(user, period));
+        return ResponseEntity.ok(
+                tripsSummaryService.computeSummary(user, StatsPeriod.fromApiValue(period)));
     }
 
     private String requireFirebaseUid() {

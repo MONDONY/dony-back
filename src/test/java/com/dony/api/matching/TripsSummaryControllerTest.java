@@ -49,7 +49,7 @@ class TripsSummaryControllerTest {
     void returns_summary_for_traveler() {
         UserEntity user = travelerUser();
         when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.of(user));
-        when(service.computeSummary(user, "30d")).thenReturn(
+        when(service.computeSummary(user, StatsPeriod.LAST_30_DAYS)).thenReturn(
                 TripsSummaryDto.of(3, new BigDecimal("19.0"), new BigDecimal("152.46"),
                         2, 5, "30d"));
 
@@ -68,7 +68,7 @@ class TripsSummaryControllerTest {
     void passes_requested_period_to_the_service() {
         UserEntity user = travelerUser();
         when(userRepository.findByFirebaseUid("firebase-uid-1")).thenReturn(Optional.of(user));
-        when(service.computeSummary(user, "12m")).thenReturn(
+        when(service.computeSummary(user, StatsPeriod.LAST_12_MONTHS)).thenReturn(
                 TripsSummaryDto.of(3, new BigDecimal("40.0"), new BigDecimal("900.00"),
                         12, 30, "12m"));
 

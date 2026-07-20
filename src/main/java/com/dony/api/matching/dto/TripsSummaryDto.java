@@ -1,26 +1,25 @@
 package com.dony.api.matching.dto;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
 import java.math.BigDecimal;
 
 /**
  * Résumé d'activité d'un utilisateur sur une période.
  *
- * <p>{@code kgSoldThisMonth} et {@code revenueThisMonth} sont conservés pour les
- * clients déployés qui les lisent encore : ils portent désormais les mêmes
- * valeurs que {@code kgSold} et {@code revenue}. Les nouveaux champs sont bornés
- * à la période demandée, indiquée par {@code period}.
+ * <p>Les anciens noms {@code kgSoldThisMonth} / {@code revenueThisMonth} restent
+ * dans le JSON pour les clients déployés qui les lisent encore, mais ce sont des
+ * alias de sérialisation, pas des champs : ils ne peuvent pas diverger des
+ * valeurs réelles, et se suppriment en deux lignes quand ces clients sont
+ * éteints.
  */
 public record TripsSummaryDto(
         long activeTrips,
-        BigDecimal kgSoldThisMonth,
-        BigDecimal revenueThisMonth,
         BigDecimal kgSold,
         BigDecimal revenue,
         long tripsPublished,
         long parcelsSent,
         String period
 ) {
-    /** Construit un résumé en dupliquant les valeurs sur les champs historiques. */
     public static TripsSummaryDto of(
             long activeTrips,
             BigDecimal kgSold,
@@ -29,13 +28,16 @@ public record TripsSummaryDto(
             long parcelsSent,
             String period) {
         return new TripsSummaryDto(
-                activeTrips,
-                kgSold,
-                revenue,
-                kgSold,
-                revenue,
-                tripsPublished,
-                parcelsSent,
-                period);
+                activeTrips, kgSold, revenue, tripsPublished, parcelsSent, period);
+    }
+
+    @JsonGetter("kgSoldThisMonth")
+    public BigDecimal kgSoldThisMonth() {
+        return kgSold;
+    }
+
+    @JsonGetter("revenueThisMonth")
+    public BigDecimal revenueThisMonth() {
+        return revenue;
     }
 }

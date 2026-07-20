@@ -6,6 +6,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.StatsPeriod;
 import com.dony.api.matching.TripsSummaryService;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.slf4j.Logger;
@@ -108,12 +109,13 @@ public class TravelerStatsListener {
         announcement.setTotalTripsCounted(true);
         announcementRepository.save(announcement);
 
-        // La clé du cache inclut la période depuis l'ajout du paramètre period :
-        // évincer le seul UUID ne correspondrait plus à aucune entrée.
-        var cache = cacheManager.getCache("trips-summary");
+        // La clé du cache inclut la période : évincer le seul UUID ne
+        // correspondrait à aucune entrée. StatsPeriod.cacheKey est la seule
+        // définition de cette clé, partagée avec le @Cacheable du service.
+        var cache = cacheManager.getCache(TripsSummaryService.CACHE_NAME);
         if (cache != null) {
-            for (String period : TripsSummaryService.SUPPORTED_PERIODS) {
-                cache.evict(traveler.getId() + "-" + period);
+            for (StatsPeriod period : StatsPeriod.values()) {
+                cache.evict(StatsPeriod.cacheKey(traveler.getId(), period));
             }
         }
 
