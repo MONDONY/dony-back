@@ -6,6 +6,7 @@ import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
+import com.dony.api.matching.TripsSummaryService;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -229,7 +230,11 @@ class TravelerStatsListenerTest {
 
         listener.onDeliveryConfirmed(new DeliveryConfirmedEvent(bidId, UUID.randomUUID(), travelerId));
 
-        verify(tripsSummaryCache).evict(travelerId);
+        // La clé inclut la période : chaque entrée du voyageur doit être évincée,
+        // sinon un seul intervalle refléterait la livraison.
+        for (String period : TripsSummaryService.SUPPORTED_PERIODS) {
+            verify(tripsSummaryCache).evict(travelerId + "-" + period);
+        }
     }
 
     @Test
