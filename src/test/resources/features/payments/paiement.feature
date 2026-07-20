@@ -16,13 +16,14 @@ Fonctionnalité: Gestion des paiements en escrow
     Alors la réponse HTTP est 404
 
   @error-case
-  Scénario: Tentative de paiement pour une offre non acceptée
+  Scénario: Tentative de paiement pour une offre annulée
     Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-pay-002" et le téléphone "+33699000003"
     Et il existe une annonce de "Paris" à "Dakar" avec 20 kg disponibles à 5.0 €/kg sauvegardée sous "annonce-pay-2"
     Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "sender-pay-002" et le téléphone "+33699000004"
     Et je dépose une offre de 5.0 kg à 50.0 € sur l'annonce "annonce-pay-2"
     Et l'offre "offre-pay-2" est sauvegardée
-    Quand je tente de créer un paiement pour l'offre "offre-pay-2"
+    Quand l'expéditeur annule l'offre "offre-pay-2"
+    Et je tente de créer un paiement pour l'offre "offre-pay-2"
     Alors la réponse HTTP est 422
 
   @happy-path @critical

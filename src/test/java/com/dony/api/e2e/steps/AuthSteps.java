@@ -44,6 +44,16 @@ public class AuthSteps extends AbstractSteps {
                 "phoneNumber", phone,
                 "roles", Set.of("TRAVELER")
         )).post("/auth/register"));
+        // Depuis le voyageur universel (Stripe = capacité optionnelle), un trajet
+        // publié sans Stripe complet est cash-only par défaut — la plupart des
+        // scénarios e2e déposent un bid sans préciser de méthode (défaut STRIPE)
+        // et n'ont pas vocation à tester ce cas-là. On onboarde Stripe par défaut
+        // ici ; les scénarios qui testent explicitement l'absence de carte
+        // utilisent leurs propres steps dédiés (ex. TestDataSteps).
+        jdbcTemplate.update(
+                "UPDATE users SET stripe_account_status = 'ONBOARDING_COMPLETE', "
+                        + "stripe_account_id = ? WHERE firebase_uid = ?",
+                "acct_test_" + uid, uid);
         // Test travelers accept non-KYC-verified senders so bids aren't blocked by
         // the default contactKycOnly=true preference (real KYC isn't run in E2E).
         asCurrentUser().body(Map.of("contactKycOnly", false)).put("/auth/me/privacy-settings");
