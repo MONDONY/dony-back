@@ -62,6 +62,20 @@ public class TestDataSteps extends AbstractSteps {
                 "acct_test_" + uid, uid);
     }
 
+    /**
+     * Contrepartie de givenStripeOperational : annule l'onboarding Stripe par
+     * défaut appliqué à l'inscription (AuthSteps.givenRegisteredTraveler),
+     * pour les scénarios qui testent explicitement la création du compte
+     * Connect depuis un état vierge.
+     */
+    @Etantdonné("le voyageur {string} n'a pas encore de compte Stripe")
+    public void givenNoStripeAccount(String uid) {
+        jdbcTemplate.update(
+                "UPDATE users SET stripe_account_status = 'NOT_CREATED', "
+                        + "stripe_account_id = NULL WHERE firebase_uid = ?",
+                uid);
+    }
+
     @Etantdonné("l'offre {string} est marquée comme livrée")
     public void givenBidCompleted(String bidAlias) {
         jdbcTemplate.update("UPDATE bids SET status = 'COMPLETED' WHERE id = ?", ctx.getId(bidAlias));
