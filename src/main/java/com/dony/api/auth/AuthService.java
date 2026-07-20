@@ -83,7 +83,7 @@ public class AuthService {
         if (deleted.isPresent()) {
             userRepository.reactivateByFirebaseUid(firebaseUid, UserStatus.ACTIVE.name());
             UserEntity reactivated = userRepository.findByFirebaseUid(firebaseUid).orElseThrow();
-            reactivated.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER)));
+            reactivated.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER, Role.TRAVELER)));
             // Reset pseudonymized fields (GDPR deletion sets placeholder values)
             reactivated.setFirstName(null);
             reactivated.setLastName(null);
@@ -382,8 +382,9 @@ public class AuthService {
     }
 
     private UserResponse createUser(String firebaseUid, FirebaseToken decodedToken, RegisterRequest request) {
-        // Tout nouveau compte reçoit uniquement SENDER — le rôle TRAVELER s'obtient via upgrade explicite
-        Set<Role> roles = new java.util.HashSet<>(Set.of(Role.SENDER));
+        // Tout compte reçoit SENDER + TRAVELER : le rôle voyageur est universel,
+        // les capacités (carte via Stripe) sont gérées séparément.
+        Set<Role> roles = new java.util.HashSet<>(Set.of(Role.SENDER, Role.TRAVELER));
 
         String signInProvider = null;
         if (decodedToken != null) {
