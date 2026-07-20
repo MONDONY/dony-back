@@ -1,17 +1,12 @@
 package com.dony.api.auth;
 
 import com.dony.api.auth.dto.UserResponse;
-import com.dony.api.auth.events.UserBecameTravelerEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
-import com.dony.api.auth.KycStatus;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -20,14 +15,11 @@ public class UserRoleService {
 
     private final UserRepository userRepository;
     private final AuditService auditService;
-    private final ApplicationEventPublisher eventPublisher;
 
     public UserRoleService(UserRepository userRepository,
-                           AuditService auditService,
-                           ApplicationEventPublisher eventPublisher) {
+                           AuditService auditService) {
         this.userRepository = userRepository;
         this.auditService = auditService;
-        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -41,29 +33,16 @@ public class UserRoleService {
             return toResponse(user);
         }
 
-        List<String> missing = new ArrayList<>();
-        if (user.getKycStatus() != KycStatus.VERIFIED) {
-            missing.add("KYC_NOT_VERIFIED");
-        }
-        if (user.getStripeAccountStatus() != StripeAccountStatus.ONBOARDING_COMPLETE) {
-            missing.add("STRIPE_ACCOUNT_NOT_COMPLETE");
-        }
-
-        if (!missing.isEmpty()) {
-            throw new DonyBusinessException(
-                    HttpStatus.CONFLICT,
-                    "traveler-upgrade-requirements-missing",
-                    "Requirements Missing",
-                    "Pré-requis manquants pour devenir transporteur",
-                    Map.of("missingRequirements", missing));
-        }
-
+        // Rôle universel : tout utilisateur obtient déjà TRAVELER à l'inscription
+        // (ou via la migration de backfill V176) — cet endpoint ne fait plus que
+        // confirmer/compléter l'état pour les comptes pré-migration, sans prérequis
+        // KYC/Stripe (le voyageur cash-only est autorisé, cf. gate conditionnel
+        // dans AnnouncementService/BidService).
         user.getRoles().add(Role.TRAVELER);
         userRepository.save(user);
 
         auditService.log("USER", user.getId(), "USER_ROLE_ADDED", user.getId(),
                 Map.of("role", "TRAVELER"));
-        eventPublisher.publishEvent(new UserBecameTravelerEvent(user.getId()));
 
         return toResponse(user);
     }

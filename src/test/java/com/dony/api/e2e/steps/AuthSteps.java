@@ -26,8 +26,9 @@ public class AuthSteps extends AbstractSteps {
 
     /**
      * Simulates a completed KYC + Stripe Connect onboarding for the current user.
-     * Real KYC/Stripe flows aren't run in E2E, and activateTravelerRole() hard-requires
-     * both (independent of the dony.kyc.enforce flag) — so this is the test bridge.
+     * Real KYC/Stripe flows aren't run in E2E. Note: activateTravelerRole() no longer
+     * gates on KYC/Stripe (universal traveler role, Task 4) — this step remains as a
+     * test bridge for scenarios that still assert on a fully onboarded user.
      */
     @Etantdonné("mon KYC est vérifié et mon compte Stripe est complet")
     public void givenKycAndStripeComplete() {
@@ -74,8 +75,10 @@ public class AuthSteps extends AbstractSteps {
 
     @Quand("j'active mon rôle voyageur")
     public void whenActivateTraveler() {
-        // Registration always grants SENDER only; TRAVELER is obtained via this
-        // explicit activation (POST /users/me/roles/traveler/activate, requires SENDER).
+        // Registration already grants both SENDER and TRAVELER (universal traveler
+        // role, Task 1). This endpoint is kept for backward compatibility with
+        // already-deployed app versions — activation is now idempotent (no-op if the
+        // user already has TRAVELER, e.g. via migration V176 backfill).
         ctx.setCurrentUser(ctx.getCurrentUid(), "ROLE_SENDER");
         store(asCurrentUser().post("/users/me/roles/traveler/activate"));
     }
