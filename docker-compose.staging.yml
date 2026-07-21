@@ -3,26 +3,14 @@ services:
     image: ghcr.io/mondony/dony-back:staging
     container_name: dony_api
     restart: unless-stopped
+    # Secrets provisionnés via .env.staging (déposé par le workflow de déploiement) :
+    # une variable ajoutée là-bas atteint le conteneur sans toucher au compose.
+    env_file:
+      - .env.staging
     environment:
       SPRING_PROFILES_ACTIVE: staging
       GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-      STRIPE_WEBHOOK_PAYMENTS_SECRET: ${STRIPE_WEBHOOK_PAYMENTS_SECRET}
-      STRIPE_WEBHOOK_KYC_SECRET: ${STRIPE_WEBHOOK_KYC_SECRET}
-      SENTRY_DSN: ${SENTRY_DSN}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
-      AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT}
-      AWS_S3_REGION: ${AWS_S3_REGION}
-      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
-      AWS_S3_ACCESS_KEY: ${AWS_S3_ACCESS_KEY}
-      AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
       APP_BASE_URL: https://api-staging.dony.store
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       SPRING_DATASOURCE_URL: jdbc:postgresql://dony_db_staging:5432/dony_staging
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}

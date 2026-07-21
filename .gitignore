@@ -6,6 +6,10 @@ target/
 
 # Environment variables (secrets)
 .env*
+# … sauf les templates (sans secret)
+!.env.example
+!.env.staging.template
+!.env.prod.template
 !.env.staging.template
 /.env.staging
 
