@@ -38,6 +38,7 @@ public class AdminUserController {
         this.userRepository = userRepository;
     }
 
+    @PreAuthorize("hasAuthority('USER_VIEW')")
     @GetMapping
     public Page<AdminUserListItemResponse> listUsers(
             @RequestParam(required = false) UserStatus status,
@@ -65,6 +66,7 @@ public class AdminUserController {
         ).map(AdminUserListItemResponse::from);
     }
 
+    @PreAuthorize("hasAuthority('USER_VIEW')")
     @GetMapping("/{userId}")
     public AdminUserDetailResponse getUser(@PathVariable UUID userId) {
         UserEntity user = userRepository.findById(userId)
@@ -73,23 +75,27 @@ public class AdminUserController {
         return AdminUserDetailResponse.from(user);
     }
 
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/suspend")
     public AdminUserDetailResponse suspendUser(@PathVariable UUID userId,
             @RequestBody SuspendBanRequest request) {
         return AdminUserDetailResponse.from(userService.suspendUser(userId, request.reason()));
     }
 
+    @PreAuthorize("hasAuthority('USER_BAN')")
     @PostMapping("/{userId}/ban")
     public AdminUserDetailResponse banUser(@PathVariable UUID userId,
             @RequestBody SuspendBanRequest request) {
         return AdminUserDetailResponse.from(userService.banUser(userId, request.reason()));
     }
 
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/unsuspend")
     public AdminUserDetailResponse unsuspendUser(@PathVariable UUID userId) {
         return AdminUserDetailResponse.from(userService.unsuspendUser(userId));
     }
 
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/suspend-publishing")
     public ResponseEntity<Void> suspendPublishing(@PathVariable UUID userId,
             @RequestParam(required = false) String reason) {
@@ -97,12 +103,14 @@ public class AdminUserController {
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/lift-publishing-suspension")
     public ResponseEntity<Void> liftPublishingSuspension(@PathVariable UUID userId) {
         userService.liftPublishingSuspension(userId);
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAuthority('USER_COMMISSION')")
     @PutMapping("/{userId}/commission-rate")
     public AdminUserDetailResponse setCommissionRate(
             @PathVariable UUID userId,

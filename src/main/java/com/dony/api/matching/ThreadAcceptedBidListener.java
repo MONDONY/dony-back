@@ -201,7 +201,7 @@ public class ThreadAcceptedBidListener {
         }
         if (!copied.isEmpty()) {
             try {
-                bidPhotoService.attachPhotos(bidId, copied);
+                bidPhotoService.attachPhotos(bidId, senderId, copied);
             } catch (Exception ex) {
                 log.error("Échec attache photos copiées au bid {}: {}", bidId, ex.toString());
             }

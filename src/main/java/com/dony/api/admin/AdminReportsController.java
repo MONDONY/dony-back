@@ -50,6 +50,7 @@ public class AdminReportsController {
         this.reportService = reportService;
     }
 
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @GetMapping("/admin/reports")
     public ResponseEntity<Page<AdminReportResponse>> listReports(
             @RequestParam(required = false) ReportStatus status,
@@ -77,6 +78,7 @@ public class AdminReportsController {
         return ResponseEntity.ok(result);
     }
 
+    @PreAuthorize("hasAuthority('REPORT_RESOLVE')")
     @PostMapping("/admin/reports/{id}/resolve")
     @Transactional
     public ResponseEntity<AdminReportResponse> resolveReport(

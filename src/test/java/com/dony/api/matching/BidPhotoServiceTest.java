@@ -36,10 +36,12 @@ class BidPhotoServiceTest {
     @Captor private ArgumentCaptor<List<BidPhotoEntity>> rowsCaptor;
 
     private static final UUID BID = UUID.randomUUID();
+    private static final UUID SENDER = UUID.randomUUID();
 
     @Test
     void attachPhotos_persistsActiveRowsWithPositions() {
-        service.attachPhotos(BID, List.of("bids/s/1.jpg", "bids/s/2.jpg"));
+        service.attachPhotos(BID, SENDER,
+                List.of("bids/" + SENDER + "/1.jpg", "bids/" + SENDER + "/2.jpg"));
 
         verify(photoRepository).saveAll(rowsCaptor.capture());
         List<BidPhotoEntity> rows = rowsCaptor.getValue();
@@ -51,14 +53,14 @@ class BidPhotoServiceTest {
 
     @Test
     void attachPhotos_nullOrEmpty_doesNothing() {
-        service.attachPhotos(BID, null);
-        service.attachPhotos(BID, List.of());
+        service.attachPhotos(BID, SENDER, null);
+        service.attachPhotos(BID, SENDER, List.of());
         verify(photoRepository, never()).saveAll(any());
     }
 
     @Test
     void attachPhotos_tooMany_throws422() {
-        assertThatThrownBy(() -> service.attachPhotos(BID,
+        assertThatThrownBy(() -> service.attachPhotos(BID, SENDER,
                 List.of("bids/1", "bids/2", "bids/3", "bids/4", "bids/5")))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(e -> {
@@ -90,7 +92,18 @@ class BidPhotoServiceTest {
 
     @Test
     void attachPhotos_keyOutsideBidsPrefix_throws422() {
-        assertThatThrownBy(() -> service.attachPhotos(BID, List.of("kyc/evil.jpg")))
+        assertThatThrownBy(() -> service.attachPhotos(BID, SENDER, List.of("kyc/evil.jpg")))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                        .isEqualTo("invalid-photo-key"));
+    }
+
+    @Test
+    void attachPhotos_keyOfAnotherSender_throws422() {
+        // Clé valide côté préfixe bids/ mais appartenant à un autre expéditeur :
+        // doit être refusée, sinon une clé volée donne accès à la photo via URL présignée.
+        assertThatThrownBy(() -> service.attachPhotos(BID, SENDER,
+                List.of("bids/" + UUID.randomUUID() + "/1.jpg")))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                         .isEqualTo("invalid-photo-key"));

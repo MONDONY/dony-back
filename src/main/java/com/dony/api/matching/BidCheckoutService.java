@@ -218,7 +218,7 @@ public class BidCheckoutService {
             bidGridItemRepository.saveAll(bidGridItems);
         }
 
-        bidPhotoService.attachPhotos(saved.getId(), req.photoKeys());
+        bidPhotoService.attachPhotos(saved.getId(), sender.getId(), req.photoKeys());
 
         BigDecimal kgNet = hasKg && announcement.getPricePerKg() != null
             ? saved.getWeightKg().multiply(announcement.getPricePerKg())

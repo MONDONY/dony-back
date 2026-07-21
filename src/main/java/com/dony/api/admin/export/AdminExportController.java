@@ -25,7 +25,7 @@ import java.util.Objects;
  */
 @RestController
 @RequestMapping("/admin/exports")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('EXPORT_RUN')")
 public class AdminExportController {
 
     private final AdminExportService exportService;

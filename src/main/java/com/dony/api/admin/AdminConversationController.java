@@ -48,6 +48,7 @@ public class AdminConversationController {
         this.userRepository = userRepository;
     }
 
+    @PreAuthorize("hasAuthority('MODERATION_VIEW')")
     @GetMapping
     public ResponseEntity<Page<AdminConversationResponse>> listAllConversations(
             @RequestParam(required = false) Boolean flagged,
@@ -85,6 +86,7 @@ public class AdminConversationController {
         return ResponseEntity.ok(result);
     }
 
+    @PreAuthorize("hasAuthority('MODERATION_VIEW')")
     @GetMapping("/{conversationId}/messages")
     public ResponseEntity<List<AdminMessageResponse>> getMessages(@PathVariable String conversationId) {
         conversationRepository.findByFirestoreConversationId(conversationId)
@@ -114,6 +116,7 @@ public class AdminConversationController {
         return ResponseEntity.ok(messages);
     }
 
+    @PreAuthorize("hasAuthority('MESSAGE_DELETE')")
     @DeleteMapping("/{conversationId}/messages/{messageId}")
     public ResponseEntity<Void> deleteMessage(
             @PathVariable String conversationId,

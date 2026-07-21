@@ -142,7 +142,10 @@ class AdminSecurityIT {
     @DisplayName("DISABLED admin token on /admin/** → 403, filter chain not called")
     void disabledAdminToken_onAdminRoute_returns403() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
-        when(request.getRequestURI()).thenReturn("/admin/test-user-view");
+        // URI stubbée avec le context path, comme en production (/api/v1/…) —
+        // sans lui le test validait un garde-fou qui ne matchait jamais.
+        when(request.getContextPath()).thenReturn("/api/v1");
+        when(request.getRequestURI()).thenReturn("/api/v1/admin/test-user-view");
         // DISABLED resolves to empty
         when(adminAuthService.resolve(DISABLED_UID)).thenReturn(Optional.empty());
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
@@ -166,7 +169,10 @@ class AdminSecurityIT {
     @DisplayName("Non-admin token on /admin/** → 403, filter chain not called")
     void nonAdminToken_onAdminRoute_returns403() throws Exception {
         when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
-        when(request.getRequestURI()).thenReturn("/admin/test-user-view");
+        // URI stubbée avec le context path, comme en production (/api/v1/…) —
+        // sans lui le test validait un garde-fou qui ne matchait jamais.
+        when(request.getContextPath()).thenReturn("/api/v1");
+        when(request.getRequestURI()).thenReturn("/api/v1/admin/test-user-view");
         // Not an admin at all
         when(adminAuthService.resolve(NON_ADMIN_UID)).thenReturn(Optional.empty());
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));

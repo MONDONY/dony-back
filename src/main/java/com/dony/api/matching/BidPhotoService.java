@@ -41,9 +41,13 @@ public class BidPhotoService {
         }
     }
 
-    /** Persiste jusqu'à MAX_PHOTOS lignes ACTIVE pour un bid fraîchement créé. */
+    /**
+     * Persiste jusqu'à MAX_PHOTOS lignes ACTIVE pour un bid fraîchement créé.
+     * Chaque clé doit vivre sous bids/{senderId}/ : accepter tout bids/* laisserait
+     * un expéditeur rattacher (et donc lire en URL présignée) la photo d'un autre.
+     */
     @Transactional
-    public void attachPhotos(UUID bidId, List<String> photoKeys) {
+    public void attachPhotos(UUID bidId, UUID senderId, List<String> photoKeys) {
         if (photoKeys == null || photoKeys.isEmpty()) {
             return;
         }
@@ -52,10 +56,11 @@ public class BidPhotoService {
                     "too-many-photos", "Too Many Photos",
                     "Maximum " + MAX_PHOTOS + " photos par colis");
         }
+        String ownerPrefix = PHOTO_PREFIX + senderId + "/";
         List<BidPhotoEntity> rows = new ArrayList<>();
         int position = 0;
         for (String key : photoKeys) {
-            if (key == null || !key.startsWith(PHOTO_PREFIX)) {
+            if (key == null || !key.startsWith(ownerPrefix)) {
                 throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "invalid-photo-key", "Invalid Photo Key",
                         "Clé photo invalide");

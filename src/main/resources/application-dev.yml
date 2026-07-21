@@ -56,7 +56,7 @@ firebase:
 
 dony:
   email:
-    resend-api-key: re_XUDoz7om_PorRcS2T5oic4LuvhCQBWGzy
+    resend-api-key: ${RESEND_API_KEY:}
     from-address: noreply@dony.store
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
   kyc:

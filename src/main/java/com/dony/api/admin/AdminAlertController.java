@@ -27,6 +27,7 @@ public class AdminAlertController {
         this.alertRepo = alertRepo;
     }
 
+    @PreAuthorize("hasAuthority('ALERT_VIEW')")
     @GetMapping
     public ResponseEntity<Page<AdminAlertResponse>> list(
             @RequestParam(required = false) String type,
@@ -41,6 +42,7 @@ public class AdminAlertController {
         return ResponseEntity.ok(result);
     }
 
+    @PreAuthorize("hasAuthority('ALERT_RESOLVE')")
     @PostMapping("/{id}/resolve")
     @Transactional
     public ResponseEntity<AdminAlertResponse> resolve(

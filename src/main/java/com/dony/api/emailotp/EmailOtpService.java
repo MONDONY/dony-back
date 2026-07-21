@@ -72,7 +72,19 @@ public class EmailOtpService {
     }
 
     public String verifyOtp(String email, String code) {
-        log.info("verifyOtp: email='{}' length={}", email, email == null ? -1 : email.length());
+        log.info("verifyOtp: email='{}'", maskEmail(email));
+
+        // Budget global par adresse : sans lui, chaque renvoi de code offrirait
+        // 5 essais frais (le compteur vit sur le token, et la vérification lit
+        // toujours le token le plus récent).
+        LocalDateTime attemptsSince =
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(OTP_VALID_MINUTES);
+        if (emailOtpRepository.sumAttemptsByEmailSince(email, attemptsSince) >= MAX_ATTEMPTS) {
+            throw new DonyBusinessException(
+                    HttpStatus.TOO_MANY_REQUESTS, "otp-attempts-exceeded",
+                    "Too Many Attempts", "Trop de tentatives échouées");
+        }
+
         EmailOtpEntity token = emailOtpRepository
                 .findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(email)
                 .orElseThrow(() -> new DonyBusinessException(
@@ -121,5 +133,17 @@ public class EmailOtpService {
                     HttpStatus.INTERNAL_SERVER_ERROR, "firebase-error",
                     "Firebase Error", "Erreur lors de la création du token");
         }
+    }
+
+    /** Les logs partent vers Loki : jamais d'adresse complète en clair. */
+    private static String maskEmail(String email) {
+        if (email == null) {
+            return "null";
+        }
+        int at = email.indexOf('@');
+        if (at <= 1) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 }

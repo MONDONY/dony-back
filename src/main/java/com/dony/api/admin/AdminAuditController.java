@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/admin/audit-log")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('AUDIT_VIEW')")
 public class AdminAuditController {
 
     private final AuditLogRepository auditRepo;
