@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -255,6 +256,129 @@ class MatchingServiceTest {
 
             assertThat(matchingService.findTravelersMatchingPackage(REQUEST_ID))
                     .containsExactly(TRAVELER_ID);
+        }
+    }
+
+    @Nested
+    @DisplayName("findBestMatchByRequestId")
+    class FindBestMatchByRequestId {
+
+        @Test
+        void findBestMatchByRequestId_dedupliqueUneDemandeCompatibleAvecDeuxTrajets() throws Exception {
+            UUID travelerId = UUID.randomUUID();
+            UUID requestId = UUID.randomUUID();
+
+            // Deux trajets du même voyageur sur le même corridor, à des dates proches.
+            AnnouncementEntity trajetFaible = new AnnouncementEntity();
+            setField(trajetFaible, "id", UUID.randomUUID());
+            trajetFaible.setTravelerId(travelerId);
+            trajetFaible.setDepartureCity("Paris");
+            trajetFaible.setArrivalCity("Dakar");
+            trajetFaible.setDepartureDate(LocalDate.of(2026, 8, 20));
+            trajetFaible.setAvailableKg(new BigDecimal("8"));
+            trajetFaible.setPricePerKg(new BigDecimal("20"));
+
+            AnnouncementEntity trajetFort = new AnnouncementEntity();
+            setField(trajetFort, "id", UUID.randomUUID());
+            trajetFort.setTravelerId(travelerId);
+            trajetFort.setDepartureCity("Paris");
+            trajetFort.setArrivalCity("Dakar");
+            trajetFort.setDepartureDate(LocalDate.of(2026, 8, 10));
+            trajetFort.setAvailableKg(new BigDecimal("30"));
+            trajetFort.setPricePerKg(new BigDecimal("5"));
+
+            PackageRequestEntity demande = new PackageRequestEntity();
+            setField(demande, "id", requestId);
+            demande.setSenderId(UUID.randomUUID());
+            demande.setStatus(PackageRequestStatus.OPEN);
+            demande.setDepartureCity("Paris");
+            demande.setArrivalCity("Dakar");
+            demande.setDesiredDate(LocalDate.of(2026, 8, 10));
+            demande.setDateToleranceDays((short) 15);
+            demande.setWeightKg(new BigDecimal("2"));
+            demande.setTargetPriceEur(new BigDecimal("40"));
+            setField(demande, "createdAt", LocalDateTime.of(2026, 7, 1, 10, 0));
+
+            UserEntity expediteur = new UserEntity();
+            setField(expediteur, "id", demande.getSenderId());
+
+            when(announcementRepository.findActiveByTravelerId(travelerId))
+                    .thenReturn(List.of(trajetFaible, trajetFort));
+            when(packageRequestRepository.findOpenByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(demande));
+            when(userRepository.findById(demande.getSenderId()))
+                    .thenReturn(Optional.of(expediteur));
+
+            Map<UUID, MatchingService.MatchInfo> result = matchingService.findBestMatchByRequestId(travelerId);
+
+            assertThat(result).hasSize(1);
+            MatchingService.MatchInfo info = result.get(requestId);
+            assertThat(info.tripId()).isEqualTo(trajetFort.getId());
+            assertThat(info.tripDepartureDate()).isEqualTo(LocalDate.of(2026, 8, 10));
+            assertThat(info.matchScore()).isGreaterThan(0);
+        }
+
+        @Test
+        void findBestMatchByRequestId_ordonneParScoreDecroissant() throws Exception {
+            UUID travelerId = UUID.randomUUID();
+
+            AnnouncementEntity trajet = new AnnouncementEntity();
+            setField(trajet, "id", UUID.randomUUID());
+            trajet.setTravelerId(travelerId);
+            trajet.setDepartureCity("Paris");
+            trajet.setArrivalCity("Dakar");
+            trajet.setDepartureDate(LocalDate.of(2026, 8, 10));
+            trajet.setAvailableKg(new BigDecimal("30"));
+            trajet.setPricePerKg(new BigDecimal("10"));
+
+            // Budget généreux + colis léger + date exacte → score élevé.
+            PackageRequestEntity forte = new PackageRequestEntity();
+            setField(forte, "id", UUID.randomUUID());
+            forte.setSenderId(UUID.randomUUID());
+            forte.setStatus(PackageRequestStatus.OPEN);
+            forte.setDepartureCity("Paris");
+            forte.setArrivalCity("Dakar");
+            forte.setDesiredDate(LocalDate.of(2026, 8, 10));
+            forte.setDateToleranceDays((short) 5);
+            forte.setWeightKg(new BigDecimal("1"));
+            forte.setTargetPriceEur(new BigDecimal("50"));
+            setField(forte, "createdAt", LocalDateTime.of(2026, 7, 1, 10, 0));
+
+            // Budget serré + colis lourd → score bas.
+            PackageRequestEntity faible = new PackageRequestEntity();
+            setField(faible, "id", UUID.randomUUID());
+            faible.setSenderId(UUID.randomUUID());
+            faible.setStatus(PackageRequestStatus.OPEN);
+            faible.setDepartureCity("Paris");
+            faible.setArrivalCity("Dakar");
+            faible.setDesiredDate(LocalDate.of(2026, 8, 10));
+            faible.setDateToleranceDays((short) 5);
+            faible.setWeightKg(new BigDecimal("28"));
+            faible.setTargetPriceEur(new BigDecimal("30"));
+            setField(faible, "createdAt", LocalDateTime.of(2026, 7, 1, 10, 0));
+
+            UserEntity u1 = new UserEntity();
+            setField(u1, "id", forte.getSenderId());
+            UserEntity u2 = new UserEntity();
+            setField(u2, "id", faible.getSenderId());
+
+            when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of(trajet));
+            when(packageRequestRepository.findOpenByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(faible, forte));
+            when(userRepository.findById(forte.getSenderId())).thenReturn(Optional.of(u1));
+            when(userRepository.findById(faible.getSenderId())).thenReturn(Optional.of(u2));
+
+            Map<UUID, MatchingService.MatchInfo> result = matchingService.findBestMatchByRequestId(travelerId);
+
+            assertThat(result.keySet()).containsExactly(forte.getId(), faible.getId());
+        }
+
+        @Test
+        void findBestMatchByRequestId_aucunTrajetActif_retourneMapVide() {
+            UUID travelerId = UUID.randomUUID();
+            when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of());
+
+            assertThat(matchingService.findBestMatchByRequestId(travelerId)).isEmpty();
         }
     }
 

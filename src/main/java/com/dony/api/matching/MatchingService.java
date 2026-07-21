@@ -10,11 +10,16 @@ import com.dony.api.requests.repository.PackageRequestRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class MatchingService {
@@ -56,6 +61,57 @@ public class MatchingService {
 
         results.sort((a, b) -> Integer.compare(b.matchScore(), a.matchScore()));
         return results;
+    }
+
+    /**
+     * Meilleur match par demande pour un voyageur : identifiant du trajet retenu,
+     * sa date de départ, et le score de compatibilité.
+     */
+    public record MatchInfo(UUID requestId, UUID tripId, LocalDate tripDepartureDate, int matchScore) {}
+
+    /**
+     * Variante dédupliquée de {@link #findMatchingRequests} destinée à la recherche
+     * paginée de demandes (paramètre {@code matchingMyTrips}).
+     *
+     * <p>{@link #findMatchingRequests} produit un DTO par couple (trajet, demande) :
+     * une demande compatible avec deux trajets du voyageur y figure deux fois. Ici
+     * on ne conserve qu'une entrée par demande, celle du meilleur score, et la map
+     * est ordonnée par score décroissant, cet ordre porte le tri de la page.
+     */
+    public Map<UUID, MatchInfo> findBestMatchByRequestId(UUID travelerId) {
+        List<AnnouncementEntity> activeAnnouncements =
+                announcementRepository.findActiveByTravelerId(travelerId);
+
+        Map<UUID, MatchInfo> best = new HashMap<>();
+
+        for (AnnouncementEntity announcement : activeAnnouncements) {
+            List<PackageRequestEntity> candidates = packageRequestRepository
+                    .findOpenByCorridor(announcement.getDepartureCity(), announcement.getArrivalCity());
+
+            for (PackageRequestEntity request : candidates) {
+                if (!fitsWeight(request, announcement)) continue;
+                if (!fitsDate(request, announcement)) continue;
+                if (userRepository.findById(request.getSenderId()).isEmpty()) continue;
+
+                int score = computeMatchScore(request, announcement, computeBudgetPerKg(request));
+                MatchInfo current = best.get(request.getId());
+                if (current == null || score > current.matchScore()) {
+                    best.put(request.getId(), new MatchInfo(
+                            request.getId(),
+                            announcement.getId(),
+                            announcement.getDepartureDate(),
+                            score));
+                }
+            }
+        }
+
+        return best.values().stream()
+                .sorted((a, b) -> Integer.compare(b.matchScore(), a.matchScore()))
+                .collect(Collectors.toMap(
+                        MatchInfo::requestId,
+                        m -> m,
+                        (a, b) -> a,
+                        LinkedHashMap::new));
     }
 
     /**
