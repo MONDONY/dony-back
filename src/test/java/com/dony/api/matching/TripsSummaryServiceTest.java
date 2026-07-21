@@ -3,6 +3,7 @@ package com.dony.api.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.dony.api.auth.UserEntity;
@@ -10,13 +11,18 @@ import com.dony.api.matching.dto.TripsSummaryDto;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,6 +31,8 @@ class TripsSummaryServiceTest {
     @Mock private AnnouncementRepository announcementRepository;
     @Mock private BidRepository bidRepository;
     @Mock private PaymentRepository paymentRepository;
+    @Mock private CacheManager cacheManager;
+    @Mock private Cache cache;
 
     private TripsSummaryService service;
     private UserEntity traveler;
@@ -32,7 +40,7 @@ class TripsSummaryServiceTest {
     @BeforeEach
     void setUp() {
         service = new TripsSummaryService(
-                announcementRepository, bidRepository, paymentRepository);
+                announcementRepository, bidRepository, paymentRepository, cacheManager);
         traveler = new UserEntity();
         ReflectionTestUtils.setField(traveler, "id", UUID.randomUUID());
     }
@@ -50,11 +58,11 @@ class TripsSummaryServiceTest {
                 eq(traveler.getId()), eq(PaymentStatus.RELEASED), any(), any()))
                 .thenReturn(new BigDecimal("152.4567"));
 
-        TripsSummaryDto dto = service.computeSummary(traveler);
+        TripsSummaryDto dto = service.computeSummary(traveler, StatsPeriod.DEFAULT);
 
         assertThat(dto.activeTrips()).isEqualTo(3);
-        assertThat(dto.kgSoldThisMonth()).isEqualByComparingTo("19.0");
-        assertThat(dto.revenueThisMonth()).isEqualByComparingTo("152.46");
+        assertThat(dto.kgSold()).isEqualByComparingTo("19.0");
+        assertThat(dto.revenue()).isEqualByComparingTo("152.46");
     }
 
     @Test
@@ -66,10 +74,78 @@ class TripsSummaryServiceTest {
         when(paymentRepository.sumCapturedRevenueForTraveler(any(), any(), any(), any()))
                 .thenReturn(null);
 
-        TripsSummaryDto dto = service.computeSummary(traveler);
+        TripsSummaryDto dto = service.computeSummary(traveler, StatsPeriod.DEFAULT);
 
         assertThat(dto.activeTrips()).isZero();
-        assertThat(dto.kgSoldThisMonth()).isEqualByComparingTo("0");
-        assertThat(dto.revenueThisMonth()).isEqualByComparingTo("0");
+        assertThat(dto.kgSold()).isEqualByComparingTo("0");
+        assertThat(dto.revenue()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void computeSummary_exposes_the_legacy_aliases_with_the_same_values() {
+        when(bidRepository.sumDeliveredKgForTraveler(any(), any(), any(), any()))
+                .thenReturn(new BigDecimal("4.0"));
+        when(paymentRepository.sumCapturedRevenueForTraveler(any(), any(), any(), any()))
+                .thenReturn(new BigDecimal("40.00"));
+
+        TripsSummaryDto dto = service.computeSummary(traveler, StatsPeriod.LAST_7_DAYS);
+
+        // Les clients déployés lisent encore les noms « ThisMonth » : ce sont
+        // des alias de sérialisation, ils ne peuvent pas diverger.
+        assertThat(dto.kgSoldThisMonth()).isEqualByComparingTo(dto.kgSold());
+        assertThat(dto.revenueThisMonth()).isEqualByComparingTo(dto.revenue());
+        assertThat(dto.period()).isEqualTo("7d");
+    }
+
+    @Test
+    void computeSummary_narrows_the_window_for_shorter_periods() {
+        ArgumentCaptor<LocalDateTime> from = ArgumentCaptor.forClass(LocalDateTime.class);
+        when(bidRepository.sumDeliveredKgForTraveler(
+                any(), any(), from.capture(), any())).thenReturn(BigDecimal.ZERO);
+
+        service.computeSummary(traveler, StatsPeriod.LAST_7_DAYS);
+        LocalDateTime sevenDays = from.getValue();
+
+        service.computeSummary(traveler, StatsPeriod.LAST_12_MONTHS);
+        LocalDateTime twelveMonths = from.getValue();
+
+        assertThat(twelveMonths).isBefore(sevenDays);
+        assertThat(sevenDays.toLocalDate()).isEqualTo(LocalDate.now().minusDays(7));
+        assertThat(twelveMonths.toLocalDate()).isEqualTo(LocalDate.now().minusMonths(12));
+    }
+
+    @Test
+    void computeSummary_counts_trips_published_and_parcels_sent() {
+        when(announcementRepository.countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                eq(traveler.getId()), any(), any(), eq(AnnouncementStatus.DRAFT)))
+                .thenReturn(2L);
+        when(bidRepository.countParcelsSentBySender(
+                eq(traveler.getId()), any(), any(), any())).thenReturn(5L);
+
+        TripsSummaryDto dto = service.computeSummary(traveler, StatsPeriod.DEFAULT);
+
+        assertThat(dto.tripsPublished()).isEqualTo(2);
+        assertThat(dto.parcelsSent()).isEqualTo(5);
+    }
+
+    @Test
+    void evictSummary_clears_every_period_of_the_traveler() {
+        UUID travelerId = UUID.randomUUID();
+        when(cacheManager.getCache(TripsSummaryService.CACHE_NAME)).thenReturn(cache);
+
+        service.evictSummary(travelerId);
+
+        // Une période oubliée resterait cachée jusqu'au TTL : l'éviction
+        // parcourt l'enum plutôt qu'une liste de clés écrite à la main.
+        for (StatsPeriod period : StatsPeriod.values()) {
+            verify(cache).evict(StatsPeriod.cacheKey(travelerId, period));
+        }
+    }
+
+    @Test
+    void evictSummary_is_a_noop_when_the_cache_is_absent() {
+        when(cacheManager.getCache(TripsSummaryService.CACHE_NAME)).thenReturn(null);
+
+        service.evictSummary(UUID.randomUUID());
     }
 }

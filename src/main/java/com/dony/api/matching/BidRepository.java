@@ -244,6 +244,24 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     long countByStatusAndSenderId(@Param("status") BidStatus status, @Param("senderId") UUID senderId);
 
     /**
+     * Counts parcels the user sent over a period, for the "Envois" activity statistic.
+     * Excludes bids that never became a real shipment (never paid, refused, cancelled).
+     */
+    @Query("""
+        SELECT COUNT(b)
+        FROM BidEntity b
+        WHERE b.senderId = :senderId
+          AND b.createdAt BETWEEN :from AND :to
+          AND b.deletedAt IS NULL
+          AND b.status NOT IN :excludedStatuses
+    """)
+    long countParcelsSentBySender(
+            @Param("senderId") UUID senderId,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to,
+            @Param("excludedStatuses") java.util.Collection<BidStatus> excludedStatuses);
+
+    /**
      * Returns past completed bookings for a sender, with traveler info and how many trips
      * that sender has done with each traveler. Used by the rebooking feature.
      */

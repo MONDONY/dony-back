@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,11 +29,16 @@ public class TripsSummaryController {
     }
 
     /**
-     * Résumé d'activité voyageur (bandeau stats « Mes trajets »).
+     * Résumé d'activité voyageur (statistiques du hub Activités).
      * Contrairement à /me/stats, accessible à tout voyageur (pas de gate Pro).
+     *
+     * @param period {@code 7d}, {@code 30d} (défaut) ou {@code 12m}. Une valeur
+     *               inconnue retombe silencieusement sur le défaut plutôt que
+     *               de renvoyer une erreur.
      */
     @GetMapping("/me/trips-summary")
-    public ResponseEntity<TripsSummaryDto> getMyTripsSummary() {
+    public ResponseEntity<TripsSummaryDto> getMyTripsSummary(
+            @RequestParam(required = false) String period) {
         String firebaseUid = requireFirebaseUid();
 
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
@@ -47,7 +53,8 @@ public class TripsSummaryController {
                     "Réservé aux voyageurs.");
         }
 
-        return ResponseEntity.ok(tripsSummaryService.computeSummary(user));
+        return ResponseEntity.ok(
+                tripsSummaryService.computeSummary(user, StatsPeriod.fromApiValue(period)));
     }
 
     private String requireFirebaseUid() {

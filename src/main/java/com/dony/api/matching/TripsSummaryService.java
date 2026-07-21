@@ -7,10 +7,10 @@ import com.dony.api.payments.PaymentStatus;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,58 +18,91 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TripsSummaryService {
 
+    public static final String CACHE_NAME = "trips-summary";
+
     private static final List<AnnouncementStatus> ACTIVE_STATUSES = List.of(
             AnnouncementStatus.ACTIVE,
             AnnouncementStatus.FULL,
             AnnouncementStatus.IN_PROGRESS);
 
+    /** Bids qui ne sont jamais devenus un envoi réel — exclus du compte « colis envoyés ». */
+    private static final List<BidStatus> NON_SHIPMENT_STATUSES = List.of(
+            BidStatus.AWAITING_PAYMENT,
+            BidStatus.REJECTED,
+            BidStatus.CANCELLED,
+            BidStatus.EXPIRED);
+
     private final AnnouncementRepository announcementRepository;
     private final BidRepository bidRepository;
     private final PaymentRepository paymentRepository;
+    private final CacheManager cacheManager;
 
     public TripsSummaryService(
             AnnouncementRepository announcementRepository,
             BidRepository bidRepository,
-            PaymentRepository paymentRepository) {
+            PaymentRepository paymentRepository,
+            CacheManager cacheManager) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
         this.paymentRepository = paymentRepository;
+        this.cacheManager = cacheManager;
     }
 
-    @Cacheable(cacheNames = "trips-summary", key = "#traveler.id")
+    @Cacheable(
+            cacheNames = CACHE_NAME,
+            key = "T(com.dony.api.matching.StatsPeriod).cacheKey(#traveler.id, #period)")
     @Transactional(readOnly = true)
-    public TripsSummaryDto computeSummary(UserEntity traveler) {
+    public TripsSummaryDto computeSummary(UserEntity traveler, StatsPeriod period) {
         UUID userId = traveler.getId();
-        YearMonth current = YearMonth.now();
-        LocalDateTime monthStart = current.atDay(1).atStartOfDay();
-        LocalDateTime monthEnd = current.atEndOfMonth().atTime(23, 59, 59);
+        LocalDateTime from = period.start();
+        LocalDateTime to = LocalDateTime.now();
 
+        // activeTrips est un état courant, pas une mesure de période : il ne
+        // dépend pas de l'intervalle demandé.
         long activeTrips = announcementRepository
                 .countByTravelerIdAndStatusIn(userId, ACTIVE_STATUSES);
 
         BigDecimal kgSold = bidRepository.sumDeliveredKgForTraveler(
-                userId, BidStatus.COMPLETED, monthStart, monthEnd);
+                userId, BidStatus.COMPLETED, from, to);
 
         BigDecimal revenue = paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, monthStart, monthEnd);
+                userId, PaymentStatus.RELEASED, from, to);
 
-        return new TripsSummaryDto(
+        long tripsPublished = announcementRepository
+                .countByTravelerIdAndCreatedAtBetweenAndStatusNot(
+                        userId, from, to, AnnouncementStatus.DRAFT);
+
+        long parcelsSent = bidRepository.countParcelsSentBySender(
+                userId, from, to, NON_SHIPMENT_STATUSES);
+
+        return TripsSummaryDto.of(
                 activeTrips,
                 kgSold != null ? kgSold : BigDecimal.ZERO,
                 revenue != null
                         ? revenue.setScale(2, RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO);
+                        : BigDecimal.ZERO,
+                tripsPublished,
+                parcelsSent,
+                period.apiValue());
     }
 
     /**
-     * Invalide le résumé caché d'un voyageur. À appeler dès que ses kg livrés ou
-     * son escrow libéré changent (livraison confirmée, paiement libéré) pour que
-     * « kg vendus ce mois » / « revenus » se rafraîchissent sans attendre le TTL
-     * Caffeine (5 min). No-op : tout le travail est fait par {@code @CacheEvict}
-     * via le proxy Spring (donc appelé depuis un autre bean, pas en interne).
+     * Invalide le résumé caché d'un voyageur, toutes périodes confondues. À
+     * appeler dès que ses kg livrés ou son escrow libéré changent (livraison
+     * confirmée, paiement libéré) pour que les statistiques se rafraîchissent
+     * sans attendre le TTL Caffeine (5 min).
+     *
+     * <p>Éviction programmatique plutôt que {@code @CacheEvict} : les clés
+     * dépendent de {@link StatsPeriod#values()}, qu'une annotation ne peut pas
+     * parcourir — une période ajoutée resterait cachée indéfiniment.
      */
-    @CacheEvict(cacheNames = "trips-summary", key = "#travelerId")
     public void evictSummary(UUID travelerId) {
-        // Intentionnellement vide.
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        if (cache == null) {
+            return;
+        }
+        for (StatsPeriod period : StatsPeriod.values()) {
+            cache.evict(StatsPeriod.cacheKey(travelerId, period));
+        }
     }
 }
