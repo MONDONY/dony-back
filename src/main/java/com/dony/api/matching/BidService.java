@@ -376,7 +376,7 @@ public class BidService {
         // happens after the sender's payment is authorized — see
         // PaymentService.promoteBidOnPaymentAuthorized().
 
-        bidPhotoService.attachPhotos(saved.getId(), request.photoKeys());
+        bidPhotoService.attachPhotos(saved.getId(), sender.getId(), request.photoKeys());
 
         return toResponse(saved, sender);
     }

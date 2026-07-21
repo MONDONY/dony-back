@@ -22,7 +22,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('BID_VIEW')")
 public class AdminBidsController {
 
     private final BidRepository bidRepo;

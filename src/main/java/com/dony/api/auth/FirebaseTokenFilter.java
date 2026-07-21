@@ -136,8 +136,11 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(adminAuth);
             return false; // not blocked
         }
-        // If request targets admin routes and caller is not an admin → 403
-        if (request.getRequestURI().startsWith("/admin/")) {
+        // If request targets admin routes and caller is not an admin → 403.
+        // getRequestURI() includes the servlet context path (/api/v1), which must be
+        // stripped or this guard never matches in production.
+        String contextPath = request.getContextPath() == null ? "" : request.getContextPath();
+        if (request.getRequestURI().startsWith(contextPath + "/admin/")) {
             writeForbidden(response, "Accès réservé aux administrateurs");
             return true;
         }

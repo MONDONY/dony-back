@@ -136,7 +136,7 @@ class ThreadAcceptedBidListenerTest {
                     "package_requests/" + SENDER_ID + "/1.jpg",
                     "package_requests/" + SENDER_ID + "/2.jpg")));
 
-            verify(bidPhotoService).attachPhotos(bidId, java.util.List.of(
+            verify(bidPhotoService).attachPhotos(bidId, SENDER_ID, java.util.List.of(
                     "bids/" + SENDER_ID + "/copy1.jpg", "bids/" + SENDER_ID + "/copy2.jpg"));
         }
 
@@ -155,7 +155,7 @@ class ThreadAcceptedBidListenerTest {
                     "package_requests/" + SENDER_ID + "/ok.jpg")));
 
             verify(bidRepository).save(any(BidEntity.class));
-            verify(bidPhotoService).attachPhotos(bidId, java.util.List.of("bids/" + SENDER_ID + "/ok-copy.jpg"));
+            verify(bidPhotoService).attachPhotos(bidId, SENDER_ID, java.util.List.of("bids/" + SENDER_ID + "/ok-copy.jpg"));
         }
 
         @Test
@@ -166,7 +166,7 @@ class ThreadAcceptedBidListenerTest {
             listener.onPackageRequestAccepted(buildEventWithPhotos(java.util.List.of()));
 
             verify(storageService, never()).copyObject(any(), any());
-            verify(bidPhotoService, never()).attachPhotos(any(), any());
+            verify(bidPhotoService, never()).attachPhotos(any(), any(), any());
         }
 
         @Test

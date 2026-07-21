@@ -25,7 +25,8 @@ class ChargebackControllerIntegrationTest {
     private static UsernamePasswordAuthenticationToken adminAuth() {
         return new UsernamePasswordAuthenticationToken(
                 "admin-uid", null,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"),
+                        new SimpleGrantedAuthority("PAYMENT_VIEW")));
     }
 
     private static UsernamePasswordAuthenticationToken senderAuth() {

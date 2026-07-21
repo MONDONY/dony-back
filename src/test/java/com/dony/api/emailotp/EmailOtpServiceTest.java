@@ -137,6 +137,22 @@ class EmailOtpServiceTest {
         }
 
         @Test
+        @DisplayName("429 — le budget d'essais survit au renvoi d'un nouveau code")
+        void attemptsBudgetSurvivesResend() {
+            // 5 échecs cumulés sur d'anciens tokens : même un token tout neuf
+            // (attempts=0) doit être refusé, sinon chaque renvoi offre 5 essais frais.
+            when(emailOtpRepository.sumAttemptsByEmailSince(eq(EMAIL), any()))
+                    .thenReturn(5L);
+
+            assertThatThrownBy(() -> emailOtpService.verifyOtp(EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .extracting(e -> ((DonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            verify(emailOtpRepository, never())
+                    .findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(any());
+        }
+
+        @Test
         @DisplayName("429 — trop de tentatives échouées")
         void tooManyAttempts() {
             EmailOtpEntity token = validToken();

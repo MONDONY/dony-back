@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/admin/chargebacks")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('PAYMENT_VIEW')")
 public class AdminChargebackController {
 
     private final ChargebackRepository chargebackRepository;

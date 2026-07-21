@@ -1,10 +1,12 @@
 # Staging profile — copie durcie de prod avec logs verbeux pour diagnostic
+# Swagger désactivé comme en prod : la carte complète des endpoints ne doit pas
+# être servie anonymement sur un domaine public. Pour diagnostiquer, lancer le
+# profil dev en local ou port-forward.
 springdoc:
   api-docs:
-    enabled: true
+    enabled: false
   swagger-ui:
-    enabled: true
-    path: /swagger-ui.html
+    enabled: false
 
 server:
   forward-headers-strategy: framework
@@ -16,8 +18,8 @@ logging:
 
 spring:
   datasource:
-    url: jdbc:postgresql://dony_db_staging:5432/dony_staging
-    username: dony
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://dony_db_staging:5432/dony_staging}
+    username: ${DB_USERNAME:dony}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:

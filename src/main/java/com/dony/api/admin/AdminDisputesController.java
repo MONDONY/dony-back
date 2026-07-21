@@ -61,6 +61,7 @@ public class AdminDisputesController {
     // Disputes
     // -------------------------------------------------------------------------
 
+    @PreAuthorize("hasAuthority('DISPUTE_VIEW')")
     @GetMapping("/admin/disputes")
     public ResponseEntity<Page<AdminDisputeListItemResponse>> listDisputes(
             @RequestParam(required = false) String status,
@@ -83,6 +84,7 @@ public class AdminDisputesController {
         return ResponseEntity.ok(result);
     }
 
+    @PreAuthorize("hasAuthority('DISPUTE_VIEW')")
     @GetMapping("/admin/disputes/{id}")
     public ResponseEntity<AdminDisputeDetailResponse> getDispute(@PathVariable UUID id) {
         DisputeEntity entity = findDisputeOrThrow(id);
@@ -95,6 +97,7 @@ public class AdminDisputesController {
         return ResponseEntity.ok(toDisputeDetail(entity, usersById));
     }
 
+    @PreAuthorize("hasAuthority('DISPUTE_RESOLVE')")
     @PostMapping("/admin/disputes/{id}/resolve")
     @Transactional
     public ResponseEntity<AdminDisputeDetailResponse> resolveDispute(
@@ -122,6 +125,7 @@ public class AdminDisputesController {
         return ResponseEntity.ok(toDisputeDetail(entity, resolveUsers));
     }
 
+    @PreAuthorize("hasAuthority('DISPUTE_RESOLVE')")
     @PostMapping("/admin/disputes/{id}/guarantee-fund")
     @Transactional
     public ResponseEntity<AdminDisputeDetailResponse> payGuaranteeFund(
@@ -175,6 +179,7 @@ public class AdminDisputesController {
     // Cancellations
     // -------------------------------------------------------------------------
 
+    @PreAuthorize("hasAuthority('DISPUTE_VIEW')")
     @GetMapping("/admin/cancellations")
     public ResponseEntity<Page<AdminCancellationResponse>> listCancellations(
             @RequestParam(required = false) CancellationStatus noShowStatus,

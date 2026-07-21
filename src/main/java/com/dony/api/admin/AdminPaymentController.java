@@ -93,6 +93,7 @@ public class AdminPaymentController {
         this.chargebackRepository = chargebackRepository;
     }
 
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @GetMapping
     public ResponseEntity<Page<AdminPaymentListItemResponse>> list(
             @RequestParam(required = false) String status,
@@ -110,6 +111,7 @@ public class AdminPaymentController {
         return ResponseEntity.ok(raw.map(AdminPaymentListItemResponse::from));
     }
 
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @GetMapping("/{id}")
     public ResponseEntity<AdminPaymentDetailResponse> getById(@PathVariable UUID id) {
         PaymentEntity p = paymentRepository.findById(id)
@@ -140,6 +142,7 @@ public class AdminPaymentController {
      * </ul>
      * Marks any related ESCROW_J48_TIMEOUT alert as resolved.
      */
+    @PreAuthorize("hasAuthority('PAYMENT_RELEASE')")
     @PostMapping("/{id}/force-release")
     @Transactional
     public ResponseEntity<AdminPaymentDetailResponse> forceRelease(@PathVariable UUID id) {
@@ -276,6 +279,7 @@ public class AdminPaymentController {
      * PaymentIntent pour lever l'autorisation — {@code Refund.create} est réservé aux
      * charges déjà capturées et échoue sur un hold. On distingue donc les deux cas.
      */
+    @PreAuthorize("hasAuthority('PAYMENT_REFUND')")
     @PostMapping("/{id}/refund")
     @Transactional
     public ResponseEntity<AdminPaymentDetailResponse> refund(@PathVariable UUID id) {

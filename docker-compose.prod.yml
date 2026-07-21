@@ -3,18 +3,13 @@ services:
     image: ghcr.io/mondony/dony-back:${DONY_IMAGE_TAG:-latest}
     container_name: dony_api
     restart: unless-stopped
+    # Toutes les variables (secrets inclus) vivent dans le .env à côté de ce
+    # fichier : une variable ajoutée au .env atteint le conteneur sans toucher
+    # au compose. Les entrées environment: ne gardent que le non-secret figé.
+    env_file:
+      - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-      SENTRY_DSN: ${SENTRY_DSN}
-      AWS_S3_ENDPOINT: ${AWS_S3_ENDPOINT}
-      AWS_S3_REGION: ${AWS_S3_REGION}
-      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
-      AWS_S3_ACCESS_KEY: ${AWS_S3_ACCESS_KEY}
-      AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
     volumes:
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
     depends_on:

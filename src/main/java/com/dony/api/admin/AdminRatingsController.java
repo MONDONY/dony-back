@@ -28,7 +28,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('RATING_MODERATE')")
 public class AdminRatingsController {
 
     private final RatingRepository ratingRepo;

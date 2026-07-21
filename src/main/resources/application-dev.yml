@@ -7,8 +7,8 @@ springdoc:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/dony_dev
-    username: dony
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/dony_dev}
+    username: ${POSTGRES_USER:dony}
     password: ${POSTGRES_PASSWORD:dony_dev_password}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -56,8 +56,8 @@ firebase:
 
 dony:
   email:
-    resend-api-key: re_XUDoz7om_PorRcS2T5oic4LuvhCQBWGzy
-    from-address: noreply@dony.store
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: ${DONY_EMAIL_FROM_ADDRESS:noreply@dony.store}
     otp-template: "Ton code dony est : %s. Valable 10 minutes."
   kyc:
     enforce: false

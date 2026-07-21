@@ -33,7 +33,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/admin/promo-codes")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN') and hasAuthority('PROMO_MANAGE')")
 public class AdminPromoController {
 
     private final PromoCodeRepository promoCodeRepository;

@@ -848,11 +848,13 @@ class BidServiceTest {
 
             BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true,
-                    null, null, null, null, java.util.List.of("bids/s/1.jpg"), null);
+                    null, null, null, null,
+                    java.util.List.of("bids/" + SENDER_ID + "/1.jpg"), null);
 
             bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest);
 
-            verify(bidPhotoService).attachPhotos(eq(BID_ID), eq(java.util.List.of("bids/s/1.jpg")));
+            verify(bidPhotoService).attachPhotos(eq(BID_ID), eq(SENDER_ID),
+                    eq(java.util.List.of("bids/" + SENDER_ID + "/1.jpg")));
         }
 
         @Test

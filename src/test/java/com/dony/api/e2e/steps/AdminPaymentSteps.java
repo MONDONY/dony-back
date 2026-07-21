@@ -33,7 +33,7 @@ public class AdminPaymentSteps extends AbstractSteps {
 
     @Etantdonné("l'administrateur {string} est authentifié")
     public void givenAdminAuthenticated(String uid) {
-        ctx.setCurrentUser(uid, "ROLE_ADMIN");
+        ctx.setCurrentUser(uid, "ROLE_ADMIN,PAYMENT_VIEW,PAYMENT_RELEASE,PAYMENT_REFUND");
     }
 
     /**
