@@ -165,8 +165,7 @@ public class MatchingService {
         return announcementRepository
                 .findActiveByCorridor(request.getDepartureCity(), request.getArrivalCity())
                 .stream()
-                .filter(a -> fitsWeight(request, a))
-                .filter(a -> fitsDate(request, a))
+                .filter(a -> matches(request, a))
                 .map(AnnouncementEntity::getTravelerId)
                 .distinct()
                 .toList();

@@ -165,9 +165,14 @@ synchrone de bout en bout.
    `?page=1&size=2147483647` (paramètre client), `subList` lèverait alors une exception
    → HTTP 500. Le calcul des bornes se fait en `long` avant le cast final.
 10. **La règle de match a un point d'extension unique.** `MatchingService.matches(request,
-    announcement)` est partagée par `findMatchingRequests` et `findBestMatchByRequestId`.
-    Ajouter un critère (ex. mode de transport, catégorie) doit se faire là, pas dans une
-    des deux boucles : elles avaient divergé silencieusement avant cette factorisation.
+    announcement)` est désormais partagée par les trois chemins de matching —
+    `findMatchingRequests`, `findBestMatchByRequestId` et `findTravelersMatchingPackage`.
+    Avant cette factorisation, les boucles n'avaient pas divergé sur le poids ou la date :
+    ces deux conditions étaient déjà identiques partout. La vraie divergence portait sur
+    le **statut** des demandes retenues en amont (`OPEN` seul via `findOpenByCorridor`
+    contre `OPEN` et `NEGOTIATING` via `findOpenOrNegotiatingByCorridor`, voir point 7),
+    pas sur `matches`. Ajouter un critère (ex. mode de transport, catégorie) doit se faire
+    dans `matches`, pas dans un des trois chemins, pour que la propagation reste automatique.
 
 ## Critères d'acceptation couverts
 - [x] `GET /package-requests?matchingMyTrips=true` retourne les demandes compatibles avec
