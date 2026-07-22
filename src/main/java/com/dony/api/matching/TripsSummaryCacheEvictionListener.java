@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.matching.events.AnnouncementDeletedEvent;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.springframework.stereotype.Component;
@@ -42,5 +43,24 @@ public class TripsSummaryCacheEvictionListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentReleased(PaymentReleasedEvent event) {
         tripsSummaryService.evictSummary(event.getTravelerId());
+    }
+
+    /**
+     * Un trajet qui devient visible fait monter {@code activeTrips}, l'indicateur
+     * qui pilote côté application le garde-fou du filtre « Pour mes trajets ».
+     * Sans cette éviction, le voyageur qui publie son premier trajet retrouve la
+     * pastille grisée et le message « Aucun trajet actif » pendant tout le TTL du
+     * cache, soit cinq minutes, alors qu'il vient précisément de faire ce que le
+     * message lui demandait.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAnnouncementPublished(AnnouncementPublishedEvent event) {
+        tripsSummaryService.evictSummary(event.travelerId());
+    }
+
+    /** Symétrique : un trajet supprimé fait baisser {@code activeTrips}. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAnnouncementDeleted(AnnouncementDeletedEvent event) {
+        tripsSummaryService.evictSummary(event.travelerId());
     }
 }
