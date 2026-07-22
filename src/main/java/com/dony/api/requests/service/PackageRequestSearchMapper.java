@@ -103,7 +103,8 @@ public class PackageRequestSearchMapper {
                 entity.getAcceptedPaymentMethods(),
                 photos,
                 isFavorite,
-                computeUrgent(entity.getDesiredDate())
+                computeUrgent(entity.getDesiredDate()),
+                null, null, null
         );
     }
 
@@ -145,7 +146,8 @@ public class PackageRequestSearchMapper {
                 entity.getAcceptedPaymentMethods(),
                 photos,
                 isFavorite,
-                computeUrgent(entity.getDesiredDate())
+                computeUrgent(entity.getDesiredDate()),
+                null, null, null
         );
     }
 

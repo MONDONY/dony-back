@@ -27,7 +27,26 @@ public record PackageRequestSearchResponse(
     /** True si le voyageur authentifié a mis cette demande en favori. False pour les appelants anonymes ou non-voyageurs. */
     boolean isFavorite,
     /** True si desiredDate ∈ [today, today + dony.urgency.threshold-days] (bornes incluses, today en UTC). */
-    boolean urgent
+    boolean urgent,
+    /** Score de compatibilité 0–100 avec le meilleur trajet actif du voyageur. Null hors filtre matchingMyTrips. */
+    Integer matchScore,
+    /** Trajet du voyageur retenu pour ce match. Null hors filtre matchingMyTrips. */
+    UUID matchedTripId,
+    /** Date de départ du trajet retenu. Null hors filtre matchingMyTrips. */
+    LocalDate matchedTripDepartureDate
 ) {
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
+
+    /** Copie enrichie des informations de match. Utilisé uniquement quand matchingMyTrips est actif. */
+    public PackageRequestSearchResponse withMatch(com.dony.api.matching.MatchingService.MatchInfo info) {
+        return new PackageRequestSearchResponse(
+                id, departureCity, arrivalCity,
+                departureLat, departureLng, arrivalLat, arrivalLng,
+                desiredDate, dateToleranceDays,
+                weightKg, parcelSize, transportMode, contentCategory,
+                targetPriceEur, negotiable, photoUrl,
+                pickupNeighborhood, deliveryNeighborhood,
+                sender, acceptedPaymentMethods, photos, isFavorite, urgent,
+                info.matchScore(), info.tripId(), info.tripDepartureDate());
+    }
 }
