@@ -97,6 +97,14 @@ class PackageRequestSearchMatchingIntegrationTest {
                         .param("departure", "Paris")
                         .param("arrival", "Dakar"))
                 .andExpect(status().isOk())
+                // La demande seedée doit bien être présente dans la réponse : sans ces
+                // assertions, `$.content[0].xxx` sur un tableau vide lève une
+                // PathNotFoundException que `doesNotExist()` interprète comme un succès,
+                // rendant le test vacueux (cf. revue).
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].departureCity").value("Paris"))
+                .andExpect(jsonPath("$.content[0].arrivalCity").value("Dakar"))
                 .andExpect(jsonPath("$.content[0].matchScore").doesNotExist())
                 .andExpect(jsonPath("$.content[0].matchedTripId").doesNotExist());
     }
