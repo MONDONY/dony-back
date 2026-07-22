@@ -237,4 +237,37 @@ class PackageRequestSpecificationsTest {
         assertThat(result).isEqualTo(pred);
         verify(cb).between(any(), eq(today), eq(today.plusDays(thresholdDays)));
     }
+
+    @Test
+    @DisplayName("idIn() collection vide → retourne disjunction")
+    void idIn_collectionVide_neMatcheRien() {
+        java.util.Set<java.util.UUID> emptySet = java.util.Set.of();
+        Predicate disjunction = mock(Predicate.class);
+        when(cb.disjunction()).thenReturn(disjunction);
+
+        Specification<PackageRequestEntity> spec = PackageRequestSpecifications.idIn(emptySet);
+        Predicate result = spec.toPredicate(root, query, cb);
+
+        assertThat(result).isSameAs(disjunction);
+        verify(cb).disjunction();
+    }
+
+    @Test
+    @DisplayName("idIn() collection non-vide → utilise in() sur id")
+    @SuppressWarnings("unchecked")
+    void idIn_collectionNonVide_utiliseUnIn() {
+        java.util.UUID a = java.util.UUID.randomUUID();
+        java.util.UUID b = java.util.UUID.randomUUID();
+
+        Path<Object> idPath = mock(Path.class);
+        Predicate inPredicate = mock(Predicate.class);
+        when(root.get("id")).thenReturn(idPath);
+        when(idPath.in(any(java.util.Collection.class))).thenReturn(inPredicate);
+
+        Specification<PackageRequestEntity> spec = PackageRequestSpecifications.idIn(java.util.List.of(a, b));
+        Predicate result = spec.toPredicate(root, query, cb);
+
+        assertThat(result).isSameAs(inPredicate);
+        verify(root).get("id");
+    }
 }

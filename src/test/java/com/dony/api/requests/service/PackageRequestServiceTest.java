@@ -50,6 +50,7 @@ class PackageRequestServiceTest {
     @Mock private StorageService storageService;
     @Mock private PackageRequestPhotoService photoService;
     @Mock private FavoriteRepository favoriteRepository;
+    @Mock private com.dony.api.matching.MatchingService matchingService;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (dony.urgency.threshold-days). */
     private final DonyConfigProperties donyConfig =
             new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3));
@@ -99,7 +100,7 @@ class PackageRequestServiceTest {
         service = new PackageRequestService(
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
-                storageService, photoService, favoriteRepository, realMapper);
+                storageService, photoService, favoriteRepository, realMapper, matchingService);
     }
 
     // ========== Task 12: create() tests ==========

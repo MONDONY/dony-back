@@ -55,4 +55,16 @@ public final class PackageRequestSpecifications {
             return cb.between(root.get("desiredDate"), today, today.plusDays(thresholdDays));
         };
     }
+
+    /**
+     * Restreint aux demandes dont l'id figure dans {@code ids}.
+     * Une collection vide ne matche rien — jamais « tout » : sinon un voyageur
+     * sans trajet actif verrait toutes les demandes de la plateforme.
+     */
+    public static Specification<PackageRequestEntity> idIn(java.util.Collection<java.util.UUID> ids) {
+        return (root, query, cb) -> {
+            if (ids == null || ids.isEmpty()) return cb.disjunction();
+            return root.get("id").in(ids);
+        };
+    }
 }

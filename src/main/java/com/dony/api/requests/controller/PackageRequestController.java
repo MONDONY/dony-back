@@ -118,6 +118,7 @@ public class PackageRequestController {
             @RequestParam(required = false) BigDecimal lng,
             @RequestParam(required = false) Double radiusKm,
             @RequestParam(required = false) Boolean urgent,
+            @RequestParam(required = false) Boolean matchingMyTrips,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -132,6 +133,11 @@ public class PackageRequestController {
         }
         UUID callerId = requireUserId();
         Pageable pageable = PageRequest.of(page, size);
+        // Le filtre « mes trajets » prime sur la recherche géographique : les deux
+        // trient différemment (score vs distance) et ne se composent pas.
+        if (Boolean.TRUE.equals(matchingMyTrips)) {
+            return service.searchMatchingMyTrips(spec, pageable, callerId);
+        }
         if (lat != null && lng != null) {
             double radius = radiusKm != null ? radiusKm : 50.0;
             return service.searchNearMe(spec, pageable, lat, lng, radius, callerId);

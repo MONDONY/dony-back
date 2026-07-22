@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.matching.events.AnnouncementDeletedEvent;
 import com.dony.api.payments.events.PaymentReleasedEvent;
 import com.dony.api.tracking.events.DeliveryConfirmedEvent;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +41,31 @@ class TripsSummaryCacheEvictionListenerTest {
 
         listener.onPaymentReleased(new PaymentReleasedEvent(
                 UUID.randomUUID(), traveler, UUID.randomUUID(), BigDecimal.TEN));
+
+        verify(tripsSummaryService).evictSummary(traveler);
+    }
+
+    @Test
+    @DisplayName("trajet publié → invalide le résumé, sinon activeTrips reste "
+            + "figé et la pastille « Pour mes trajets » demeure grisée")
+    void announcementPublished_evictsTravelerSummary() {
+        var listener = new TripsSummaryCacheEvictionListener(tripsSummaryService);
+        UUID traveler = UUID.randomUUID();
+
+        listener.onAnnouncementPublished(new AnnouncementPublishedEvent(
+                UUID.randomUUID(), traveler, "Aboubakar D.", "Paris", "Abidjan"));
+
+        verify(tripsSummaryService).evictSummary(traveler);
+    }
+
+    @Test
+    @DisplayName("trajet supprimé → invalide le résumé du voyageur")
+    void announcementDeleted_evictsTravelerSummary() {
+        var listener = new TripsSummaryCacheEvictionListener(tripsSummaryService);
+        UUID traveler = UUID.randomUUID();
+
+        listener.onAnnouncementDeleted(
+                new AnnouncementDeletedEvent(UUID.randomUUID(), traveler));
 
         verify(tripsSummaryService).evictSummary(traveler);
     }

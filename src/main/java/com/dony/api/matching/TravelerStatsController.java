@@ -125,6 +125,13 @@ public class TravelerStatsController {
         return ResponseEntity.ok(new CalendarStatsResponse(activeTrips, totalMonth));
     }
 
+    /**
+     * @deprecated Remplacé par {@code GET /package-requests?matchingMyTrips=true},
+     * qui apporte la pagination, la combinaison avec les autres filtres et la
+     * déduplication par demande. Conservé le temps que les clients installés
+     * migrent. Ne pas supprimer sans vérifier les versions d'app en circulation.
+     */
+    @Deprecated(since = "2026-07-22")
     @GetMapping("/me/matching-requests")
     public ResponseEntity<List<MatchingRequestDto>> getMatchingRequests() {
         String firebaseUid = requireFirebaseUid();
