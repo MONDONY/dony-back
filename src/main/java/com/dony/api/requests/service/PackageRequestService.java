@@ -8,6 +8,7 @@ import com.dony.api.common.StorageService;
 import com.dony.api.config.ContentCategoryNormalizer;
 import com.dony.api.favorites.FavoriteRepository;
 import com.dony.api.favorites.FavoriteTargetType;
+import com.dony.api.matching.MatchingService;
 import com.dony.api.payments.cash.CommissionProperties;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.requests.RequestsConfig;
@@ -16,6 +17,7 @@ import com.dony.api.requests.entity.*;
 import com.dony.api.requests.event.*;
 import com.dony.api.requests.repository.NegotiationThreadRepository;
 import com.dony.api.requests.repository.PackageRequestRepository;
+import com.dony.api.requests.specification.PackageRequestSpecifications;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +58,7 @@ public class PackageRequestService {
     private final PackageRequestPhotoService photoService;
     private final FavoriteRepository favoriteRepository;
     private final PackageRequestSearchMapper packageRequestSearchMapper;
+    private final MatchingService matchingService;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -68,7 +71,8 @@ public class PackageRequestService {
                                   StorageService storageService,
                                   PackageRequestPhotoService photoService,
                                   FavoriteRepository favoriteRepository,
-                                  PackageRequestSearchMapper packageRequestSearchMapper) {
+                                  PackageRequestSearchMapper packageRequestSearchMapper,
+                                  MatchingService matchingService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -81,6 +85,7 @@ public class PackageRequestService {
         this.photoService = photoService;
         this.favoriteRepository = favoriteRepository;
         this.packageRequestSearchMapper = packageRequestSearchMapper;
+        this.matchingService = matchingService;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -413,6 +418,51 @@ public class PackageRequestService {
         BatchMaps batch = buildBatchMaps(page.getContent());
         return page.map(e -> packageRequestSearchMapper.toSearchResponse(
                 e, favIds.contains(e.getId()), batch.userMap, batch.cityMap, batch.photoMap));
+    }
+
+    /**
+     * Recherche restreinte aux demandes compatibles avec les trajets actifs du
+     * voyageur, triée par score de compatibilité décroissant.
+     *
+     * <p>La règle de match vit dans {@link MatchingService} et n'est pas exprimable
+     * en SQL sans la dupliquer : on récupère donc l'ensemble des ids compatibles,
+     * on applique la recherche filtrée dessus, puis on trie et pagine en mémoire.
+     * L'ensemble est borné par le nombre de matchs du voyageur, du même ordre de
+     * grandeur que ce que renvoie déjà {@code GET /travelers/me/matching-requests}
+     * sans pagination.
+     *
+     * <p>Injection {@code requests → matching} assumée : lecture synchrone
+     * unidirectionnelle nécessaire à la construction de la réponse, sans cycle.
+     * Un Spring Event ne conviendrait pas, le résultat étant attendu par l'appelant.
+     */
+    @Transactional(readOnly = true)
+    public Page<PackageRequestSearchResponse> searchMatchingMyTrips(Specification<PackageRequestEntity> spec,
+                                                                     Pageable pageable,
+                                                                     UUID callerId) {
+        Map<UUID, MatchingService.MatchInfo> matches = matchingService.findBestMatchByRequestId(callerId);
+        if (matches.isEmpty()) {
+            return new org.springframework.data.domain.PageImpl<>(List.of(), pageable, 0);
+        }
+
+        Specification<PackageRequestEntity> restricted = spec.and(
+                PackageRequestSpecifications.idIn(matches.keySet()));
+
+        Set<UUID> favIds = loadFavIds(callerId);
+        List<PackageRequestEntity> all = repository.findAll(restricted);
+        BatchMaps batch = buildBatchMaps(all);
+
+        List<PackageRequestSearchResponse> sorted = all.stream()
+                .map(e -> packageRequestSearchMapper.toSearchResponse(
+                        e, favIds.contains(e.getId()), batch.userMap(), batch.cityMap(), batch.photoMap()))
+                .map(r -> r.withMatch(matches.get(r.id())))
+                .sorted(java.util.Comparator.comparingInt(
+                        (PackageRequestSearchResponse r) -> r.matchScore()).reversed())
+                .toList();
+
+        int from = (int) Math.min(pageable.getOffset(), sorted.size());
+        int to = Math.min(from + pageable.getPageSize(), sorted.size());
+        return new org.springframework.data.domain.PageImpl<>(
+                sorted.subList(from, to), pageable, sorted.size());
     }
 
     /**
