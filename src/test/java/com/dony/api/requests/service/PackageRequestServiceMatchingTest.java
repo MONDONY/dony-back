@@ -30,6 +30,7 @@ import org.springframework.data.jpa.domain.Specification;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,6 +88,31 @@ class PackageRequestServiceMatchingTest {
                 }
             }
         } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private PackageRequestEntity buildEntity(UUID id, LocalDateTime createdAt) {
+        PackageRequestEntity entity = buildEntity(id);
+        setField(entity, "createdAt", createdAt);
+        return entity;
+    }
+
+    private static void setField(Object entity, String fieldName, Object value) {
+        try {
+            Class<?> c = entity.getClass();
+            while (c != null) {
+                try {
+                    Field f = c.getDeclaredField(fieldName);
+                    f.setAccessible(true);
+                    f.set(entity, value);
+                    return;
+                } catch (NoSuchFieldException e) {
+                    c = c.getSuperclass();
+                }
+            }
+            throw new IllegalArgumentException("no field " + fieldName);
+        } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
@@ -209,5 +235,140 @@ class PackageRequestServiceMatchingTest {
         assertThat(page.getContent()).isEmpty();
         assertThat(page.getTotalElements()).isEqualTo(0);
         verifyNoInteractions(repository);
+    }
+
+    // ─── Départage déterministe des ex æquo ──────────────────────────────────
+
+    /**
+     * Dans ce chemin le score discrimine mal (dateScore vaut toujours 25, budgetScore
+     * n'a que 3 valeurs) : les ex æquo sont la règle. {@code findAll} n'a pas d'ORDER BY,
+     * Postgres est donc libre de changer l'ordre entre deux requêtes — ici simulé par
+     * deux retours de mock dans des ordres différents.
+     */
+    private Map<UUID, MatchingService.MatchInfo> exAequoMatches(int score, UUID... ids) {
+        Map<UUID, MatchingService.MatchInfo> matches = new LinkedHashMap<>();
+        for (UUID id : ids) {
+            matches.put(id, new MatchingService.MatchInfo(
+                    id, UUID.randomUUID(), LocalDate.now().plusDays(3), score));
+        }
+        return matches;
+    }
+
+    @Test
+    void searchMatchingMyTrips_exAequo_ordreIdentiqueSurDeuxAppels() {
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+        UUID id4 = UUID.randomUUID();
+
+        LocalDateTime base = LocalDateTime.of(2026, 7, 1, 10, 0);
+        PackageRequestEntity e1 = buildEntity(id1, base.plusHours(1));
+        PackageRequestEntity e2 = buildEntity(id2, base.plusHours(2));
+        PackageRequestEntity e3 = buildEntity(id3, base.plusHours(3));
+        PackageRequestEntity e4 = buildEntity(id4, base.plusHours(4));
+
+        when(matchingService.findBestMatchByRequestId(CALLER_ID))
+                .thenReturn(exAequoMatches(50, id1, id2, id3, id4));
+        // Deux ordres SQL différents pour deux appels consécutifs.
+        when(repository.findAll(any(Specification.class)))
+                .thenReturn(List.of(e1, e2, e3, e4), List.of(e3, e1, e4, e2));
+
+        Page<PackageRequestSearchResponse> appel1 = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(0, 10), CALLER_ID);
+        Page<PackageRequestSearchResponse> appel2 = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(0, 10), CALLER_ID);
+
+        // Ordre stable et prévisible : à score égal, la plus récente d'abord.
+        assertThat(appel1.getContent()).extracting(PackageRequestSearchResponse::id)
+                .containsExactly(id4, id3, id2, id1);
+        assertThat(appel2.getContent()).extracting(PackageRequestSearchResponse::id)
+                .containsExactly(id4, id3, id2, id1);
+    }
+
+    @Test
+    void searchMatchingMyTrips_exAequo_paginationSansDoublonNiPerte() {
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+        UUID id4 = UUID.randomUUID();
+
+        LocalDateTime base = LocalDateTime.of(2026, 7, 1, 10, 0);
+        PackageRequestEntity e1 = buildEntity(id1, base.plusHours(1));
+        PackageRequestEntity e2 = buildEntity(id2, base.plusHours(2));
+        PackageRequestEntity e3 = buildEntity(id3, base.plusHours(3));
+        PackageRequestEntity e4 = buildEntity(id4, base.plusHours(4));
+
+        when(matchingService.findBestMatchByRequestId(CALLER_ID))
+                .thenReturn(exAequoMatches(50, id1, id2, id3, id4));
+        // La page 0 et la page 1 sont servies par deux requêtes SQL d'ordres différents.
+        when(repository.findAll(any(Specification.class)))
+                .thenReturn(List.of(e1, e2, e3, e4), List.of(e2, e4, e1, e3));
+
+        Page<PackageRequestSearchResponse> page0 = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(0, 2), CALLER_ID);
+        Page<PackageRequestSearchResponse> page1 = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(1, 2), CALLER_ID);
+
+        List<UUID> vus = new java.util.ArrayList<>();
+        page0.getContent().forEach(r -> vus.add(r.id()));
+        page1.getContent().forEach(r -> vus.add(r.id()));
+
+        // Ni doublon (une demande sur deux pages) ni perte (une demande sur aucune page).
+        assertThat(vus).containsExactlyInAnyOrder(id1, id2, id3, id4);
+        assertThat(page0.getTotalElements()).isEqualTo(4);
+        assertThat(page1.getTotalElements()).isEqualTo(4);
+    }
+
+    // ─── Taille de page extrême ──────────────────────────────────────────────
+
+    @Test
+    void searchMatchingMyTrips_taillePageExtreme_neDebordePas() {
+        // ?page=1&size=2147483647 : offset + pageSize déborde en int → subList lèverait
+        // une exception (HTTP 500). Le calcul doit se faire en long.
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        PackageRequestEntity e1 = buildEntity(id1, LocalDateTime.of(2026, 7, 1, 10, 0));
+        PackageRequestEntity e2 = buildEntity(id2, LocalDateTime.of(2026, 7, 1, 11, 0));
+
+        when(matchingService.findBestMatchByRequestId(CALLER_ID))
+                .thenReturn(exAequoMatches(50, id1, id2));
+        when(repository.findAll(any(Specification.class))).thenReturn(List.of(e1, e2));
+
+        Page<PackageRequestSearchResponse> horsBornes = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(1, Integer.MAX_VALUE), CALLER_ID);
+        assertThat(horsBornes.getContent()).isEmpty();
+        assertThat(horsBornes.getTotalElements()).isEqualTo(2);
+
+        Page<PackageRequestSearchResponse> premierePage = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(0, Integer.MAX_VALUE), CALLER_ID);
+        assertThat(premierePage.getContent()).hasSize(2);
+        assertThat(premierePage.getTotalElements()).isEqualTo(2);
+    }
+
+    // ─── Mapping / présignage limités à la page ──────────────────────────────
+
+    @Test
+    void searchMatchingMyTrips_neMappeQueLaPage() {
+        // buildBatchMaps signe une URL S3 par photo et par avatar : il ne doit voir
+        // que les entités de la page, pas l'ensemble filtré.
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+        LocalDateTime base = LocalDateTime.of(2026, 7, 1, 10, 0);
+        PackageRequestEntity e1 = buildEntity(id1, base.plusHours(1));
+        PackageRequestEntity e2 = buildEntity(id2, base.plusHours(2));
+        PackageRequestEntity e3 = buildEntity(id3, base.plusHours(3));
+
+        when(matchingService.findBestMatchByRequestId(CALLER_ID))
+                .thenReturn(exAequoMatches(50, id1, id2, id3));
+        when(repository.findAll(any(Specification.class))).thenReturn(List.of(e1, e2, e3));
+
+        Page<PackageRequestSearchResponse> page = service.searchMatchingMyTrips(
+                Specification.where(null), PageRequest.of(0, 2), CALLER_ID);
+
+        assertThat(page.getContent()).hasSize(2);
+        // Ordre createdAt décroissant → page 0 = [id3, id2].
+        verify(photoService).activePhotosBatch(List.of(id3, id2));
+        assertThat(page.getTotalElements()).isEqualTo(3);
     }
 }

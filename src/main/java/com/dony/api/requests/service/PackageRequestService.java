@@ -434,6 +434,12 @@ public class PackageRequestService {
      * <p>Injection {@code requests → matching} assumée : lecture synchrone
      * unidirectionnelle nécessaire à la construction de la réponse, sans cycle.
      * Un Spring Event ne conviendrait pas, le résultat étant attendu par l'appelant.
+     *
+     * <p><b>Ordre des opérations :</b> on trie et on découpe les <em>entités</em>,
+     * puis on ne mappe que la page. {@link #buildBatchMaps} déclenche une URL S3
+     * présignée par photo et par avatar : le faire sur l'ensemble filtré signerait
+     * des milliers d'URLs pour en renvoyer vingt. {@code totalElements} reste le
+     * total filtré, pas la taille de la page.
      */
     @Transactional(readOnly = true)
     public Page<PackageRequestSearchResponse> searchMatchingMyTrips(Specification<PackageRequestEntity> spec,
@@ -447,22 +453,45 @@ public class PackageRequestService {
         Specification<PackageRequestEntity> restricted = spec.and(
                 PackageRequestSpecifications.idIn(matches.keySet()));
 
-        Set<UUID> favIds = loadFavIds(callerId);
-        List<PackageRequestEntity> all = repository.findAll(restricted);
-        BatchMaps batch = buildBatchMaps(all);
-
-        List<PackageRequestSearchResponse> sorted = all.stream()
-                .map(e -> packageRequestSearchMapper.toSearchResponse(
-                        e, favIds.contains(e.getId()), batch.userMap(), batch.cityMap(), batch.photoMap()))
-                .map(r -> r.withMatch(matches.get(r.id())))
-                .sorted(java.util.Comparator.comparingInt(
-                        (PackageRequestSearchResponse r) -> r.matchScore()).reversed())
+        List<PackageRequestEntity> sorted = repository.findAll(restricted).stream()
+                .sorted(matchOrder(matches))
                 .toList();
 
-        int from = (int) Math.min(pageable.getOffset(), sorted.size());
-        int to = Math.min(from + pageable.getPageSize(), sorted.size());
-        return new org.springframework.data.domain.PageImpl<>(
-                sorted.subList(from, to), pageable, sorted.size());
+        // Arithmétique en long : `size` est un int fourni par le client, from + size
+        // déborderait en négatif sur une taille de page extrême (subList → 500).
+        long fromLong = Math.min(pageable.getOffset(), sorted.size());
+        long toLong = Math.min(fromLong + pageable.getPageSize(), sorted.size());
+        List<PackageRequestEntity> pageEntities = sorted.subList((int) fromLong, (int) toLong);
+
+        Set<UUID> favIds = loadFavIds(callerId);
+        BatchMaps batch = buildBatchMaps(pageEntities);
+        List<PackageRequestSearchResponse> content = pageEntities.stream()
+                .map(e -> packageRequestSearchMapper.toSearchResponse(
+                        e, favIds.contains(e.getId()), batch.userMap, batch.cityMap, batch.photoMap))
+                .map(r -> r.withMatch(matches.get(r.id())))
+                .toList();
+
+        return new org.springframework.data.domain.PageImpl<>(content, pageable, sorted.size());
+    }
+
+    /**
+     * Ordre total strict de la recherche « mes trajets » : score décroissant, puis
+     * demande la plus récente, puis identifiant.
+     *
+     * <p>Le départage n'est pas cosmétique : dans ce chemin {@code dateScore} vaut
+     * toujours 25 et {@code budgetScore} ne prend que 3 valeurs, les ex æquo sont la
+     * règle. Sans ordre total, {@code findAll} sans {@code ORDER BY} laisse Postgres
+     * choisir l'ordre des ex æquo, et une demande peut apparaître sur deux pages ou
+     * sur aucune.
+     */
+    private static java.util.Comparator<PackageRequestEntity> matchOrder(
+            Map<UUID, MatchingService.MatchInfo> matches) {
+        return java.util.Comparator
+                .comparingInt((PackageRequestEntity e) -> matches.get(e.getId()).matchScore())
+                .reversed()
+                .thenComparing(PackageRequestEntity::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                .thenComparing(PackageRequestEntity::getId);
     }
 
     /**

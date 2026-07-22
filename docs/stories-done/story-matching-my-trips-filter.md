@@ -131,6 +131,43 @@ synchrone de bout en bout.
    leurs paramètres sont absents) ferait qu'un voyageur sans trajet actif verrait *toutes*
    les demandes de la plateforme au lieu d'aucune. Ne pas copier le pattern
    `conjunction()`-par-défaut des autres specs sur `idIn`.
+6. **Le tri doit rester un ordre total strict — sinon la pagination ment.**
+   `searchMatchingMyTrips` trie en mémoire le résultat d'un `findAll(spec)` qui n'a
+   pas d'`ORDER BY` : Postgres est libre de rendre les lignes dans un ordre différent
+   d'une requête à l'autre. Or dans ce chemin le score discrimine mal — `dateScore`
+   vaut *toujours* 25 (`fitsDate` a déjà garanti que l'écart est dans la tolérance) et
+   `budgetScore` ne prend que 3 valeurs — donc seul `weightScore` sépare : les ex æquo
+   sont la règle, pas l'exception. Avec un simple tri par score (stable), les ex æquo
+   sortent dans l'ordre Postgres, et une même demande peut apparaître sur deux pages
+   ou sur aucune. D'où le comparateur `matchOrder` : **score décroissant → `createdAt`
+   décroissant → `id`**, l'`id` en dernier recours garantissant l'ordre total. Ne pas
+   retirer les départages « parce que le score suffit ». Même raison côté
+   `MatchingService.findBestMatchByRequestId`, dont la map ordonnée départage aussi par
+   `requestId` (l'itération d'une `HashMap` n'est pas un ordre).
+7. **Le filtre expose `OPEN` **et** `NEGOTIATING`, comme la recherche standard.**
+   `PackageRequestSpecifications.openOnly()` retient les deux statuts. Le filtre doit
+   faire pareil, sinon le même endpoint expose deux ensembles de statuts selon la valeur
+   du booléen : une demande passe à `NEGOTIATING` dès qu'un voyageur *quelconque* ouvre
+   un fil (`NegotiationService`), et le voyageur qui négocie verrait la demande
+   disparaître de sa propre liste filtrée au refresh suivant. D'où
+   `PackageRequestRepository.findOpenOrNegotiatingByCorridor`, consommé **uniquement**
+   par `findBestMatchByRequestId`. `findOpenByCorridor` (statut `OPEN` seul) est
+   **volontairement laissé intact** : il alimente le digest d'alertes corridor
+   (`AlertService`), qui ne doit notifier que des demandes encore strictement ouvertes.
+   Ne pas fusionner les deux méthodes.
+8. **Mapper la page, pas l'ensemble.** `buildBatchMaps` déclenche une URL S3 présignée
+   (HMAC-SHA256) par photo et un `avatarUrl` par expéditeur. `searchMatchingMyTrips`
+   trie et découpe donc les **entités**, puis n'appelle `buildBatchMaps` que sur la page.
+   Ne pas remonter le mapping avant le `subList` « pour simplifier » : 2 000 demandes ×
+   4 photos = 8 000 signatures calculées pour en renvoyer 80. `totalElements` reste le
+   total filtré (`sorted.size()`), pas la taille de la page.
+9. **Pagination : arithmétique en `long`.** `offset + pageSize` déborde en `int` sur
+   `?page=1&size=2147483647` (paramètre client), `subList` lèverait alors une exception
+   → HTTP 500. Le calcul des bornes se fait en `long` avant le cast final.
+10. **La règle de match a un point d'extension unique.** `MatchingService.matches(request,
+    announcement)` est partagée par `findMatchingRequests` et `findBestMatchByRequestId`.
+    Ajouter un critère (ex. mode de transport, catégorie) doit se faire là, pas dans une
+    des deux boucles : elles avaient divergé silencieusement avant cette factorisation.
 
 ## Critères d'acceptation couverts
 - [x] `GET /package-requests?matchingMyTrips=true` retourne les demandes compatibles avec

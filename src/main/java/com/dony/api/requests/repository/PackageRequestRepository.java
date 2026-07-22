@@ -35,4 +35,23 @@ public interface PackageRequestRepository
     List<PackageRequestEntity> findOpenByCorridor(
             @Param("departureCity") String departureCity,
             @Param("arrivalCity") String arrivalCity);
+
+    /**
+     * Variante de {@link #findOpenByCorridor} incluant les demandes {@code NEGOTIATING},
+     * alignée sur l'ensemble de statuts de la recherche standard
+     * ({@code PackageRequestSpecifications.openOnly}).
+     *
+     * <p>Méthode séparée <b>volontairement</b> : {@link #findOpenByCorridor} alimente le
+     * digest d'alertes corridor ({@code AlertService}), qui ne doit notifier que des
+     * demandes encore strictement ouvertes. Ne pas fusionner les deux.
+     */
+    @Query("""
+        SELECT p FROM PackageRequestEntity p
+        WHERE LOWER(p.departureCity) = LOWER(:departureCity)
+          AND LOWER(p.arrivalCity) = LOWER(:arrivalCity)
+          AND p.status IN ('OPEN', 'NEGOTIATING')
+    """)
+    List<PackageRequestEntity> findOpenOrNegotiatingByCorridor(
+            @Param("departureCity") String departureCity,
+            @Param("arrivalCity") String arrivalCity);
 }

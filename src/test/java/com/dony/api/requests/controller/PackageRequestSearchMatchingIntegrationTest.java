@@ -186,6 +186,58 @@ class PackageRequestSearchMatchingIntegrationTest {
                 .andExpect(jsonPath("$.content").isEmpty());
     }
 
+    // ─── Test 5 : trajet actif mais aucune demande compatible ────────────────
+
+    @Test
+    void search_matchingMyTripsTrue_trajetActifMaisAucuneDemandeCompatible_renvoiePageVide()
+            throws Exception {
+        // Arrange : le voyageur a bien un trajet actif Paris → Dakar, mais la seule
+        // demande de la base est sur un autre corridor. Distinct du test 4, qui couvre
+        // l'absence totale de trajet actif.
+        var traveler = seedUser("uid-nomatch-traveler", Role.TRAVELER);
+        seedAnnouncement(traveler.getId(), "Paris", "Dakar",
+                LocalDate.of(2026, 8, 10), new BigDecimal("30"), new BigDecimal("10"),
+                AnnouncementStatus.ACTIVE);
+
+        var sender = seedUser("uid-nomatch-sender", Role.SENDER);
+        seedPackageRequest(sender.getId(), "Lyon", "Bamako",
+                LocalDate.of(2026, 8, 10), new BigDecimal("2"), (short) 5,
+                PackageRequestStatus.OPEN);
+
+        mockMvc.perform(get("/package-requests")
+                        .with(authentication(authenticatedAs("uid-nomatch-traveler")))
+                        .param("matchingMyTrips", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    // ─── Test 6 : une demande NEGOTIATING reste visible ──────────────────────
+
+    @Test
+    void search_matchingMyTripsTrue_inclutLesDemandesEnNegociation() throws Exception {
+        // Le statut passe à NEGOTIATING dès qu'un voyageur quelconque ouvre un fil.
+        // La liste filtrée doit rester alignée sur la recherche standard (OPEN +
+        // NEGOTIATING), sinon la demande disparaît de la liste du voyageur qui négocie.
+        var traveler = seedUser("uid-nego-traveler", Role.TRAVELER);
+        seedAnnouncement(traveler.getId(), "Paris", "Dakar",
+                LocalDate.of(2026, 8, 10), new BigDecimal("30"), new BigDecimal("10"),
+                AnnouncementStatus.ACTIVE);
+
+        var sender = seedUser("uid-nego-sender", Role.SENDER);
+        var demande = seedPackageRequest(sender.getId(), "Paris", "Dakar",
+                LocalDate.of(2026, 8, 10), new BigDecimal("2"), (short) 5,
+                PackageRequestStatus.NEGOTIATING);
+
+        mockMvc.perform(get("/package-requests")
+                        .with(authentication(authenticatedAs("uid-nego-traveler")))
+                        .param("matchingMyTrips", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(demande.getId().toString()))
+                .andExpect(jsonPath("$.content[0].matchScore").isNumber());
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private UserEntity seedUser(String firebaseUid, Role role) {

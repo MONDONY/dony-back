@@ -26,6 +26,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -304,10 +307,9 @@ class MatchingServiceTest {
 
             when(announcementRepository.findActiveByTravelerId(travelerId))
                     .thenReturn(List.of(trajetFaible, trajetFort));
-            when(packageRequestRepository.findOpenByCorridor("Paris", "Dakar"))
+            when(packageRequestRepository.findOpenOrNegotiatingByCorridor("Paris", "Dakar"))
                     .thenReturn(List.of(demande));
-            when(userRepository.findById(demande.getSenderId()))
-                    .thenReturn(Optional.of(expediteur));
+            when(userRepository.findAllById(any())).thenReturn(List.of(expediteur));
 
             Map<UUID, MatchingService.MatchInfo> result = matchingService.findBestMatchByRequestId(travelerId);
 
@@ -316,6 +318,11 @@ class MatchingServiceTest {
             assertThat(info.tripId()).isEqualTo(trajetFort.getId());
             assertThat(info.tripDepartureDate()).isEqualTo(LocalDate.of(2026, 8, 10));
             assertThat(info.matchScore()).isGreaterThan(0);
+
+            // Les expéditeurs sont chargés en un seul appel, jamais un findById par
+            // candidat : cette méthode est rappelée à chaque page de recherche.
+            verify(userRepository, times(1)).findAllById(any());
+            verify(userRepository, never()).findById(any());
         }
 
         @Test
@@ -363,10 +370,9 @@ class MatchingServiceTest {
             setField(u2, "id", faible.getSenderId());
 
             when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of(trajet));
-            when(packageRequestRepository.findOpenByCorridor("Paris", "Dakar"))
+            when(packageRequestRepository.findOpenOrNegotiatingByCorridor("Paris", "Dakar"))
                     .thenReturn(List.of(faible, forte));
-            when(userRepository.findById(forte.getSenderId())).thenReturn(Optional.of(u1));
-            when(userRepository.findById(faible.getSenderId())).thenReturn(Optional.of(u2));
+            when(userRepository.findAllById(any())).thenReturn(List.of(u1, u2));
 
             Map<UUID, MatchingService.MatchInfo> result = matchingService.findBestMatchByRequestId(travelerId);
 
@@ -379,6 +385,115 @@ class MatchingServiceTest {
             when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of());
 
             assertThat(matchingService.findBestMatchByRequestId(travelerId)).isEmpty();
+        }
+
+        @Test
+        void findBestMatchByRequestId_trajetsActifsMaisAucuneDemandeCompatible_retourneMapVide()
+                throws Exception {
+            // Le voyageur a bien un trajet actif, mais la seule demande du corridor
+            // pèse plus que la capacité disponible → aucun match.
+            UUID travelerId = UUID.randomUUID();
+
+            AnnouncementEntity trajet = new AnnouncementEntity();
+            setField(trajet, "id", UUID.randomUUID());
+            trajet.setTravelerId(travelerId);
+            trajet.setDepartureCity("Paris");
+            trajet.setArrivalCity("Dakar");
+            trajet.setDepartureDate(LocalDate.of(2026, 8, 10));
+            trajet.setAvailableKg(new BigDecimal("5"));
+            trajet.setPricePerKg(new BigDecimal("10"));
+
+            PackageRequestEntity tropLourde = new PackageRequestEntity();
+            setField(tropLourde, "id", UUID.randomUUID());
+            tropLourde.setSenderId(UUID.randomUUID());
+            tropLourde.setStatus(PackageRequestStatus.OPEN);
+            tropLourde.setDepartureCity("Paris");
+            tropLourde.setArrivalCity("Dakar");
+            tropLourde.setDesiredDate(LocalDate.of(2026, 8, 10));
+            tropLourde.setDateToleranceDays((short) 5);
+            tropLourde.setWeightKg(new BigDecimal("30"));
+            tropLourde.setTargetPriceEur(new BigDecimal("50"));
+
+            when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of(trajet));
+            when(packageRequestRepository.findOpenOrNegotiatingByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(tropLourde));
+
+            assertThat(matchingService.findBestMatchByRequestId(travelerId)).isEmpty();
+            // Aucun candidat retenu → aucun chargement d'expéditeur.
+            verify(userRepository, never()).findAllById(any());
+        }
+
+        @Test
+        void findBestMatchByRequestId_expediteurIntrouvable_exclutLaDemande() throws Exception {
+            UUID travelerId = UUID.randomUUID();
+
+            AnnouncementEntity trajet = new AnnouncementEntity();
+            setField(trajet, "id", UUID.randomUUID());
+            trajet.setTravelerId(travelerId);
+            trajet.setDepartureCity("Paris");
+            trajet.setArrivalCity("Dakar");
+            trajet.setDepartureDate(LocalDate.of(2026, 8, 10));
+            trajet.setAvailableKg(new BigDecimal("30"));
+            trajet.setPricePerKg(new BigDecimal("10"));
+
+            PackageRequestEntity orpheline = new PackageRequestEntity();
+            setField(orpheline, "id", UUID.randomUUID());
+            orpheline.setSenderId(UUID.randomUUID());
+            orpheline.setStatus(PackageRequestStatus.OPEN);
+            orpheline.setDepartureCity("Paris");
+            orpheline.setArrivalCity("Dakar");
+            orpheline.setDesiredDate(LocalDate.of(2026, 8, 10));
+            orpheline.setDateToleranceDays((short) 5);
+            orpheline.setWeightKg(new BigDecimal("2"));
+            orpheline.setTargetPriceEur(new BigDecimal("50"));
+
+            when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of(trajet));
+            when(packageRequestRepository.findOpenOrNegotiatingByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(orpheline));
+            // Le chargement groupé ne ramène pas l'expéditeur → demande exclue,
+            // sémantique identique à l'ancien findById().isEmpty().
+            when(userRepository.findAllById(any())).thenReturn(List.of());
+
+            assertThat(matchingService.findBestMatchByRequestId(travelerId)).isEmpty();
+        }
+
+        @Test
+        void findBestMatchByRequestId_conserveLesDemandesEnNegociation() throws Exception {
+            // Le repository dédié renvoie OPEN + NEGOTIATING ; le service ne doit pas
+            // re-filtrer sur le statut, sinon un voyageur qui négocie perdrait la
+            // demande de sa propre liste filtrée.
+            UUID travelerId = UUID.randomUUID();
+
+            AnnouncementEntity trajet = new AnnouncementEntity();
+            setField(trajet, "id", UUID.randomUUID());
+            trajet.setTravelerId(travelerId);
+            trajet.setDepartureCity("Paris");
+            trajet.setArrivalCity("Dakar");
+            trajet.setDepartureDate(LocalDate.of(2026, 8, 10));
+            trajet.setAvailableKg(new BigDecimal("30"));
+            trajet.setPricePerKg(new BigDecimal("10"));
+
+            PackageRequestEntity enNegociation = new PackageRequestEntity();
+            setField(enNegociation, "id", UUID.randomUUID());
+            enNegociation.setSenderId(UUID.randomUUID());
+            enNegociation.setStatus(PackageRequestStatus.NEGOTIATING);
+            enNegociation.setDepartureCity("Paris");
+            enNegociation.setArrivalCity("Dakar");
+            enNegociation.setDesiredDate(LocalDate.of(2026, 8, 10));
+            enNegociation.setDateToleranceDays((short) 5);
+            enNegociation.setWeightKg(new BigDecimal("2"));
+            enNegociation.setTargetPriceEur(new BigDecimal("50"));
+
+            UserEntity expediteur = new UserEntity();
+            setField(expediteur, "id", enNegociation.getSenderId());
+
+            when(announcementRepository.findActiveByTravelerId(travelerId)).thenReturn(List.of(trajet));
+            when(packageRequestRepository.findOpenOrNegotiatingByCorridor("Paris", "Dakar"))
+                    .thenReturn(List.of(enNegociation));
+            when(userRepository.findAllById(any())).thenReturn(List.of(expediteur));
+
+            assertThat(matchingService.findBestMatchByRequestId(travelerId))
+                    .containsOnlyKeys(enNegociation.getId());
         }
     }
 
