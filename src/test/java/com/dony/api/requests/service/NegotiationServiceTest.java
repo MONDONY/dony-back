@@ -1517,6 +1517,55 @@ class NegotiationServiceTest {
             assertEquals(java.util.EnumSet.of(PaymentMethod.STRIPE), thread.getAvailablePaymentMethods());
             assertNull(thread.getPaymentMethod());
         }
+
+        @Test
+        @DisplayName("colis STRIPE+CASH, voyageur STRIPE seulement → SET exposé dans la réponse")
+        void submitTrip_response_exposesAvailableSet() {
+            UUID threadId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setEntityId(thread, threadId);
+            thread.setTravelerId(travelerId);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("100.00"));
+            thread.setRoundsCount((short) 1);
+
+            PackageRequestEntity request = new PackageRequestEntity();
+            request.setSenderId(SENDER_ID);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setDesiredDate(LocalDate.now().plusDays(10));
+            request.setDateToleranceDays((short) 2);
+            request.setWeightKg(new BigDecimal("5"));
+
+            UserEntity traveler = new UserEntity();
+            setEntityId(traveler, travelerId);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(travelerId);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5"));
+
+            when(threadRepo.findById(threadId)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(any())).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(travelerId)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(announcementRepo.findById(annId)).thenReturn(java.util.Optional.of(ann));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.05"));
+            when(cashGatePort.hasSufficientFunds(eq(travelerId), any())).thenReturn(false);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            NegotiationThreadResponse res = service.submitTrip(travelerId, threadId,
+                new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE, false));
+
+            assertEquals(java.util.EnumSet.of(PaymentMethod.STRIPE), res.availablePaymentMethods());
+        }
     }
 
     @Nested

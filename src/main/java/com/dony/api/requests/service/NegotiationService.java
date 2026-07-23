@@ -1141,7 +1141,8 @@ public class NegotiationService {
             gross,
             t.getPaymentMethod(),
             t.getMaterializedBidId(),
-            cashCommissionAvailable
+            cashCommissionAvailable,
+            t.getAvailablePaymentMethods()
         );
     }
 
