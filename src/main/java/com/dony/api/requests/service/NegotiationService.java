@@ -688,36 +688,38 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
         }
 
-        // Mode final = choix expéditeur, à défaut le mode déjà porté par le thread (legacy).
-        // Il doit appartenir au SET fournissable calculé au trip-linking. `available == null`
-        // = thread legacy (trip lié avant l'introduction du SET) → on retombe sur le
-        // comportement existant (validation contre request.getAcceptedPaymentMethods() ci-dessous).
-        PaymentMethod method = chosenMethod != null ? chosenMethod : thread.getPaymentMethod();
+        // Résolution du mode final. L'expéditeur choisit au checkout (chosenMethod).
+        // Sur le webhook Stripe (chosenMethod null), amount_capturable_updated ne se produit
+        // que pour un escrow CARTE → le mode est STRIPE par définition ; thread.paymentMethod
+        // peut être null (modèle SET : le voyageur ne fixe plus de mode au trip-linking).
+        PaymentMethod method = chosenMethod != null
+            ? chosenMethod
+            : (thread.getPaymentMethod() != null ? thread.getPaymentMethod() : PaymentMethod.STRIPE);
+
+        // Le mode retenu doit appartenir au SET fournissable (null = thread legacy → on
+        // s'appuie seulement sur la validation "accepté par la demande" ci-dessous).
         java.util.Set<PaymentMethod> available = thread.getAvailablePaymentMethods();
-        if (available != null && (method == null || !available.contains(method))) {
+        if (available != null && !available.contains(method)) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "payment-method/not-in-available-set");
         }
+        // Défense en profondeur : reste dans les méthodes acceptées par la demande.
+        if (!request.getAcceptedPaymentMethods().contains(method)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-accepted");
+        }
 
-        // Mode de paiement finalisé par l'expéditeur : validé contre les méthodes
-        // acceptées par la demande, puis appliqué AVANT la décision cash/stripe
-        // ci-dessous (sinon la commission cash serait prélevée à tort, ou pas).
-        if (chosenMethod != null && chosenMethod != thread.getPaymentMethod()) {
-            if (!request.getAcceptedPaymentMethods().contains(chosenMethod)) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "payment-method/not-accepted");
-            }
-            // Avant de changer de méthode, on libère tout escrow Stripe en vol pour
-            // ce thread (annulation du hold carte) afin de ne pas le laisser orphelin
-            // ni prélever à tort la commission du voyageur en basculant vers CASH. Si
-            // le hold ne peut pas être libéré (déjà capturé / erreur Stripe), on
-            // refuse la bascule plutôt que de risquer un hold orphelin.
+        // Bascule vers CASH : si un hold CARTE est en vol (l'expéditeur avait initié un escrow
+        // Stripe puis choisi cash), on l'annule pour ne pas le laisser orphelin. STRIPE→STRIPE
+        // n'est PAS une bascule (thread.paymentMethod est null jusqu'ici sous le modèle SET),
+        // donc on ne touche jamais un escrow carte valide.
+        if (method == PaymentMethod.CASH) {
             if (!escrowPort.releaseEscrowForMethodSwitch(threadId)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "payment-method/escrow-release-failed");
             }
-            thread.setPaymentMethod(chosenMethod);
         }
+        thread.setPaymentMethod(method);
 
         if (request.getRecipientName() == null || request.getRecipientPhone() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,

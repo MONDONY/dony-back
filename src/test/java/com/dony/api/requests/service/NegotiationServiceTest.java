@@ -1683,6 +1683,7 @@ class NegotiationServiceTest {
         @DisplayName("thread CASH — commission prélevée (port=true) → finalize OK + ACCEPTED")
         void finalize_cashThread_commissionCharged_succeeds() {
             thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             request.setRecipientName("Fatou Diop");
             request.setRecipientPhone("+221771234567");
             request.setDepartureCity("Paris");
@@ -1690,6 +1691,8 @@ class NegotiationServiceTest {
             request.setWeightKg(new BigDecimal("5"));
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            // Mode final CASH → on tente de libérer tout escrow carte en vol (ici aucun : no-op → true).
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
             // Simule le comportement réel de CashCommissionService.chargeNegotiationCommission :
             // stamper commissionChargedVia sur le thread en même temps que le charge réussi.
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
@@ -1724,10 +1727,12 @@ class NegotiationServiceTest {
         @DisplayName("thread CASH — commission échoue (port=false) → 422 et thread reste AWAITING_PAYMENT")
         void finalize_cashThread_commissionFails_throws422AndNotFinalized() {
             thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             request.setRecipientName("Fatou Diop");
             request.setRecipientPhone("+221771234567");
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
                 .thenReturn(false);
 
@@ -2519,8 +2524,8 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("finalize applique le mode choisi par l'expéditeur (override du thread, bascule cash→stripe)")
-        void finalize_chosenMethodOverridesThreadMethod() {
+        @DisplayName("finalize STRIPE ne libère JAMAIS l'escrow carte (choisir STRIPE n'est pas une bascule)")
+        void finalize_chosenMethodStripe_neverReleasesEscrow() {
             request.setAcceptedPaymentMethods(
                 java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
             thread.setPaymentMethod(PaymentMethod.CASH);
@@ -2533,17 +2538,16 @@ class NegotiationServiceTest {
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
-            // Bascule de méthode → on libère d'abord tout escrow en vol (ici aucun).
-            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
-            // Override vers STRIPE → /checkout vérifie l'escrow online.
+            // Mode final STRIPE → /checkout vérifie l'escrow online (jamais de libération).
             when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_real_override")).thenReturn(true);
 
             service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_override", PaymentMethod.STRIPE);
 
-            // Le mode du thread est remplacé par celui choisi par l'expéditeur ;
-            // la branche cash (commission) n'est donc PAS déclenchée.
+            // Le mode retenu est STRIPE ; la branche cash (commission) n'est PAS déclenchée
+            // et surtout l'escrow carte de l'expéditeur n'est JAMAIS annulé (sécurité escrow).
             assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
             org.mockito.Mockito.verifyNoInteractions(cashGatePort);
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
     }
 
@@ -2677,6 +2681,144 @@ class NegotiationServiceTest {
 
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
             verifyNoInteractions(escrowPort);
+        }
+    }
+
+    @Nested
+    @DisplayName("finalizeInternal() — modèle SET (thread.paymentMethod null post-linking)")
+    class SetModelFinalizeTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        private void setId(Object entity, UUID id) {
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(entity, id);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @BeforeEach
+        void setupPostLinkingThread() {
+            // Forme RÉELLE post-trip-linking : le voyageur ne fixe plus de mode → paymentMethod
+            // null, et le SET fournissable est persisté sur le thread.
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setPaymentMethod(null);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            setId(thread, THREAD_ID);
+
+            request.setRecipientName("Mamadou Diallo");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+        }
+
+        private void stubFinalizeCollaborators() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+        }
+
+        @Test
+        @DisplayName("1. webhook STRIPE (chosenMethod null, paymentMethod null, SET={STRIPE}) → ACCEPTED en STRIPE, pas de release")
+        void webhookStripe_postLinking_finalizesToStripe() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            stubFinalizeCollaborators();
+
+            // Chemin webhook (3-arg) : le sender a déjà payé (carte autorisée), Stripe a émis
+            // amount_capturable_updated. Le thread DOIT finaliser malgré paymentMethod null.
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_webhook_set");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("2. checkout STRIPE (chosenMethod STRIPE, paymentMethod null, SET={STRIPE}) → ACCEPTED, escrow vérifié, jamais libéré")
+        void checkoutStripe_postLinking_verifiesEscrowNeverReleases() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            stubFinalizeCollaborators();
+            when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_sync_set")).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_sync_set", PaymentMethod.STRIPE);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+            // L'escrow live du sender NE DOIT JAMAIS être annulé sur un checkout STRIPE.
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+            verify(escrowPort).verifyNegotiationEscrow(THREAD_ID, "pi_sync_set");
+        }
+
+        @Test
+        @DisplayName("3. checkout CASH (chosenMethod CASH, paymentMethod null, SET={CASH}) → ACCEPTED en CASH, commission prélevée")
+        void checkoutCash_postLinking_chargesCommission() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            stubFinalizeCollaborators();
+            // Pas d'escrow carte en vol → release no-op (true).
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            when(cashGatePort.chargeNegotiationCashCommission(
+                    eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any())).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            verify(cashGatePort).chargeNegotiationCashCommission(
+                eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any());
+        }
+
+        @Test
+        @DisplayName("4. bascule STRIPE→CASH (chosenMethod CASH, SET={STRIPE,CASH}) → CASH, release appelé UNE fois")
+        void switchStripeToCash_postLinking_releasesEscrowOnce() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            stubFinalizeCollaborators();
+            // Le sender avait initié un escrow carte puis choisi cash → hold carte annulé.
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            when(cashGatePort.chargeNegotiationCashCommission(
+                    eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any())).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            verify(escrowPort, times(1)).releaseEscrowForMethodSwitch(THREAD_ID);
+        }
+
+        @Test
+        @DisplayName("5. Task 5 préservée : SET={CASH}, chosenMethod STRIPE → 422 not-in-available-set")
+        void chosenMethodNotInSet_postLinking_throws422() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x", PaymentMethod.STRIPE));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/not-in-available-set", ex.getReason());
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
     }
 
