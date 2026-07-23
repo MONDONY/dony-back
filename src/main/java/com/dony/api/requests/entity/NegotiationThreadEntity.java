@@ -59,6 +59,9 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "last_activity_at", nullable = false)
     private LocalDateTime lastActivityAt;
 
+    @Column(name = "last_nudge_at")
+    private LocalDateTime lastNudgeAt;
+
     @Column(name = "payment_intent_id", length = 255)
     private String paymentIntentId;
 
@@ -121,6 +124,8 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public LocalDateTime getLastActivityAt() { return lastActivityAt; }
 
+    public LocalDateTime getLastNudgeAt() { return lastNudgeAt; }
+
     public String getPaymentIntentId() { return paymentIntentId; }
 
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
@@ -154,6 +159,8 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setRoundsCount(Short roundsCount) { this.roundsCount = roundsCount; }
 
     public void setLastActivityAt(LocalDateTime lastActivityAt) { this.lastActivityAt = lastActivityAt; }
+
+    public void setLastNudgeAt(LocalDateTime lastNudgeAt) { this.lastNudgeAt = lastNudgeAt; }
 
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
 

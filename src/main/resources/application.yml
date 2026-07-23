@@ -148,7 +148,7 @@ dony:
   requests:
     max-negotiation-rounds: ${DONY_REQUESTS_MAX_NEGOTIATION_ROUNDS:5}
     thread-inactivity-hours: ${DONY_REQUESTS_THREAD_INACTIVITY_HOURS:72}
-    awaiting-trip-hours: ${DONY_REQUESTS_AWAITING_TRIP_HOURS:24}
+    awaiting-trip-hours: ${DONY_REQUESTS_AWAITING_TRIP_HOURS:12}
     awaiting-payment-hours: ${DONY_REQUESTS_AWAITING_PAYMENT_HOURS:24}
     date-tolerance-default-days: ${DONY_REQUESTS_DATE_TOLERANCE_DEFAULT_DAYS:2}
     date-tolerance-max-days: ${DONY_REQUESTS_DATE_TOLERANCE_MAX_DAYS:7}
