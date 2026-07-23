@@ -3074,4 +3074,133 @@ class NegotiationServiceTest {
             assertThat(response.senderPhotoUrl()).isNull();
         }
     }
+
+    @Nested
+    @DisplayName("nudge()")
+    class NudgeTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        private NegotiationThreadEntity buildThread(NegotiationThreadStatus status,
+                                                     java.time.LocalDateTime lastActivityAt,
+                                                     java.time.LocalDateTime lastNudgeAt) {
+            NegotiationThreadEntity t = new NegotiationThreadEntity();
+            t.setPackageRequestId(REQUEST_ID);
+            t.setTravelerId(TRAVELER_ID);
+            t.setStatus(status);
+            t.setCurrentPriceEur(new BigDecimal("30"));
+            t.setRoundsCount((short) 1);
+            t.setLastActivityAt(lastActivityAt);
+            t.setLastNudgeAt(lastNudgeAt);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(t, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return t;
+        }
+
+        @Test
+        @DisplayName("caller ni sender ni traveler => 403")
+        void nudge_nonParticipant_throws403() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            UUID stranger = UUID.randomUUID();
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(stranger, THREAD_ID));
+
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("negotiation/not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("status AWAITING_PAYMENT => 409 nudge/not-active")
+        void nudge_statusNotOpenOrAwaitingTrip_throws409NotActive() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_PAYMENT,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/not-active");
+        }
+
+        @Test
+        @DisplayName("caller est celui qui doit agir (voyageur en AWAITING_TRIP) => 409 nudge/not-your-wait")
+        void nudge_callerIsTheOneWhoMustAct_throws409NotYourWait() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            // Le voyageur doit agir en AWAITING_TRIP -> il ne peut pas relancer.
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(TRAVELER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/not-your-wait");
+        }
+
+        @Test
+        @DisplayName("lastActivityAt il y a 20 min => 409 nudge/too-early")
+        void nudge_beforeOneHour_throws409TooEarly() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            // Le sender attend (le voyageur doit agir) mais l'activité est trop récente.
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/too-early");
+        }
+
+        @Test
+        @DisplayName("lastNudgeAt il y a 20 min => 429 nudge/rate-limited")
+        void nudge_rateLimited_throws429() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2),
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/rate-limited");
+        }
+
+        @Test
+        @DisplayName("succès : notifie la partie qui attend, set lastNudgeAt, garde lastActivityAt, canNudge=false")
+        void nudge_success_notifiesOtherParty_setsLastNudgeAt_keepsLastActivityAt() {
+            java.time.LocalDateTime oldActivity =
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2);
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP, oldActivity, null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+
+            var response = service.nudge(SENDER_ID, THREAD_ID);
+
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationNudgeSentEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationNudgeSentEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            var publishedEvent = eventCaptor.getValue();
+            assertThat(publishedEvent.toUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(publishedEvent.fromUserId()).isEqualTo(SENDER_ID);
+            assertThat(publishedEvent.threadId()).isEqualTo(THREAD_ID);
+            verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("NUDGE_SENT"), eq(SENDER_ID), any());
+            assertThat(thread.getLastNudgeAt()).isNotNull();
+            assertThat(thread.getLastActivityAt()).isEqualTo(oldActivity);
+            assertThat(response.canNudge()).isFalse();
+        }
+    }
 }

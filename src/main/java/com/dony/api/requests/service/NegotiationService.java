@@ -951,6 +951,76 @@ public class NegotiationService {
         return toResponse(thread, messages, null, traveler, request, callerId, senderName, null);
     }
 
+    /**
+     * The waiting party nudges the party who must act, reminding them to
+     * respond. Guards MIRROR the {@code canNudge} eligibility computed in
+     * {@link #toResponse} so the endpoint and the button agree on when a
+     * nudge is allowed.
+     */
+    @Transactional
+    public NegotiationThreadResponse nudge(UUID callerId, UUID threadId) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        boolean isTraveler = callerId.equals(thread.getTravelerId());
+        boolean isSender = callerId.equals(request.getSenderId());
+        if (!isTraveler && !isSender) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+        if (thread.getStatus() != NegotiationThreadStatus.OPEN
+                && thread.getStatus() != NegotiationThreadStatus.AWAITING_TRIP) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "nudge/not-active");
+        }
+
+        // Qui doit agir (la cible de la relance) ? En AWAITING_TRIP : le voyageur.
+        // En OPEN : le destinataire du dernier message (l'autre que l'émetteur).
+        UUID mustActUserId;
+        if (thread.getStatus() == NegotiationThreadStatus.AWAITING_TRIP) {
+            mustActUserId = thread.getTravelerId();
+        } else {
+            List<NegotiationMessageEntity> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId);
+            if (messages.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "nudge/not-active");
+            }
+            UUID lastFrom = messages.get(messages.size() - 1).getFromUserId();
+            mustActUserId = lastFrom.equals(thread.getTravelerId())
+                ? request.getSenderId() : thread.getTravelerId();
+        }
+        // Le caller doit être la partie qui ATTEND (donc PAS celle qui doit agir).
+        if (callerId.equals(mustActUserId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "nudge/not-your-wait");
+        }
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (thread.getLastActivityAt() != null && thread.getLastActivityAt().isAfter(now.minusHours(1))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "nudge/too-early");
+        }
+        if (thread.getLastNudgeAt() != null && thread.getLastNudgeAt().isAfter(now.minusHours(1))) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "nudge/rate-limited");
+        }
+
+        String callerName = userRepository.findById(callerId).map(this::buildDisplayName).orElse("Un utilisateur");
+        eventPublisher.publishEvent(new NegotiationNudgeSentEvent(
+            thread.getId(), request.getId(), callerId, mustActUserId, callerName));
+
+        thread.setLastNudgeAt(now); // NE PAS toucher lastActivityAt
+        threadRepo.save(thread);
+        auditService.log("NEGOTIATION_THREAD", threadId, "NUDGE_SENT", callerId,
+            Map.of("target", mustActUserId.toString()));
+
+        List<NegotiationMessageResponse> msgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
+            .stream().map(this::toMessageResponse).toList();
+        UserEntity travelerEntity = userRepository.findById(thread.getTravelerId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        String senderName = userRepository.findById(request.getSenderId())
+            .map(this::buildDisplayName).orElse("Expéditeur");
+        com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
+            ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null) : null;
+        return toResponse(thread, msgs, null, travelerEntity, request, callerId, senderName, linkedAnn);
+    }
+
     @Transactional(readOnly = true)
     public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)

@@ -156,6 +156,17 @@ public class NegotiationController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * The waiting party nudges the party who must act (traveler or sender)
+     * to remind them to respond. Eligibility mirrors {@code canNudge} on the
+     * response so the button and the endpoint agree.
+     */
+    @PostMapping("/{id}/nudge")
+    @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
+    public NegotiationThreadResponse nudge(@PathVariable UUID id) {
+        return service.nudge(requireUserId(), id);
+    }
+
     // ─── Auth helper ─────────────────────────────────────────────────────────────
 
     private UUID requireUserId() {

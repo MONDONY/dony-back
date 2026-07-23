@@ -144,6 +144,23 @@ public class RequestEventsListener {
         );
     }
 
+    /**
+     * The waiting party nudged the other one to remind them to respond.
+     */
+    @EventListener
+    @Async
+    public void onNegotiationNudgeSent(NegotiationNudgeSentEvent e) {
+        dispatcher.notifyUser(
+            e.toUserId(),
+            "Relance",
+            e.fromUserName() + " attend de vos nouvelles sur votre négociation.",
+            Map.of(
+                "type", "negotiation",
+                "threadId", e.threadId().toString()
+            )
+        );
+    }
+
     @EventListener
     @Async
     public void onNegotiationExpired(NegotiationExpiredEvent e) {
