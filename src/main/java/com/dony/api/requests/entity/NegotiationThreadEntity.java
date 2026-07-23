@@ -3,6 +3,7 @@ package com.dony.api.requests.entity;
 import com.dony.api.common.BaseEntity;
 import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -64,6 +65,17 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "payment_method", length = 20)
     private PaymentMethod paymentMethod;  // null until trip-linking
 
+    /**
+     * Modes de paiement réellement fournissables par le voyageur pour cette
+     * demande, calculés au trip-linking = colis.acceptedPaymentMethods ∩ capacité
+     * voyageur (STRIPE si onboardé, CASH si fonds wallet OU consentement carte).
+     * NULL tant que le trajet n'est pas lié. L'expéditeur choisit son mode final
+     * au checkout parmi ce SET.
+     */
+    @Convert(converter = com.dony.api.payments.cash.PaymentMethodSetConverter.class)
+    @Column(name = "available_payment_methods")
+    private java.util.Set<com.dony.api.payments.cash.PaymentMethod> availablePaymentMethods;
+
     // Dony commission charge tracking for CASH negotiated threads.
     // Stored as String (not the payments/cash enums) to avoid coupling the
     // requests/ entity to the payments/ package — values mirror
@@ -112,6 +124,10 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
 
+    public java.util.Set<com.dony.api.payments.cash.PaymentMethod> getAvailablePaymentMethods() {
+        return availablePaymentMethods;
+    }
+
     public String getCommissionStatus() { return commissionStatus; }
 
     public String getCommissionPaymentIntentId() { return commissionPaymentIntentId; }
@@ -143,6 +159,10 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
 
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public void setAvailablePaymentMethods(java.util.Set<com.dony.api.payments.cash.PaymentMethod> availablePaymentMethods) {
+        this.availablePaymentMethods = availablePaymentMethods;
+    }
 
     public void setCommissionStatus(String commissionStatus) { this.commissionStatus = commissionStatus; }
 
