@@ -1,6 +1,8 @@
 package com.dony.api.matching;
 
+import com.dony.api.matching.dto.AnnouncementRevenueRow;
 import com.dony.api.payments.cash.CommissionStatus;
+import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -78,6 +80,71 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
     java.math.BigDecimal sumDeliveredKgForTraveler(
             @Param("travelerId") UUID travelerId,
             @Param("status") BidStatus status,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
+    /**
+     * Revenu net des deals réglés en ESPÈCES sur la période. Le cash ne crée
+     * aucun PaymentEntity (argent de la main à la main, dony ne prélève que sa
+     * commission à part) : le revenu carte, payment-based, l'ignore donc. On le
+     * reconstitue depuis le bid livré = {@code negotiatedNetEur} (net voyageur
+     * figé au trip-linking, Modèle B : l'expéditeur paie gross = net×(1+taux)).
+     * Filtré {@code paymentMethod = CASH} pour ne pas doubler les deals carte
+     * déjà comptés par {@code PaymentRepository.sumCapturedRevenueForTraveler}.
+     * Même fenêtre que {@link #sumDeliveredKgForTraveler} ({@code b.createdAt}).
+     */
+    @Query("""
+        SELECT COALESCE(SUM(b.negotiatedNetEur), 0)
+        FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.paymentMethod = :method
+          AND b.createdAt BETWEEN :from AND :to AND b.deletedAt IS NULL
+    """)
+    java.math.BigDecimal sumCashNetRevenueForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("method") PaymentMethod method,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
+    /** Total tous temps du revenu net cash — voir {@link #sumCashNetRevenueForTraveler}. */
+    @Query("""
+        SELECT COALESCE(SUM(b.negotiatedNetEur), 0)
+        FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.paymentMethod = :method AND b.deletedAt IS NULL
+    """)
+    java.math.BigDecimal sumTotalCashNetRevenueForTraveler(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("method") PaymentMethod method);
+
+    /**
+     * Revenu cash agrégé par annonce, pour la ventilation « transactions » du
+     * cockpit pro. Miroir de {@code PaymentRepository.findReleasedRevenueByAnnouncement}
+     * côté espèces : gross = net = {@code negotiatedNetEur} (le voyageur encaisse
+     * le net en cash), commission = 0 (la commission Dony du cash est prélevée à
+     * part et son montant n'est pas figé sur le bid). Ainsi la somme des colonnes
+     * Net (carte + cash) se réconcilie exactement avec le KPI « Revenus ».
+     */
+    @Query("""
+        SELECT new com.dony.api.matching.dto.AnnouncementRevenueRow(
+            a.id, a.departureCity, a.arrivalCity, a.departureDate,
+            COUNT(b), COALESCE(SUM(b.negotiatedNetEur), 0), COALESCE(SUM(b.negotiatedNetEur * 0), 0))
+        FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.paymentMethod = :method
+          AND b.createdAt BETWEEN :from AND :to AND b.deletedAt IS NULL
+        GROUP BY a.id, a.departureCity, a.arrivalCity, a.departureDate
+        ORDER BY a.departureDate DESC
+    """)
+    List<AnnouncementRevenueRow> findCashRevenueByAnnouncement(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("method") PaymentMethod method,
             @Param("from") java.time.LocalDateTime from,
             @Param("to") java.time.LocalDateTime to);
 

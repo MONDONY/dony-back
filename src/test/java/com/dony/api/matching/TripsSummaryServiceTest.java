@@ -66,6 +66,23 @@ class TripsSummaryServiceTest {
     }
 
     @Test
+    void computeSummary_adds_cash_revenue_to_card_revenue() {
+        when(paymentRepository.sumCapturedRevenueForTraveler(
+                eq(traveler.getId()), eq(PaymentStatus.RELEASED), any(), any()))
+                .thenReturn(new BigDecimal("150.00"));
+        // Les deals réglés en espèces ne créent pas de PaymentEntity : leur net
+        // (bids CASH livrés) doit s'ajouter au revenu carte, pas rester à 0.
+        when(bidRepository.sumCashNetRevenueForTraveler(
+                eq(traveler.getId()), eq(BidStatus.COMPLETED),
+                eq(com.dony.api.payments.cash.PaymentMethod.CASH), any(), any()))
+                .thenReturn(new BigDecimal("50.00"));
+
+        TripsSummaryDto dto = service.computeSummary(traveler, StatsPeriod.DEFAULT);
+
+        assertThat(dto.revenue()).isEqualByComparingTo("200.00");
+    }
+
+    @Test
     void computeSummary_returns_zeros_when_repositories_return_null() {
         when(announcementRepository.countByTravelerIdAndStatusIn(
                 eq(traveler.getId()), any())).thenReturn(0L);
