@@ -81,7 +81,7 @@ public class NegotiationController {
     @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
     public ResponseEntity<Void> cancel(
             @PathVariable UUID id,
-            @RequestBody(required = false) @Valid NegotiationCancelRequest req) {
+            @RequestBody(required = false) @Valid NegotiationRejectRequest req) {
         service.cancelNegotiation(requireUserId(), id, req == null ? null : req.reason());
         return ResponseEntity.noContent().build();
     }

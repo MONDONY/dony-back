@@ -320,17 +320,8 @@ public class NegotiationService {
             // Soft-delete du trajet DÉDIÉ orphelin (créé exclusivement pour cette
             // demande via createDedicatedTrip) — miroir exact de refuseTrip. C'est
             // du travail DB transactionnel, donc il reste inline.
-            UUID annId = thread.getTravelerAnnouncementId();
-            if (annId != null) {
-                announcementRepo.findById(annId).ifPresent(ann -> {
-                    if (request.getId().equals(ann.getLinkedPackageRequestId())) {
-                        ann.softDelete();
-                        announcementRepo.save(ann);
-                        auditService.log("ANNOUNCEMENT", ann.getId(), "DEDICATED_TRIP_ORPHANED_ON_CANCEL", callerId,
-                            Map.of("threadId", threadId.toString()));
-                    }
-                });
-            }
+            softDeleteOrphanedDedicatedTrip(thread.getTravelerAnnouncementId(), request, callerId, threadId,
+                "DEDICATED_TRIP_ORPHANED_ON_CANCEL");
         }
 
         thread.setStatus(NegotiationThreadStatus.CANCELLED);
@@ -343,6 +334,37 @@ public class NegotiationService {
             thread.getId(), request.getId(), callerId, otherParty, byName, releaseEscrow));
         auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
             Map.of("reason", reason == null ? "" : reason));
+    }
+
+    /**
+     * Soft-deletes the DEDICATED trip announcement (created exclusively for this
+     * package_request via {@link #createDedicatedTrip}) once it is orphaned — i.e.
+     * detached/abandoned before payment. A dedicated trip's {@code availableKg} is
+     * always 0 until surplus is opened after payment, so once orphaned nobody can
+     * ever book it; without this cleanup it stays {@code ACTIVE} forever, a dead
+     * entry in the traveler's "Mes trajets" with {@code reservedKg} stuck.
+     *
+     * <p>No-op if {@code travelerAnnouncementId} is {@code null}, or if the
+     * announcement isn't a dedicated trip for THIS request (i.e. it was linked via
+     * {@link #submitTrip} instead — those are real, reusable trips and must never
+     * be deleted).
+     *
+     * <p>Shared by {@link #cancelNegotiation} and {@link #refuseTrip}; each passes
+     * its own {@code auditAction} so the audit_log entry keeps its distinct meaning.
+     */
+    private void softDeleteOrphanedDedicatedTrip(UUID travelerAnnouncementId, PackageRequestEntity request,
+                                                  UUID callerId, UUID threadId, String auditAction) {
+        if (travelerAnnouncementId == null) {
+            return;
+        }
+        announcementRepo.findById(travelerAnnouncementId).ifPresent(ann -> {
+            if (request.getId().equals(ann.getLinkedPackageRequestId())) {
+                ann.softDelete();
+                announcementRepo.save(ann);
+                auditService.log("ANNOUNCEMENT", ann.getId(), auditAction, callerId,
+                    Map.of("threadId", threadId.toString()));
+            }
+        });
     }
 
     /**
@@ -980,14 +1002,8 @@ public class NegotiationService {
         // aucune utilité une fois détaché : availableKg=0 pour toujours, personne
         // ne pourra jamais le réserver. Sans ce nettoyage il reste ACTIVE pour
         // toujours, orphelin dans « Mes trajets » du voyageur avec reservedKg figé.
-        announcementRepo.findById(oldAnnouncementId).ifPresent(ann -> {
-            if (request.getId().equals(ann.getLinkedPackageRequestId())) {
-                ann.softDelete();
-                announcementRepo.save(ann);
-                auditService.log("ANNOUNCEMENT", ann.getId(), "DEDICATED_TRIP_ORPHANED_ON_REFUSAL", callerId,
-                    Map.of("threadId", threadId.toString()));
-            }
-        });
+        softDeleteOrphanedDedicatedTrip(oldAnnouncementId, request, callerId, threadId,
+            "DEDICATED_TRIP_ORPHANED_ON_REFUSAL");
 
         // Persister la raison du refus comme message visible dans le thread
         if (reason != null && !reason.isBlank()) {

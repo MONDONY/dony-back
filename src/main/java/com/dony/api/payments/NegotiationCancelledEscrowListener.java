@@ -41,20 +41,16 @@ public class NegotiationCancelledEscrowListener {
         this.paymentService = paymentService;
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, condition = "#event.releaseEscrow()")
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onNegotiationCancelled(NegotiationCancelledEvent event) {
-        if (!event.releaseEscrow()) {
-            // OPEN / AWAITING_TRIP cancel — no Stripe hold in flight, nothing to release.
-            return;
-        }
         // Idempotent, best-effort: cancelNegotiationEscrow is a no-op when no escrow
         // exists or it is already terminal, and returns false only if a live hold could
         // not be cancelled (already captured) — logged, not rethrown, so a Stripe error
         // never leaves the (already committed) cancellation half-done.
         try {
-            boolean released = paymentService.cancelNegotiationEscrow(event.threadId());
+            boolean released = paymentService.cancelNegotiationEscrow(event.threadId(), "negotiation-cancelled");
             if (!released) {
                 log.warn("Negotiation escrow could not be released after cancel (thread={})",
                     event.threadId());

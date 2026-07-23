@@ -1088,12 +1088,15 @@ public class PaymentService {
      * sender switches the thread to another payment method (e.g. CASH) at checkout,
      * so the Stripe card hold is not left orphaned.
      *
+     * @param reason audit_log reason recorded on the {@code NEGOTIATION_ESCROW_CANCELED}
+     *               entry — distinguishes why the hold was released (e.g.
+     *               {@code "payment-method-switch"} vs {@code "negotiation-cancelled"}).
      * @return {@code true} if there is no in-flight escrow to release, or it was
      *         released; {@code false} if a live escrow exists but Stripe refused to
      *         cancel it (e.g. already captured) — the caller MUST then keep the
      *         current method (do not switch).
      */
-    public boolean cancelNegotiationEscrow(java.util.UUID threadId) {
+    public boolean cancelNegotiationEscrow(java.util.UUID threadId, String reason) {
         if (threadId == null) {
             return true;
         }
@@ -1119,7 +1122,7 @@ public class PaymentService {
             paymentRepository.save(payment);
             auditService.log("PAYMENT", payment.getId(), "NEGOTIATION_ESCROW_CANCELED", null,
                     Map.of("piId", payment.getStripePaymentIntentId(),
-                            "reason", "payment-method-switch"));
+                            "reason", reason));
             log.info("Negotiation escrow released (thread={}, pi={}) for payment-method switch",
                     threadId, payment.getStripePaymentIntentId());
             return true;

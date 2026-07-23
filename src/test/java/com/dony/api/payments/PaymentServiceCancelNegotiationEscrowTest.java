@@ -25,6 +25,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
             paymentRepository, mock(UserRepository.class), auditService, mock(AdminAlertService.class));
 
     private final UUID THREAD = UUID.randomUUID();
+    private static final String REASON = "negotiation-cancelled";
 
     private PaymentEntity payment(PaymentStatus status, String piId) {
         PaymentEntity p = new PaymentEntity();
@@ -45,7 +46,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
             when(pi.cancel()).thenReturn(pi);
             mocked.when(() -> PaymentIntent.retrieve("pi_hold")).thenReturn(pi);
 
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isTrue();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isTrue();
 
             verify(pi).cancel();
             assertThat(p.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
@@ -65,7 +66,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
             when(pi.cancel()).thenReturn(pi);
             mocked.when(() -> PaymentIntent.retrieve("pi_pending")).thenReturn(pi);
 
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isTrue();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isTrue();
 
             assertThat(p.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
             verify(paymentRepository).save(p);
@@ -77,7 +78,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
     void cancel_noPayment_returnsTrue() {
         when(paymentRepository.findByNegotiationThreadId(THREAD)).thenReturn(Optional.empty());
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isTrue();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isTrue();
             mocked.verifyNoInteractions();
         }
         verify(paymentRepository, never()).save(any());
@@ -89,7 +90,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
         PaymentEntity p = payment(PaymentStatus.RELEASED, "pi_done");
         when(paymentRepository.findByNegotiationThreadId(THREAD)).thenReturn(Optional.of(p));
         try (MockedStatic<PaymentIntent> mocked = mockStatic(PaymentIntent.class)) {
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isTrue();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isTrue();
             mocked.verifyNoInteractions();
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.RELEASED);
@@ -106,7 +107,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
             when(pi.cancel()).thenThrow(mock(StripeException.class));
             mocked.when(() -> PaymentIntent.retrieve("pi_boom")).thenReturn(pi);
 
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isFalse();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isFalse();
         }
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.ESCROW);
         verify(paymentRepository, never()).save(any());
@@ -115,7 +116,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
     @Test
     @DisplayName("threadId null → true, pas d'accès DB")
     void cancel_nullThread_returnsTrue() {
-        assertThat(service.cancelNegotiationEscrow(null)).isTrue();
+        assertThat(service.cancelNegotiationEscrow(null, REASON)).isTrue();
         verifyNoInteractions(paymentRepository);
     }
 
@@ -129,7 +130,7 @@ class PaymentServiceCancelNegotiationEscrowTest {
             when(pi.getStatus()).thenReturn("canceled");
             mocked.when(() -> PaymentIntent.retrieve("pi_already")).thenReturn(pi);
 
-            assertThat(service.cancelNegotiationEscrow(THREAD)).isTrue();
+            assertThat(service.cancelNegotiationEscrow(THREAD, REASON)).isTrue();
 
             verify(pi, never()).cancel();
             assertThat(p.getStatus()).isEqualTo(PaymentStatus.CANCELLED);

@@ -79,6 +79,6 @@ public class NegotiationEscrowAdapter implements NegotiationEscrowPort {
     public boolean releaseEscrowForMethodSwitch(UUID threadId) {
         // Delegates to PaymentService — the canonical owner of Stripe escrow
         // lifecycle (cancel PaymentIntent + flip PaymentEntity → CANCELLED + audit).
-        return paymentService.cancelNegotiationEscrow(threadId);
+        return paymentService.cancelNegotiationEscrow(threadId, "payment-method-switch");
     }
 }
