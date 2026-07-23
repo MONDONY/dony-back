@@ -50,14 +50,16 @@ public class ProAnalyticsService {
         LocalDateTime prevTo = prevRange[1];
 
         // Revenue = carte (escrow libéré) + espèces (net des bids CASH livrés, hors PaymentEntity).
-        BigDecimal revenue = orZero(paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, from, to))
-                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
-                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to)));
-        BigDecimal prevRevenue = orZero(paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, prevFrom, prevTo))
-                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
-                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, prevFrom, prevTo)));
+        BigDecimal revenue = TravelerRevenue.cardPlusCash(
+                paymentRepository.sumCapturedRevenueForTraveler(
+                        userId, PaymentStatus.RELEASED, from, to),
+                bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to));
+        BigDecimal prevRevenue = TravelerRevenue.cardPlusCash(
+                paymentRepository.sumCapturedRevenueForTraveler(
+                        userId, PaymentStatus.RELEASED, prevFrom, prevTo),
+                bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, prevFrom, prevTo));
 
         // Trips
         long trips = announcementRepository.countByTravelerIdAndCreatedAtBetween(userId, from, to);
@@ -129,10 +131,6 @@ public class ProAnalyticsService {
 
     private String formatPercent(double rate) {
         return BigDecimal.valueOf(rate * 100).setScale(0, RoundingMode.HALF_UP) + "%";
-    }
-
-    private BigDecimal orZero(BigDecimal v) {
-        return v != null ? v : BigDecimal.ZERO;
     }
 
     /**

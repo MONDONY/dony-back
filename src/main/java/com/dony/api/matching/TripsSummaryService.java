@@ -67,14 +67,13 @@ public class TripsSummaryService {
                 userId, BidStatus.COMPLETED, from, to);
 
         // Revenu = carte (escrow libéré) + espèces (net des bids CASH livrés, qui
-        // ne passent par aucun PaymentEntity). Sans le second terme, un trajet
-        // réglé en cash restait à 0 € alors que « Kg vendus » le comptait déjà.
-        BigDecimal cardRevenue = paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, from, to);
-        BigDecimal cashRevenue = bidRepository.sumCashNetRevenueForTraveler(
-                userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to);
-        BigDecimal revenue = (cardRevenue != null ? cardRevenue : BigDecimal.ZERO)
-                .add(cashRevenue != null ? cashRevenue : BigDecimal.ZERO);
+        // ne passent par aucun PaymentEntity). Sans le terme cash, un trajet réglé
+        // en espèces restait à 0 € alors que « Kg vendus » le comptait déjà.
+        BigDecimal revenue = TravelerRevenue.cardPlusCash(
+                paymentRepository.sumCapturedRevenueForTraveler(
+                        userId, PaymentStatus.RELEASED, from, to),
+                bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to));
 
         long tripsPublished = announcementRepository
                 .countByTravelerIdAndCreatedAtBetweenAndStatusNot(

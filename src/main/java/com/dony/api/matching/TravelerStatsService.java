@@ -41,14 +41,15 @@ public class TravelerStatsService {
         LocalDateTime monthEnd = current.atEndOfMonth().atTime(23, 59, 59);
 
         // Carte (escrow libéré) + espèces (net des bids CASH livrés, hors PaymentEntity).
-        BigDecimal monthlyRevenue = orZero(paymentRepository
-                .sumCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED, monthStart, monthEnd))
-                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
-                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, monthStart, monthEnd)));
-        BigDecimal totalRevenue = orZero(paymentRepository
-                .sumTotalCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED))
-                .add(orZero(bidRepository.sumTotalCashNetRevenueForTraveler(
-                        userId, BidStatus.COMPLETED, PaymentMethod.CASH)));
+        BigDecimal monthlyRevenue = TravelerRevenue.cardPlusCash(
+                paymentRepository.sumCapturedRevenueForTraveler(
+                        userId, PaymentStatus.RELEASED, monthStart, monthEnd),
+                bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, monthStart, monthEnd));
+        BigDecimal totalRevenue = TravelerRevenue.cardPlusCash(
+                paymentRepository.sumTotalCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED),
+                bidRepository.sumTotalCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH));
 
         long monthlyTrips = announcementRepository
                 .countByTravelerIdAndStatusAndCreatedAtBetween(userId, AnnouncementStatus.COMPLETED, monthStart, monthEnd);
@@ -92,9 +93,5 @@ public class TravelerStatsService {
                 parcelsInTransit,
                 traveler.getRatingCount()
         );
-    }
-
-    private static BigDecimal orZero(BigDecimal value) {
-        return value != null ? value : BigDecimal.ZERO;
     }
 }
