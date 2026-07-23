@@ -1140,7 +1140,14 @@ public class NegotiationService {
                 && !t.getLastActivityAt().isAfter(nowUtc.minusHours(1));
         boolean nudgeNotRecent = t.getLastNudgeAt() == null
                 || !t.getLastNudgeAt().isAfter(nowUtc.minusHours(1));
-        boolean canNudge = nudgeStatus && !isMyTurn && waitedEnough && nudgeNotRecent;
+        // La partie qui attend n'est pas la même selon l'état : en AWAITING_TRIP,
+        // isMyTurn vaut toujours false (calculé seulement pour OPEN plus haut), donc
+        // !isMyTurn serait vrai pour les DEUX viewers — y compris le voyageur, qui
+        // doit pourtant AGIR (lier un trajet) et non attendre. Seul l'expéditeur attend.
+        boolean callerIsWaiting = t.getStatus() == NegotiationThreadStatus.AWAITING_TRIP
+                ? !callerId.equals(t.getTravelerId())   // en AWAITING_TRIP, le voyageur doit agir -> l'expéditeur attend
+                : !isMyTurn;                             // en OPEN, la partie qui n'a pas la main attend
+        boolean canNudge = nudgeStatus && callerIsWaiting && waitedEnough && nudgeNotRecent;
 
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),

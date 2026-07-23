@@ -933,6 +933,37 @@ class NegotiationServiceTest {
 
             assertThat(resp.canNudge()).isFalse();
         }
+
+        @Test
+        @DisplayName("true — AWAITING_TRIP, viewer = expéditeur (partie qui attend le voyageur)")
+        void canNudge_trueWhenAwaitingTrip_viewerIsSender() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            // En AWAITING_TRIP le voyageur doit lier un trajet -> l'expéditeur attend.
+            var resp = service.getById(SENDER_ID, threadId);
+
+            assertThat(resp.canNudge()).isTrue();
+        }
+
+        @Test
+        @DisplayName("false — AWAITING_TRIP, viewer = voyageur (partie qui doit agir, jamais relancée)")
+        void canNudge_falseWhenAwaitingTrip_viewerIsTraveler() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            // Le voyageur est celui qui doit agir (lier un trajet) : jamais canNudge=true
+            // pour lui, sinon il verrait un bouton "Relancer" que /nudge rejetterait en 409.
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
     }
 
     @Nested
