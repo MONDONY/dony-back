@@ -225,8 +225,8 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("voyageur ne peut pas offrir le mode accepté par la demande → 422 payment-method/not-offerable")
-        void start_rejectsWhenTravelerCannotOfferAnyAcceptedMethod() {
+        @DisplayName("voyageur sans Stripe peut négocier une demande card-only → blocage différé au trip-linking")
+        void start_allowsTravelerWithoutStripeOnCardOnlyRequest_blockDeferredToTripLinking() {
             // Request only accepts STRIPE
             request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
             // Traveler is NOT onboarded on Stripe (default stripeAccountStatus = NOT_CREATED)
@@ -235,17 +235,32 @@ class NegotiationServiceTest {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(any(), any()))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(any(), any())).thenReturn(0L);
             when(threadRepo.countCreatedBy(any(), any())).thenReturn(0L);
+            when(threadRepo.save(any())).thenAnswer(inv -> {
+                NegotiationThreadEntity t = inv.getArgument(0);
+                try {
+                    var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                    idField.setAccessible(true);
+                    idField.set(t, UUID.randomUUID());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return t;
+            });
 
             var req = new NegotiationStartRequest(REQUEST_ID, new BigDecimal("30"),
                 LocalDate.now().plusDays(5), new BigDecimal("10"), null, "x");
-            assertThatThrownBy(() -> service.start(TRAVELER_ID, req))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("payment-method/not-offerable");
+
+            var response = service.start(TRAVELER_ID, req);
+
+            assertThat(response).isNotNull();
+            assertThat(response.status()).isEqualTo(NegotiationThreadStatus.OPEN);
+            verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.PROPOSAL));
         }
     }
 

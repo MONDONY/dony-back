@@ -144,13 +144,6 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "negotiation/rate-limit");
         }
 
-        boolean canOfferAny = request.getAcceptedPaymentMethods().stream()
-            .anyMatch(m -> travelerCanOffer(traveler, m));
-        if (!canOfferAny) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "payment-method/not-offerable");
-        }
-
         NegotiationThreadEntity thread = new NegotiationThreadEntity();
         thread.setPackageRequestId(req.packageRequestId());
         thread.setTravelerId(travelerId);
