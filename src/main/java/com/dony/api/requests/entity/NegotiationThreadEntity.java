@@ -12,6 +12,7 @@ import org.hibernate.annotations.SQLRestriction;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -72,9 +73,9 @@ public class NegotiationThreadEntity extends BaseEntity {
      * NULL tant que le trajet n'est pas lié. L'expéditeur choisit son mode final
      * au checkout parmi ce SET.
      */
-    @Convert(converter = com.dony.api.payments.cash.PaymentMethodSetConverter.class)
+    @Convert(converter = com.dony.api.payments.cash.NullablePaymentMethodSetConverter.class)
     @Column(name = "available_payment_methods")
-    private java.util.Set<com.dony.api.payments.cash.PaymentMethod> availablePaymentMethods;
+    private Set<PaymentMethod> availablePaymentMethods;
 
     // Dony commission charge tracking for CASH negotiated threads.
     // Stored as String (not the payments/cash enums) to avoid coupling the
@@ -124,9 +125,7 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
 
-    public java.util.Set<com.dony.api.payments.cash.PaymentMethod> getAvailablePaymentMethods() {
-        return availablePaymentMethods;
-    }
+    public Set<PaymentMethod> getAvailablePaymentMethods() { return availablePaymentMethods; }
 
     public String getCommissionStatus() { return commissionStatus; }
 
@@ -160,9 +159,7 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
 
-    public void setAvailablePaymentMethods(java.util.Set<com.dony.api.payments.cash.PaymentMethod> availablePaymentMethods) {
-        this.availablePaymentMethods = availablePaymentMethods;
-    }
+    public void setAvailablePaymentMethods(Set<PaymentMethod> availablePaymentMethods) { this.availablePaymentMethods = availablePaymentMethods; }
 
     public void setCommissionStatus(String commissionStatus) { this.commissionStatus = commissionStatus; }
 
