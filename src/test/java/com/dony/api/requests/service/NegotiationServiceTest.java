@@ -514,13 +514,14 @@ class NegotiationServiceTest {
             assertThat(publishedEvent.packageRequestId()).isEqualTo(REQUEST_ID);
             assertThat(publishedEvent.byUserId()).isEqualTo(SENDER_ID);
             assertThat(publishedEvent.toUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(publishedEvent.releaseEscrow()).isFalse();
             verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("CANCELLED"), eq(SENDER_ID), any());
             verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
 
         @Test
-        @DisplayName("status AWAITING_PAYMENT → escrow libéré + trajet dédié soft-deleted + CANCELLED")
-        void cancel_awaitingPayment_cancelsEscrow_softDeletesDedicatedTrip_setsCancelled() {
+        @DisplayName("status AWAITING_PAYMENT → escrow NON libéré inline (releaseEscrow=true) + trajet dédié soft-deleted + CANCELLED")
+        void cancel_awaitingPayment_defersEscrow_softDeletesDedicatedTrip_setsCancelled() {
             UUID announcementId = UUID.randomUUID();
             thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
             thread.setTravelerAnnouncementId(announcementId);
@@ -537,12 +538,13 @@ class NegotiationServiceTest {
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(dedicatedAnn));
-            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
 
             service.cancelNegotiation(TRAVELER_ID, THREAD_ID, null);
 
             assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
-            verify(escrowPort).releaseEscrowForMethodSwitch(THREAD_ID);
+            // Le hold Stripe n'est PLUS annulé inline : cela se fait dans un listener
+            // paiements AFTER_COMMIT (règle #18). Le service ne touche jamais escrowPort ici.
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
             assertThat(dedicatedAnn.getDeletedAt()).isNotNull();
             verify(announcementRepo).save(dedicatedAnn);
             ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
@@ -550,6 +552,8 @@ class NegotiationServiceTest {
             verify(eventPublisher).publishEvent(eventCaptor.capture());
             assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
             assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+            // L'event porte le drapeau qui déclenchera la libération de l'escrow après commit.
+            assertThat(eventCaptor.getValue().releaseEscrow()).isTrue();
         }
 
         @Test
@@ -568,6 +572,7 @@ class NegotiationServiceTest {
             verify(eventPublisher).publishEvent(eventCaptor.capture());
             assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
             assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(eventCaptor.getValue().releaseEscrow()).isFalse();
             verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
     }

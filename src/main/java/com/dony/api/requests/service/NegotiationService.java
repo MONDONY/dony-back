@@ -308,14 +308,18 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/not-cancellable");
         }
 
-        if (st == NegotiationThreadStatus.AWAITING_PAYMENT) {
-            // Annule tout hold Stripe en vol (idempotent, best-effort). Un échec
-            // (hold déjà capturé) ne devrait pas arriver hors ACCEPTED ; on
-            // n'empêche pas la fin de la négociation dans ce cas.
-            escrowPort.releaseEscrowForMethodSwitch(threadId);
+        // Un hold Stripe en vol n'existe qu'en AWAITING_PAYMENT. Son annulation
+        // (side-effect non-transactionnel) NE doit PAS être exécutée inline avant
+        // le commit : un rollback ultérieur (contrainte, race, webhook concurrent)
+        // voiderait le hold de façon irréversible pendant que la DB revient en
+        // arrière (CLAUDE.md règle #18). On délègue donc à un listener paiements
+        // AFTER_COMMIT + REQUIRES_NEW via ce drapeau.
+        boolean releaseEscrow = (st == NegotiationThreadStatus.AWAITING_PAYMENT);
 
+        if (st == NegotiationThreadStatus.AWAITING_PAYMENT) {
             // Soft-delete du trajet DÉDIÉ orphelin (créé exclusivement pour cette
-            // demande via createDedicatedTrip) — miroir exact de refuseTrip.
+            // demande via createDedicatedTrip) — miroir exact de refuseTrip. C'est
+            // du travail DB transactionnel, donc il reste inline.
             UUID annId = thread.getTravelerAnnouncementId();
             if (annId != null) {
                 announcementRepo.findById(annId).ifPresent(ann -> {
@@ -336,7 +340,7 @@ public class NegotiationService {
         UUID otherParty = isSender ? thread.getTravelerId() : request.getSenderId();
         String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse("Un utilisateur");
         eventPublisher.publishEvent(new NegotiationCancelledEvent(
-            thread.getId(), request.getId(), callerId, otherParty, byName));
+            thread.getId(), request.getId(), callerId, otherParty, byName, releaseEscrow));
         auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
             Map.of("reason", reason == null ? "" : reason));
     }
