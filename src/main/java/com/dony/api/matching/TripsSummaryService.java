@@ -4,6 +4,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.matching.dto.TripsSummaryDto;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
+import com.dony.api.payments.cash.PaymentMethod;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -65,8 +66,15 @@ public class TripsSummaryService {
         BigDecimal kgSold = bidRepository.sumDeliveredKgForTraveler(
                 userId, BidStatus.COMPLETED, from, to);
 
-        BigDecimal revenue = paymentRepository.sumCapturedRevenueForTraveler(
+        // Revenu = carte (escrow libéré) + espèces (net des bids CASH livrés, qui
+        // ne passent par aucun PaymentEntity). Sans le second terme, un trajet
+        // réglé en cash restait à 0 € alors que « Kg vendus » le comptait déjà.
+        BigDecimal cardRevenue = paymentRepository.sumCapturedRevenueForTraveler(
                 userId, PaymentStatus.RELEASED, from, to);
+        BigDecimal cashRevenue = bidRepository.sumCashNetRevenueForTraveler(
+                userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to);
+        BigDecimal revenue = (cardRevenue != null ? cardRevenue : BigDecimal.ZERO)
+                .add(cashRevenue != null ? cashRevenue : BigDecimal.ZERO);
 
         long tripsPublished = announcementRepository
                 .countByTravelerIdAndCreatedAtBetweenAndStatusNot(

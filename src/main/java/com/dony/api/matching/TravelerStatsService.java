@@ -4,6 +4,7 @@ import com.dony.api.auth.UserEntity;
 import com.dony.api.matching.dto.TravelerStatsDto;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
+import com.dony.api.payments.cash.PaymentMethod;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +40,15 @@ public class TravelerStatsService {
         LocalDateTime monthStart = current.atDay(1).atStartOfDay();
         LocalDateTime monthEnd = current.atEndOfMonth().atTime(23, 59, 59);
 
-        BigDecimal monthlyRevenue = paymentRepository
-                .sumCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED, monthStart, monthEnd);
-        BigDecimal totalRevenue = paymentRepository
-                .sumTotalCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED);
+        // Carte (escrow libéré) + espèces (net des bids CASH livrés, hors PaymentEntity).
+        BigDecimal monthlyRevenue = orZero(paymentRepository
+                .sumCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED, monthStart, monthEnd))
+                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, monthStart, monthEnd)));
+        BigDecimal totalRevenue = orZero(paymentRepository
+                .sumTotalCapturedRevenueForTraveler(userId, PaymentStatus.RELEASED))
+                .add(orZero(bidRepository.sumTotalCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH)));
 
         long monthlyTrips = announcementRepository
                 .countByTravelerIdAndStatusAndCreatedAtBetween(userId, AnnouncementStatus.COMPLETED, monthStart, monthEnd);
@@ -86,5 +92,9 @@ public class TravelerStatsService {
                 parcelsInTransit,
                 traveler.getRatingCount()
         );
+    }
+
+    private static BigDecimal orZero(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 }

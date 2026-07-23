@@ -6,6 +6,7 @@ import com.dony.api.matching.dto.ProAnalyticsResponse.KpiDto;
 import com.dony.api.matching.dto.ProAnalyticsResponse.TransactionRowDto;
 import com.dony.api.payments.PaymentRepository;
 import com.dony.api.payments.PaymentStatus;
+import com.dony.api.payments.cash.PaymentMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,11 +49,15 @@ public class ProAnalyticsService {
         LocalDateTime prevFrom = prevRange[0];
         LocalDateTime prevTo = prevRange[1];
 
-        // Revenue
+        // Revenue = carte (escrow libéré) + espèces (net des bids CASH livrés, hors PaymentEntity).
         BigDecimal revenue = orZero(paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, from, to));
+                userId, PaymentStatus.RELEASED, from, to))
+                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to)));
         BigDecimal prevRevenue = orZero(paymentRepository.sumCapturedRevenueForTraveler(
-                userId, PaymentStatus.RELEASED, prevFrom, prevTo));
+                userId, PaymentStatus.RELEASED, prevFrom, prevTo))
+                .add(orZero(bidRepository.sumCashNetRevenueForTraveler(
+                        userId, BidStatus.COMPLETED, PaymentMethod.CASH, prevFrom, prevTo)));
 
         // Trips
         long trips = announcementRepository.countByTravelerIdAndCreatedAtBetween(userId, from, to);
