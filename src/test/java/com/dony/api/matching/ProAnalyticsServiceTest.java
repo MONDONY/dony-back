@@ -108,6 +108,53 @@ class ProAnalyticsServiceTest {
         assertThat(resp.transactions()).hasSize(2);
     }
 
+    /**
+     * Un trajet réglé en espèces n'a pas de PaymentEntity : sa ligne doit venir
+     * du terme cash et fusionner avec la ligne carte de la même annonce, pour que
+     * la ventilation reste réconciliée avec le KPI « Revenus ».
+     */
+    @Test
+    void transactions_mergeCardAndCashPerAnnouncement() {
+        UUID travelerId = UUID.randomUUID();
+        UUID annA = UUID.randomUUID();
+        UUID annB = UUID.randomUUID();
+        UserEntity traveler = new UserEntity();
+        ReflectionTestUtils.setField(traveler, "id", travelerId);
+
+        stubKpisToZero();
+
+        // annA : une ligne carte (net 92) + une ligne cash (net 50) → fusion.
+        when(paymentRepository.findReleasedRevenueByAnnouncement(
+                eq(travelerId), eq(PaymentStatus.RELEASED), any(), any()))
+                .thenReturn(List.of(new AnnouncementRevenueRow(
+                        annA, "Paris", "Dakar", LocalDate.of(2026, 6, 10),
+                        2L, new BigDecimal("100.00"), new BigDecimal("8.00"))));
+        when(bidRepository.findCashRevenueByAnnouncement(
+                eq(travelerId), eq(BidStatus.COMPLETED),
+                eq(com.dony.api.payments.cash.PaymentMethod.CASH), any(), any()))
+                .thenReturn(List.of(
+                        new AnnouncementRevenueRow(annA, "Paris", "Dakar",
+                                LocalDate.of(2026, 6, 10), 1L,
+                                new BigDecimal("50.00"), BigDecimal.ZERO),
+                        new AnnouncementRevenueRow(annB, "Lyon", "Abidjan",
+                                LocalDate.of(2026, 6, 5), 1L,
+                                new BigDecimal("30.00"), BigDecimal.ZERO)));
+
+        ProAnalyticsResponse resp = service().computeAnalytics(traveler, "year");
+
+        assertThat(resp.transactions()).hasSize(2);
+        ProAnalyticsResponse.TransactionRowDto merged = resp.transactions().stream()
+                .filter(r -> r.tripId().equals(annA.toString())).findFirst().orElseThrow();
+        assertThat(merged.parcelCount()).isEqualTo(3);          // 2 carte + 1 cash
+        assertThat(merged.grossRevenue()).isEqualTo(15000L);    // 100 + 50
+        assertThat(merged.commission()).isEqualTo(800L);        // 8 + 0
+        assertThat(merged.netRevenue()).isEqualTo(14200L);      // 92 + 50
+
+        long netSum = resp.transactions().stream()
+                .mapToLong(ProAnalyticsResponse.TransactionRowDto::netRevenue).sum();
+        assertThat(netSum).isEqualTo(17200L);                    // 142 + 30
+    }
+
     @Test
     void transactions_emptyWhenNoReleasedPayments() {
         UUID travelerId = UUID.randomUUID();

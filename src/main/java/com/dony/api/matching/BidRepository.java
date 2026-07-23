@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.matching.dto.AnnouncementRevenueRow;
 import com.dony.api.payments.cash.CommissionStatus;
 import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.LockModeType;
@@ -119,6 +120,33 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("travelerId") UUID travelerId,
             @Param("status") BidStatus status,
             @Param("method") PaymentMethod method);
+
+    /**
+     * Revenu cash agrégé par annonce, pour la ventilation « transactions » du
+     * cockpit pro. Miroir de {@code PaymentRepository.findReleasedRevenueByAnnouncement}
+     * côté espèces : gross = net = {@code negotiatedNetEur} (le voyageur encaisse
+     * le net en cash), commission = 0 (la commission Dony du cash est prélevée à
+     * part et son montant n'est pas figé sur le bid). Ainsi la somme des colonnes
+     * Net (carte + cash) se réconcilie exactement avec le KPI « Revenus ».
+     */
+    @Query("""
+        SELECT new com.dony.api.matching.dto.AnnouncementRevenueRow(
+            a.id, a.departureCity, a.arrivalCity, a.departureDate,
+            COUNT(b), COALESCE(SUM(b.negotiatedNetEur), 0), COALESCE(SUM(b.negotiatedNetEur * 0), 0))
+        FROM BidEntity b
+        JOIN AnnouncementEntity a ON b.announcementId = a.id
+        WHERE a.travelerId = :travelerId AND b.status = :status
+          AND b.paymentMethod = :method
+          AND b.createdAt BETWEEN :from AND :to AND b.deletedAt IS NULL
+        GROUP BY a.id, a.departureCity, a.arrivalCity, a.departureDate
+        ORDER BY a.departureDate DESC
+    """)
+    List<AnnouncementRevenueRow> findCashRevenueByAnnouncement(
+            @Param("travelerId") UUID travelerId,
+            @Param("status") BidStatus status,
+            @Param("method") PaymentMethod method,
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
 
     /**
      * Counts only bids that are currently visible to the traveler on their announcement

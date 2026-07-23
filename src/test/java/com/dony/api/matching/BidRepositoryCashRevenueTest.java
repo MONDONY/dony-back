@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.matching.dto.AnnouncementRevenueRow;
 import com.dony.api.payments.cash.PaymentMethod;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,5 +136,39 @@ class BidRepositoryCashRevenueTest {
                 traveler, BidStatus.COMPLETED, PaymentMethod.CASH);
 
         assertThat(total).isEqualByComparingTo("150.00");
+    }
+
+    @Test
+    void cashByAnnouncement_groupsWithNetGrossAndZeroCommission() {
+        UUID traveler = UUID.randomUUID();
+        UUID ann = newAnnouncement(traveler);
+        newBid(ann, BidStatus.COMPLETED, PaymentMethod.CASH, "150.00");
+        newBid(ann, BidStatus.COMPLETED, PaymentMethod.CASH, "90.00");
+        // Bruit à exclure : carte, non-livré, autre annonce.
+        newBid(ann, BidStatus.COMPLETED, PaymentMethod.STRIPE, "999.00");
+        newBid(ann, BidStatus.ACCEPTED, PaymentMethod.CASH, "999.00");
+
+        List<AnnouncementRevenueRow> rows = bidRepository.findCashRevenueByAnnouncement(
+                traveler, BidStatus.COMPLETED, PaymentMethod.CASH, FROM, TO);
+
+        assertThat(rows).hasSize(1);
+        AnnouncementRevenueRow row = rows.get(0);
+        assertThat(row.announcementId()).isEqualTo(ann);
+        assertThat(row.parcelCount()).isEqualTo(2);
+        // gross = net (le voyageur encaisse le net en cash), commission = 0.
+        assertThat(row.gross()).isEqualByComparingTo("240.00");
+        assertThat(row.commission()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void cashByAnnouncement_excludesOtherTraveler() {
+        UUID traveler = UUID.randomUUID();
+        UUID otherAnn = newAnnouncement(UUID.randomUUID());
+        newBid(otherAnn, BidStatus.COMPLETED, PaymentMethod.CASH, "150.00");
+
+        List<AnnouncementRevenueRow> rows = bidRepository.findCashRevenueByAnnouncement(
+                traveler, BidStatus.COMPLETED, PaymentMethod.CASH, FROM, TO);
+
+        assertThat(rows).isEmpty();
     }
 }

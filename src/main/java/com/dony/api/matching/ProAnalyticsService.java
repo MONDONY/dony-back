@@ -1,6 +1,7 @@
 package com.dony.api.matching;
 
 import com.dony.api.auth.UserEntity;
+import com.dony.api.matching.dto.AnnouncementRevenueRow;
 import com.dony.api.matching.dto.ProAnalyticsResponse;
 import com.dony.api.matching.dto.ProAnalyticsResponse.KpiDto;
 import com.dony.api.matching.dto.ProAnalyticsResponse.TransactionRowDto;
@@ -13,7 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.NumberFormat;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -134,29 +138,61 @@ public class ProAnalyticsService {
     }
 
     /**
-     * Détail des transactions : une ligne par annonce ayant généré des paiements
-     * RELEASED sur la période. Piloté par les mêmes paiements que le KPI
-     * « Revenus nets » (statut RELEASED + {@code createdAt} dans la période), donc
-     * la somme des colonnes Net se réconcilie exactement avec ce KPI. La commission
-     * remontée est celle réellement prélevée (overrides figés inclus).
+     * Détail des transactions : une ligne par annonce sur la période, fusionnant
+     * les revenus carte (paiements RELEASED) et espèces (bids CASH livrés, qui ne
+     * créent aucun PaymentEntity). Sans le terme cash, un trajet réglé en espèces
+     * n'apparaîtrait pas ici et la somme des colonnes Net ne se réconcilierait plus
+     * avec le KPI « Revenus ». Une même annonce peut porter les deux, d'où la fusion.
      */
     private List<TransactionRowDto> buildTransactions(UUID userId, LocalDateTime from, LocalDateTime to) {
-        return paymentRepository
-                .findReleasedRevenueByAnnouncement(userId, PaymentStatus.RELEASED, from, to)
-                .stream()
-                .map(r -> {
-                    BigDecimal net = r.gross().subtract(r.commission());
-                    return new TransactionRowDto(
-                            r.announcementId().toString(),
-                            r.departureCity() + " → " + r.arrivalCity(),
-                            r.departureDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                            (int) r.parcelCount(),
-                            toCents(r.gross()),
-                            toCents(r.commission()),
-                            toCents(net)
-                    );
-                })
+        Map<UUID, TxnAccumulator> byAnnouncement = new LinkedHashMap<>();
+        paymentRepository.findReleasedRevenueByAnnouncement(userId, PaymentStatus.RELEASED, from, to)
+                .forEach(r -> accumulate(byAnnouncement, r));
+        bidRepository.findCashRevenueByAnnouncement(userId, BidStatus.COMPLETED, PaymentMethod.CASH, from, to)
+                .forEach(r -> accumulate(byAnnouncement, r));
+
+        return byAnnouncement.values().stream()
+                .sorted(Comparator.comparing((TxnAccumulator a) -> a.departureDate).reversed())
+                .map(a -> new TransactionRowDto(
+                        a.announcementId.toString(),
+                        a.departureCity + " → " + a.arrivalCity,
+                        a.departureDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                        (int) a.parcelCount,
+                        toCents(a.gross),
+                        toCents(a.commission),
+                        toCents(a.gross.subtract(a.commission))))
                 .toList();
+    }
+
+    private static void accumulate(Map<UUID, TxnAccumulator> map, AnnouncementRevenueRow r) {
+        map.computeIfAbsent(
+                r.announcementId(),
+                id -> new TxnAccumulator(id, r.departureCity(), r.arrivalCity(), r.departureDate()))
+           .add(r.parcelCount(), r.gross(), r.commission());
+    }
+
+    /** Accumulateur mutable par annonce : additionne carte + cash. */
+    private static final class TxnAccumulator {
+        final UUID announcementId;
+        final String departureCity;
+        final String arrivalCity;
+        final LocalDate departureDate;
+        long parcelCount;
+        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal commission = BigDecimal.ZERO;
+
+        TxnAccumulator(UUID announcementId, String departureCity, String arrivalCity, LocalDate departureDate) {
+            this.announcementId = announcementId;
+            this.departureCity = departureCity;
+            this.arrivalCity = arrivalCity;
+            this.departureDate = departureDate;
+        }
+
+        void add(long count, BigDecimal g, BigDecimal c) {
+            parcelCount += count;
+            gross = gross.add(g);
+            commission = commission.add(c);
+        }
     }
 
     private long toCents(BigDecimal euros) {
