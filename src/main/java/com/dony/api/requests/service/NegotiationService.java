@@ -371,7 +371,6 @@ public class NegotiationService {
     @Transactional
     public NegotiationThreadResponse submitTrip(UUID callerId, UUID threadId, NegotiationSubmitTripRequest req) {
         UUID travelerAnnouncementId = req.travelerAnnouncementId();
-        PaymentMethod paymentMethod = req.paymentMethod();
 
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
@@ -384,10 +383,11 @@ public class NegotiationService {
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
-        if (!request.getAcceptedPaymentMethods().contains(paymentMethod)) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "payment-method/not-accepted-by-request");
-        }
+        UserEntity traveler = userRepository.findById(callerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        java.util.Set<PaymentMethod> available = computeAvailableMethods(
+            request, traveler, thread.getCurrentPriceEur(), req.useCardForCommission());
+        assertNonEmptyOrThrow(available, request.getAcceptedPaymentMethods());
 
         // Validate the announcement belongs to caller and matches corridor + date window
         com.dony.api.matching.AnnouncementEntity ann = announcementRepo.findById(travelerAnnouncementId)
@@ -422,13 +422,10 @@ public class NegotiationService {
                 "announcement/date-mismatch");
         }
 
-        if (paymentMethod == PaymentMethod.CASH) {
-            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
-        }
-
         thread.setTravelerAnnouncementId(travelerAnnouncementId);
         thread.setTravelerTravelDate(annDate);
-        thread.setPaymentMethod(paymentMethod);
+        thread.setAvailablePaymentMethods(available);
+        thread.setPaymentMethod(null); // l'expéditeur choisit au checkout parmi le SET
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -440,39 +437,14 @@ public class NegotiationService {
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "TRIP_LINKED", callerId,
             Map.of("announcementId", travelerAnnouncementId.toString(),
-                   "paymentMethod", paymentMethod.name()));
+                   "availablePaymentMethods", available.toString()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
-        UserEntity submitTraveler = userRepository.findById(callerId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
             .orElse("Expéditeur");
-        return toResponse(thread, allMsgs, null, submitTraveler, request, callerId, senderName, ann);
-    }
-
-    /**
-     * Gate cash au moment de lier un trajet. Wallet d'abord par défaut ; si le
-     * wallet est insuffisant ET que le voyageur consent à un prélèvement carte
-     * ({@code useCard}), on autorise la liaison à condition qu'une carte de
-     * commission soit enregistrée. Le prélèvement réel a lieu plus tard, au
-     * finalize (wallet d'abord puis carte).
-     */
-    private void requireCashCommissionSource(UUID callerId, NegotiationThreadEntity thread, boolean useCard) {
-        if (useCard) {
-            if (!cashGatePort.hasCommissionCard(callerId)) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "payment-method/no-commission-card");
-            }
-            return;
-        }
-        BigDecimal commission = PriceBreakdown.fromNet(
-            thread.getCurrentPriceEur(), commissionProperties.rate()).commission();
-        if (!cashGatePort.hasSufficientFunds(callerId, commission)) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "payment-method/traveler-insufficient-funds-cash");
-        }
+        return toResponse(thread, allMsgs, null, traveler, request, callerId, senderName, ann);
     }
 
     /**
@@ -505,10 +477,11 @@ public class NegotiationService {
         PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
-        if (!request.getAcceptedPaymentMethods().contains(req.paymentMethod())) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "payment-method/not-accepted-by-request");
-        }
+        UserEntity traveler = userRepository.findById(callerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        java.util.Set<PaymentMethod> available = computeAvailableMethods(
+            request, traveler, thread.getCurrentPriceEur(), req.useCardForCommission());
+        assertNonEmptyOrThrow(available, request.getAcceptedPaymentMethods());
 
         // Validate the chosen date falls within the sender's tolerance window.
         java.time.LocalDate from = request.getDesiredDate().minusDays(request.getDateToleranceDays());
@@ -517,13 +490,6 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "announcement/date-mismatch");
         }
-
-        if (req.paymentMethod() == PaymentMethod.CASH) {
-            requireCashCommissionSource(callerId, thread, req.useCardForCommission());
-        }
-
-        UserEntity traveler = userRepository.findById(callerId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
 
         // Build the dedicated announcement with all locked fields derived server-side.
         com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
@@ -587,7 +553,8 @@ public class NegotiationService {
         // Link the dedicated trip to the thread and transition to AWAITING_PAYMENT.
         thread.setTravelerAnnouncementId(savedAnn.getId());
         thread.setTravelerTravelDate(savedAnn.getDepartureDate());
-        thread.setPaymentMethod(req.paymentMethod());
+        thread.setAvailablePaymentMethods(available);
+        thread.setPaymentMethod(null); // l'expéditeur choisit au checkout parmi le SET
         thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
@@ -600,7 +567,7 @@ public class NegotiationService {
         auditService.log("NEGOTIATION_THREAD", threadId, "DEDICATED_TRIP_CREATED", callerId,
             Map.of("announcementId", savedAnn.getId().toString(),
                    "linkedPackageRequestId", request.getId().toString(),
-                   "paymentMethod", req.paymentMethod().name()));
+                   "availablePaymentMethods", available.toString()));
 
         List<NegotiationMessageResponse> allMsgs = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
             .stream().map(this::toMessageResponse).toList();
@@ -1219,5 +1186,47 @@ public class NegotiationService {
             case STRIPE -> t.getStripeAccountStatus() == StripeAccountStatus.ONBOARDING_COMPLETE;
             case CASH, WAVE, ORANGE_MONEY -> true;
         };
+    }
+
+    /**
+     * SET des modes réellement fournissables = colis.acceptedPaymentMethods ∩ capacité voyageur.
+     * STRIPE : compte Connect onboardé. CASH : fonds wallet suffisants OU (consentement carte
+     * ET carte de commission enregistrée) — la commission est fonction du prix négocié.
+     */
+    private java.util.Set<PaymentMethod> computeAvailableMethods(
+            PackageRequestEntity request, UserEntity traveler,
+            BigDecimal negotiatedPrice, boolean useCardForCommission) {
+        java.util.Set<PaymentMethod> set = java.util.EnumSet.noneOf(PaymentMethod.class);
+        java.util.Set<PaymentMethod> accepted = request.getAcceptedPaymentMethods();
+
+        if (accepted.contains(PaymentMethod.STRIPE) && travelerCanOffer(traveler, PaymentMethod.STRIPE)) {
+            set.add(PaymentMethod.STRIPE);
+        }
+        if (accepted.contains(PaymentMethod.CASH)) {
+            BigDecimal commission = PriceBreakdown
+                .fromNet(negotiatedPrice, commissionProperties.rate()).commission();
+            boolean cashOk = cashGatePort.hasSufficientFunds(traveler.getId(), commission)
+                || (useCardForCommission && cashGatePort.hasCommissionCard(traveler.getId()));
+            if (cashOk) {
+                set.add(PaymentMethod.CASH);
+            }
+        }
+        return set;
+    }
+
+    /**
+     * 422 discriminant quand aucun mode n'est fournissable, selon ce que le colis exigeait.
+     */
+    private void assertNonEmptyOrThrow(
+            java.util.Set<PaymentMethod> set, java.util.Set<PaymentMethod> accepted) {
+        if (!set.isEmpty()) {
+            return;
+        }
+        boolean wantsCard = accepted.contains(PaymentMethod.STRIPE);
+        boolean wantsCash = accepted.contains(PaymentMethod.CASH);
+        String reason = (wantsCard && wantsCash) ? "payment-method/none-available"
+                      : wantsCard                ? "payment-method/card-capability-required"
+                      :                            "payment-method/cash-funds-required";
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, reason);
     }
 }
