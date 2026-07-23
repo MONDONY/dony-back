@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public record NegotiationThreadResponse(
@@ -39,5 +40,11 @@ public record NegotiationThreadResponse(
     UUID materializedBidId,
     // Vrai si le voyageur peut payer la commission Dony en cash (wallet suffisant ou carte enregistrée).
     // Sert à masquer l'option CASH côté sender et traveler si elle n'est pas viable.
-    boolean cashCommissionAvailable
+    boolean cashCommissionAvailable,
+    // SET des modes de paiement effectivement fournissables (colis.acceptedPaymentMethods ∩
+    // capacité voyageur), calculé au trip-linking. Null tant qu'aucun trajet n'est lié.
+    Set<PaymentMethod> availablePaymentMethods,
+    // Vrai si le viewer peut relancer l'autre partie (thread OPEN/AWAITING_TRIP, ce n'est pas
+    // son tour, attente > 1h depuis la dernière activité, et pas de relance déjà envoyée < 1h).
+    boolean canNudge
 ) {}

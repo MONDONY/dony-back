@@ -3,6 +3,7 @@ package com.dony.api.requests.entity;
 import com.dony.api.common.BaseEntity;
 import com.dony.api.payments.cash.PaymentMethod;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -11,6 +12,7 @@ import org.hibernate.annotations.SQLRestriction;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -57,12 +59,26 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "last_activity_at", nullable = false)
     private LocalDateTime lastActivityAt;
 
+    @Column(name = "last_nudge_at")
+    private LocalDateTime lastNudgeAt;
+
     @Column(name = "payment_intent_id", length = 255)
     private String paymentIntentId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 20)
     private PaymentMethod paymentMethod;  // null until trip-linking
+
+    /**
+     * Modes de paiement réellement fournissables par le voyageur pour cette
+     * demande, calculés au trip-linking = colis.acceptedPaymentMethods ∩ capacité
+     * voyageur (STRIPE si onboardé, CASH si fonds wallet OU consentement carte).
+     * NULL tant que le trajet n'est pas lié. L'expéditeur choisit son mode final
+     * au checkout parmi ce SET.
+     */
+    @Convert(converter = com.dony.api.payments.cash.NullablePaymentMethodSetConverter.class)
+    @Column(name = "available_payment_methods")
+    private Set<PaymentMethod> availablePaymentMethods;
 
     // Dony commission charge tracking for CASH negotiated threads.
     // Stored as String (not the payments/cash enums) to avoid coupling the
@@ -108,9 +124,13 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public LocalDateTime getLastActivityAt() { return lastActivityAt; }
 
+    public LocalDateTime getLastNudgeAt() { return lastNudgeAt; }
+
     public String getPaymentIntentId() { return paymentIntentId; }
 
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
+
+    public Set<PaymentMethod> getAvailablePaymentMethods() { return availablePaymentMethods; }
 
     public String getCommissionStatus() { return commissionStatus; }
 
@@ -140,9 +160,13 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public void setLastActivityAt(LocalDateTime lastActivityAt) { this.lastActivityAt = lastActivityAt; }
 
+    public void setLastNudgeAt(LocalDateTime lastNudgeAt) { this.lastNudgeAt = lastNudgeAt; }
+
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
 
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public void setAvailablePaymentMethods(Set<PaymentMethod> availablePaymentMethods) { this.availablePaymentMethods = availablePaymentMethods; }
 
     public void setCommissionStatus(String commissionStatus) { this.commissionStatus = commissionStatus; }
 

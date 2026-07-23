@@ -116,15 +116,15 @@ class NegotiationEscrowAdapterTest {
     @Test
     @DisplayName("releaseEscrowForMethodSwitch — délègue à PaymentService.cancelNegotiationEscrow (succès → true)")
     void release_delegatesToPaymentService_true() {
-        when(paymentService.cancelNegotiationEscrow(THREAD)).thenReturn(true);
+        when(paymentService.cancelNegotiationEscrow(THREAD, "payment-method-switch")).thenReturn(true);
         assertThat(adapter.releaseEscrowForMethodSwitch(THREAD)).isTrue();
-        verify(paymentService).cancelNegotiationEscrow(THREAD);
+        verify(paymentService).cancelNegotiationEscrow(THREAD, "payment-method-switch");
     }
 
     @Test
     @DisplayName("releaseEscrowForMethodSwitch — échec de release → false (propagé)")
     void release_delegatesToPaymentService_false() {
-        when(paymentService.cancelNegotiationEscrow(THREAD)).thenReturn(false);
+        when(paymentService.cancelNegotiationEscrow(THREAD, "payment-method-switch")).thenReturn(false);
         assertThat(adapter.releaseEscrowForMethodSwitch(THREAD)).isFalse();
     }
 }

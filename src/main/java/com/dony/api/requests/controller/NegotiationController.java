@@ -73,6 +73,19 @@ public class NegotiationController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Either participant (sender or traveler) ends the negotiation before payment.
+     * Allowed while OPEN, AWAITING_TRIP or AWAITING_PAYMENT.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
+    public ResponseEntity<Void> cancel(
+            @PathVariable UUID id,
+            @RequestBody(required = false) @Valid NegotiationRejectRequest req) {
+        service.cancelNegotiation(requireUserId(), id, req == null ? null : req.reason());
+        return ResponseEntity.noContent().build();
+    }
+
     /** Traveler links a trip (existing announcement) to an AWAITING_TRIP thread. */
     @PostMapping("/{id}/submit-trip")
     @PreAuthorize("hasRole('TRAVELER')")
@@ -154,6 +167,17 @@ public class NegotiationController {
     ) {
         service.openSurplus(requireUserId(), announcementId, req.surplusKg(), req.pricePerKg());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The waiting party nudges the party who must act (traveler or sender)
+     * to remind them to respond. Eligibility mirrors {@code canNudge} on the
+     * response so the button and the endpoint agree.
+     */
+    @PostMapping("/{id}/nudge")
+    @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
+    public NegotiationThreadResponse nudge(@PathVariable UUID id) {
+        return service.nudge(requireUserId(), id);
     }
 
     // ─── Auth helper ─────────────────────────────────────────────────────────────

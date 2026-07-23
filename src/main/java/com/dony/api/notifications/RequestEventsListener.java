@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Map;
 
@@ -140,6 +142,44 @@ public class RequestEventsListener {
             Map.of(
                 "type", "request_expired",
                 "packageRequestId", e.requestId().toString()
+            )
+        );
+    }
+
+    /**
+     * The waiting party nudged the other one to remind them to respond.
+     */
+    @EventListener
+    @Async
+    public void onNegotiationNudgeSent(NegotiationNudgeSentEvent e) {
+        dispatcher.notifyUser(
+            e.toUserId(),
+            "Relance",
+            e.fromUserName() + " attend de vos nouvelles sur votre négociation.",
+            Map.of(
+                "type", "negotiation",
+                "threadId", e.threadId().toString()
+            )
+        );
+    }
+
+    /**
+     * A participant ended the negotiation before payment. Notify the other party.
+     *
+     * <p>{@code AFTER_COMMIT} (not a plain {@code @EventListener}) so no spurious
+     * "négociation terminée" push is sent if the cancel transaction rolls back
+     * (e.g. a CHECK-constraint failure or a concurrent finalize winning the race).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async
+    public void onNegotiationCancelled(NegotiationCancelledEvent e) {
+        dispatcher.notifyUser(
+            e.toUserId(),
+            "Négociation terminée",
+            e.byName() + " a mis fin à la négociation.",
+            Map.of(
+                "type", "negotiation",
+                "threadId", e.threadId().toString()
             )
         );
     }

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -31,6 +32,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -221,8 +225,8 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("voyageur ne peut pas offrir le mode accepté par la demande → 422 payment-method/not-offerable")
-        void start_rejectsWhenTravelerCannotOfferAnyAcceptedMethod() {
+        @DisplayName("voyageur sans Stripe peut négocier une demande card-only → blocage différé au trip-linking")
+        void start_allowsTravelerWithoutStripeOnCardOnlyRequest_blockDeferredToTripLinking() {
             // Request only accepts STRIPE
             request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
             // Traveler is NOT onboarded on Stripe (default stripeAccountStatus = NOT_CREATED)
@@ -231,17 +235,32 @@ class NegotiationServiceTest {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(any(), any()))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(any(), any())).thenReturn(0L);
             when(threadRepo.countCreatedBy(any(), any())).thenReturn(0L);
+            when(threadRepo.save(any())).thenAnswer(inv -> {
+                NegotiationThreadEntity t = inv.getArgument(0);
+                try {
+                    var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                    idField.setAccessible(true);
+                    idField.set(t, UUID.randomUUID());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return t;
+            });
 
             var req = new NegotiationStartRequest(REQUEST_ID, new BigDecimal("30"),
                 LocalDate.now().plusDays(5), new BigDecimal("10"), null, "x");
-            assertThatThrownBy(() -> service.start(TRAVELER_ID, req))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("payment-method/not-offerable");
+
+            var response = service.start(TRAVELER_ID, req);
+
+            assertThat(response).isNotNull();
+            assertThat(response.status()).isEqualTo(NegotiationThreadStatus.OPEN);
+            verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.PROPOSAL));
         }
     }
 
@@ -427,6 +446,134 @@ class NegotiationServiceTest {
             assertThatThrownBy(() -> service.reject(SENDER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("already-finalized");
+        }
+    }
+
+    @Nested
+    @DisplayName("cancelNegotiation() — end negotiation before payment")
+    class CancelNegotiationTests {
+        private NegotiationThreadEntity thread;
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("non-participant → 403 negotiation/not-thread-participant")
+        void cancel_nonParticipant_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            UUID outsider = UUID.randomUUID();
+            assertThatThrownBy(() -> service.cancelNegotiation(outsider, THREAD_ID, "nope"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("status ACCEPTED → 409 negotiation/not-cancellable")
+        void cancel_statusAccepted_throws409NotCancellable() {
+            thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.cancelNegotiation(SENDER_ID, THREAD_ID, "nope"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-cancellable");
+        }
+
+        @Test
+        @DisplayName("status OPEN, caller = sender → CANCELLED, event vers traveler, audit, escrowPort jamais appelé")
+        void cancel_open_setsCancelled_publishesEventToOtherParty_audits() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.cancelNegotiation(SENDER_ID, THREAD_ID, "Je change d'avis");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            verify(threadRepo).save(thread);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            var publishedEvent = eventCaptor.getValue();
+            assertThat(publishedEvent.threadId()).isEqualTo(THREAD_ID);
+            assertThat(publishedEvent.packageRequestId()).isEqualTo(REQUEST_ID);
+            assertThat(publishedEvent.byUserId()).isEqualTo(SENDER_ID);
+            assertThat(publishedEvent.toUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(publishedEvent.releaseEscrow()).isFalse();
+            verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("CANCELLED"), eq(SENDER_ID), any());
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+        }
+
+        @Test
+        @DisplayName("status AWAITING_PAYMENT → escrow NON libéré inline (releaseEscrow=true) + trajet dédié soft-deleted + CANCELLED")
+        void cancel_awaitingPayment_defersEscrow_softDeletesDedicatedTrip_setsCancelled() {
+            UUID announcementId = UUID.randomUUID();
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setTravelerAnnouncementId(announcementId);
+
+            com.dony.api.matching.AnnouncementEntity dedicatedAnn = new com.dony.api.matching.AnnouncementEntity();
+            dedicatedAnn.setLinkedPackageRequestId(REQUEST_ID);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(dedicatedAnn, announcementId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(dedicatedAnn));
+
+            service.cancelNegotiation(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            // Le hold Stripe n'est PLUS annulé inline : cela se fait dans un listener
+            // paiements AFTER_COMMIT (règle #18). Le service ne touche jamais escrowPort ici.
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+            assertThat(dedicatedAnn.getDeletedAt()).isNotNull();
+            verify(announcementRepo).save(dedicatedAnn);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
+            assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+            // L'event porte le drapeau qui déclenchera la libération de l'escrow après commit.
+            assertThat(eventCaptor.getValue().releaseEscrow()).isTrue();
+        }
+
+        @Test
+        @DisplayName("status AWAITING_TRIP, caller = traveler → CANCELLED, event vers sender")
+        void cancel_awaitingTrip_setsCancelled() {
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+
+            service.cancelNegotiation(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
+            assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(eventCaptor.getValue().releaseEscrow()).isFalse();
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
     }
 
@@ -792,6 +939,162 @@ class NegotiationServiceTest {
     }
 
     @Nested
+    @DisplayName("canNudge — flag calculé sur la réponse du thread")
+    class CanNudgeTests {
+
+        /**
+         * @param status thread status
+         * @param lastActivityAt when the thread last saw activity
+         * @param lastNudgeAt when the viewer last nudged (null if never)
+         */
+        private NegotiationThreadEntity threadFor(UUID threadId, NegotiationThreadStatus status,
+                                                   java.time.LocalDateTime lastActivityAt,
+                                                   java.time.LocalDateTime lastNudgeAt) {
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(status);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(lastActivityAt);
+            thread.setLastNudgeAt(lastNudgeAt);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return thread;
+        }
+
+        private void stubCommonLookups(UUID threadId, NegotiationThreadEntity thread) {
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+        }
+
+        @Test
+        @DisplayName("true — statut OPEN, en attente >1h, pas de relance récente")
+        void canNudge_trueWhenWaitingOverAnHour_noRecentNudge() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            // Dernier message posté par le caller (TRAVELER_ID) lui-même : il attend la réponse
+            // de l'autre partie → isMyTurn = false pour ce viewer.
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isTrue();
+        }
+
+        @Test
+        @DisplayName("false — moins d'1h depuis la dernière activité")
+        void canNudge_falseWhenLessThanAnHour() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(30), null);
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — rate-limité, relance déjà envoyée il y a moins d'1h")
+        void canNudge_falseWhenRateLimited() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2),
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20));
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — c'est le tour du viewer d'agir")
+        void canNudge_falseWhenMyTurn() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            // Dernier message posté par l'autre partie (SENDER_ID) : c'est au caller
+            // (TRAVELER_ID) d'agir → isMyTurn = true, donc pas de nudge (il doit répondre).
+            var lastMsg = NegotiationMessageEntity.create(threadId, SENDER_ID,
+                NegotiationMessageKind.COUNTER, new BigDecimal("28"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — statut ni OPEN ni AWAITING_TRIP")
+        void canNudge_falseWhenStatusNotOpenOrAwaitingTrip() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_PAYMENT,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("true — AWAITING_TRIP, viewer = expéditeur (partie qui attend le voyageur)")
+        void canNudge_trueWhenAwaitingTrip_viewerIsSender() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            // En AWAITING_TRIP le voyageur doit lier un trajet -> l'expéditeur attend.
+            var resp = service.getById(SENDER_ID, threadId);
+
+            assertThat(resp.canNudge()).isTrue();
+        }
+
+        @Test
+        @DisplayName("false — AWAITING_TRIP, viewer = voyageur (partie qui doit agir, jamais relancée)")
+        void canNudge_falseWhenAwaitingTrip_viewerIsTraveler() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            // Le voyageur est celui qui doit agir (lier un trajet) : jamais canNudge=true
+            // pour lui, sinon il verrait un bouton "Relancer" que /nudge rejetterait en 409.
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+    }
+
+    @Nested
     class RefuseTripTests {
 
         @Test
@@ -1120,6 +1423,8 @@ class NegotiationServiceTest {
         void createDedicatedTrip_dateBeforeWindow_throws422() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
 
             var req = buildRequest(request.getDesiredDate().minusDays(3));
             assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID, req))
@@ -1133,6 +1438,8 @@ class NegotiationServiceTest {
         void createDedicatedTrip_dateAfterWindow_throws422() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(true);
 
             var req = buildRequest(request.getDesiredDate().plusDays(3));
             assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID, req))
@@ -1179,18 +1486,20 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("voyageur choisit CASH avec fonds insuffisants → 422 traveler-insufficient-funds-cash")
+        @DisplayName("voyageur choisit CASH avec fonds insuffisants → 422 discriminant cash-funds-required")
         void createDedicatedTrip_rejectsCashWhenInsufficientFunds() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(commissionProperties.rate()).thenReturn(new BigDecimal("0.12"));
             when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
 
-            // buildRequest uses CASH as payment method
+            // buildRequest uses CASH as payment method (now ignored — request only accepts CASH,
+            // and the wallet has insufficient funds with no card consent → SET is empty).
             assertThatThrownBy(() -> service.createDedicatedTrip(TRAVELER_ID, THREAD_ID,
                 buildRequest(request.getDesiredDate())))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("traveler-insufficient-funds-cash");
+                .hasMessageContaining("payment-method/cash-funds-required");
 
             verifyNoInteractions(announcementRepo);
         }
@@ -1228,25 +1537,8 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("voyageur choisit CASH mais la demande n'accepte que STRIPE → 422 payment-method/not-accepted-by-request")
-        void submitTrip_rejectsWhenPaymentMethodNotAcceptedByRequest() {
-            UUID annId = UUID.randomUUID();
-            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-
-            // Traveler tries CASH, but request only accepts STRIPE
-            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.CASH);
-
-            assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("payment-method/not-accepted-by-request");
-        }
-
-        @Test
-        @DisplayName("voyageur choisit CASH avec fonds insuffisants → 422 traveler-insufficient-funds-cash")
-        void submitTrip_rejectsCashWhenInsufficientFunds() {
-            // Request accepts CASH
-            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+        @DisplayName("req.paymentMethod() est ignoré pour la décision → SET calculé depuis accepted ∩ capacité voyageur")
+        void submitTrip_ignoresPaymentMethodField_usesRequestAcceptedAndCapability() {
             UUID annId = UUID.randomUUID();
 
             com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
@@ -1254,11 +1546,36 @@ class NegotiationServiceTest {
             ann.setDepartureCity("Paris");
             ann.setArrivalCity("Dakar");
             ann.setDepartureDate(request.getDesiredDate());
-            ann.setAvailableKg(new BigDecimal("5")); // request weight is 5 → linkable
+            ann.setAvailableKg(new BigDecimal("5"));
 
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+
+            // Request only accepts STRIPE, traveler is Stripe-capable (fixture default);
+            // req.paymentMethod() = CASH is ignored — the SET is still computed correctly.
+            var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.CASH);
+            var resp = service.submitTrip(TRAVELER_ID, THREAD_ID, req);
+
+            assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
+            assertThat(thread.getAvailablePaymentMethods()).isEqualTo(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            assertThat(thread.getPaymentMethod()).isNull();
+        }
+
+        @Test
+        @DisplayName("voyageur CASH avec fonds insuffisants et sans consentement carte → 422 discriminant cash-funds-required")
+        void submitTrip_rejectsCashWhenInsufficientFunds() {
+            // Request accepts CASH — SET computation fails (no funds, no card consent) before
+            // the announcement is ever looked up.
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            UUID annId = UUID.randomUUID();
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(commissionProperties.rate()).thenReturn(new java.math.BigDecimal("0.12"));
             when(cashGatePort.hasSufficientFunds(eq(TRAVELER_ID), any())).thenReturn(false);
 
@@ -1266,11 +1583,12 @@ class NegotiationServiceTest {
 
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("traveler-insufficient-funds-cash");
+                .hasMessageContaining("payment-method/cash-funds-required");
+            verifyNoInteractions(announcementRepo);
         }
 
         @Test
-        @DisplayName("CASH + consentement carte + carte enregistrée → liaison OK même wallet vide (wallet non consulté)")
+        @DisplayName("CASH + consentement carte + carte enregistrée → liaison OK même wallet vide")
         void submitTrip_cashWithCardConsent_linksEvenIfWalletShort() {
             request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             UUID annId = UUID.randomUUID();
@@ -1295,27 +1613,21 @@ class NegotiationServiceTest {
             var resp = service.submitTrip(TRAVELER_ID, THREAD_ID, req);
 
             assertThat(resp.status()).isEqualTo(NegotiationThreadStatus.AWAITING_PAYMENT);
-            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
-            // Chemin carte : le solde wallet n'est pas consulté.
-            verify(cashGatePort, org.mockito.Mockito.never()).hasSufficientFunds(any(), any());
+            assertThat(thread.getAvailablePaymentMethods()).isEqualTo(java.util.EnumSet.of(PaymentMethod.CASH));
+            assertThat(thread.getPaymentMethod()).isNull();
         }
 
         @Test
-        @DisplayName("CASH + consentement carte mais aucune carte enregistrée → 422 no-commission-card")
+        @DisplayName("CASH + consentement carte mais aucune carte enregistrée (et wallet vide) → 422 discriminant cash-funds-required")
         void submitTrip_cashWithCardConsentButNoCard_throws422() {
+            // SET computation fails (no funds, card consent but no card registered) before
+            // the announcement is ever looked up.
             request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             UUID annId = UUID.randomUUID();
 
-            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
-            ann.setTravelerId(TRAVELER_ID);
-            ann.setDepartureCity("Paris");
-            ann.setArrivalCity("Dakar");
-            ann.setDepartureDate(request.getDesiredDate());
-            ann.setAvailableKg(new BigDecimal("5")); // request weight is 5 → linkable
-
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
-            when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(cashGatePort.hasCommissionCard(eq(TRAVELER_ID))).thenReturn(false);
 
             var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(
@@ -1323,7 +1635,8 @@ class NegotiationServiceTest {
 
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("no-commission-card");
+                .hasMessageContaining("payment-method/cash-funds-required");
+            verifyNoInteractions(announcementRepo);
         }
 
         @Test
@@ -1342,6 +1655,7 @@ class NegotiationServiceTest {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
 
             var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE);
 
@@ -1365,12 +1679,191 @@ class NegotiationServiceTest {
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
             when(announcementRepo.findById(annId)).thenReturn(Optional.of(ann));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
 
             var req = new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE);
 
             assertThatThrownBy(() -> service.submitTrip(TRAVELER_ID, THREAD_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("announcement/insufficient-capacity");
+        }
+
+        /** BaseEntity.id has no public setter — mirrors the reflection helper used throughout this file. */
+        private void setEntityId(com.dony.api.common.BaseEntity entity, UUID id) {
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(entity, id);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Test
+        @DisplayName("colis card-only, voyageur non onboardé Stripe → 422 discriminant card-capability-required")
+        void submitTrip_cardOnlyRequest_travelerNoStripe_throws422CardCapability() {
+            UUID threadId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setEntityId(thread, threadId);
+            thread.setTravelerId(travelerId);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("100.00"));
+
+            PackageRequestEntity request = new PackageRequestEntity();
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+
+            UserEntity traveler = new UserEntity();
+            setEntityId(traveler, travelerId);
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED); // pas onboardé (tout statut ≠ ONBOARDING_COMPLETE)
+
+            when(threadRepo.findById(threadId)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(any())).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(travelerId)).thenReturn(java.util.Optional.of(traveler));
+
+            com.dony.api.requests.dto.NegotiationSubmitTripRequest req =
+                new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE, false);
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.submitTrip(travelerId, threadId, req));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/card-capability-required", ex.getReason());
+        }
+
+        @Test
+        @DisplayName("colis cash-only, voyageur sans fonds ni consentement carte → 422 discriminant cash-funds-required")
+        void submitTrip_cashOnlyRequest_noFundsNoConsent_throws422CashFunds() {
+            UUID threadId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setEntityId(thread, threadId);
+            thread.setTravelerId(travelerId);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("100.00"));
+
+            PackageRequestEntity request = new PackageRequestEntity();
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+
+            UserEntity traveler = new UserEntity();
+            setEntityId(traveler, travelerId);
+            traveler.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
+
+            when(threadRepo.findById(threadId)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(any())).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(travelerId)).thenReturn(java.util.Optional.of(traveler));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.05"));
+            when(cashGatePort.hasSufficientFunds(eq(travelerId), any())).thenReturn(false);
+
+            com.dony.api.requests.dto.NegotiationSubmitTripRequest req =
+                new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.CASH, false); // pas de consentement
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.submitTrip(travelerId, threadId, req));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/cash-funds-required", ex.getReason());
+        }
+
+        @Test
+        @DisplayName("colis STRIPE+CASH, voyageur STRIPE seulement → SET={STRIPE} persisté, champ paymentMethod requête ignoré")
+        void submitTrip_bothAccepted_travelerStripeOnly_persistsStripeSet() {
+            UUID threadId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setEntityId(thread, threadId);
+            thread.setTravelerId(travelerId);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("100.00"));
+            thread.setRoundsCount((short) 1);
+
+            PackageRequestEntity request = new PackageRequestEntity();
+            request.setSenderId(SENDER_ID);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setDesiredDate(LocalDate.now().plusDays(10));
+            request.setDateToleranceDays((short) 2);
+            request.setWeightKg(new BigDecimal("5"));
+
+            UserEntity traveler = new UserEntity();
+            setEntityId(traveler, travelerId);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(travelerId);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5"));
+
+            when(threadRepo.findById(threadId)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(any())).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(travelerId)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(announcementRepo.findById(annId)).thenReturn(java.util.Optional.of(ann));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.05"));
+            when(cashGatePort.hasSufficientFunds(eq(travelerId), any())).thenReturn(false);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            service.submitTrip(travelerId, threadId,
+                new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE, false));
+
+            assertEquals(java.util.EnumSet.of(PaymentMethod.STRIPE), thread.getAvailablePaymentMethods());
+            assertNull(thread.getPaymentMethod());
+        }
+
+        @Test
+        @DisplayName("colis STRIPE+CASH, voyageur STRIPE seulement → SET exposé dans la réponse")
+        void submitTrip_response_exposesAvailableSet() {
+            UUID threadId = UUID.randomUUID();
+            UUID travelerId = UUID.randomUUID();
+            UUID annId = UUID.randomUUID();
+
+            NegotiationThreadEntity thread = new NegotiationThreadEntity();
+            setEntityId(thread, threadId);
+            thread.setTravelerId(travelerId);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            thread.setCurrentPriceEur(new BigDecimal("100.00"));
+            thread.setRoundsCount((short) 1);
+
+            PackageRequestEntity request = new PackageRequestEntity();
+            request.setSenderId(SENDER_ID);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setDesiredDate(LocalDate.now().plusDays(10));
+            request.setDateToleranceDays((short) 2);
+            request.setWeightKg(new BigDecimal("5"));
+
+            UserEntity traveler = new UserEntity();
+            setEntityId(traveler, travelerId);
+            traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+
+            com.dony.api.matching.AnnouncementEntity ann = new com.dony.api.matching.AnnouncementEntity();
+            ann.setTravelerId(travelerId);
+            ann.setDepartureCity("Paris");
+            ann.setArrivalCity("Dakar");
+            ann.setDepartureDate(request.getDesiredDate());
+            ann.setAvailableKg(new BigDecimal("5"));
+
+            when(threadRepo.findById(threadId)).thenReturn(java.util.Optional.of(thread));
+            when(requestRepo.findById(any())).thenReturn(java.util.Optional.of(request));
+            when(userRepository.findById(travelerId)).thenReturn(java.util.Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(java.util.Optional.of(traveler));
+            when(announcementRepo.findById(annId)).thenReturn(java.util.Optional.of(ann));
+            when(commissionProperties.rate()).thenReturn(new BigDecimal("0.05"));
+            when(cashGatePort.hasSufficientFunds(eq(travelerId), any())).thenReturn(false);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of());
+
+            NegotiationThreadResponse res = service.submitTrip(travelerId, threadId,
+                new com.dony.api.requests.dto.NegotiationSubmitTripRequest(annId, PaymentMethod.STRIPE, false));
+
+            assertEquals(java.util.EnumSet.of(PaymentMethod.STRIPE), res.availablePaymentMethods());
         }
     }
 
@@ -1489,6 +1982,7 @@ class NegotiationServiceTest {
         @DisplayName("thread CASH — commission prélevée (port=true) → finalize OK + ACCEPTED")
         void finalize_cashThread_commissionCharged_succeeds() {
             thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             request.setRecipientName("Fatou Diop");
             request.setRecipientPhone("+221771234567");
             request.setDepartureCity("Paris");
@@ -1496,6 +1990,8 @@ class NegotiationServiceTest {
             request.setWeightKg(new BigDecimal("5"));
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            // Mode final CASH → on tente de libérer tout escrow carte en vol (ici aucun : no-op → true).
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
             // Simule le comportement réel de CashCommissionService.chargeNegotiationCommission :
             // stamper commissionChargedVia sur le thread en même temps que le charge réussi.
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
@@ -1530,10 +2026,12 @@ class NegotiationServiceTest {
         @DisplayName("thread CASH — commission échoue (port=false) → 422 et thread reste AWAITING_PAYMENT")
         void finalize_cashThread_commissionFails_throws422AndNotFinalized() {
             thread.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
             request.setRecipientName("Fatou Diop");
             request.setRecipientPhone("+221771234567");
             when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
             when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
             when(cashGatePort.chargeNegotiationCashCommission(eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any()))
                 .thenReturn(false);
 
@@ -2305,8 +2803,28 @@ class NegotiationServiceTest {
         }
 
         @Test
-        @DisplayName("finalize applique le mode choisi par l'expéditeur (override du thread, bascule cash→stripe)")
-        void finalize_chosenMethodOverridesThreadMethod() {
+        @DisplayName("finalize avec un mode hors du SET fournissable par le voyageur (availablePaymentMethods) → 422")
+        void finalize_chosenMethodNotInAvailableSet_throws422() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            // Voyageur non onboardé Stripe : seul CASH est réellement fournissable,
+            // bien que STRIPE reste accepté par la demande.
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            thread.setPaymentMethod(null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            org.springframework.web.server.ResponseStatusException ex = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x", PaymentMethod.STRIPE));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/not-in-available-set", ex.getReason());
+        }
+
+        @Test
+        @DisplayName("finalize STRIPE ne libère JAMAIS l'escrow carte (choisir STRIPE n'est pas une bascule)")
+        void finalize_chosenMethodStripe_neverReleasesEscrow() {
             request.setAcceptedPaymentMethods(
                 java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
             thread.setPaymentMethod(PaymentMethod.CASH);
@@ -2319,17 +2837,16 @@ class NegotiationServiceTest {
             when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
-            // Bascule de méthode → on libère d'abord tout escrow en vol (ici aucun).
-            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
-            // Override vers STRIPE → /checkout vérifie l'escrow online.
+            // Mode final STRIPE → /checkout vérifie l'escrow online (jamais de libération).
             when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_real_override")).thenReturn(true);
 
             service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_real_override", PaymentMethod.STRIPE);
 
-            // Le mode du thread est remplacé par celui choisi par l'expéditeur ;
-            // la branche cash (commission) n'est donc PAS déclenchée.
+            // Le mode retenu est STRIPE ; la branche cash (commission) n'est PAS déclenchée
+            // et surtout l'escrow carte de l'expéditeur n'est JAMAIS annulé (sécurité escrow).
             assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
             org.mockito.Mockito.verifyNoInteractions(cashGatePort);
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
         }
     }
 
@@ -2466,6 +2983,144 @@ class NegotiationServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("finalizeInternal() — modèle SET (thread.paymentMethod null post-linking)")
+    class SetModelFinalizeTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+        private NegotiationThreadEntity thread;
+
+        private void setId(Object entity, UUID id) {
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(entity, id);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @BeforeEach
+        void setupPostLinkingThread() {
+            // Forme RÉELLE post-trip-linking : le voyageur ne fixe plus de mode → paymentMethod
+            // null, et le SET fournissable est persisté sur le thread.
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(new BigDecimal("35"));
+            thread.setRoundsCount((short) 2);
+            thread.setPaymentMethod(null);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            setId(thread, THREAD_ID);
+
+            request.setRecipientName("Mamadou Diallo");
+            request.setRecipientPhone("+221771234567");
+            request.setDepartureCity("Paris");
+            request.setArrivalCity("Dakar");
+            request.setWeightKg(new BigDecimal("5"));
+        }
+
+        private void stubFinalizeCollaborators() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of());
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(requestRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+        }
+
+        @Test
+        @DisplayName("1. webhook STRIPE (chosenMethod null, paymentMethod null, SET={STRIPE}) → ACCEPTED en STRIPE, pas de release")
+        void webhookStripe_postLinking_finalizesToStripe() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            stubFinalizeCollaborators();
+
+            // Chemin webhook (3-arg) : le sender a déjà payé (carte autorisée), Stripe a émis
+            // amount_capturable_updated. Le thread DOIT finaliser malgré paymentMethod null.
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_webhook_set");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+            verify(eventPublisher).publishEvent(any(PackageRequestAcceptedEvent.class));
+        }
+
+        @Test
+        @DisplayName("2. checkout STRIPE (chosenMethod STRIPE, paymentMethod null, SET={STRIPE}) → ACCEPTED, escrow vérifié, jamais libéré")
+        void checkoutStripe_postLinking_verifiesEscrowNeverReleases() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.STRIPE));
+            stubFinalizeCollaborators();
+            when(escrowPort.verifyNegotiationEscrow(THREAD_ID, "pi_sync_set")).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_sync_set", PaymentMethod.STRIPE);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+            // L'escrow live du sender NE DOIT JAMAIS être annulé sur un checkout STRIPE.
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+            verify(escrowPort).verifyNegotiationEscrow(THREAD_ID, "pi_sync_set");
+        }
+
+        @Test
+        @DisplayName("3. checkout CASH (chosenMethod CASH, paymentMethod null, SET={CASH}) → ACCEPTED en CASH, commission prélevée")
+        void checkoutCash_postLinking_chargesCommission() {
+            request.setAcceptedPaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            stubFinalizeCollaborators();
+            // Pas d'escrow carte en vol → release no-op (true).
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            when(cashGatePort.chargeNegotiationCashCommission(
+                    eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any())).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            verify(cashGatePort).chargeNegotiationCashCommission(
+                eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any());
+        }
+
+        @Test
+        @DisplayName("4. bascule STRIPE→CASH (chosenMethod CASH, SET={STRIPE,CASH}) → CASH, release appelé UNE fois")
+        void switchStripeToCash_postLinking_releasesEscrowOnce() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            stubFinalizeCollaborators();
+            // Le sender avait initié un escrow carte puis choisi cash → hold carte annulé.
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+            when(cashGatePort.chargeNegotiationCashCommission(
+                    eq(TRAVELER_ID), eq(SENDER_ID), eq(THREAD_ID), any())).thenReturn(true);
+
+            service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "CASH", PaymentMethod.CASH);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.ACCEPTED);
+            assertThat(thread.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+            verify(escrowPort, times(1)).releaseEscrowForMethodSwitch(THREAD_ID);
+        }
+
+        @Test
+        @DisplayName("5. Task 5 préservée : SET={CASH}, chosenMethod STRIPE → 422 not-in-available-set")
+        void chosenMethodNotInSet_postLinking_throws422() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x", PaymentMethod.STRIPE));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/not-in-available-set", ex.getReason());
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+        }
+    }
+
     // ========== AvatarUrl in NegotiationThreadResponse ==========
 
     @Nested
@@ -2545,6 +3200,135 @@ class NegotiationServiceTest {
             var response = service.getById(SENDER_ID, THREAD_ID);
 
             assertThat(response.senderPhotoUrl()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("nudge()")
+    class NudgeTests {
+
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        private NegotiationThreadEntity buildThread(NegotiationThreadStatus status,
+                                                     java.time.LocalDateTime lastActivityAt,
+                                                     java.time.LocalDateTime lastNudgeAt) {
+            NegotiationThreadEntity t = new NegotiationThreadEntity();
+            t.setPackageRequestId(REQUEST_ID);
+            t.setTravelerId(TRAVELER_ID);
+            t.setStatus(status);
+            t.setCurrentPriceEur(new BigDecimal("30"));
+            t.setRoundsCount((short) 1);
+            t.setLastActivityAt(lastActivityAt);
+            t.setLastNudgeAt(lastNudgeAt);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(t, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return t;
+        }
+
+        @Test
+        @DisplayName("caller ni sender ni traveler => 403")
+        void nudge_nonParticipant_throws403() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            UUID stranger = UUID.randomUUID();
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(stranger, THREAD_ID));
+
+            assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("negotiation/not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("status AWAITING_PAYMENT => 409 nudge/not-active")
+        void nudge_statusNotOpenOrAwaitingTrip_throws409NotActive() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_PAYMENT,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/not-active");
+        }
+
+        @Test
+        @DisplayName("caller est celui qui doit agir (voyageur en AWAITING_TRIP) => 409 nudge/not-your-wait")
+        void nudge_callerIsTheOneWhoMustAct_throws409NotYourWait() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            // Le voyageur doit agir en AWAITING_TRIP -> il ne peut pas relancer.
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(TRAVELER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/not-your-wait");
+        }
+
+        @Test
+        @DisplayName("lastActivityAt il y a 20 min => 409 nudge/too-early")
+        void nudge_beforeOneHour_throws409TooEarly() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20), null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            // Le sender attend (le voyageur doit agir) mais l'activité est trop récente.
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/too-early");
+        }
+
+        @Test
+        @DisplayName("lastNudgeAt il y a 20 min => 429 nudge/rate-limited")
+        void nudge_rateLimited_throws429() {
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2),
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20));
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            var ex = assertThrows(ResponseStatusException.class, () -> service.nudge(SENDER_ID, THREAD_ID));
+
+            assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatusCode());
+            assertThat(ex.getReason()).isEqualTo("nudge/rate-limited");
+        }
+
+        @Test
+        @DisplayName("succès : notifie la partie qui attend, set lastNudgeAt, garde lastActivityAt, canNudge=false")
+        void nudge_success_notifiesOtherParty_setsLastNudgeAt_keepsLastActivityAt() {
+            java.time.LocalDateTime oldActivity =
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2);
+            NegotiationThreadEntity thread = buildThread(NegotiationThreadStatus.AWAITING_TRIP, oldActivity, null);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(THREAD_ID)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(threadRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(config.maxNegotiationRounds()).thenReturn(5);
+
+            var response = service.nudge(SENDER_ID, THREAD_ID);
+
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationNudgeSentEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationNudgeSentEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            var publishedEvent = eventCaptor.getValue();
+            assertThat(publishedEvent.toUserId()).isEqualTo(TRAVELER_ID);
+            assertThat(publishedEvent.fromUserId()).isEqualTo(SENDER_ID);
+            assertThat(publishedEvent.threadId()).isEqualTo(THREAD_ID);
+            verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("NUDGE_SENT"), eq(SENDER_ID), any());
+            assertThat(thread.getLastNudgeAt()).isNotNull();
+            assertThat(thread.getLastActivityAt()).isEqualTo(oldActivity);
+            assertThat(response.canNudge()).isFalse();
         }
     }
 }
