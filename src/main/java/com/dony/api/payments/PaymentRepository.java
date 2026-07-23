@@ -72,12 +72,16 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
            "AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
     boolean hasActiveEscrowForUser(@Param("userId") UUID userId);
 
+    // Un paiement du flux négociation / trajet dédié a bidId = NULL (keyé sur le
+    // thread) : LEFT JOIN + attribution via t.travelerId, sinon l'INNER JOIN sur
+    // le bid jetait ces revenus (KPI « Revenus » à 0 pour les deals carte négociés).
     @Query("""
         SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
         FROM PaymentEntity p
-        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
-        WHERE a.travelerId = :travelerId
+        LEFT JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        LEFT JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        LEFT JOIN com.dony.api.requests.entity.NegotiationThreadEntity t ON p.negotiationThreadId = t.id
+        WHERE (a.travelerId = :travelerId OR t.travelerId = :travelerId)
           AND p.status = :status
           AND p.createdAt BETWEEN :from AND :to
     """)
@@ -96,18 +100,24 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
      * avec le KPI « Revenus nets ». La commission remontée est celle réellement
      * prélevée (somme des {@code commissionAmount}, overrides figés inclus).
      */
+    // Annonce effective = celle du bid (deals directs) ou, pour un paiement de
+    // thread (bidId NULL), l'annonce du voyageur liée au thread — COALESCE des
+    // deux, sinon les revenus négociés disparaissaient de la ventilation par annonce.
     @Query("""
         SELECT new com.dony.api.matching.dto.AnnouncementRevenueRow(
-            a.id, a.departureCity, a.arrivalCity, a.departureDate,
+            ann.id, ann.departureCity, ann.arrivalCity, ann.departureDate,
             COUNT(p), COALESCE(SUM(p.amount), 0), COALESCE(SUM(p.commissionAmount), 0))
         FROM PaymentEntity p
-        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
-        WHERE a.travelerId = :travelerId
+        LEFT JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        LEFT JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        LEFT JOIN com.dony.api.requests.entity.NegotiationThreadEntity t ON p.negotiationThreadId = t.id
+        LEFT JOIN com.dony.api.matching.AnnouncementEntity ta ON t.travelerAnnouncementId = ta.id
+        JOIN com.dony.api.matching.AnnouncementEntity ann ON ann.id = COALESCE(a.id, ta.id)
+        WHERE ann.travelerId = :travelerId
           AND p.status = :status
           AND p.createdAt BETWEEN :from AND :to
-        GROUP BY a.id, a.departureCity, a.arrivalCity, a.departureDate
-        ORDER BY a.departureDate DESC
+        GROUP BY ann.id, ann.departureCity, ann.arrivalCity, ann.departureDate
+        ORDER BY ann.departureDate DESC
     """)
     List<AnnouncementRevenueRow> findReleasedRevenueByAnnouncement(
             @Param("travelerId") UUID travelerId,
@@ -118,9 +128,10 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
     @Query("""
         SELECT COALESCE(SUM(p.amount - p.commissionAmount), 0)
         FROM PaymentEntity p
-        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
-        WHERE a.travelerId = :travelerId
+        LEFT JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        LEFT JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        LEFT JOIN com.dony.api.requests.entity.NegotiationThreadEntity t ON p.negotiationThreadId = t.id
+        WHERE (a.travelerId = :travelerId OR t.travelerId = :travelerId)
           AND p.status = :status
     """)
     java.math.BigDecimal sumTotalCapturedRevenueForTraveler(
@@ -129,9 +140,10 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, UUID> {
 
     @Query("""
         SELECT p FROM PaymentEntity p
-        JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
-        JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
-        WHERE a.travelerId = :travelerId
+        LEFT JOIN com.dony.api.matching.BidEntity b ON p.bidId = b.id
+        LEFT JOIN com.dony.api.matching.AnnouncementEntity a ON b.announcementId = a.id
+        LEFT JOIN com.dony.api.requests.entity.NegotiationThreadEntity t ON p.negotiationThreadId = t.id
+        WHERE (a.travelerId = :travelerId OR t.travelerId = :travelerId)
           AND p.status = 'RELEASED'
           AND p.createdAt BETWEEN :from AND :to
         ORDER BY p.createdAt ASC
