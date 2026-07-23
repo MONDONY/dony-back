@@ -89,7 +89,8 @@ class NegotiationControllerIT {
             null,   // paymentMethod
             null,   // materializedBidId
             true,   // cashCommissionAvailable
-            null    // availablePaymentMethods
+            null,   // availablePaymentMethods
+            false   // canNudge
         );
     }
 
@@ -199,7 +200,8 @@ class NegotiationControllerIT {
             null,   // paymentMethod
             null,   // materializedBidId
             true,   // cashCommissionAvailable
-            null    // availablePaymentMethods
+            null,   // availablePaymentMethods
+            false   // canNudge
         );
         when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
 
@@ -381,7 +383,8 @@ class NegotiationControllerIT {
             new java.math.BigDecimal("33.60"), null,
             null, // materializedBidId
             true, // cashCommissionAvailable
-            null  // availablePaymentMethods
+            null, // availablePaymentMethods
+            false // canNudge
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
         when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any()))
@@ -504,7 +507,8 @@ class NegotiationControllerIT {
             null, // paymentMethod
             null, // materializedBidId
             true, // cashCommissionAvailable
-            null  // availablePaymentMethods
+            null, // availablePaymentMethods
+            false // canNudge
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(withTrip);
 

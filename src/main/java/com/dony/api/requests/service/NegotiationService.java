@@ -1130,6 +1130,18 @@ public class NegotiationService {
                 || cashGatePort.hasCommissionCard(t.getTravelerId());
         }
 
+        // canNudge : le viewer peut relancer l'autre partie si le thread est encore en
+        // négociation (OPEN/AWAITING_TRIP), que ce n'est pas son tour d'agir, que la dernière
+        // activité date de plus d'1h, et qu'aucune relance n'a déjà été envoyée depuis moins d'1h.
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
+        boolean nudgeStatus = t.getStatus() == NegotiationThreadStatus.OPEN
+                           || t.getStatus() == NegotiationThreadStatus.AWAITING_TRIP;
+        boolean waitedEnough = t.getLastActivityAt() != null
+                && !t.getLastActivityAt().isAfter(nowUtc.minusHours(1));
+        boolean nudgeNotRecent = t.getLastNudgeAt() == null
+                || !t.getLastNudgeAt().isAfter(nowUtc.minusHours(1));
+        boolean canNudge = nudgeStatus && !isMyTurn && waitedEnough && nudgeNotRecent;
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1148,7 +1160,8 @@ public class NegotiationService {
             t.getPaymentMethod(),
             t.getMaterializedBidId(),
             cashCommissionAvailable,
-            t.getAvailablePaymentMethods()
+            t.getAvailablePaymentMethods(),
+            canNudge
         );
     }
 

@@ -811,6 +811,131 @@ class NegotiationServiceTest {
     }
 
     @Nested
+    @DisplayName("canNudge — flag calculé sur la réponse du thread")
+    class CanNudgeTests {
+
+        /**
+         * @param status thread status
+         * @param lastActivityAt when the thread last saw activity
+         * @param lastNudgeAt when the viewer last nudged (null if never)
+         */
+        private NegotiationThreadEntity threadFor(UUID threadId, NegotiationThreadStatus status,
+                                                   java.time.LocalDateTime lastActivityAt,
+                                                   java.time.LocalDateTime lastNudgeAt) {
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(status);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(lastActivityAt);
+            thread.setLastNudgeAt(lastNudgeAt);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return thread;
+        }
+
+        private void stubCommonLookups(UUID threadId, NegotiationThreadEntity thread) {
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+        }
+
+        @Test
+        @DisplayName("true — statut OPEN, en attente >1h, pas de relance récente")
+        void canNudge_trueWhenWaitingOverAnHour_noRecentNudge() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            // Dernier message posté par le caller (TRAVELER_ID) lui-même : il attend la réponse
+            // de l'autre partie → isMyTurn = false pour ce viewer.
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isTrue();
+        }
+
+        @Test
+        @DisplayName("false — moins d'1h depuis la dernière activité")
+        void canNudge_falseWhenLessThanAnHour() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(30), null);
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — rate-limité, relance déjà envoyée il y a moins d'1h")
+        void canNudge_falseWhenRateLimited() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2),
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(20));
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — c'est le tour du viewer d'agir")
+        void canNudge_falseWhenMyTurn() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.OPEN,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            // Dernier message posté par l'autre partie (SENDER_ID) : c'est au caller
+            // (TRAVELER_ID) d'agir → isMyTurn = true, donc pas de nudge (il doit répondre).
+            var lastMsg = NegotiationMessageEntity.create(threadId, SENDER_ID,
+                NegotiationMessageKind.COUNTER, new BigDecimal("28"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+
+        @Test
+        @DisplayName("false — statut ni OPEN ni AWAITING_TRIP")
+        void canNudge_falseWhenStatusNotOpenOrAwaitingTrip() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, NegotiationThreadStatus.AWAITING_PAYMENT,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(2), null);
+            stubCommonLookups(threadId, thread);
+
+            var lastMsg = NegotiationMessageEntity.create(threadId, TRAVELER_ID,
+                NegotiationMessageKind.PROPOSAL, new BigDecimal("30"), null);
+            when(messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)).thenReturn(List.of(lastMsg));
+
+            var resp = service.getById(TRAVELER_ID, threadId);
+
+            assertThat(resp.canNudge()).isFalse();
+        }
+    }
+
+    @Nested
     class RefuseTripTests {
 
         @Test

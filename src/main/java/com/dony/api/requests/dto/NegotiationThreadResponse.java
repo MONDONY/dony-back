@@ -43,5 +43,8 @@ public record NegotiationThreadResponse(
     boolean cashCommissionAvailable,
     // SET des modes de paiement effectivement fournissables (colis.acceptedPaymentMethods ∩
     // capacité voyageur), calculé au trip-linking. Null tant qu'aucun trajet n'est lié.
-    Set<PaymentMethod> availablePaymentMethods
+    Set<PaymentMethod> availablePaymentMethods,
+    // Vrai si le viewer peut relancer l'autre partie (thread OPEN/AWAITING_TRIP, ce n'est pas
+    // son tour, attente > 1h depuis la dernière activité, et pas de relance déjà envoyée < 1h).
+    boolean canNudge
 ) {}
