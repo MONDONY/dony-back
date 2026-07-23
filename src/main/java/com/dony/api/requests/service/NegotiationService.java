@@ -277,6 +277,71 @@ public class NegotiationService {
     }
 
     /**
+     * Either participant (sender or traveler) ends the negotiation before payment.
+     * Allowed while the thread is still OPEN, AWAITING_TRIP or AWAITING_PAYMENT —
+     * once ACCEPTED (paid) the thread can no longer be cancelled this way.
+     * If a Stripe escrow hold is in flight (AWAITING_PAYMENT), it is released
+     * (idempotent, best-effort) and any orphaned DEDICATED trip announcement
+     * created exclusively for this request is soft-deleted, mirroring
+     * {@link #refuseTrip}. The other party is notified via
+     * {@link NegotiationCancelledEvent}. The linked {@code PackageRequest} is
+     * intentionally left untouched — it can still be negotiated with other
+     * travelers.
+     */
+    @Transactional
+    public void cancelNegotiation(UUID callerId, UUID threadId, String reason) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        boolean isTraveler = callerId.equals(thread.getTravelerId());
+        boolean isSender = callerId.equals(request.getSenderId());
+        if (!isTraveler && !isSender) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        NegotiationThreadStatus st = thread.getStatus();
+        if (st != NegotiationThreadStatus.OPEN
+                && st != NegotiationThreadStatus.AWAITING_TRIP
+                && st != NegotiationThreadStatus.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "negotiation/not-cancellable");
+        }
+
+        if (st == NegotiationThreadStatus.AWAITING_PAYMENT) {
+            // Annule tout hold Stripe en vol (idempotent, best-effort). Un échec
+            // (hold déjà capturé) ne devrait pas arriver hors ACCEPTED ; on
+            // n'empêche pas la fin de la négociation dans ce cas.
+            escrowPort.releaseEscrowForMethodSwitch(threadId);
+
+            // Soft-delete du trajet DÉDIÉ orphelin (créé exclusivement pour cette
+            // demande via createDedicatedTrip) — miroir exact de refuseTrip.
+            UUID annId = thread.getTravelerAnnouncementId();
+            if (annId != null) {
+                announcementRepo.findById(annId).ifPresent(ann -> {
+                    if (request.getId().equals(ann.getLinkedPackageRequestId())) {
+                        ann.softDelete();
+                        announcementRepo.save(ann);
+                        auditService.log("ANNOUNCEMENT", ann.getId(), "DEDICATED_TRIP_ORPHANED_ON_CANCEL", callerId,
+                            Map.of("threadId", threadId.toString()));
+                    }
+                });
+            }
+        }
+
+        thread.setStatus(NegotiationThreadStatus.CANCELLED);
+        thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        threadRepo.save(thread);
+
+        UUID otherParty = isSender ? thread.getTravelerId() : request.getSenderId();
+        String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse("Un utilisateur");
+        eventPublisher.publishEvent(new NegotiationCancelledEvent(
+            thread.getId(), request.getId(), callerId, otherParty, byName));
+        auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
+            Map.of("reason", reason == null ? "" : reason));
+    }
+
+    /**
      * Bilateral accept — both the sender AND the traveler can accept the other's counter-offer.
      * <ul>
      *   <li>If the traveler accepts AND already has a trip linked → AWAITING_PAYMENT (skip trip step).</li>

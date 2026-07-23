@@ -73,6 +73,19 @@ public class NegotiationController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Either participant (sender or traveler) ends the negotiation before payment.
+     * Allowed while OPEN, AWAITING_TRIP or AWAITING_PAYMENT.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('SENDER','TRAVELER')")
+    public ResponseEntity<Void> cancel(
+            @PathVariable UUID id,
+            @RequestBody(required = false) @Valid NegotiationCancelRequest req) {
+        service.cancelNegotiation(requireUserId(), id, req == null ? null : req.reason());
+        return ResponseEntity.noContent().build();
+    }
+
     /** Traveler links a trip (existing announcement) to an AWAITING_TRIP thread. */
     @PostMapping("/{id}/submit-trip")
     @PreAuthorize("hasRole('TRAVELER')")

@@ -161,6 +161,23 @@ public class RequestEventsListener {
         );
     }
 
+    /**
+     * A participant ended the negotiation before payment. Notify the other party.
+     */
+    @EventListener
+    @Async
+    public void onNegotiationCancelled(NegotiationCancelledEvent e) {
+        dispatcher.notifyUser(
+            e.toUserId(),
+            "Négociation terminée",
+            e.byName() + " a mis fin à la négociation.",
+            Map.of(
+                "type", "negotiation",
+                "threadId", e.threadId().toString()
+            )
+        );
+    }
+
     @EventListener
     @Async
     public void onNegotiationExpired(NegotiationExpiredEvent e) {

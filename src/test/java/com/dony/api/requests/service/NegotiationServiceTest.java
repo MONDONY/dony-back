@@ -450,6 +450,129 @@ class NegotiationServiceTest {
     }
 
     @Nested
+    @DisplayName("cancelNegotiation() — end negotiation before payment")
+    class CancelNegotiationTests {
+        private NegotiationThreadEntity thread;
+        private final UUID THREAD_ID = UUID.randomUUID();
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupThread() {
+            thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.OPEN);
+            thread.setCurrentPriceEur(new BigDecimal("30"));
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, THREAD_ID);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        @DisplayName("non-participant → 403 negotiation/not-thread-participant")
+        void cancel_nonParticipant_throws403() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            UUID outsider = UUID.randomUUID();
+            assertThatThrownBy(() -> service.cancelNegotiation(outsider, THREAD_ID, "nope"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("status ACCEPTED → 409 negotiation/not-cancellable")
+        void cancel_statusAccepted_throws409NotCancellable() {
+            thread.setStatus(NegotiationThreadStatus.ACCEPTED);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.cancelNegotiation(SENDER_ID, THREAD_ID, "nope"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not-cancellable");
+        }
+
+        @Test
+        @DisplayName("status OPEN, caller = sender → CANCELLED, event vers traveler, audit, escrowPort jamais appelé")
+        void cancel_open_setsCancelled_publishesEventToOtherParty_audits() {
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+
+            service.cancelNegotiation(SENDER_ID, THREAD_ID, "Je change d'avis");
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            verify(threadRepo).save(thread);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            var publishedEvent = eventCaptor.getValue();
+            assertThat(publishedEvent.threadId()).isEqualTo(THREAD_ID);
+            assertThat(publishedEvent.packageRequestId()).isEqualTo(REQUEST_ID);
+            assertThat(publishedEvent.byUserId()).isEqualTo(SENDER_ID);
+            assertThat(publishedEvent.toUserId()).isEqualTo(TRAVELER_ID);
+            verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("CANCELLED"), eq(SENDER_ID), any());
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+        }
+
+        @Test
+        @DisplayName("status AWAITING_PAYMENT → escrow libéré + trajet dédié soft-deleted + CANCELLED")
+        void cancel_awaitingPayment_cancelsEscrow_softDeletesDedicatedTrip_setsCancelled() {
+            UUID announcementId = UUID.randomUUID();
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setTravelerAnnouncementId(announcementId);
+
+            com.dony.api.matching.AnnouncementEntity dedicatedAnn = new com.dony.api.matching.AnnouncementEntity();
+            dedicatedAnn.setLinkedPackageRequestId(REQUEST_ID);
+            try {
+                var idField = com.dony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(dedicatedAnn, announcementId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(announcementRepo.findById(announcementId)).thenReturn(Optional.of(dedicatedAnn));
+            when(escrowPort.releaseEscrowForMethodSwitch(THREAD_ID)).thenReturn(true);
+
+            service.cancelNegotiation(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            verify(escrowPort).releaseEscrowForMethodSwitch(THREAD_ID);
+            assertThat(dedicatedAnn.getDeletedAt()).isNotNull();
+            verify(announcementRepo).save(dedicatedAnn);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
+            assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+        }
+
+        @Test
+        @DisplayName("status AWAITING_TRIP, caller = traveler → CANCELLED, event vers sender")
+        void cancel_awaitingTrip_setsCancelled() {
+            thread.setStatus(NegotiationThreadStatus.AWAITING_TRIP);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+
+            service.cancelNegotiation(TRAVELER_ID, THREAD_ID, null);
+
+            assertThat(thread.getStatus()).isEqualTo(NegotiationThreadStatus.CANCELLED);
+            ArgumentCaptor<com.dony.api.requests.event.NegotiationCancelledEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.dony.api.requests.event.NegotiationCancelledEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().toUserId()).isEqualTo(SENDER_ID);
+            assertThat(eventCaptor.getValue().byUserId()).isEqualTo(TRAVELER_ID);
+            verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+        }
+    }
+
+    @Nested
     @DisplayName("accept() — atomic acceptance")
     class AcceptTests {
         private NegotiationThreadEntity thread;

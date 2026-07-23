@@ -11,6 +11,8 @@ public enum NegotiationThreadStatus {
     ACCEPTED,
     /** Rejet manuel par un participant. */
     REJECTED,
+    /** Un participant a mis fin à la négociation avant paiement. */
+    CANCELLED,
     /** Rejet auto : un thread concurrent sur la même demande a été ACCEPTED. */
     AUTO_REJECTED,
     /** Expiré faute d'activité. */
