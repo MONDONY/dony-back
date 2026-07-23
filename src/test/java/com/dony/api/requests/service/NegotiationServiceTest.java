@@ -2499,6 +2499,26 @@ class NegotiationServiceTest {
         }
 
         @Test
+        @DisplayName("finalize avec un mode hors du SET fournissable par le voyageur (availablePaymentMethods) → 422")
+        void finalize_chosenMethodNotInAvailableSet_throws422() {
+            request.setAcceptedPaymentMethods(
+                java.util.EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH));
+            // Voyageur non onboardé Stripe : seul CASH est réellement fournissable,
+            // bien que STRIPE reste accepté par la demande.
+            thread.setAvailablePaymentMethods(java.util.EnumSet.of(PaymentMethod.CASH));
+            thread.setPaymentMethod(null);
+
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            org.springframework.web.server.ResponseStatusException ex = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> service.finalizeAfterPayment(SENDER_ID, THREAD_ID, "pi_x", PaymentMethod.STRIPE));
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+            assertEquals("payment-method/not-in-available-set", ex.getReason());
+        }
+
+        @Test
         @DisplayName("finalize applique le mode choisi par l'expéditeur (override du thread, bascule cash→stripe)")
         void finalize_chosenMethodOverridesThreadMethod() {
             request.setAcceptedPaymentMethods(

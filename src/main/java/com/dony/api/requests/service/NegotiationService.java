@@ -688,6 +688,17 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "thread/not-awaiting-payment");
         }
 
+        // Mode final = choix expéditeur, à défaut le mode déjà porté par le thread (legacy).
+        // Il doit appartenir au SET fournissable calculé au trip-linking. `available == null`
+        // = thread legacy (trip lié avant l'introduction du SET) → on retombe sur le
+        // comportement existant (validation contre request.getAcceptedPaymentMethods() ci-dessous).
+        PaymentMethod method = chosenMethod != null ? chosenMethod : thread.getPaymentMethod();
+        java.util.Set<PaymentMethod> available = thread.getAvailablePaymentMethods();
+        if (available != null && (method == null || !available.contains(method))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "payment-method/not-in-available-set");
+        }
+
         // Mode de paiement finalisé par l'expéditeur : validé contre les méthodes
         // acceptées par la demande, puis appliqué AVANT la décision cash/stripe
         // ci-dessous (sinon la commission cash serait prélevée à tort, ou pas).
