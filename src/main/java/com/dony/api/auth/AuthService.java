@@ -138,20 +138,11 @@ public class AuthService {
             String v = request.lastName().trim();
             user.setLastName(v.isEmpty() ? null : v);
         }
+        // L'email n'est pas modifiable ici : c'est une donnée d'identification portée
+        // par Firebase Auth. Il est absent de UpdateProfileRequest, et une requête qui
+        // le contiendrait encore le verrait ignoré (fail-on-unknown-properties=false).
         FirebaseContactService.Contact contact = firebaseContact.getContact(firebaseUid);
 
-        if (request.email() != null) {
-            String v = request.email().trim();
-            // Une chaîne vide n'efface plus l'email : Firebase, source de vérité, ne
-            // permet pas de retirer une adresse déjà rattachée à un compte.
-            if (!v.isEmpty() && !v.equals(contact.email())) {
-                if (isTakenByAnotherAccount(firebaseContact.findUidByEmail(v), firebaseUid)) {
-                    throw new DonyBusinessException(HttpStatus.CONFLICT, "email-already-exists",
-                            "Email Already Registered", "Cet email est déjà associé à un compte actif");
-                }
-                firebaseContact.updateEmail(firebaseUid, v);
-            }
-        }
         if (request.birthDate() != null) {
             user.setBirthDate(request.birthDate());
         }

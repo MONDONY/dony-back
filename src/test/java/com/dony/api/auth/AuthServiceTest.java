@@ -269,7 +269,7 @@ class AuthServiceTest {
             when(userRepository.save(any(UserEntity.class))).thenReturn(user);
 
             UpdateProfileRequest req = new UpdateProfileRequest(
-                    "Amadou", "Diallo", "amadou@dony.app",
+                    "Amadou", "Diallo",
                     LocalDate.of(1990, 5, 15), "Paris", null, null, null, null
             );
 
@@ -277,10 +277,31 @@ class AuthServiceTest {
 
             assertThat(user.getFirstName()).isEqualTo("Amadou");
             assertThat(user.getLastName()).isEqualTo("Diallo");
-            verify(firebaseContact).updateEmail(FIREBASE_UID, "amadou@dony.app");
+            // L'email n'est pas modifiable par cet endpoint : jamais d'écriture Firebase
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
             assertThat(user.getBirthDate()).isEqualTo(LocalDate.of(1990, 5, 15));
             assertThat(user.getCity()).isEqualTo("Paris");
             verify(userRepository).save(user);
+        }
+
+        @Test
+        @DisplayName("email absent du contrat — un client qui l'enverrait quand même ne peut pas le changer")
+        void updateProfile_emailIsNotEditable() {
+            // L'email identifie le compte Firebase : le rendre modifiable depuis une
+            // requête de profil permettrait de détourner l'adresse d'un compte.
+            UserEntity user = buildUser();
+            when(firebaseContact.getContact(FIREBASE_UID))
+                    .thenReturn(new FirebaseContactService.Contact(PHONE, "titulaire@dony.app"));
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            UserResponse res = authService.updateProfile(FIREBASE_UID,
+                    new UpdateProfileRequest("Amadou", null, null, null, null, null, null, null));
+
+            // Le reste du profil passe, l'adresse reste celle du compte Firebase
+            assertThat(res.firstName()).isEqualTo("Amadou");
+            assertThat(res.email()).isEqualTo("titulaire@dony.app");
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
         }
 
         @Test
@@ -291,7 +312,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, null, "  ", null, null, null, null);
+            UpdateProfileRequest req = new UpdateProfileRequest("  ", null, null, "  ", null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isNull();
@@ -306,7 +327,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenReturn(user);
 
-            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null, null, null, null);
+            UpdateProfileRequest req = new UpdateProfileRequest(null, null, null, null, null, null, null, null);
             authService.updateProfile(FIREBASE_UID, req);
 
             assertThat(user.getFirstName()).isEqualTo("Original");
@@ -320,7 +341,7 @@ class AuthServiceTest {
             when(userRepository.save(any())).thenReturn(user);
 
             authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest(null, null, null, null, null, "+33699000001", null, null, null));
+                    new UpdateProfileRequest(null, null, null, null, "+33699000001", null, null, null));
 
             verify(firebaseContact).updatePhone(FIREBASE_UID, "+33699000001");
         }
@@ -334,7 +355,7 @@ class AuthServiceTest {
                     .thenReturn(Optional.of("uid-d-un-autre-compte"));
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest(null, null, null, null, null, "+33699999999", null, null, null)))
+                    new UpdateProfileRequest(null, null, null, null, "+33699999999", null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.CONFLICT));
@@ -346,7 +367,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
-                    new UpdateProfileRequest("A", null, null, null, null, null, null, null, null)))
+                    new UpdateProfileRequest("A", null, null, null, null, null, null, null)))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));
@@ -359,7 +380,7 @@ class AuthServiceTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-            var req = new UpdateProfileRequest(null, null, null, null, null, null,
+            var req = new UpdateProfileRequest(null, null, null, null, null,
                     "Voyageur sérieux", Set.of("FR", "WO"), "AVION");
 
             UserResponse res = authService.updateProfile(FIREBASE_UID, req);
