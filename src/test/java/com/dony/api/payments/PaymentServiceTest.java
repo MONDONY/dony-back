@@ -68,7 +68,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         service = new PaymentService(
-                userRepository, bidRepository, announcementRepository,
+                userRepository, bidRepository, mock(com.dony.api.matching.BidGridItemRepository.class), announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
@@ -212,6 +212,30 @@ class PaymentServiceTest {
 
         Throwable thrown = catchThrowable(() -> service.createEscrow(request, "uid-sender"));
         assertThat(thrown).isInstanceOf(TravelerNotEligibleForPaymentException.class);
+    }
+
+    @Test
+    void createEscrow_clientAmountMismatch_throwsUnprocessable() {
+        // SECURITE : le montant net est recalculé serveur (5 kg × 5 €/kg = 25,00 €,
+        // pas de grid). Un totalNetEur client divergent (0,01 €) doit être rejeté
+        // (amount-mismatch) — sinon l'expéditeur ferait sous-payer le voyageur.
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        BidEntity bid = buildBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
+        when(paymentRepository.findByBidId(bidId)).thenReturn(Optional.empty());
+        AnnouncementEntity ann = buildAnnouncement();
+        when(announcementRepository.findById(annId)).thenReturn(Optional.of(ann));
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        traveler.setStripeAccountId("acct_ok");
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        var request = mock(com.dony.api.payments.dto.CreatePaymentRequest.class);
+        when(request.getBidId()).thenReturn(bidId);
+        when(request.getTotalNetEur()).thenReturn(new BigDecimal("0.01"));
+
+        assertDonyError(() -> service.createEscrow(request, "uid-sender"), "amount-mismatch");
     }
 
     // ── createConnectAccount ──────────────────────────────────────────────────

@@ -521,8 +521,10 @@ public class StripeService {
 **Règles Stripe:**
 - `capture_method: manual` obligatoire (mode escrow)
 - Commission dony dans `application_fee_amount` (12% configurable)
-- Ne JAMAIS capturer sans `DeliveryConfirmedEvent` (sauf force-release admin à J+48)
 - Valider la signature des webhooks Stripe avant tout traitement
+- **Montant net TOUJOURS recalculé côté serveur** (grid items snapshotés + poids × prix/kg) dans `PaymentService.createEscrow`. Un `totalNetEur` reçu du client est purement indicatif et recoupé (422 `amount-mismatch` sinon) — ne jamais le prendre comme source de vérité du montant.
+
+**Invariant de capture (separate charges & transfers) :** dans le modèle actuel non-legacy, le `PaymentIntent` est **capturé dès l'acceptation du bid** (`BidAcceptedEventListener`) — l'autorisation Stripe expirant ~7 j, insuffisant pour un acheminement vers l'Afrique. La protection escrow tient au **Transfer** : le voyageur n'est payé qu'au `Transfer.create` déclenché par `DeliveryConfirmedEvent` (`DeliveryEventListener.releaseV2`) ou force-release admin J+48. L'invariant réel est donc « pas de **versement voyageur** sans `DeliveryConfirmedEvent` », pas « pas de capture ». (Legacy destination-charge : capture bien à la livraison.) Vérifier que les CGU / l'UI de paiement informent l'expéditeur qu'il est débité à l'acceptation.
 
 ### 9. File Storage (Hetzner S3)
 

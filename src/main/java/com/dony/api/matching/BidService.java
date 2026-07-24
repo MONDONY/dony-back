@@ -1050,7 +1050,11 @@ public class BidService {
                 bid.getDescription(),
                 bid.getContentCategory(),
                 bid.getRecipientName(),
-                bid.getRecipientPhone(),
+                // Même masquage que sender/traveler : le téléphone du destinataire
+                // (tiers non consentant) n'est révélé qu'à partir de l'acceptation,
+                // sinon un voyageur pourrait moissonner des numéros via des offres
+                // PENDING qu'il refuse ensuite.
+                phoneForStatus(bid.getRecipientPhone(), bid.getStatus()),
                 bid.getStatus().name(),
                 bid.getRejectionReason(),
                 bid.getHandoverLocation(),

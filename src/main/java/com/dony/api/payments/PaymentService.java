@@ -15,6 +15,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dony.api.matching.AnnouncementEntity;
 import com.dony.api.matching.AnnouncementRepository;
 import com.dony.api.matching.BidEntity;
+import com.dony.api.matching.BidGridItemEntity;
+import com.dony.api.matching.BidGridItemRepository;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.matching.BidStatus;
 import com.dony.api.matching.events.BidCreatedEvent;
@@ -66,6 +68,7 @@ public class PaymentService {
 
     private final UserRepository userRepository;
     private final BidRepository bidRepository;
+    private final BidGridItemRepository bidGridItemRepository;
     private final AnnouncementRepository announcementRepository;
     private final PaymentRepository paymentRepository;
     private final AuditService auditService;
@@ -79,6 +82,7 @@ public class PaymentService {
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
+                          BidGridItemRepository bidGridItemRepository,
                           AnnouncementRepository announcementRepository,
                           PaymentRepository paymentRepository,
                           AuditService auditService,
@@ -91,6 +95,7 @@ public class PaymentService {
                           StripeGateway stripeGateway) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
+        this.bidGridItemRepository = bidGridItemRepository;
         this.announcementRepository = announcementRepository;
         this.paymentRepository = paymentRepository;
         this.auditService = auditService;
@@ -393,18 +398,34 @@ public class PaymentService {
             throw new TravelerNotEligibleForPaymentException(traveler.getId());
         }
 
-        // Formule NET×(1+taux dony.commission.rate) si totalNetEur fourni, sinon calcul GROSS legacy
-        BigDecimal totalNet;
-        if (request.getTotalNetEur() != null) {
-            totalNet = request.getTotalNetEur().setScale(2, RoundingMode.HALF_UP);
-        } else {
-            totalNet = bid.getWeightKg().multiply(announcement.getPricePerKg())
-                         .setScale(2, RoundingMode.HALF_UP);
+        // SECURITE : le montant net est TOUJOURS recalculé côté serveur à partir
+        // des données persistées du bid (grid items snapshotés + poids × prix/kg
+        // de l'annonce), jamais pris depuis le client. Le totalNetEur du corps de
+        // requête n'est qu'indicatif : s'il est fourni, il doit correspondre au
+        // montant serveur, sinon c'est une tentative de falsification (HTTP 422).
+        // Sans ce recoupement, un expéditeur pouvait payer un bid 0,01 € et faire
+        // sous-payer le voyageur / sous-encaisser la commission.
+        BigDecimal gridNet = BigDecimal.ZERO;
+        for (BidGridItemEntity item : bidGridItemRepository.findByBidId(bidId)) {
+            gridNet = gridNet.add(
+                item.getUnitPriceNetSnapshot().multiply(BigDecimal.valueOf(item.getQuantity())));
         }
+        BigDecimal kgNet = (bid.getWeightKg() != null && announcement.getPricePerKg() != null)
+                ? bid.getWeightKg().multiply(announcement.getPricePerKg())
+                : BigDecimal.ZERO;
+        BigDecimal totalNet = gridNet.add(kgNet).setScale(2, RoundingMode.HALF_UP);
         if (totalNet.compareTo(BigDecimal.ZERO) <= 0) {
             throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "invalid-amount", "Invalid Amount",
                 "Le montant calculé est invalide (≤ 0)");
+        }
+        if (request.getTotalNetEur() != null
+                && request.getTotalNetEur().setScale(2, RoundingMode.HALF_UP).compareTo(totalNet) != 0) {
+            log.warn("Paiement bid {} rejeté : totalNetEur client {} ≠ montant serveur {}",
+                    bidId, request.getTotalNetEur(), totalNet);
+            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "amount-mismatch", "Amount Mismatch",
+                "Le montant fourni ne correspond pas au montant calculé pour cette demande");
         }
         // Taux effectif : promo > overrides > global (SOURCE UNIQUE via CommissionRateResolver).
         // Si le promo est expiré/épuisé depuis la création du bid → fallback silencieux.

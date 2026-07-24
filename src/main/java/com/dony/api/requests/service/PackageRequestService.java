@@ -169,7 +169,7 @@ public class PackageRequestService {
         entity.setContentCategory(ContentCategoryNormalizer.normalizeJoined(req.contentCategory()));
         entity.setDescription(req.description());
         entity.setTargetPriceEur(netTarget);
-        entity.setPhotoUrl(req.photoUrl());
+        entity.setPhotoUrl(sanitizeLegacyPhotoUrl(req.photoUrl()));
         entity.setPickupNeighborhood(req.pickupNeighborhood());
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
@@ -252,7 +252,7 @@ public class PackageRequestService {
         entity.setContentCategory(ContentCategoryNormalizer.normalizeJoined(req.contentCategory()));
         entity.setDescription(req.description());
         entity.setTargetPriceEur(netTarget);
-        entity.setPhotoUrl(req.photoUrl());
+        entity.setPhotoUrl(sanitizeLegacyPhotoUrl(req.photoUrl()));
         entity.setPickupNeighborhood(req.pickupNeighborhood());
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
@@ -636,5 +636,24 @@ public class PackageRequestService {
             return first;
         }
         return "Expéditeur";
+    }
+
+    /**
+     * Le champ legacy {@code photoUrl} n'accepte qu'une clé S3 interne, jamais une
+     * URL absolue : sans ce garde-fou un expéditeur pouvait injecter du contenu
+     * externe (pixel de tracking, image de phishing sous la marque dony) affiché à
+     * tous les voyageurs parcourant le feed des demandes. Même protection que
+     * {@code TrackingService}. Le chemin moderne validé est {@code photoKeys}.
+     */
+    private static String sanitizeLegacyPhotoUrl(String photoUrl) {
+        if (photoUrl == null || photoUrl.isBlank()) {
+            return photoUrl;
+        }
+        if (photoUrl.startsWith("http://") || photoUrl.startsWith("https://")
+                || photoUrl.contains("..")) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "request/invalid-photo-url");
+        }
+        return photoUrl;
     }
 }

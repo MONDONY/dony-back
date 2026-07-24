@@ -55,7 +55,7 @@ class EphemeralKeyServiceTest {
     void setUp() {
         StripeConnectProperties props = PaymentServiceTestFactory.defaultConnectProperties();
         service = new PaymentService(
-                userRepository, bidRepository, announcementRepository,
+                userRepository, bidRepository, mock(com.dony.api.matching.BidGridItemRepository.class), announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 props,
                 new com.fasterxml.jackson.databind.ObjectMapper(),

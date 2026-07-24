@@ -70,7 +70,7 @@ class PaymentServiceOnBehalfOfTest {
                 "dony://stripe/onboarding/refresh"
         );
         service = new PaymentService(
-                userRepository, bidRepository, announcementRepository,
+                userRepository, bidRepository, mock(com.dony.api.matching.BidGridItemRepository.class), announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 props,
                 new com.fasterxml.jackson.databind.ObjectMapper(),

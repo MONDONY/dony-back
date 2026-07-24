@@ -238,6 +238,28 @@ class PackageRequestServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("date-too-far");
         }
+
+        @Test @DisplayName("photoUrl legacy = URL absolue → 422 (anti-injection contenu externe)")
+        void create_photoUrlAbsolute_throws422() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            // photoUrl (arg 9) = URL externe arbitraire : doit être rejetée avant
+            // persistance (sinon pixel de tracking / phishing affiché dans le feed).
+            PackageRequestCreateRequest req = new PackageRequestCreateRequest(
+                "Paris", "Dakar",
+                LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements",
+                "desc", null, "https://evil.example/pixel.gif",
+                "10e arr", "Plateau",
+                true, EnumSet.of(PaymentMethod.STRIPE)
+            , List.of());
+
+            assertThatThrownBy(() -> service.create(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid-photo-url");
+            verify(repository, never()).save(any(PackageRequestEntity.class));
+        }
     }
 
     // ========== Task 5: createAndReturnEntity() — derived size, forced PLANE, gross→net, negotiable ==========

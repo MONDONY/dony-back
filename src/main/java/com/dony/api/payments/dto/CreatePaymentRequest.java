@@ -9,7 +9,11 @@ public class CreatePaymentRequest {
     @NotNull(message = "bidId est obligatoire")
     private UUID bidId;
 
-    private BigDecimal totalNetEur;  // si fourni, formule NET×(1+taux dony.commission.rate); sinon ancien calcul GROSS
+    // Indicatif uniquement : le montant net est TOUJOURS recalculé côté serveur
+    // (grid items snapshotés + poids × prix/kg). S'il est fourni ici, il est
+    // recoupé et rejeté (422 amount-mismatch) s'il diffère du montant serveur.
+    // Ne jamais s'en servir comme source de vérité du montant.
+    private BigDecimal totalNetEur;
 
     // null/true → setup_future_usage=off_session (carte réutilisable) ; false → non enregistrée
     private Boolean savePaymentMethod;

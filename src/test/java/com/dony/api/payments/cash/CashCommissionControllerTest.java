@@ -221,7 +221,7 @@ class CashCommissionControllerTest {
 
     @Test
     void confirmAcceptance_accepted_returns200() throws Exception {
-        when(cashCommissionService.confirmCommissionAcceptance(any()))
+        when(cashCommissionService.confirmCommissionAcceptance(any(), any()))
                 .thenReturn(ConfirmAcceptanceResponse.ok());
 
         mockMvc.perform(post("/bids/{bidId}/confirm-acceptance", BID_ID)
@@ -231,7 +231,7 @@ class CashCommissionControllerTest {
 
     @Test
     void confirmAcceptance_failed_returns422() throws Exception {
-        when(cashCommissionService.confirmCommissionAcceptance(any()))
+        when(cashCommissionService.confirmCommissionAcceptance(any(), any()))
                 .thenReturn(ConfirmAcceptanceResponse.fail("payment_failed"));
 
         mockMvc.perform(post("/bids/{bidId}/confirm-acceptance", BID_ID)
