@@ -127,6 +127,22 @@ class AuthMeIT {
     }
 
     @Test
+    @DisplayName("GET /auth/me — token valide mais aucune ligne users → 404, jamais 401")
+    void getMe_authenticatedButNotRegistered_returns404() throws Exception {
+        // Contrat dont dépend le client : « pas encore inscrit » doit se distinguer de
+        // « session invalide ». Un 401 ici renverrait tout nouvel utilisateur — ou tout
+        // le monde après une remise à zéro de la base de dev — vers l'écran de login
+        // au lieu de l'onboarding.
+        String inconnu = "uid-jamais-inscrit-999";
+        when(adminAuthService.resolve(inconnu)).thenReturn(Optional.empty());
+        var auth = new UsernamePasswordAuthenticationToken(inconnu, null, List.of());
+
+        mockMvc.perform(get("/auth/me").with(authentication(auth)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("user-not-found"));
+    }
+
+    @Test
     @DisplayName("GET /auth/me with SUPER_ADMIN → 200 + admin block with role + permissions + mustChangePassword")
     void getMe_superAdminUser_returns200WithAdminBlock() throws Exception {
         // Build AdminAuthorities for SUPER_ADMIN with ADMIN_MANAGE permission
