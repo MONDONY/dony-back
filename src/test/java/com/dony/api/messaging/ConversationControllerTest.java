@@ -118,7 +118,7 @@ class ConversationControllerTest {
 
         when(conversationRepository.findByParticipant(currentUserId, pageable)).thenReturn(page);
         when(conversationService.fetchConversationMeta(anyList())).thenReturn(Map.of());
-        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap())).thenReturn(fakeResponse);
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap(), anyMap())).thenReturn(fakeResponse);
 
         ResponseEntity<PageResponse<ConversationResponse>> response =
                 controller.listConversations(pageable);
@@ -143,7 +143,7 @@ class ConversationControllerTest {
         when(conversationRepository.findByParticipant(currentUserId, pageable)).thenReturn(page);
         when(conversationService.fetchConversationMeta(List.of(conversation.getFirestoreConversationId())))
                 .thenReturn(Map.of());
-        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap())).thenReturn(fakeResponse);
+        when(conversationService.toResponse(eq(conversation), eq(currentUserId), anyMap(), anyMap())).thenReturn(fakeResponse);
 
         controller.listConversations(pageable);
 

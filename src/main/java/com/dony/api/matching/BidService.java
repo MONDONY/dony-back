@@ -42,6 +42,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.concurrent.ThreadLocalRandom;
@@ -425,23 +426,29 @@ public class BidService {
                     "Vous n'êtes pas autorisé à voir ces demandes");
         }
 
-        return bidRepository.findByAnnouncementId(announcementId)
+        List<BidEntity> visible = bidRepository.findByAnnouncementId(announcementId)
                 .stream()
                 .filter(b -> !b.isDeletedByTraveler())
                 .filter(b -> b.getStatus() != BidStatus.AWAITING_PAYMENT)
+                .toList();
+        Map<String, FirebaseContactService.Contact> contacts = prefetchContacts(visible);
+        return visible.stream()
                 .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
-                    return toResponse(b, sender);
+                    return toResponse(b, sender, null, contacts);
                 }).toList();
     }
 
     @Transactional(readOnly = true)
     public List<BidResponse> getMyBids(String firebaseUid) {
         UserEntity user = findUserByFirebaseUid(firebaseUid);
-        return bidRepository.findBySenderId(user.getId())
+        List<BidEntity> mine = bidRepository.findBySenderId(user.getId())
                 .stream()
                 .filter(b -> !b.isDeletedBySender())
-                .map(b -> toResponse(b, user))
+                .toList();
+        Map<String, FirebaseContactService.Contact> contacts = prefetchContacts(mine);
+        return mine.stream()
+                .map(b -> toResponse(b, user, null, contacts))
                 .toList();
     }
 
@@ -457,7 +464,8 @@ public class BidService {
         Map<UUID, UserEntity> sendersById = userRepository.findAllById(
                         bids.getContent().stream().map(BidEntity::getSenderId).distinct().toList())
                 .stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
-        return bids.map(b -> toResponse(b, sendersById.get(b.getSenderId())));
+        Map<String, FirebaseContactService.Contact> contacts = prefetchContacts(bids.getContent());
+        return bids.map(b -> toResponse(b, sendersById.get(b.getSenderId()), null, contacts));
     }
 
     @Transactional
@@ -897,15 +905,57 @@ public class BidService {
      * Numéro de l'utilisateur si le statut l'autorise. Le numéro vit dans Firebase :
      * on n'interroge celui-ci que lorsque le statut le rend visible, pour ne pas
      * payer un appel par offre listée.
+     *
+     * <p>{@code prefetched} porte les coordonnées déjà résolues en lot par les
+     * endpoints de liste. Un UID absent retombe sur une résolution à la demande :
+     * le pré-chargement est une optimisation, il ne peut pas faire disparaître un
+     * numéro qui s'affichait avant.
      */
-    private String phoneForStatus(UserEntity user, BidStatus status) {
+    private String phoneForStatus(UserEntity user, BidStatus status,
+                                  Map<String, FirebaseContactService.Contact> prefetched) {
         if (user == null || !PHONE_VISIBLE_STATUSES.contains(status)) return null;
-        return firebaseContact.getContact(user.getFirebaseUid()).phoneNumber();
+        String uid = user.getFirebaseUid();
+        FirebaseContactService.Contact contact = prefetched.get(uid);
+        return (contact != null ? contact : firebaseContact.getContact(uid)).phoneNumber();
+    }
+
+    /**
+     * Coordonnées de toutes les contreparties d'une liste de colis, en un aller-retour
+     * Firebase au lieu d'un par ligne affichée.
+     *
+     * <p>Les deux côtés sont collectés : l'expéditeur, porté par le colis, et le
+     * voyageur, qui n'est atteignable que via l'annonce. Rien n'est chargé si aucun
+     * colis de la liste n'est à un statut qui révèle le numéro — c'est le cas courant,
+     * et il ne doit coûter ni requête SQL ni appel réseau.
+     */
+    private Map<String, FirebaseContactService.Contact> prefetchContacts(List<BidEntity> bids) {
+        boolean anyVisible = bids.stream().anyMatch(b -> PHONE_VISIBLE_STATUSES.contains(b.getStatus()));
+        if (!anyVisible) return Map.of();
+
+        Set<UUID> userIds = bids.stream()
+                .map(BidEntity::getSenderId)
+                .collect(Collectors.toCollection(java.util.HashSet::new));
+        announcementRepository.findAllById(bids.stream()
+                        .map(BidEntity::getAnnouncementId)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct().toList())
+                .forEach(a -> userIds.add(a.getTravelerId()));
+
+        List<String> uids = userRepository.findAllById(userIds).stream()
+                .map(UserEntity::getFirebaseUid)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return firebaseContact.getContacts(uids);
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
+        return toResponse(bid, sender, callerId, Map.of());
+    }
+
+    BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId,
+                           Map<String, FirebaseContactService.Contact> contacts) {
         String senderName = buildSenderName(sender);
-        String senderPhone = phoneForStatus(sender, bid.getStatus());
+        String senderPhone = phoneForStatus(sender, bid.getStatus(), contacts);
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         boolean senderKycVerified = sender != null
                 && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
@@ -939,7 +989,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = phoneForStatus(traveler, bid.getStatus());
+        String travelerPhone = phoneForStatus(traveler, bid.getStatus(), contacts);
         boolean travelerKycVerified = traveler != null
                 && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         boolean travelerIsProAccount = traveler != null && traveler.isProAccount();

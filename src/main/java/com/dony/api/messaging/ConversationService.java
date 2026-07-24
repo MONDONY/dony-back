@@ -220,8 +220,10 @@ public class ConversationService {
             .getContent();
         Map<String, Map<String, Object>> meta = fetchConversationMeta(
             archived.stream().map(ConversationEntity::getFirestoreConversationId).toList());
+        Map<String, FirebaseContactService.Contact> contacts =
+            prefetchParticipantContacts(archived, userId);
         return archived.stream()
-            .map(c -> toResponse(c, userId, meta))
+            .map(c -> toResponse(c, userId, meta, contacts))
             .toList();
     }
 
@@ -246,21 +248,69 @@ public class ConversationService {
         Map<String, Object> meta = firestoreService
             .getConversationMeta(List.of(conv.getFirestoreConversationId()))
             .get(conv.getFirestoreConversationId());
-        return buildResponse(conv, currentUserId, meta);
+        // Conversation seule : rien à pré-charger, le contact est résolu à la demande.
+        return buildResponse(conv, currentUserId, meta, Map.of());
     }
 
     /** Variante batch : réutilise une map déjà chargée (cf. {@link #fetchConversationMeta}). */
     public ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId,
                                             Map<String, Map<String, Object>> metaByFirestoreId) {
+        return toResponse(conv, currentUserId, metaByFirestoreId, Map.of());
+    }
+
+    /**
+     * Variante batch complète : coordonnées des contreparties également pré-chargées
+     * (cf. {@link #prefetchParticipantContacts}), pour ne pas payer un appel Firebase
+     * par conversation listée.
+     */
+    public ConversationResponse toResponse(ConversationEntity conv, UUID currentUserId,
+                                            Map<String, Map<String, Object>> metaByFirestoreId,
+                                            Map<String, FirebaseContactService.Contact> contacts) {
         Map<String, Object> meta = metaByFirestoreId.get(conv.getFirestoreConversationId());
-        return buildResponse(conv, currentUserId, meta);
+        return buildResponse(conv, currentUserId, meta, contacts);
+    }
+
+    /** Interlocuteur de la conversation, déduit de l'entité sans requête. */
+    private static UUID otherUserId(ConversationEntity conv, UUID currentUserId) {
+        return conv.getSenderId().equals(currentUserId) ? conv.getTravelerId() : conv.getSenderId();
+    }
+
+    /**
+     * Coordonnées des interlocuteurs d'une page de conversations, en un aller-retour
+     * Firebase au lieu d'un par ligne.
+     *
+     * <p>Seules les conversations dont le colis est à un statut révélant le numéro sont
+     * concernées : si aucune ne l'est, rien n'est chargé et aucun appel ne part.
+     */
+    public Map<String, FirebaseContactService.Contact> prefetchParticipantContacts(
+            List<ConversationEntity> convs, UUID currentUserId) {
+        if (convs.isEmpty()) return Map.of();
+
+        java.util.Set<UUID> revealingBids = bidRepository.findAllById(convs.stream()
+                        .map(ConversationEntity::getBidId)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct().toList())
+                .stream()
+                .filter(b -> PHONE_VISIBLE_STATUSES.contains(b.getStatus()))
+                .map(BidEntity::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (revealingBids.isEmpty()) return Map.of();
+
+        List<UUID> otherIds = convs.stream()
+                .filter(c -> revealingBids.contains(c.getBidId()))
+                .map(c -> otherUserId(c, currentUserId))
+                .distinct().toList();
+        List<String> uids = userRepository.findAllById(otherIds).stream()
+                .map(UserEntity::getFirebaseUid)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return firebaseContact.getContacts(uids);
     }
 
     private ConversationResponse buildResponse(ConversationEntity conv, UUID currentUserId,
-                                                Map<String, Object> meta) {
-        UUID otherUserId = conv.getSenderId().equals(currentUserId)
-            ? conv.getTravelerId()
-            : conv.getSenderId();
+                                                Map<String, Object> meta,
+                                                Map<String, FirebaseContactService.Contact> contacts) {
+        UUID otherUserId = otherUserId(conv, currentUserId);
 
         UserEntity other = userRepository.findById(otherUserId).orElse(null);
         String role = otherUserId.equals(conv.getTravelerId()) ? "Voyageur" : "Expéditeur";
@@ -289,7 +339,7 @@ public class ConversationService {
             }
         }
 
-        ParticipantDTO otherParticipant = buildParticipant(otherUserId, other, revealPhone, role);
+        ParticipantDTO otherParticipant = buildParticipant(otherUserId, other, revealPhone, role, contacts);
 
         String lastMessagePreview = meta != null ? (String) meta.get("lastMessagePreview") : null;
 
@@ -334,17 +384,22 @@ public class ConversationService {
         }
     }
 
-    private ParticipantDTO buildParticipant(UUID userId, UserEntity user, boolean revealPhone, String role) {
+    private ParticipantDTO buildParticipant(UUID userId, UserEntity user, boolean revealPhone, String role,
+                                            Map<String, FirebaseContactService.Contact> contacts) {
         if (user == null) {
             return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null, null, role, false);
         }
         String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
             + (user.getLastName() != null ? user.getLastName() : "")).strip();
         // Numéro lu dans Firebase (source de vérité) et uniquement si la révélation
-        // est autorisée pour cette conversation.
-        String phone = revealPhone
-                ? firebaseContact.getContact(user.getFirebaseUid()).phoneNumber()
-                : null;
+        // est autorisée. Un UID absent du pré-chargement retombe sur un appel unitaire :
+        // le batch est une optimisation, il ne peut pas masquer un numéro attendu.
+        String phone = null;
+        if (revealPhone) {
+            FirebaseContactService.Contact contact = contacts.get(user.getFirebaseUid());
+            phone = (contact != null ? contact : firebaseContact.getContact(user.getFirebaseUid()))
+                    .phoneNumber();
+        }
         boolean kyc = user.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
                 storageService.avatarUrl(user.getAvatarUrl()), phone, role, kyc);
