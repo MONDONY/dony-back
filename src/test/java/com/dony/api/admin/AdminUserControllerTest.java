@@ -70,7 +70,7 @@ class AdminUserControllerTest {
         user.setFirebaseUid("uid-awa");
 
         when(firebaseContact.findUidByEmail("awa@example.com")).thenReturn(java.util.Optional.of("uid-awa"));
-        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(user)));
         when(firebaseContact.getContacts(java.util.List.of("uid-awa"))).thenReturn(
                 java.util.Map.of("uid-awa", new com.dony.api.auth.FirebaseContactService.Contact(
@@ -82,7 +82,6 @@ class AdminUserControllerTest {
         verify(userRepository).findAdminFiltered(
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.eq("awa@example.com"),
                 org.mockito.ArgumentMatchers.eq("%awa@example.com%"),
                 org.mockito.ArgumentMatchers.eq("uid-awa"),
                 org.mockito.ArgumentMatchers.isNull(), any());
@@ -92,22 +91,37 @@ class AdminUserControllerTest {
     }
 
     @Test
-    void listUsers_queryOnPhone_fallsBackToPhoneLookup() {
+    void listUsers_queryOnPhone_usesPhoneLookupOnly() {
         AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
-        when(firebaseContact.findUidByEmail("+221701234567")).thenReturn(java.util.Optional.empty());
         when(firebaseContact.findUidByPhone("+221701234567")).thenReturn(java.util.Optional.of("uid-awa"));
-        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
         controller.listUsers(null, null, null, null, null, "+221701234567", 0, 20);
 
+        // Un terme en E.164 ne déclenche que le lookup téléphone : le lookup email
+        // était un aller-retour réseau voué à échouer.
         verify(firebaseContact).findUidByPhone("+221701234567");
+        verify(firebaseContact, org.mockito.Mockito.never()).findUidByEmail(any());
+    }
+
+    @Test
+    void listUsers_queryOnName_hitsNoFirebaseLookup() {
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        controller.listUsers(null, null, null, null, null, "Dupont", 0, 20);
+
+        // Cas dominant d'une liste admin : aucun appel Firebase ne doit partir.
+        verify(firebaseContact, org.mockito.Mockito.never()).findUidByEmail(any());
+        verify(firebaseContact, org.mockito.Mockito.never()).findUidByPhone(any());
     }
 
     @Test
     void listUsers_withoutQuery_doesNotHitFirebaseLookups() {
         AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
-        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
         controller.listUsers(null, null, null, null, null, "   ", 0, 20);

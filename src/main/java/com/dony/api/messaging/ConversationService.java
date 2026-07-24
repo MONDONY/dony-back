@@ -1,5 +1,6 @@
 package com.dony.api.messaging;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.AuditService;
@@ -37,7 +38,7 @@ public class ConversationService {
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
     private final StorageService storageService;
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
 
     public ConversationService(ConversationRepository conversationRepository,
                                 FirestoreService firestoreService,
@@ -46,7 +47,7 @@ public class ConversationService {
                                 BidRepository bidRepository,
                                 AnnouncementRepository announcementRepository,
                                 StorageService storageService,
-                                com.dony.api.auth.FirebaseContactService firebaseContact) {
+                                FirebaseContactService firebaseContact) {
         this.conversationRepository = conversationRepository;
         this.firestoreService = firestoreService;
         this.userRepository = userRepository;

@@ -144,17 +144,21 @@ class FirebaseContactServiceTest {
     }
 
     @Test
-    @DisplayName("updateEmail / updatePhone écrivent dans Firebase et vident le cache")
-    void updates_writeToFirebaseAndEvict() throws Exception {
+    @DisplayName("updateEmail écrit dans Firebase et réamorce le cache sans relire")
+    void updates_writeToFirebaseAndRefreshCache() throws Exception {
         UserRecord avant = record("uid-1", "+221701111111", "avant@example.com");
         UserRecord apres = record("uid-1", "+221709999999", "apres@example.com");
-        when(firebaseAuth.getUser("uid-1")).thenReturn(avant).thenReturn(apres);
+        when(firebaseAuth.getUser("uid-1")).thenReturn(avant);
+        when(firebaseAuth.updateUser(any())).thenReturn(apres);
 
         service.getContact("uid-1");
         service.updateEmail("uid-1", "apres@example.com");
 
         assertThat(service.getContact("uid-1").email()).isEqualTo("apres@example.com");
         verify(firebaseAuth, times(1)).updateUser(any());
+        // La réponse de updateUser porte déjà les coordonnées à jour : la relecture
+        // d'après écriture ne doit pas repartir vers Firebase.
+        verify(firebaseAuth, times(1)).getUser("uid-1");
     }
 
     @Test
@@ -163,7 +167,11 @@ class FirebaseContactServiceTest {
         FirebaseContactService offline = new FirebaseContactService(null);
 
         assertThat(offline.getContact("uid-1")).isEqualTo(FirebaseContactService.Contact.EMPTY);
-        assertThat(offline.getContacts(List.of("uid-1"))).isEmpty();
+        // getContacts garantit une entrée par UID demandé, même hors ligne : les
+        // appelants n'ont pas à distinguer « absent » de « Firebase injoignable ».
+        assertThat(offline.getContacts(List.of("uid-1")))
+                .containsExactly(org.assertj.core.api.Assertions.entry(
+                        "uid-1", FirebaseContactService.Contact.EMPTY));
         assertThat(offline.findUidByEmail("awa@example.com")).isEmpty();
         assertThat(offline.findUidByPhone("+221701234567")).isEmpty();
         // Les écritures sont des no-op : rien à propager, aucun compte Firebase à joindre

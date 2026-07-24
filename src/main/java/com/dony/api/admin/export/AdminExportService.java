@@ -1,5 +1,6 @@
 package com.dony.api.admin.export;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -31,12 +32,12 @@ public class AdminExportService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final DisputeRepository disputeRepository;
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
 
     public AdminExportService(PaymentRepository paymentRepository,
                               UserRepository userRepository,
                               DisputeRepository disputeRepository,
-                              com.dony.api.auth.FirebaseContactService firebaseContact) {
+                              FirebaseContactService firebaseContact) {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.disputeRepository = disputeRepository;
@@ -72,7 +73,7 @@ public class AdminExportService {
         StringBuilder sb = header("id,prenom,nom,telephone,email,roles,statut,kyc,pro,ville,creeLe");
         for (UserEntity u : users) {
             var contact = contacts.getOrDefault(
-                    u.getFirebaseUid(), com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
+                    u.getFirebaseUid(), FirebaseContactService.Contact.EMPTY);
             row(sb,
                 str(u.getId()),
                 u.getFirstName(),

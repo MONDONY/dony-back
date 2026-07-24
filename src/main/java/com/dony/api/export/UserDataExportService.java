@@ -1,5 +1,6 @@
 package com.dony.api.export;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.addressbook.delivery.DeliveryAddressEntity;
 import com.dony.api.addressbook.delivery.DeliveryAddressRepository;
 import com.dony.api.addressbook.delivery.dto.DeliveryAddressDto;
@@ -31,14 +32,14 @@ public class UserDataExportService {
     private final DeliveryAddressRepository deliveryAddressRepository;
     private final FavoriteRepository favoriteRepository;
     private final KycRepository kycRepository;
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
 
     public UserDataExportService(RecipientRepository recipientRepository,
                                   PickupAddressRepository pickupAddressRepository,
                                   DeliveryAddressRepository deliveryAddressRepository,
                                   FavoriteRepository favoriteRepository,
                                   KycRepository kycRepository,
-                                  com.dony.api.auth.FirebaseContactService firebaseContact) {
+                                  FirebaseContactService firebaseContact) {
         this.recipientRepository = recipientRepository;
         this.pickupAddressRepository = pickupAddressRepository;
         this.deliveryAddressRepository = deliveryAddressRepository;

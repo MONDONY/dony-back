@@ -1,5 +1,6 @@
 package com.dony.api.auth;
 
+import com.dony.api.common.DonyBusinessException;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.firebase.auth.FirebaseAuth;
@@ -8,17 +9,19 @@ import com.google.firebase.auth.UidIdentifier;
 import com.google.firebase.auth.UserIdentifier;
 import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Source de vérité des coordonnées de contact (téléphone, email) : Firebase Auth,
@@ -86,33 +89,37 @@ public class FirebaseContactService {
 
     /**
      * Coordonnées de plusieurs utilisateurs en un aller-retour (listes admin, exports).
-     * Firebase plafonne à 100 identifiants par appel, d'où le découpage. Les UID absents
-     * de la réponse retombent sur {@link Contact#EMPTY}, jamais sur une exception.
+     * Firebase plafonne à 100 identifiants par appel, d'où le découpage.
+     *
+     * <p>La map renvoyée contient une entrée pour chaque UID demandé, {@link Contact#EMPTY}
+     * à défaut : l'appelant peut faire un {@code get} direct sans repli de son côté.
      */
     public Map<String, Contact> getContacts(Collection<String> firebaseUids) {
         Map<String, Contact> result = new HashMap<>();
-        if (unavailable() || firebaseUids == null || firebaseUids.isEmpty()) {
+        if (firebaseUids == null || firebaseUids.isEmpty()) {
             return result;
         }
-        List<String> missing = new ArrayList<>();
+        // LinkedHashSet : le dédoublonnage est structurel, sans quoi un UID répété
+        // compterait deux fois dans le découpage par lots.
+        Set<String> missing = new LinkedHashSet<>();
         for (String uid : firebaseUids) {
-            if (uid == null || uid.isBlank() || result.containsKey(uid)) {
+            if (uid == null || uid.isBlank()) {
                 continue;
             }
-            Contact cached = cache.getIfPresent(uid);
+            Contact cached = unavailable() ? null : cache.getIfPresent(uid);
             if (cached != null) {
                 result.put(uid, cached);
             } else {
                 missing.add(uid);
             }
         }
-        for (int i = 0; i < missing.size(); i += BATCH_SIZE) {
-            List<String> chunk = missing.subList(i, Math.min(i + BATCH_SIZE, missing.size()));
-            fetchChunk(chunk, result);
+        if (!unavailable()) {
+            List<String> toFetch = List.copyOf(missing);
+            for (int i = 0; i < toFetch.size(); i += BATCH_SIZE) {
+                fetchChunk(toFetch.subList(i, Math.min(i + BATCH_SIZE, toFetch.size())), result);
+            }
         }
-        for (String uid : missing) {
-            result.putIfAbsent(uid, Contact.EMPTY);
-        }
+        missing.forEach(uid -> result.putIfAbsent(uid, Contact.EMPTY));
         return result;
     }
 
@@ -126,9 +133,54 @@ public class FirebaseContactService {
                 cache.put(record.getUid(), contact);
                 result.put(record.getUid(), contact);
             }
+            // L'appel a abouti : les UID absents de la réponse n'existent pas côté
+            // Firebase. On mémorise cette absence, sinon ils repartiraient dans le lot
+            // à chaque rafraîchissement de liste. Rien n'est mémorisé si l'appel échoue
+            // (bloc catch) : une panne réseau ne doit pas se figer 5 min en « pas de
+            // coordonnées ».
+            for (String uid : chunk) {
+                if (!result.containsKey(uid)) {
+                    cache.put(uid, Contact.EMPTY);
+                    result.put(uid, Contact.EMPTY);
+                }
+            }
         } catch (Exception e) {
             log.warn("Firebase getUsers({} uids) indisponible", chunk.size(), e);
         }
+    }
+
+    /**
+     * Supprime le compte Firebase et purge le cache dans la foulée. Ce service étant
+     * seul à détenir le cache, la suppression lui appartient : laisser l'appelant
+     * enchaîner {@code deleteUser} puis {@code evict} laisse la PII en RAM dès qu'un
+     * chemin oublie le second appel.
+     */
+    public void deleteAccount(String firebaseUid) {
+        if (firebaseUid == null) {
+            return;
+        }
+        if (!unavailable()) {
+            try {
+                firebaseAuth.deleteUser(firebaseUid);
+            } catch (FirebaseAuthException e) {
+                log.warn("Firebase deleteUser({}) a échoué : {}", firebaseUid, e.getAuthErrorCode());
+            }
+        }
+        cache.invalidate(firebaseUid);
+    }
+
+    /** Vrai si cet email appartient à un compte Firebase autre que {@code selfUid}. */
+    public boolean isEmailTakenByAnother(String email, String selfUid) {
+        return isTakenByAnother(findUidByEmail(email), selfUid);
+    }
+
+    /** Vrai si ce numéro appartient à un compte Firebase autre que {@code selfUid}. */
+    public boolean isPhoneTakenByAnother(String phoneNumber, String selfUid) {
+        return isTakenByAnother(findUidByPhone(phoneNumber), selfUid);
+    }
+
+    private static boolean isTakenByAnother(Optional<String> foundUid, String selfUid) {
+        return foundUid.filter(uid -> !uid.equals(selfUid)).isPresent();
     }
 
     /** UID Firebase possédant cet email (lookup exact), ou vide si aucun. */
@@ -155,29 +207,40 @@ public class FirebaseContactService {
         }
     }
 
-    /** Met à jour l'email côté Firebase (source de vérité) et invalide le cache. */
+    /** Met à jour l'email côté Firebase (source de vérité) et rafraîchit le cache. */
     public void updateEmail(String firebaseUid, String email) {
         if (unavailable()) {
             return;
         }
-        try {
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(firebaseUid).setEmail(email));
-            cache.invalidate(firebaseUid);
-        } catch (FirebaseAuthException e) {
-            throw new IllegalStateException("Mise à jour email Firebase impossible", e);
-        }
+        applyUpdate(new UserRecord.UpdateRequest(firebaseUid).setEmail(email),
+                "Mise à jour email Firebase impossible");
     }
 
-    /** Met à jour le téléphone côté Firebase (source de vérité) et invalide le cache. */
+    /** Met à jour le téléphone côté Firebase (source de vérité) et rafraîchit le cache. */
     public void updatePhone(String firebaseUid, String phoneNumber) {
         if (unavailable()) {
             return;
         }
+        applyUpdate(new UserRecord.UpdateRequest(firebaseUid).setPhoneNumber(phoneNumber),
+                "Mise à jour téléphone Firebase impossible");
+    }
+
+    /**
+     * Applique une mutation Firebase et réamorce le cache avec le {@link UserRecord}
+     * renvoyé, plutôt que d'invalider : tous les appelants relisent les coordonnées
+     * dans la foulée (réponse de profil), une invalidation leur coûterait un
+     * aller-retour supplémentaire pour une donnée déjà en main.
+     */
+    private void applyUpdate(UserRecord.UpdateRequest request, String errorDetail) {
         try {
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(firebaseUid).setPhoneNumber(phoneNumber));
-            cache.invalidate(firebaseUid);
+            UserRecord updated = firebaseAuth.updateUser(request);
+            cache.put(updated.getUid(), new Contact(updated.getPhoneNumber(), updated.getEmail()));
         } catch (FirebaseAuthException e) {
-            throw new IllegalStateException("Mise à jour téléphone Firebase impossible", e);
+            // DonyBusinessException pour rester dans le contrat RFC 7807 du
+            // GlobalExceptionHandler : ces méthodes sont sur des chemins utilisateur
+            // (mise à jour de profil, rattachement d'email).
+            throw new DonyBusinessException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, "firebase-error", "Firebase Error", errorDetail);
         }
     }
 

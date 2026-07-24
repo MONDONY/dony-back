@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.BlockService;
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
@@ -66,7 +67,7 @@ public class BidService {
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
 
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
 
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
@@ -79,7 +80,7 @@ public class BidService {
                       PromoService promoService,
                       StorageService storageService,
                       BidPhotoService bidPhotoService,
-                      com.dony.api.auth.FirebaseContactService firebaseContact) {
+                      FirebaseContactService firebaseContact) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;

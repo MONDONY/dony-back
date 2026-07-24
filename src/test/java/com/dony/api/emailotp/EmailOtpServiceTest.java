@@ -110,7 +110,7 @@ class EmailOtpServiceTest {
             givenValidOtp();
             when(firebaseContact.getContact(UID))
                     .thenReturn(com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
-            when(firebaseContact.findUidByEmail(EMAIL)).thenReturn(Optional.empty());
+            when(firebaseContact.isEmailTakenByAnother(EMAIL, UID)).thenReturn(false);
 
             emailOtpService.attachEmailToAccount(UID, EMAIL, "123456");
 
@@ -159,7 +159,7 @@ class EmailOtpServiceTest {
             givenValidOtp();
             when(firebaseContact.getContact(UID))
                     .thenReturn(com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
-            when(firebaseContact.findUidByEmail(EMAIL)).thenReturn(Optional.of("un-autre-uid"));
+            when(firebaseContact.isEmailTakenByAnother(EMAIL, UID)).thenReturn(true);
 
             assertThatThrownBy(() -> emailOtpService.attachEmailToAccount(UID, EMAIL, "123456"))
                     .isInstanceOf(DonyBusinessException.class)

@@ -113,7 +113,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             @Param("kycStatus") String kycStatus,
             @Param("pro") Boolean pro,
             @Param("city") String city,
-            @Param("query") String query,
             @Param("queryLike") String queryLike,
             @Param("queryFirebaseUid") String queryFirebaseUid,
             @Param("role") String role,

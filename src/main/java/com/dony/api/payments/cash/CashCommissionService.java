@@ -1,5 +1,6 @@
 package com.dony.api.payments.cash;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.CommissionRateResolver;
@@ -81,7 +82,7 @@ public class CashCommissionService {
     private final CommissionRateResolver commissionRateResolver;
     private final com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
     private final StripeCashGateway stripeCashGateway;
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
     private final com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
     private Clock clock = Clock.systemUTC();
 
@@ -97,7 +98,7 @@ public class CashCommissionService {
                                  com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository,
                                  StripeCashGateway stripeCashGateway,
                                  com.dony.api.matching.BidGridItemRepository bidGridItemRepository,
-                                 com.dony.api.auth.FirebaseContactService firebaseContact) {
+                                 FirebaseContactService firebaseContact) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;

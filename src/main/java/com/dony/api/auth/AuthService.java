@@ -138,11 +138,6 @@ public class AuthService {
             String v = request.lastName().trim();
             user.setLastName(v.isEmpty() ? null : v);
         }
-        // L'email n'est pas modifiable ici : c'est une donnée d'identification portée
-        // par Firebase Auth. Il est absent de UpdateProfileRequest, et une requête qui
-        // le contiendrait encore le verrait ignoré (fail-on-unknown-properties=false).
-        FirebaseContactService.Contact contact = firebaseContact.getContact(firebaseUid);
-
         if (request.birthDate() != null) {
             user.setBirthDate(request.birthDate());
         }
@@ -152,8 +147,11 @@ public class AuthService {
         }
         if (request.phoneNumber() != null) {
             String v = request.phoneNumber().trim();
-            if (!v.isEmpty() && !v.equals(contact.phoneNumber())) {
-                if (isTakenByAnotherAccount(firebaseContact.findUidByPhone(v), firebaseUid)) {
+            // Lu ici seulement : une mise à jour qui ne touche pas au numéro n'a
+            // aucune raison d'interroger Firebase.
+            String currentPhone = firebaseContact.getContact(firebaseUid).phoneNumber();
+            if (!v.isEmpty() && !v.equals(currentPhone)) {
+                if (firebaseContact.isPhoneTakenByAnother(v, firebaseUid)) {
                     throw new DonyBusinessException(HttpStatus.CONFLICT, "phone-already-exists",
                             "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
                 }
@@ -479,28 +477,6 @@ public class AuthService {
                 .filter(uid -> !uid.equals(selfUid))
                 .flatMap(userRepository::findByFirebaseUid)
                 .map(this::toResponse);
-    }
-
-    /** Vrai si l'UID trouvé côté Firebase existe et appartient à un autre compte. */
-    private static boolean isTakenByAnotherAccount(Optional<String> foundUid, String selfUid) {
-        return foundUid.filter(uid -> !uid.equals(selfUid)).isPresent();
-    }
-
-    private Set<Role> parseRoles(Set<String> rawRoles) {
-        return rawRoles.stream()
-                .map(r -> {
-                    try {
-                        return Role.valueOf(r.toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        throw new DonyBusinessException(
-                                HttpStatus.UNPROCESSABLE_ENTITY,
-                                "invalid-role",
-                                "Invalid Role",
-                                "Rôle invalide: " + r + ". Valeurs acceptées: SENDER, TRAVELER"
-                        );
-                    }
-                })
-                .collect(Collectors.toSet());
     }
 
     @Transactional

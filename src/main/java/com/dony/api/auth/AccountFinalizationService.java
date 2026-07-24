@@ -4,8 +4,6 @@ import com.dony.api.auth.events.UserFinalizedEvent;
 import com.dony.api.common.AuditService;
 import com.dony.api.common.StorageService;
 import com.dony.api.kyc.KycRepository;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseAuthException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -73,12 +71,7 @@ public class AccountFinalizationService {
         eventPublisher.publishEvent(new UserFinalizedEvent(userId, reason));
 
         // 5. Delete Firebase user (porteur du téléphone et de l'email)
-        try {
-            FirebaseAuth.getInstance().deleteUser(user.getFirebaseUid());
-        } catch (FirebaseAuthException e) {
-            log.warn("Firebase deleteUser failed for {}: {}", userId, e.getMessage());
-        }
-        firebaseContact.evict(user.getFirebaseUid());
+        firebaseContact.deleteAccount(user.getFirebaseUid());
 
         // 6. Immutable audit entry
         auditService.log("USER", userId, "USER_GDPR_DELETION", userId,

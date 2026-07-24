@@ -351,8 +351,8 @@ class AuthServiceTest {
         void updateProfile_phoneAlreadyTaken_throws409() {
             UserEntity user = buildUser();
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(firebaseContact.findUidByPhone("+33699999999"))
-                    .thenReturn(Optional.of("uid-d-un-autre-compte"));
+            when(firebaseContact.isPhoneTakenByAnother("+33699999999", FIREBASE_UID))
+                    .thenReturn(true);
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
                     new UpdateProfileRequest(null, null, null, null, "+33699999999", null, null, null)))

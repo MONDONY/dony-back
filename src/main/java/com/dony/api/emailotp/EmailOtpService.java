@@ -130,10 +130,7 @@ public class EmailOtpService {
                     "Une adresse est déjà associée à ce compte et ne peut pas être remplacée");
         }
 
-        boolean takenByAnother = firebaseContact.findUidByEmail(email)
-                .filter(uid -> !uid.equals(firebaseUid))
-                .isPresent();
-        if (takenByAnother) {
+        if (firebaseContact.isEmailTakenByAnother(email, firebaseUid)) {
             throw new DonyBusinessException(
                     HttpStatus.CONFLICT, "email-already-exists",
                     "Email Already Registered", "Cet email est déjà associé à un compte");

@@ -60,22 +60,13 @@ public class AdminUserController {
         String queryLike = normalizedQuery != null ? "%" + normalizedQuery + "%" : null;
         String normalizedCity = (city != null && !city.isBlank()) ? city.trim() : null;
 
-        // Téléphone et email ne sont plus en base : une recherche qui en vise un est
-        // résolue par Firebase en UID, puis appariée exactement. Les noms restent en
-        // recherche partielle SQL.
-        String queryFirebaseUid = normalizedQuery == null ? null
-                : firebaseContact.findUidByEmail(normalizedQuery)
-                        .or(() -> firebaseContact.findUidByPhone(normalizedQuery))
-                        .orElse(null);
-
         Page<UserEntity> users = userRepository.findAdminFiltered(
                 status != null ? status.name() : null,
                 kyc != null ? kyc.name() : null,
                 pro,
                 normalizedCity,
-                normalizedQuery,
                 queryLike,
-                queryFirebaseUid,
+                resolveQueryToFirebaseUid(normalizedQuery),
                 role != null ? role.name() : null,
                 PageRequest.of(page, size)
         );
@@ -84,6 +75,28 @@ public class AdminUserController {
                 users.getContent().stream().map(UserEntity::getFirebaseUid).toList());
         return users.map(u -> AdminUserListItemResponse.from(
                 u, contacts.getOrDefault(u.getFirebaseUid(), FirebaseContactService.Contact.EMPTY)));
+    }
+
+    /**
+     * Téléphone et email ne sont plus en base : une recherche qui en vise un est résolue
+     * par Firebase en UID, puis appariée exactement. Les noms restent en recherche
+     * partielle SQL.
+     *
+     * <p>La forme du terme choisit le lookup, sinon toute recherche par nom, le cas
+     * dominant, paierait deux appels réseau voués à échouer avant même que le SQL parte.
+     */
+    private String resolveQueryToFirebaseUid(String normalizedQuery) {
+        if (normalizedQuery == null) {
+            return null;
+        }
+        if (normalizedQuery.contains("@")) {
+            return firebaseContact.findUidByEmail(normalizedQuery).orElse(null);
+        }
+        // Les numéros sont stockés en E.164 côté Firebase, donc préfixés de « + ».
+        if (normalizedQuery.startsWith("+")) {
+            return firebaseContact.findUidByPhone(normalizedQuery).orElse(null);
+        }
+        return null;
     }
 
     @PreAuthorize("hasAuthority('USER_VIEW')")

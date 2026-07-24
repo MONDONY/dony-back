@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -79,7 +80,7 @@ public class PaymentService {
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
     private final StripeGateway stripeGateway;
-    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+    private final FirebaseContactService firebaseContact;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -94,7 +95,7 @@ public class PaymentService {
                           CommissionRateResolver commissionRateResolver,
                           PromoService promoService,
                           StripeGateway stripeGateway,
-                          com.dony.api.auth.FirebaseContactService firebaseContact) {
+                          FirebaseContactService firebaseContact) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.bidGridItemRepository = bidGridItemRepository;

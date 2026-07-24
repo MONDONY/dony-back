@@ -85,18 +85,15 @@ class AccountFinalizationServiceTest {
 
     @Test
     @DisplayName("supprime le compte Firebase — seul porteur du téléphone et de l'email")
-    void deletesFirebaseAccountAndEvictsContactCache() throws Exception {
+    void deletesFirebaseAccountAndEvictsContactCache() {
         UserEntity user = makeUser();
         when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
-        com.google.firebase.auth.FirebaseAuth mockAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
 
-        try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class)) {
-            staticAuth.when(FirebaseAuth::getInstance).thenReturn(mockAuth);
-            service.finalize(user, FinalizationReason.HARD_IMMEDIATE);
-        }
+        service.finalize(user, FinalizationReason.HARD_IMMEDIATE);
 
-        verify(mockAuth).deleteUser("uid-test");
-        verify(firebaseContact).evict("uid-test");
+        // Suppression et purge du cache sont une seule opération portée par le service
+        // qui détient le cache : l'appelant ne peut plus oublier la seconde.
+        verify(firebaseContact).deleteAccount("uid-test");
     }
 
     @Test
