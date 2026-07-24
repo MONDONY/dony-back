@@ -1,7 +1,9 @@
 package com.dony.api.emailotp;
 
 import com.dony.api.auth.FirebaseContactService;
+import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
+import com.dony.api.common.AuditService;
 import com.dony.api.common.DonyBusinessException;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
@@ -37,19 +39,22 @@ public class EmailOtpService {
     private final FirebaseAuth firebaseAuth;
     private final UserRepository userRepository;
     private final FirebaseContactService firebaseContact;
+    private final AuditService auditService;
 
     public EmailOtpService(EmailOtpRepository emailOtpRepository,
                            PasswordEncoder passwordEncoder,
                            ResendEmailService resendEmailService,
                            @Autowired(required = false) FirebaseAuth firebaseAuth,
                            UserRepository userRepository,
-                           FirebaseContactService firebaseContact) {
+                           FirebaseContactService firebaseContact,
+                           AuditService auditService) {
         this.emailOtpRepository = emailOtpRepository;
         this.passwordEncoder    = passwordEncoder;
         this.resendEmailService = resendEmailService;
         this.firebaseAuth       = firebaseAuth;
         this.userRepository     = userRepository;
         this.firebaseContact    = firebaseContact;
+        this.auditService       = auditService;
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -77,6 +82,78 @@ public class EmailOtpService {
 
     public String verifyOtp(String email, String code) {
         log.info("verifyOtp: email='{}'", maskEmail(email));
+        consumeOtp(email, code);
+
+        if (firebaseAuth == null) {
+            log.warn("FirebaseAuth not available — returning null custom token (test mode)");
+            return null;
+        }
+        try {
+            // Si l'utilisateur existe déjà, on crée le token avec son firebase_uid existant
+            // pour que GET /auth/me fonctionne même si le compte a été créé via un autre
+            // provider. L'adresse n'étant plus stockée en base, c'est Firebase — seule
+            // source de vérité — qui donne l'UID rattaché à cet email.
+            String uid = firebaseContact.findUidByEmail(email)
+                    .filter(u -> userRepository.findByFirebaseUid(u).isPresent())
+                    .orElse(email);
+            return firebaseAuth.createCustomToken(uid);
+        } catch (FirebaseAuthException e) {
+            throw new DonyBusinessException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, "firebase-error",
+                    "Firebase Error", "Erreur lors de la création du token");
+        }
+    }
+
+    /**
+     * Rattache une adresse au compte authentifié, après avoir consommé le code OTP
+     * dans la même opération : la preuve de possession est donc intrinsèque, un
+     * appelant ne peut pas s'attribuer l'adresse d'un tiers.
+     *
+     * <p>Ajout seulement, jamais remplacement : l'email identifie le compte Firebase.
+     * Un compte qui en porte déjà un est refusé (409).
+     */
+    public void attachEmailToAccount(String firebaseUid, String email, String code) {
+        log.info("attachEmailToAccount: uid={} email='{}'", firebaseUid, maskEmail(email));
+
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new DonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found",
+                        "User Not Found", "Utilisateur introuvable"));
+
+        // Preuve de possession avant toute écriture : le code est consommé ici.
+        consumeOtp(email, code);
+
+        if (firebaseContact.getContact(firebaseUid).email() != null) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "email-already-set",
+                    "Email Already Set",
+                    "Une adresse est déjà associée à ce compte et ne peut pas être remplacée");
+        }
+
+        boolean takenByAnother = firebaseContact.findUidByEmail(email)
+                .filter(uid -> !uid.equals(firebaseUid))
+                .isPresent();
+        if (takenByAnother) {
+            throw new DonyBusinessException(
+                    HttpStatus.CONFLICT, "email-already-exists",
+                    "Email Already Registered", "Cet email est déjà associé à un compte");
+        }
+
+        firebaseContact.updateEmail(firebaseUid, email);
+
+        // Payload sans PII : l'adresse elle-même ne doit pas atterrir dans audit_log.
+        auditService.log("USER", user.getId(), "USER_EMAIL_ATTACHED", user.getId(),
+                java.util.Map.of("verifiedBy", "email-otp"));
+    }
+
+    /**
+     * Valide le code reçu pour cette adresse et le consomme (usage unique).
+     * Lève si le code est absent, expiré, faux, ou si le budget de tentatives est épuisé.
+     *
+     * <p>Extrait de {@link #verifyOtp} pour que le rattachement d'une adresse à un compte
+     * puisse exiger la même preuve de possession, dans la même requête que l'écriture.
+     */
+    void consumeOtp(String email, String code) {
 
         // Budget global par adresse : sans lui, chaque renvoi de code offrirait
         // 5 essais frais (le compteur vit sur le token, et la vérification lit
@@ -120,25 +197,6 @@ public class EmailOtpService {
 
         token.setUsedAt(LocalDateTime.now(ZoneOffset.UTC));
         emailOtpRepository.save(token);
-
-        if (firebaseAuth == null) {
-            log.warn("FirebaseAuth not available — returning null custom token (test mode)");
-            return null;
-        }
-        try {
-            // Si l'utilisateur existe déjà, on crée le token avec son firebase_uid existant
-            // pour que GET /auth/me fonctionne même si le compte a été créé via un autre
-            // provider. L'adresse n'étant plus stockée en base, c'est Firebase — seule
-            // source de vérité — qui donne l'UID rattaché à cet email.
-            String uid = firebaseContact.findUidByEmail(email)
-                    .filter(u -> userRepository.findByFirebaseUid(u).isPresent())
-                    .orElse(email);
-            return firebaseAuth.createCustomToken(uid);
-        } catch (FirebaseAuthException e) {
-            throw new DonyBusinessException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "firebase-error",
-                    "Firebase Error", "Erreur lors de la création du token");
-        }
     }
 
     /** Les logs partent vers Loki : jamais d'adresse complète en clair. */
