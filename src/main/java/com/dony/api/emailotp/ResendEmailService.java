@@ -59,7 +59,9 @@ public class ResendEmailService {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException e) {
-            log.error("Resend API error sending OTP to {}: {}", to, e.getMessage());
+            // PII : ne jamais logguer l'email complet en prod (accumulation RGPD dans
+            // la chaîne de logs sur incident Resend récurrent). On masque.
+            log.error("Resend API error sending OTP to {}: {}", maskEmail(to), e.getMessage());
             if (devProfile) {
                 // En dev, l'envoi réel peut échouer (domaine Resend non vérifié).
                 // On logge le code pour permettre la connexion locale sans email réel.
@@ -70,5 +72,17 @@ public class ResendEmailService {
                     HttpStatus.SERVICE_UNAVAILABLE, "email-service-error",
                     "Email Service Error", "L'envoi de l'email a échoué, veuillez réessayer");
         }
+    }
+
+    /** Masque une adresse email pour les logs : {@code j***@domain.com}. */
+    private static String maskEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return "(vide)";
+        }
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 }

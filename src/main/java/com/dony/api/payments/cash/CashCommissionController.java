@@ -79,7 +79,8 @@ public class CashCommissionController {
 
     @PostMapping("/bids/{bidId}/confirm-acceptance")
     public ResponseEntity<ConfirmAcceptanceResponse> confirmAcceptance(@PathVariable UUID bidId) {
-        ConfirmAcceptanceResponse resp = cashCommissionService.confirmCommissionAcceptance(bidId);
+        UUID userId = resolveUserId();
+        ConfirmAcceptanceResponse resp = cashCommissionService.confirmCommissionAcceptance(bidId, userId);
         return resp.accepted() ? ResponseEntity.ok(resp) : ResponseEntity.unprocessableEntity().body(resp);
     }
 

@@ -43,7 +43,7 @@ class PaymentWebhookBidPromotionTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentService(userRepository, bidRepository, announcementRepository,
+        service = new PaymentService(userRepository, bidRepository, mock(com.dony.api.matching.BidGridItemRepository.class), announcementRepository,
             paymentRepository, auditService, eventPublisher,
             PaymentServiceTestFactory.defaultConnectProperties(),
             new com.fasterxml.jackson.databind.ObjectMapper(),

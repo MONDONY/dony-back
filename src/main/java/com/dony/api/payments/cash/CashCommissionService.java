@@ -600,18 +600,26 @@ public class CashCommissionService {
     }
 
     @Transactional
-    public ConfirmAcceptanceResponse confirmCommissionAcceptance(UUID bidId) {
+    public ConfirmAcceptanceResponse confirmCommissionAcceptance(UUID bidId, UUID travelerId) {
         BidEntity bid = bidRepo.findById(bidId).orElseThrow();
         if (bid.getCommissionStatus() == CommissionStatus.CHARGED
                 && bid.getStatus() == BidStatus.ACCEPTED) {
             return ConfirmAcceptanceResponse.ok();
+        }
+        // Ownership : seul le voyageur propriétaire du trajet peut confirmer, AVANT
+        // toute lecture Stripe ou mutation d'état (aligné sur acceptCashBid). Sans ce
+        // contrôle, un tiers (tout compte a ROLE_TRAVELER) pouvait déclencher/casser
+        // l'acceptation d'un bid d'autrui (flip commissionStatus=FAILED = griefing).
+        AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
+        if (!announcement.getTravelerId().equals(travelerId)) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN,
+                    "forbidden", "Forbidden", "Ce trajet ne vous appartient pas");
         }
         if (bid.getCommissionStatus() == CommissionStatus.CHARGED) {
             // Pose CARD si absent (idempotent — un bid CHARGED via PI a toujours une carte)
             if (bid.getCommissionChargedVia() == null && bid.getCommissionPaymentIntentId() != null) {
                 bid.setCommissionChargedVia(CommissionChargedVia.CARD);
             }
-            AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
             finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
             return ConfirmAcceptanceResponse.ok();
         }
@@ -623,7 +631,6 @@ public class CashCommissionService {
             if ("succeeded".equals(pi.getStatus())) {
                 bid.setCommissionStatus(CommissionStatus.CHARGED);
                 bid.setCommissionChargedVia(CommissionChargedVia.CARD);
-                AnnouncementEntity announcement = announcementRepo.findByIdForUpdate(bid.getAnnouncementId()).orElseThrow();
                 finalizeBidAcceptance(bid, announcement, announcement.getTravelerId());
                 return ConfirmAcceptanceResponse.ok();
             }

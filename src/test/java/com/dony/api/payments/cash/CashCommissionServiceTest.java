@@ -492,7 +492,7 @@ class CashCommissionServiceTest {
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
                 pi.when(() -> PaymentIntent.retrieve("pi_xyz")).thenReturn(mockPi);
 
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
 
                 assertThat(resp.accepted()).isTrue();
                 assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.CHARGED);
@@ -509,7 +509,7 @@ class CashCommissionServiceTest {
             bid.setStatus(BidStatus.ACCEPTED);
 
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
                 assertThat(resp.accepted()).isTrue();
                 pi.verifyNoInteractions();
                 verify(announcementRepo, never()).findByIdForUpdate(any());
@@ -521,7 +521,7 @@ class CashCommissionServiceTest {
             bid.setCommissionStatus(CommissionStatus.CHARGED);
 
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
                 assertThat(resp.accepted()).isTrue();
                 assertThat(bid.getStatus()).isEqualTo(BidStatus.ACCEPTED);
                 pi.verifyNoInteractions();
@@ -536,7 +536,7 @@ class CashCommissionServiceTest {
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
                 pi.when(() -> PaymentIntent.retrieve("pi_xyz")).thenReturn(mockPi);
 
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
 
                 assertThat(resp.accepted()).isFalse();
                 assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.FAILED);
@@ -552,7 +552,7 @@ class CashCommissionServiceTest {
             assertThat(bid.getCommissionChargedVia()).isNull();
 
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
                 assertThat(resp.accepted()).isTrue();
                 pi.verifyNoInteractions(); // CHARGED court-circuite l'appel Stripe
             }
@@ -567,7 +567,7 @@ class CashCommissionServiceTest {
             bid.setCommissionPaymentIntentId(null);
 
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
                 assertThat(resp.accepted()).isFalse();
                 pi.verifyNoInteractions();
             }
@@ -578,10 +578,25 @@ class CashCommissionServiceTest {
             try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
                 pi.when(() -> PaymentIntent.retrieve("pi_xyz")).thenThrow(mock(StripeException.class));
 
-                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId());
+                ConfirmAcceptanceResponse resp = service.confirmCommissionAcceptance(bid.getId(), travelerId);
 
                 assertThat(resp.accepted()).isFalse();
             }
+        }
+
+        @Test
+        void rejectsWhenCallerIsNotTripOwner() {
+            // IDOR : un voyageur tiers (non-propriétaire du trajet) ne doit pas pouvoir
+            // confirmer/casser l'acceptation. 403 attendu AVANT toute lecture Stripe ou
+            // mutation d'état (bid reste REQUIRES_3DS, aucun save).
+            UUID attacker = UUID.randomUUID();
+            try (MockedStatic<PaymentIntent> pi = mockStatic(PaymentIntent.class)) {
+                assertThatThrownBy(() -> service.confirmCommissionAcceptance(bid.getId(), attacker))
+                        .isInstanceOf(DonyBusinessException.class);
+                pi.verifyNoInteractions();
+            }
+            assertThat(bid.getCommissionStatus()).isEqualTo(CommissionStatus.REQUIRES_3DS);
+            verify(bidRepo, never()).save(bid);
         }
     }
 

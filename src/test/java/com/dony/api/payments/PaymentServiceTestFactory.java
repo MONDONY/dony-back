@@ -7,6 +7,7 @@ import com.dony.api.common.stripe.AdminAlertService;
 import com.dony.api.promo.PromoService;
 import com.dony.api.config.StripeConnectProperties;
 import com.dony.api.matching.AnnouncementRepository;
+import com.dony.api.matching.BidGridItemRepository;
 import com.dony.api.matching.BidRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,6 +56,7 @@ class PaymentServiceTestFactory {
         return new PaymentService(
                 mock(UserRepository.class),
                 mock(BidRepository.class),
+                mock(BidGridItemRepository.class),
                 mock(AnnouncementRepository.class),
                 mock(PaymentRepository.class),
                 mock(AuditService.class),
@@ -87,6 +89,7 @@ class PaymentServiceTestFactory {
         return new PaymentService(
                 userRepository,
                 mock(BidRepository.class),
+                mock(BidGridItemRepository.class),
                 mock(AnnouncementRepository.class),
                 paymentRepository,
                 auditService,

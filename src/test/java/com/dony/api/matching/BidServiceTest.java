@@ -2383,6 +2383,32 @@ class BidServiceTest {
 
             assertThat(resp.senderAvatarUrl()).isNull();
         }
+
+        @Test
+        @DisplayName("recipientPhone masqué tant que le bid n'est pas accepté (PENDING → null)")
+        void toResponse_recipientPhoneHiddenBeforeAcceptance() {
+            // PII destinataire (tiers) : ne doit pas fuiter sur une offre PENDING,
+            // sinon un voyageur moissonne des numéros via des offres qu'il refuse.
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.recipientPhone()).isNull();
+        }
+
+        @Test
+        @DisplayName("recipientPhone révélé une fois le bid accepté")
+        void toResponse_recipientPhoneRevealedWhenAccepted() {
+            UserEntity sender = buildSender();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.recipientPhone()).isEqualTo("+221701234567");
+        }
     }
 
     @Nested
