@@ -106,7 +106,6 @@ class AnnouncementServiceTest {
     private UserEntity buildTraveler() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(FIREBASE_UID);
-        u.setPhoneNumber("+33601020304");
         u.getRoles().add(Role.TRAVELER);
         setId(u, USER_ID);
         return u;

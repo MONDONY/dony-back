@@ -56,6 +56,20 @@ import java.util.UUID;
 @ExtendWith(MockitoExtension.class)
 class CashCommissionServiceTest {
 
+    /**
+     * Coordonnées de test servies par Firebase — elles ne sont plus stockées en base
+     * (cf. {@link com.dony.api.auth.FirebaseContactService}).
+     */
+    private static com.dony.api.auth.FirebaseContactService stubbedContacts() {
+        var svc = org.mockito.Mockito.mock(com.dony.api.auth.FirebaseContactService.class);
+        org.mockito.Mockito.lenient()
+                .when(svc.getContact(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.dony.api.auth.FirebaseContactService.Contact(
+                        "+33600000000", "test@dony.app"));
+        return svc;
+    }
+
+
     @Mock private UserRepository userRepo;
     @Mock private BidRepository bidRepo;
     @Mock private AnnouncementRepository announcementRepo;
@@ -79,7 +93,9 @@ class CashCommissionServiceTest {
         lenient().when(bidGridItemRepository.findByBidId(any())).thenReturn(java.util.List.of());
         service = new CashCommissionService(props, userRepo, bidRepo, announcementRepo, events,
                 walletService, walletTransactionRepository, auditService, commissionRateResolver,
-                negotiationThreadRepository, new StripeCashGatewayImpl(), bidGridItemRepository);
+                negotiationThreadRepository, new StripeCashGatewayImpl(), bidGridItemRepository,
+                stubbedContacts()
+);
         service.setClock(Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -204,7 +220,6 @@ class CashCommissionServiceTest {
             UUID userId = UUID.randomUUID();
             UserEntity user = new UserEntity();
             ReflectionTestUtils.setField(user, "id", userId);
-            user.setEmail("test@example.com");
             when(userRepo.findById(userId)).thenReturn(Optional.of(user));
 
             Customer mockCustomer = new Customer();

@@ -41,7 +41,7 @@ public class AuthSteps extends AbstractSteps {
     @Etantdonné("un utilisateur VOYAGEUR enregistré avec l'uid {string} et le téléphone {string}")
     public void givenRegisteredTraveler(String uid, String phone) {
         ctx.setCurrentUser(uid, "ROLE_TRAVELER");
-        store(asCurrentUser().body(Map.of(
+        store(asCurrentUser().header("X-Test-Phone", phone).body(Map.of(
                 "phoneNumber", phone,
                 "roles", Set.of("TRAVELER")
         )).post("/auth/register"));
@@ -64,7 +64,7 @@ public class AuthSteps extends AbstractSteps {
     @Etantdonné("un utilisateur EXPÉDITEUR enregistré avec l'uid {string} et le téléphone {string}")
     public void givenRegisteredSender(String uid, String phone) {
         ctx.setCurrentUser(uid, "ROLE_SENDER");
-        store(asCurrentUser().body(Map.of(
+        store(asCurrentUser().header("X-Test-Phone", phone).body(Map.of(
                 "phoneNumber", phone,
                 "roles", Set.of("SENDER")
         )).post("/auth/register"));
@@ -85,7 +85,7 @@ public class AuthSteps extends AbstractSteps {
 
     @Quand("je m'inscris avec le téléphone {string} et le rôle {string}")
     public void whenRegister(String phone, String role) {
-        Response resp = asCurrentUser().body(Map.of(
+        Response resp = asCurrentUser().header("X-Test-Phone", phone).body(Map.of(
                 "phoneNumber", phone,
                 "roles", Set.of(role)
         )).post("/auth/register");
@@ -94,7 +94,7 @@ public class AuthSteps extends AbstractSteps {
 
     @Quand("je m'inscris avec le téléphone {string} et les rôles {string} et {string}")
     public void whenRegisterBothRoles(String phone, String role1, String role2) {
-        Response resp = asCurrentUser().body(Map.of(
+        Response resp = asCurrentUser().header("X-Test-Phone", phone).body(Map.of(
                 "phoneNumber", phone,
                 "roles", Set.of(role1, role2)
         )).post("/auth/register");
@@ -139,9 +139,4 @@ public class AuthSteps extends AbstractSteps {
         Assertions.assertThat(lastResponse().jsonPath().getString("lastName")).isEqualTo(lastName);
     }
 
-    @Alors("le numéro de téléphone {string} est déjà pris")
-    public void thenPhoneAlreadyTaken(String phone) {
-        String code = lastResponse().jsonPath().getString("properties.code");
-        Assertions.assertThat(code).isEqualTo("phone-already-exists");
-    }
 }

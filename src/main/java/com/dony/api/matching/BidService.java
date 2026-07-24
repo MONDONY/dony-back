@@ -66,6 +66,8 @@ public class BidService {
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
 
+    private final com.dony.api.auth.FirebaseContactService firebaseContact;
+
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
                       ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
@@ -76,7 +78,8 @@ public class BidService {
                       CommissionRateResolver commissionRateResolver,
                       PromoService promoService,
                       StorageService storageService,
-                      BidPhotoService bidPhotoService) {
+                      BidPhotoService bidPhotoService,
+                      com.dony.api.auth.FirebaseContactService firebaseContact) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -91,6 +94,7 @@ public class BidService {
         this.promoService = promoService;
         this.storageService = storageService;
         this.bidPhotoService = bidPhotoService;
+        this.firebaseContact = firebaseContact;
     }
 
     /**
@@ -888,9 +892,19 @@ public class BidService {
         return PHONE_VISIBLE_STATUSES.contains(status) ? phone : null;
     }
 
+    /**
+     * Numéro de l'utilisateur si le statut l'autorise. Le numéro vit dans Firebase :
+     * on n'interroge celui-ci que lorsque le statut le rend visible, pour ne pas
+     * payer un appel par offre listée.
+     */
+    private String phoneForStatus(UserEntity user, BidStatus status) {
+        if (user == null || !PHONE_VISIBLE_STATUSES.contains(status)) return null;
+        return firebaseContact.getContact(user.getFirebaseUid()).phoneNumber();
+    }
+
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
-        String senderPhone = sender != null ? phoneForStatus(sender.getPhoneNumber(), bid.getStatus()) : null;
+        String senderPhone = phoneForStatus(sender, bid.getStatus());
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         boolean senderKycVerified = sender != null
                 && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
@@ -924,7 +938,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = traveler != null ? phoneForStatus(traveler.getPhoneNumber(), bid.getStatus()) : null;
+        String travelerPhone = phoneForStatus(traveler, bid.getStatus());
         boolean travelerKycVerified = traveler != null
                 && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         boolean travelerIsProAccount = traveler != null && traveler.isProAccount();

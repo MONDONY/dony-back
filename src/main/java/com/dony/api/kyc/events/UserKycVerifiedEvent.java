@@ -2,16 +2,18 @@ package com.dony.api.kyc.events;
 
 import java.util.UUID;
 
+/**
+ * KYC vérifié. Ne transporte aucune coordonnée : le seul écouteur
+ * ({@code BusinessMetricsListener}) ne compte que l'événement, et le téléphone
+ * n'est plus stocké en base — il vit dans Firebase.
+ */
 public class UserKycVerifiedEvent {
 
     private final UUID userId;
-    private final String phoneNumber;
 
-    public UserKycVerifiedEvent(UUID userId, String phoneNumber) {
+    public UserKycVerifiedEvent(UUID userId) {
         this.userId = userId;
-        this.phoneNumber = phoneNumber;
     }
 
     public UUID getUserId() { return userId; }
-    public String getPhoneNumber() { return phoneNumber; }
 }

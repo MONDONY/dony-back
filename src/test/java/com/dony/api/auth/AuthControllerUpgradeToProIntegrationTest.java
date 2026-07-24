@@ -39,6 +39,10 @@ class AuthControllerUpgradeToProIntegrationTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired UserRepository userRepository;
 
+    /** Téléphone et email ne sont plus en base : c'est Firebase qui les sert. */
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    FirebaseContactService firebaseContact;
+
     private static final String FIREBASE_UID = "uid-pro-it-001";
     private static final String FIREBASE_UID_WITH_STRIPE = "uid-pro-it-002";
 
@@ -49,7 +53,6 @@ class AuthControllerUpgradeToProIntegrationTest {
         // Seed a plain user (no Stripe account)
         UserEntity plainUser = new UserEntity();
         plainUser.setFirebaseUid(FIREBASE_UID);
-        plainUser.setPhoneNumber("+33612000001");
         plainUser.setStatus(UserStatus.ACTIVE);
         plainUser.setKycStatus(KycStatus.PENDING);
         plainUser.setRoles(Set.of(Role.SENDER, Role.TRAVELER));
@@ -59,13 +62,17 @@ class AuthControllerUpgradeToProIntegrationTest {
         // Seed a user who already has a Stripe account
         UserEntity stripeUser = new UserEntity();
         stripeUser.setFirebaseUid(FIREBASE_UID_WITH_STRIPE);
-        stripeUser.setPhoneNumber("+33612000002");
         stripeUser.setStatus(UserStatus.ACTIVE);
         stripeUser.setKycStatus(KycStatus.PENDING);
         stripeUser.setRoles(Set.of(Role.TRAVELER));
         stripeUser.setStripeAccountId("acct_existing_123");
         stripeUser.setStripeAccountStatus(StripeAccountStatus.PENDING_ONBOARDING);
         userRepository.save(stripeUser);
+
+        org.mockito.Mockito.lenient().when(firebaseContact.getContact(FIREBASE_UID))
+                .thenReturn(new FirebaseContactService.Contact("+33612000001", null));
+        org.mockito.Mockito.lenient().when(firebaseContact.getContact(FIREBASE_UID_WITH_STRIPE))
+                .thenReturn(new FirebaseContactService.Contact("+33612000002", null));
     }
 
     private UsernamePasswordAuthenticationToken authenticatedAs(String uid) {

@@ -31,13 +31,16 @@ public class AdminExportService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final DisputeRepository disputeRepository;
+    private final com.dony.api.auth.FirebaseContactService firebaseContact;
 
     public AdminExportService(PaymentRepository paymentRepository,
                               UserRepository userRepository,
-                              DisputeRepository disputeRepository) {
+                              DisputeRepository disputeRepository,
+                              com.dony.api.auth.FirebaseContactService firebaseContact) {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.disputeRepository = disputeRepository;
+        this.firebaseContact = firebaseContact;
     }
 
     public byte[] exportTransactions(LocalDate from, LocalDate to) {
@@ -62,14 +65,20 @@ public class AdminExportService {
     public byte[] exportUsers(LocalDate from, LocalDate to) {
         List<UserEntity> users = userRepository
                 .findAllByCreatedAtBetweenOrderByCreatedAtAsc(lower(from), upper(to));
+        // Coordonnées récupérées en un lot depuis Firebase (source de vérité) plutôt
+        // qu'un appel par ligne exportée.
+        var contacts = firebaseContact.getContacts(
+                users.stream().map(UserEntity::getFirebaseUid).toList());
         StringBuilder sb = header("id,prenom,nom,telephone,email,roles,statut,kyc,pro,ville,creeLe");
         for (UserEntity u : users) {
+            var contact = contacts.getOrDefault(
+                    u.getFirebaseUid(), com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
             row(sb,
                 str(u.getId()),
                 u.getFirstName(),
                 u.getLastName(),
-                u.getPhoneNumber(),
-                u.getEmail(),
+                contact.phoneNumber(),
+                contact.email(),
                 u.getRoles().stream().map(Role::name).sorted().collect(Collectors.joining("|")),
                 u.getStatus().name(),
                 u.getKycStatus().name(),

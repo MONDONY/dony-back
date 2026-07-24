@@ -80,7 +80,6 @@ class BidCreateGuardTest {
     private UserEntity buildSender() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(SENDER_UID);
-        u.setPhoneNumber("+33612345678");
         u.getRoles().add(Role.SENDER);
         setId(u, SENDER_ID);
         return u;
@@ -88,7 +87,6 @@ class BidCreateGuardTest {
 
     private UserEntity buildTraveler() {
         UserEntity u = new UserEntity();
-        u.setPhoneNumber("+33611223344");
         u.getRoles().add(Role.TRAVELER);
         setId(u, TRAVELER_ID);
         return u;

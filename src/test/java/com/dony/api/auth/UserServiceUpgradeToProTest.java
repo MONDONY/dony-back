@@ -44,7 +44,6 @@ class UserServiceUpgradeToProTest {
         UserEntity u = new UserEntity();
         setId(u, USER_ID);
         u.setFirebaseUid("uid-pro-001");
-        u.setPhoneNumber("+33612345678");
         u.setStatus(UserStatus.ACTIVE);
         return u;
     }

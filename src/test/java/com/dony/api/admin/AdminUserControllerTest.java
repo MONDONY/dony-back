@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,12 +25,16 @@ class AdminUserControllerTest {
 
     @Mock UserService userService;
     @Mock UserRepository userRepository;
+    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     // ── Délégation du contrôleur ────────────────────────────────────────────
 
     @Test
     void setCommissionRate_delegatesToService_andReturnsDetail() {
-        AdminUserController controller = new AdminUserController(userService, userRepository);
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        // Coordonnées servies par Firebase, plus par la base
+        when(firebaseContact.getContact(any())).thenReturn(
+                com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
         UUID userId = UUID.randomUUID();
         BigDecimal rate = new BigDecimal("0.08");
         com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
@@ -43,7 +48,10 @@ class AdminUserControllerTest {
 
     @Test
     void setCommissionRate_nullRate_delegatesNull_forGlobalReset() {
-        AdminUserController controller = new AdminUserController(userService, userRepository);
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        // Coordonnées servies par Firebase, plus par la base
+        when(firebaseContact.getContact(any())).thenReturn(
+                com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
         UUID userId = UUID.randomUUID();
         when(userService.setCommissionRateOverride(userId, null))
                 .thenReturn(new com.dony.api.auth.UserEntity());
@@ -51,6 +59,61 @@ class AdminUserControllerTest {
         controller.setCommissionRate(userId, new CommissionRateOverrideRequest(null));
 
         verify(userService).setCommissionRateOverride(userId, null);
+    }
+
+    // ── Recherche : téléphone et email ne sont plus en base ─────────────────
+
+    @Test
+    void listUsers_queryOnEmail_resolvesFirebaseUid_andMapsContacts() {
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        com.dony.api.auth.UserEntity user = new com.dony.api.auth.UserEntity();
+        user.setFirebaseUid("uid-awa");
+
+        when(firebaseContact.findUidByEmail("awa@example.com")).thenReturn(java.util.Optional.of("uid-awa"));
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(java.util.List.of(user)));
+        when(firebaseContact.getContacts(java.util.List.of("uid-awa"))).thenReturn(
+                java.util.Map.of("uid-awa", new com.dony.api.auth.FirebaseContactService.Contact(
+                        "+221701234567", "awa@example.com")));
+
+        var page = controller.listUsers(null, null, null, null, null, "awa@example.com", 0, 20);
+
+        // L'UID résolu est passé à la requête, qui l'apparie exactement
+        verify(userRepository).findAdminFiltered(
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("awa@example.com"),
+                org.mockito.ArgumentMatchers.eq("%awa@example.com%"),
+                org.mockito.ArgumentMatchers.eq("uid-awa"),
+                org.mockito.ArgumentMatchers.isNull(), any());
+        assertThat(page.getContent()).singleElement()
+                .extracting(com.dony.api.admin.dto.AdminUserListItemResponse::phoneNumber)
+                .isEqualTo("+221701234567");
+    }
+
+    @Test
+    void listUsers_queryOnPhone_fallsBackToPhoneLookup() {
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        when(firebaseContact.findUidByEmail("+221701234567")).thenReturn(java.util.Optional.empty());
+        when(firebaseContact.findUidByPhone("+221701234567")).thenReturn(java.util.Optional.of("uid-awa"));
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        controller.listUsers(null, null, null, null, null, "+221701234567", 0, 20);
+
+        verify(firebaseContact).findUidByPhone("+221701234567");
+    }
+
+    @Test
+    void listUsers_withoutQuery_doesNotHitFirebaseLookups() {
+        AdminUserController controller = new AdminUserController(userService, userRepository, firebaseContact);
+        when(userRepository.findAdminFiltered(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        controller.listUsers(null, null, null, null, null, "   ", 0, 20);
+
+        verify(firebaseContact, org.mockito.Mockito.never()).findUidByEmail(any());
+        verify(firebaseContact, org.mockito.Mockito.never()).findUidByPhone(any());
     }
 
     // ── Bean validation du DTO (@DecimalMin / @DecimalMax) ───────────────────

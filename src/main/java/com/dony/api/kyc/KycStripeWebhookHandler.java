@@ -92,7 +92,7 @@ public class KycStripeWebhookHandler implements StripeWebhookHandler {
                     auditService.log("kyc_verification", kyc.getId(), "KYC_VERIFIED",
                             user.getId(), Map.of("sessionId", sessionId));
                     eventPublisher.publishEvent(
-                            new UserKycVerifiedEvent(user.getId(), user.getPhoneNumber()));
+                            new UserKycVerifiedEvent(user.getId()));
                 }
             }
             case "identity.verification_session.canceled" -> {

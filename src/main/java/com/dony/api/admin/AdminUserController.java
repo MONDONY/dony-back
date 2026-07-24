@@ -2,6 +2,7 @@ package com.dony.api.admin;
 
 import com.dony.api.admin.dto.AdminUserDetailResponse;
 import com.dony.api.admin.dto.AdminUserListItemResponse;
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
 import com.dony.api.auth.UserEntity;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -32,10 +34,14 @@ public class AdminUserController {
 
     private final UserService userService;
     private final UserRepository userRepository;
+    private final FirebaseContactService firebaseContact;
 
-    public AdminUserController(UserService userService, UserRepository userRepository) {
+    public AdminUserController(UserService userService,
+                               UserRepository userRepository,
+                               FirebaseContactService firebaseContact) {
         this.userService = userService;
         this.userRepository = userRepository;
+        this.firebaseContact = firebaseContact;
     }
 
     @PreAuthorize("hasAuthority('USER_VIEW')")
@@ -54,16 +60,30 @@ public class AdminUserController {
         String queryLike = normalizedQuery != null ? "%" + normalizedQuery + "%" : null;
         String normalizedCity = (city != null && !city.isBlank()) ? city.trim() : null;
 
-        return userRepository.findAdminFiltered(
+        // Téléphone et email ne sont plus en base : une recherche qui en vise un est
+        // résolue par Firebase en UID, puis appariée exactement. Les noms restent en
+        // recherche partielle SQL.
+        String queryFirebaseUid = normalizedQuery == null ? null
+                : firebaseContact.findUidByEmail(normalizedQuery)
+                        .or(() -> firebaseContact.findUidByPhone(normalizedQuery))
+                        .orElse(null);
+
+        Page<UserEntity> users = userRepository.findAdminFiltered(
                 status != null ? status.name() : null,
                 kyc != null ? kyc.name() : null,
                 pro,
                 normalizedCity,
                 normalizedQuery,
                 queryLike,
+                queryFirebaseUid,
                 role != null ? role.name() : null,
                 PageRequest.of(page, size)
-        ).map(AdminUserListItemResponse::from);
+        );
+
+        Map<String, FirebaseContactService.Contact> contacts = firebaseContact.getContacts(
+                users.getContent().stream().map(UserEntity::getFirebaseUid).toList());
+        return users.map(u -> AdminUserListItemResponse.from(
+                u, contacts.getOrDefault(u.getFirebaseUid(), FirebaseContactService.Contact.EMPTY)));
     }
 
     @PreAuthorize("hasAuthority('USER_VIEW')")
@@ -72,27 +92,27 @@ public class AdminUserController {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
-        return AdminUserDetailResponse.from(user);
+        return detail(user);
     }
 
     @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/suspend")
     public AdminUserDetailResponse suspendUser(@PathVariable UUID userId,
             @RequestBody SuspendBanRequest request) {
-        return AdminUserDetailResponse.from(userService.suspendUser(userId, request.reason()));
+        return detail(userService.suspendUser(userId, request.reason()));
     }
 
     @PreAuthorize("hasAuthority('USER_BAN')")
     @PostMapping("/{userId}/ban")
     public AdminUserDetailResponse banUser(@PathVariable UUID userId,
             @RequestBody SuspendBanRequest request) {
-        return AdminUserDetailResponse.from(userService.banUser(userId, request.reason()));
+        return detail(userService.banUser(userId, request.reason()));
     }
 
     @PreAuthorize("hasAuthority('USER_SUSPEND')")
     @PostMapping("/{userId}/unsuspend")
     public AdminUserDetailResponse unsuspendUser(@PathVariable UUID userId) {
-        return AdminUserDetailResponse.from(userService.unsuspendUser(userId));
+        return detail(userService.unsuspendUser(userId));
     }
 
     @PreAuthorize("hasAuthority('USER_SUSPEND')")
@@ -115,8 +135,11 @@ public class AdminUserController {
     public AdminUserDetailResponse setCommissionRate(
             @PathVariable UUID userId,
             @RequestBody @jakarta.validation.Valid CommissionRateOverrideRequest request) {
-        return AdminUserDetailResponse.from(
-                userService.setCommissionRateOverride(userId, request.rate()));
+        return detail(userService.setCommissionRateOverride(userId, request.rate()));
+    }
+
+    private AdminUserDetailResponse detail(UserEntity user) {
+        return AdminUserDetailResponse.from(user, firebaseContact.getContact(user.getFirebaseUid()));
     }
 
     record SuspendBanRequest(String reason) {}

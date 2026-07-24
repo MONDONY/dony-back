@@ -27,17 +27,20 @@ public class AccountFinalizationService {
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditService auditService;
+    private final FirebaseContactService firebaseContact;
 
     public AccountFinalizationService(UserRepository userRepository,
                                       KycRepository kycRepository,
                                       StorageService storageService,
                                       ApplicationEventPublisher eventPublisher,
-                                      AuditService auditService) {
+                                      AuditService auditService,
+                                      FirebaseContactService firebaseContact) {
         this.userRepository = userRepository;
         this.kycRepository = kycRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
         this.auditService = auditService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Transactional
@@ -46,8 +49,8 @@ public class AccountFinalizationService {
         String uid = userId.toString();
 
         // 1. Pseudonymise personal data
-        user.setEmail("deleted_" + uid + "@dony.app");
-        user.setPhoneNumber("+00000000000");
+        // Téléphone et email ne sont plus stockés ici : ils disparaissent avec le
+        // compte Firebase supprimé à l'étape 5.
         user.setFirstName("Utilisateur");
         user.setLastName("supprimé");
         user.setBirthDate(null);
@@ -69,12 +72,13 @@ public class AccountFinalizationService {
         // 4. Publish event → Firestore + Stripe cleanup (cross-package via events)
         eventPublisher.publishEvent(new UserFinalizedEvent(userId, reason));
 
-        // 5. Delete Firebase user
+        // 5. Delete Firebase user (porteur du téléphone et de l'email)
         try {
             FirebaseAuth.getInstance().deleteUser(user.getFirebaseUid());
         } catch (FirebaseAuthException e) {
             log.warn("Firebase deleteUser failed for {}: {}", userId, e.getMessage());
         }
+        firebaseContact.evict(user.getFirebaseUid());
 
         // 6. Immutable audit entry
         auditService.log("USER", userId, "USER_GDPR_DELETION", userId,

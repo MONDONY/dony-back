@@ -37,6 +37,7 @@ public class ConversationService {
     private final BidRepository bidRepository;
     private final AnnouncementRepository announcementRepository;
     private final StorageService storageService;
+    private final com.dony.api.auth.FirebaseContactService firebaseContact;
 
     public ConversationService(ConversationRepository conversationRepository,
                                 FirestoreService firestoreService,
@@ -44,7 +45,8 @@ public class ConversationService {
                                 AuditService auditService,
                                 BidRepository bidRepository,
                                 AnnouncementRepository announcementRepository,
-                                StorageService storageService) {
+                                StorageService storageService,
+                                com.dony.api.auth.FirebaseContactService firebaseContact) {
         this.conversationRepository = conversationRepository;
         this.firestoreService = firestoreService;
         this.userRepository = userRepository;
@@ -52,6 +54,7 @@ public class ConversationService {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.storageService = storageService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Transactional
@@ -336,7 +339,11 @@ public class ConversationService {
         }
         String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
             + (user.getLastName() != null ? user.getLastName() : "")).strip();
-        String phone = revealPhone ? user.getPhoneNumber() : null;
+        // Numéro lu dans Firebase (source de vérité) et uniquement si la révélation
+        // est autorisée pour cette conversation.
+        String phone = revealPhone
+                ? firebaseContact.getContact(user.getFirebaseUid()).phoneNumber()
+                : null;
         boolean kyc = user.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
                 storageService.avatarUrl(user.getAvatarUrl()), phone, role, kyc);

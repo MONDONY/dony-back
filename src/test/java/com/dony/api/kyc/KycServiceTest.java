@@ -47,7 +47,6 @@ class KycServiceTest {
         UserEntity user = new UserEntity();
         setId(user, UUID.randomUUID());
         user.setFirebaseUid("uid-001");
-        user.setPhoneNumber("+33612345678");
         user.setKycStatus(kycStatus);
         return user;
     }

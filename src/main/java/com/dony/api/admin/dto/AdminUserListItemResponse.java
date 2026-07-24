@@ -1,5 +1,6 @@
 package com.dony.api.admin.dto;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserEntity;
 
 import java.math.BigDecimal;
@@ -21,12 +22,13 @@ public record AdminUserListItemResponse(
         int totalShipments,
         LocalDateTime createdAt
 ) {
-    public static AdminUserListItemResponse from(UserEntity u) {
+    /** Le téléphone provient de Firebase : il n'est plus stocké en base. */
+    public static AdminUserListItemResponse from(UserEntity u, FirebaseContactService.Contact contact) {
         return new AdminUserListItemResponse(
                 u.getId(),
                 u.getFirstName(),
                 u.getLastName(),
-                u.getPhoneNumber(),
+                contact.phoneNumber(),
                 u.getCity(),
                 u.getCountry(),
                 u.getStatus().name(),

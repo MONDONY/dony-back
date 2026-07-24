@@ -34,6 +34,7 @@ class ConversationServiceTest {
     @Mock BidRepository bidRepository;
     @Mock AnnouncementRepository announcementRepository;
     @Mock StorageService storageService;
+    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     ConversationService service;
 
@@ -45,7 +46,7 @@ class ConversationServiceTest {
     void setUp() {
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         service = new ConversationService(conversationRepository, firestoreService, userRepository, auditService,
-                bidRepository, announcementRepository, storageService);
+                bidRepository, announcementRepository, storageService, firebaseContact);
 
         UserEntity sender   = mockUser(senderId,   "Alice", "Martin", "uid-sender");
         UserEntity traveler = mockUser(travelerId, "Bob",   "Dupont", "uid-traveler");
@@ -83,7 +84,10 @@ class ConversationServiceTest {
         UserEntity traveler = mock(UserEntity.class);
         when(traveler.getFirstName()).thenReturn("Bob");
         when(traveler.getLastName()).thenReturn("Dupont");
-        lenient().when(traveler.getPhoneNumber()).thenReturn("+33612345678");
+        // Le numéro vient de Firebase, plus de la colonne users.phone_number
+        lenient().when(traveler.getFirebaseUid()).thenReturn("uid-traveler");
+        lenient().when(firebaseContact.getContact("uid-traveler")).thenReturn(
+                new com.dony.api.auth.FirebaseContactService.Contact("+33612345678", null));
         lenient().when(traveler.getKycStatus()).thenReturn(KycStatus.VERIFIED);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
 

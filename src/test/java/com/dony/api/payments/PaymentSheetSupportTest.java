@@ -79,7 +79,9 @@ class PaymentSheetSupportTest {
                 mock(com.dony.api.common.stripe.AdminAlertService.class),
                 PaymentServiceTestFactory.stubbedResolver(),
                 mock(com.dony.api.promo.PromoService.class),
-                new StripeGatewayImpl());
+                new StripeGatewayImpl(),
+                PaymentServiceTestFactory.stubbedContacts()
+                );
     }
 
     // ── Helpers (mêmes patterns que PaymentServiceOnBehalfOfTest) ────────────

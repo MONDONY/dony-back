@@ -75,7 +75,6 @@ class RatingServiceTest {
         sender = new UserEntity();
         setId(sender, SENDER_ID);
         setField(sender, "firebaseUid", SENDER_UID);
-        setField(sender, "phoneNumber", "+33612345678");
 
         bid = new BidEntity();
         setId(bid, BID_ID);

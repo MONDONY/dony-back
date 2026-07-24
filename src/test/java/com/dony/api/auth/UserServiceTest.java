@@ -47,8 +47,6 @@ class UserServiceTest {
         user = new UserEntity();
         setId(user, USER_ID);
         setField(user, "firebaseUid", FIREBASE_UID);
-        setField(user, "phoneNumber", "+33612345678");
-        setField(user, "email", "user@test.com");
         setField(user, "status", UserStatus.ACTIVE);
         setField(user, "refusedCount", 0);
     }

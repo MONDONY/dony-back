@@ -4,12 +4,20 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.UidIdentifier;
+import com.google.firebase.auth.UserIdentifier;
 import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -27,6 +35,9 @@ public class FirebaseContactService {
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseContactService.class);
 
+    /** Plafond imposé par l'API Firebase {@code getUsers}. */
+    private static final int BATCH_SIZE = 100;
+
     /** Coordonnées de contact d'un utilisateur (peuvent être nulles). */
     public record Contact(String phoneNumber, String email) {
         public static final Contact EMPTY = new Contact(null, null);
@@ -38,8 +49,16 @@ public class FirebaseContactService {
             .expireAfterWrite(Duration.ofMinutes(5))
             .build();
 
-    public FirebaseContactService(FirebaseAuth firebaseAuth) {
+    // required = false : en test/CI, FirebaseConfig ne publie aucun FirebaseAuth
+    // (pas de credentials). Le service dégrade alors vers Contact.EMPTY plutôt que
+    // d'empêcher le contexte Spring de démarrer.
+    public FirebaseContactService(@Autowired(required = false) FirebaseAuth firebaseAuth) {
         this.firebaseAuth = firebaseAuth;
+    }
+
+    /** Firebase indisponible (test/CI) : aucune coordonnée n'est lisible ni modifiable. */
+    private boolean unavailable() {
+        return firebaseAuth == null;
     }
 
     /**
@@ -48,7 +67,7 @@ public class FirebaseContactService {
      * propagée pour ne pas casser un envoi SMS ou une réponse d'API).
      */
     public Contact getContact(String firebaseUid) {
-        if (firebaseUid == null || firebaseUid.isBlank()) {
+        if (unavailable() || firebaseUid == null || firebaseUid.isBlank()) {
             return Contact.EMPTY;
         }
         return cache.get(firebaseUid, uid -> {
@@ -65,9 +84,56 @@ public class FirebaseContactService {
         });
     }
 
+    /**
+     * Coordonnées de plusieurs utilisateurs en un aller-retour (listes admin, exports).
+     * Firebase plafonne à 100 identifiants par appel, d'où le découpage. Les UID absents
+     * de la réponse retombent sur {@link Contact#EMPTY}, jamais sur une exception.
+     */
+    public Map<String, Contact> getContacts(Collection<String> firebaseUids) {
+        Map<String, Contact> result = new HashMap<>();
+        if (unavailable() || firebaseUids == null || firebaseUids.isEmpty()) {
+            return result;
+        }
+        List<String> missing = new ArrayList<>();
+        for (String uid : firebaseUids) {
+            if (uid == null || uid.isBlank() || result.containsKey(uid)) {
+                continue;
+            }
+            Contact cached = cache.getIfPresent(uid);
+            if (cached != null) {
+                result.put(uid, cached);
+            } else {
+                missing.add(uid);
+            }
+        }
+        for (int i = 0; i < missing.size(); i += BATCH_SIZE) {
+            List<String> chunk = missing.subList(i, Math.min(i + BATCH_SIZE, missing.size()));
+            fetchChunk(chunk, result);
+        }
+        for (String uid : missing) {
+            result.putIfAbsent(uid, Contact.EMPTY);
+        }
+        return result;
+    }
+
+    private void fetchChunk(List<String> chunk, Map<String, Contact> result) {
+        try {
+            List<UserIdentifier> identifiers = chunk.stream()
+                    .map(uid -> (UserIdentifier) new UidIdentifier(uid))
+                    .toList();
+            for (UserRecord record : firebaseAuth.getUsers(identifiers).getUsers()) {
+                Contact contact = new Contact(record.getPhoneNumber(), record.getEmail());
+                cache.put(record.getUid(), contact);
+                result.put(record.getUid(), contact);
+            }
+        } catch (Exception e) {
+            log.warn("Firebase getUsers({} uids) indisponible", chunk.size(), e);
+        }
+    }
+
     /** UID Firebase possédant cet email (lookup exact), ou vide si aucun. */
     public Optional<String> findUidByEmail(String email) {
-        if (email == null || email.isBlank()) {
+        if (unavailable() || email == null || email.isBlank()) {
             return Optional.empty();
         }
         try {
@@ -79,7 +145,7 @@ public class FirebaseContactService {
 
     /** UID Firebase possédant ce numéro (lookup exact), ou vide si aucun. */
     public Optional<String> findUidByPhone(String phoneNumber) {
-        if (phoneNumber == null || phoneNumber.isBlank()) {
+        if (unavailable() || phoneNumber == null || phoneNumber.isBlank()) {
             return Optional.empty();
         }
         try {
@@ -91,6 +157,9 @@ public class FirebaseContactService {
 
     /** Met à jour l'email côté Firebase (source de vérité) et invalide le cache. */
     public void updateEmail(String firebaseUid, String email) {
+        if (unavailable()) {
+            return;
+        }
         try {
             firebaseAuth.updateUser(new UserRecord.UpdateRequest(firebaseUid).setEmail(email));
             cache.invalidate(firebaseUid);
@@ -101,6 +170,9 @@ public class FirebaseContactService {
 
     /** Met à jour le téléphone côté Firebase (source de vérité) et invalide le cache. */
     public void updatePhone(String firebaseUid, String phoneNumber) {
+        if (unavailable()) {
+            return;
+        }
         try {
             firebaseAuth.updateUser(new UserRecord.UpdateRequest(firebaseUid).setPhoneNumber(phoneNumber));
             cache.invalidate(firebaseUid);

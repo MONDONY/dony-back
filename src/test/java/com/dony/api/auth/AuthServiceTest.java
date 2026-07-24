@@ -50,8 +50,22 @@ class AuthServiceTest {
     @Mock private ConnectedDevicesService connectedDevicesService;
     @Mock private StorageService storageService;
     @Mock private AdminAuthService adminAuthService;
+    @Mock private FirebaseContactService firebaseContact;
 
     @InjectMocks private AuthService authService;
+
+    /**
+     * Téléphone et email ne sont plus en base : toute lecture passe par Firebase.
+     * Ces stubs par défaut donnent le contact « nominal », les tests qui portent sur
+     * une autre adresse le réécrivent.
+     */
+    @BeforeEach
+    void stubFirebaseContact() {
+        lenient().when(firebaseContact.getContact(anyString()))
+                .thenReturn(new FirebaseContactService.Contact(PHONE, null));
+        lenient().when(firebaseContact.findUidByEmail(anyString())).thenReturn(Optional.empty());
+        lenient().when(firebaseContact.findUidByPhone(anyString())).thenReturn(Optional.empty());
+    }
 
     private static final String FIREBASE_UID = "uid-test-123";
     private static final String PHONE = "+33612345678";
@@ -61,7 +75,6 @@ class AuthServiceTest {
     private UserEntity buildUser() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(FIREBASE_UID);
-        u.setPhoneNumber(PHONE);
         u.setStatus(UserStatus.ACTIVE);
         u.setKycStatus(KycStatus.PENDING);
         u.getRoles().add(Role.SENDER);
@@ -82,7 +95,8 @@ class AuthServiceTest {
     private com.google.firebase.auth.FirebaseToken mockPhoneToken() {
         com.google.firebase.auth.FirebaseToken token = mock(com.google.firebase.auth.FirebaseToken.class);
         lenient().when(token.getClaims()).thenReturn(java.util.Map.of(
-                "firebase", java.util.Map.of("sign_in_provider", "phone")));
+                "firebase", java.util.Map.of("sign_in_provider", "phone"),
+                "phone_number", PHONE));
         return token;
     }
 
@@ -109,7 +123,6 @@ class AuthServiceTest {
         @DisplayName("nouvel utilisateur valide → crée l'utilisateur en base")
         void register_newUser_createsUser() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
                 UserEntity u = inv.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -130,7 +143,6 @@ class AuthServiceTest {
         @DisplayName("rôle ADMIN dans la requête → ignoré, compte créé avec SENDER+TRAVELER")
         void register_adminRole_ignored_createsSenderAndTraveler() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
                 UserEntity u = inv.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -146,20 +158,23 @@ class AuthServiceTest {
         }
 
         @Test
-        @DisplayName("numéro déjà utilisé → 409 CONFLICT")
-        void register_duplicatePhone_throwsConflict() {
+        @DisplayName("inscription par téléphone → aucune coordonnée écrite en base, unicité déléguée à Firebase")
+        void register_phone_storesNoContactLocally() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(true);
+            when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
+                UserEntity u = inv.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
 
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
+            UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
-            assertThatThrownBy(() -> authService.register(FIREBASE_UID, mockPhoneToken(), req))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> {
-                        DonyBusinessException ex = (DonyBusinessException) e;
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                        assertThat(ex.getErrorCode()).isEqualTo("phone-already-exists");
-                    });
+            // Le numéro rendu vient de Firebase, pas d'une colonne dony
+            assertThat(result.phoneNumber()).isEqualTo(PHONE);
+            verify(firebaseContact).getContact(FIREBASE_UID);
+            // Aucune écriture de coordonnée : le compte Firebase porte déjà le numéro
+            verify(firebaseContact, never()).updatePhone(anyString(), anyString());
         }
 
         @ParameterizedTest
@@ -167,7 +182,6 @@ class AuthServiceTest {
         @DisplayName("rôles non reconnus dans la requête → ignorés, compte créé avec SENDER+TRAVELER")
         void register_unknownRoles_ignored_createsSenderAndTraveler(String role) {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
                 UserEntity u = inv.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -186,7 +200,6 @@ class AuthServiceTest {
         @DisplayName("SENDER+TRAVELER dans la requête → peu importe, le compte reçoit toujours les deux rôles")
         void register_dualRoles_alwaysAssignsBoth() {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
                 UserEntity u = inv.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -213,7 +226,8 @@ class AuthServiceTest {
         @DisplayName("utilisateur existant → retourne le profil complet")
         void getProfile_existingUser_returnsUserResponse() {
             UserEntity user = buildUser();
-            user.setEmail("test@dony.app");
+            when(firebaseContact.getContact(FIREBASE_UID))
+                    .thenReturn(new FirebaseContactService.Contact(PHONE, "test@dony.app"));
             user.setFirstName("Amadou");
             user.setLastName("Diallo");
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
@@ -263,7 +277,7 @@ class AuthServiceTest {
 
             assertThat(user.getFirstName()).isEqualTo("Amadou");
             assertThat(user.getLastName()).isEqualTo("Diallo");
-            assertThat(user.getEmail()).isEqualTo("amadou@dony.app");
+            verify(firebaseContact).updateEmail(FIREBASE_UID, "amadou@dony.app");
             assertThat(user.getBirthDate()).isEqualTo(LocalDate.of(1990, 5, 15));
             assertThat(user.getCity()).isEqualTo("Paris");
             verify(userRepository).save(user);
@@ -303,13 +317,12 @@ class AuthServiceTest {
         void updateProfile_addPhoneNumber_saved() {
             UserEntity user = buildUser(); // phone = PHONE = "+33612345678"
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(userRepository.existsByPhoneNumber("+33699000001")).thenReturn(false);
             when(userRepository.save(any())).thenReturn(user);
 
             authService.updateProfile(FIREBASE_UID,
                     new UpdateProfileRequest(null, null, null, null, null, "+33699000001", null, null, null));
 
-            assertThat(user.getPhoneNumber()).isEqualTo("+33699000001");
+            verify(firebaseContact).updatePhone(FIREBASE_UID, "+33699000001");
         }
 
         @Test
@@ -317,7 +330,8 @@ class AuthServiceTest {
         void updateProfile_phoneAlreadyTaken_throws409() {
             UserEntity user = buildUser();
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(userRepository.existsByPhoneNumber("+33699999999")).thenReturn(true);
+            when(firebaseContact.findUidByPhone("+33699999999"))
+                    .thenReturn(Optional.of("uid-d-un-autre-compte"));
 
             assertThatThrownBy(() -> authService.updateProfile(FIREBASE_UID,
                     new UpdateProfileRequest(null, null, null, null, null, "+33699999999", null, null, null)))
@@ -572,7 +586,8 @@ class AuthServiceTest {
         @DisplayName("entité complète → UserResponse correctement mappé")
         void toResponse_fullEntity_mapsAllFields() {
             UserEntity user = buildUser();
-            user.setEmail("test@example.com");
+            when(firebaseContact.getContact(FIREBASE_UID))
+                    .thenReturn(new FirebaseContactService.Contact(PHONE, "test@example.com"));
             user.setFirstName("Fatou");
             user.setLastName("Sow");
             user.setBirthDate(LocalDate.of(1985, 3, 10));
@@ -604,15 +619,22 @@ class AuthServiceTest {
     class RegisterWithProvider {
 
         private com.google.firebase.auth.FirebaseToken mockToken(String signInProvider, String email) {
+            return mockToken(signInProvider, email, null);
+        }
+
+        /** {@code phone} alimente le claim {@code phone_number}, seule source du numéro. */
+        private com.google.firebase.auth.FirebaseToken mockToken(String signInProvider, String email, String phone) {
             com.google.firebase.auth.FirebaseToken token = mock(com.google.firebase.auth.FirebaseToken.class);
-            when(token.getClaims()).thenReturn(java.util.Map.of(
-                    "firebase", java.util.Map.of("sign_in_provider", signInProvider)));
+            java.util.Map<String, Object> claims = new java.util.HashMap<>();
+            claims.put("firebase", java.util.Map.of("sign_in_provider", signInProvider));
+            if (phone != null) claims.put("phone_number", phone);
+            when(token.getClaims()).thenReturn(claims);
             if (email != null) when(token.getEmail()).thenReturn(email);
             return token;
         }
 
         @Test
-        @DisplayName("provider phone — phoneNumber null → 422")
+        @DisplayName("provider phone — claim phone_number absent du token → 422")
         void phone_phoneNumberRequired() {
             com.google.firebase.auth.FirebaseToken token = mockToken("phone", null);
             RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
@@ -627,10 +649,9 @@ class AuthServiceTest {
         @Test
         @DisplayName("provider phone — succès")
         void phone_success() {
-            com.google.firebase.auth.FirebaseToken token = mockToken("phone", null);
+            com.google.firebase.auth.FirebaseToken token = mockToken("phone", null, PHONE);
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
             when(userRepository.save(any())).thenAnswer(i -> {
                 UserEntity u = i.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -640,7 +661,9 @@ class AuthServiceTest {
             UserResponse result = authService.register(FIREBASE_UID, token, req);
 
             assertThat(result).isNotNull();
-            verify(userRepository).save(argThat(u -> PHONE.equals(u.getPhoneNumber())));
+            // Le numéro rendu est celui de Firebase, aucune colonne dony ne le porte
+            assertThat(result.phoneNumber()).isEqualTo(PHONE);
+            verify(userRepository).save(any(UserEntity.class));
         }
 
         @Test
@@ -649,7 +672,8 @@ class AuthServiceTest {
             com.google.firebase.auth.FirebaseToken token = mockToken("google.com", "google@gmail.com");
             RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
-            when(userRepository.existsByEmail("google@gmail.com")).thenReturn(false);
+            when(firebaseContact.getContact(FIREBASE_UID))
+                    .thenReturn(new FirebaseContactService.Contact(null, "google@gmail.com"));
             when(userRepository.save(any())).thenAnswer(i -> {
                 UserEntity u = i.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -658,8 +682,10 @@ class AuthServiceTest {
 
             UserResponse result = authService.register(FIREBASE_UID, token, req);
 
-            assertThat(result).isNotNull();
-            verify(userRepository).save(argThat(u -> "google@gmail.com".equals(u.getEmail())));
+            // L'email est celui du compte Firebase, il n'est pas recopié en base
+            assertThat(result.email()).isEqualTo("google@gmail.com");
+            verify(userRepository).save(any(UserEntity.class));
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
         }
 
         @Test
@@ -668,7 +694,6 @@ class AuthServiceTest {
             com.google.firebase.auth.FirebaseToken token = mockToken("custom", null);
             RegisterRequest req = new RegisterRequest(null, "otp@example.com", Set.of("SENDER"));
             when(userRepository.findByFirebaseUid("otp@example.com")).thenReturn(Optional.empty());
-            when(userRepository.existsByEmail("otp@example.com")).thenReturn(false);
             when(userRepository.save(any())).thenAnswer(i -> {
                 UserEntity u = i.getArgument(0);
                 setId(u, UUID.randomUUID());
@@ -678,7 +703,27 @@ class AuthServiceTest {
             UserResponse result = authService.register("otp@example.com", token, req);
 
             assertThat(result).isNotNull();
-            verify(userRepository).save(argThat(u -> "otp@example.com".equals(u.getEmail())));
+            verify(userRepository).save(any(UserEntity.class));
+            // Un compte custom ne porte pas d'email côté Firebase : on l'y écrit,
+            // pour que Firebase reste la seule source de vérité.
+            verify(firebaseContact).updateEmail("otp@example.com", "otp@example.com");
+        }
+
+        @Test
+        @DisplayName("provider google.com — email déjà rattaché à un autre compte → renvoie ce compte")
+        void google_existingAccountWithSameEmail_returnsIt() {
+            com.google.firebase.auth.FirebaseToken token = mockToken("google.com", "deja@gmail.com");
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            UserEntity existing = buildUser();
+            existing.setFirebaseUid("uid-historique");
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+            when(firebaseContact.findUidByEmail("deja@gmail.com")).thenReturn(Optional.of("uid-historique"));
+            when(userRepository.findByFirebaseUid("uid-historique")).thenReturn(Optional.of(existing));
+
+            UserResponse result = authService.register(FIREBASE_UID, token, req);
+
+            assertThat(result.id()).isEqualTo(existing.getId());
+            verify(userRepository, never()).save(any());
         }
 
         @Test
@@ -736,14 +781,12 @@ class AuthServiceTest {
     void createUser_alwaysAssignsSenderAndTraveler_ignoringRequestRoles() {
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
         when(userRepository.findByFirebaseUidIncludingDeleted(FIREBASE_UID)).thenReturn(Optional.empty());
-        when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
 
         UserEntity saved = new UserEntity();
         saved.setFirebaseUid(FIREBASE_UID);
         saved.setStatus(UserStatus.ACTIVE);
         saved.setKycStatus(KycStatus.NOT_STARTED);
         saved.setRoles(new java.util.HashSet<>(Set.of(Role.SENDER, Role.TRAVELER)));
-        saved.setPhoneNumber(PHONE);
         setId(saved, UUID.randomUUID());
         when(userRepository.save(any())).thenReturn(saved);
 
@@ -786,7 +829,6 @@ class AuthServiceTest {
     void createUser_assignsSenderAndTravelerRoles() {
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
         when(userRepository.findByFirebaseUidIncludingDeleted(FIREBASE_UID)).thenReturn(Optional.empty());
-        when(userRepository.existsByPhoneNumber(PHONE)).thenReturn(false);
         when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> {
             UserEntity u = inv.getArgument(0);
             setId(u, UUID.randomUUID());

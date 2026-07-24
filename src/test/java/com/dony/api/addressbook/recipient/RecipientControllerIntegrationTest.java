@@ -58,7 +58,6 @@ class RecipientControllerIntegrationTest {
     private void seedUser(String firebaseUid, String phone) {
         var user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
-        user.setPhoneNumber(phone);
         user.setStatus(UserStatus.ACTIVE);
         user.setKycStatus(KycStatus.PENDING);
         user.setRoles(new java.util.HashSet<>(List.of(Role.SENDER)));

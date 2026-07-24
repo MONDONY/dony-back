@@ -25,12 +25,23 @@ class SmsFallbackSchedulerTest {
     @Mock NotificationRepository notificationRepository;
     @Mock UserRepository userRepository;
     @Mock SmsService smsService;
+    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     SmsFallbackScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new SmsFallbackScheduler(notificationRepository, userRepository, smsService);
+        scheduler = new SmsFallbackScheduler(
+                notificationRepository, userRepository, smsService, firebaseContact);
+    }
+
+    /** Le numéro vit dans Firebase : on crée un user local et on y associe son contact. */
+    private UserEntity userWithPhone(String uid, String phone) {
+        UserEntity u = new UserEntity();
+        u.setFirebaseUid(uid);
+        when(firebaseContact.getContact(uid))
+                .thenReturn(new com.dony.api.auth.FirebaseContactService.Contact(phone, null));
+        return u;
     }
 
     @Test
@@ -48,8 +59,7 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber("+221701234567");
+        UserEntity user = userWithPhone("uid-1", "+221701234567");
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
         scheduler.processPendingFallbacks();
@@ -64,8 +74,7 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber("+221701234567");
+        UserEntity user = userWithPhone("uid-1", "+221701234567");
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
         scheduler.processPendingFallbacks();
@@ -81,8 +90,8 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber(null);
+        // Aucun numéro côté Firebase (compte créé par email OTP par exemple)
+        UserEntity user = userWithPhone("uid-sans-tel", null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
         scheduler.processPendingFallbacks();
@@ -112,8 +121,8 @@ class SmsFallbackSchedulerTest {
         var n2 = criticalNotification(userId2);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(n1, n2));
 
-        UserEntity u1 = new UserEntity(); u1.setPhoneNumber("+221111111111");
-        UserEntity u2 = new UserEntity(); u2.setPhoneNumber("+221222222222");
+        UserEntity u1 = userWithPhone("uid-1", "+221111111111");
+        UserEntity u2 = userWithPhone("uid-2", "+221222222222");
         when(userRepository.findById(userId1)).thenReturn(Optional.of(u1));
         when(userRepository.findById(userId2)).thenReturn(Optional.of(u2));
 
@@ -130,7 +139,7 @@ class SmsFallbackSchedulerTest {
         var n2 = criticalNotification(userId2);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(n1, n2));
 
-        UserEntity u = new UserEntity(); u.setPhoneNumber("+221111111111");
+        UserEntity u = userWithPhone("uid-1", "+221111111111");
         when(userRepository.findById(any())).thenReturn(Optional.of(u));
         doThrow(new RuntimeException("SMS provider down")).when(smsService).send(anyString(), anyString());
 

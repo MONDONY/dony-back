@@ -51,14 +51,15 @@ Fonctionnalité: Inscription des utilisateurs
     Alors la réponse HTTP est 201
     Et la réponse contient le rôle "SENDER"
 
-  @error-case
-  Scénario: Inscription avec un numéro de téléphone déjà utilisé
+  Scénario: Un même numéro ne donne qu'un seul compte — l'unicité est garantie par Firebase
+    # Le numéro n'est plus stocké en base : un numéro correspond à un unique compte
+    # Firebase, donc au même uid, donc au même compte dony. Une seconde inscription
+    # avec ce numéro retombe sur le compte existant au lieu d'en créer un second.
     Etant donné un token Firebase pour l'uid "user-phone-a"
     Et je m'inscris avec le téléphone "+33611000006" et le rôle "SENDER"
-    Etant donné un token Firebase pour l'uid "user-phone-b"
     Quand je m'inscris avec le téléphone "+33611000006" et le rôle "TRAVELER"
-    Alors la réponse HTTP est 409
-    Et le code d'erreur de la réponse est "phone-already-exists"
+    Alors la réponse HTTP est 201
+    Et la réponse contient un identifiant utilisateur
 
   @error-case
   Scénario: Inscription sans token Firebase — non autorisé

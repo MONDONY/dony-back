@@ -111,8 +111,7 @@ class BusinessMetricsListenerTest {
 
     @Test
     void onKycVerified_incrementsCounter() {
-        listener.onKycVerified(new UserKycVerifiedEvent(
-                UUID.randomUUID(), "+221770000000"));
+        listener.onKycVerified(new UserKycVerifiedEvent(UUID.randomUUID()));
         assertThat(registry.counter("dony.kyc.verified").count()).isEqualTo(1.0);
     }
 

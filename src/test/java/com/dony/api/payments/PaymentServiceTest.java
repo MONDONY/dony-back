@@ -73,7 +73,9 @@ class PaymentServiceTest {
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 org.mockito.Mockito.mock(com.dony.api.common.stripe.AdminAlertService.class),
-                PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.dony.api.promo.PromoService.class), new StripeGatewayImpl());
+                PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.dony.api.promo.PromoService.class), new StripeGatewayImpl(),
+                PaymentServiceTestFactory.stubbedContacts()
+);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -266,7 +268,6 @@ class PaymentServiceTest {
     @Test
     void createConnectAccount_createsNewAccount_setsStatusPending() {
         UserEntity user = buildUser(senderId, "uid-sender");
-        user.setEmail("test@dony.app");
         user.setCountry("FR");
         when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(senderId)).thenReturn(Optional.of(user));

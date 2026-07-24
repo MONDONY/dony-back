@@ -1,5 +1,6 @@
 package com.dony.api.notifications;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,13 +23,16 @@ public class SmsFallbackScheduler {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final SmsService smsService;
+    private final FirebaseContactService firebaseContact;
 
     public SmsFallbackScheduler(NotificationRepository notificationRepository,
                                 UserRepository userRepository,
-                                SmsService smsService) {
+                                SmsService smsService,
+                                FirebaseContactService firebaseContact) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.smsService = smsService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Scheduled(fixedDelay = 30_000)
@@ -44,8 +48,10 @@ public class SmsFallbackScheduler {
         for (var notification : pending) {
             try {
                 userRepository.findById(notification.getUserId()).ifPresentOrElse(user -> {
-                    if (user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
-                        smsService.send(user.getPhoneNumber(), buildSmsText(notification));
+                    // Le numéro vit dans Firebase, pas en base (cache mémoire 5 min).
+                    String phone = firebaseContact.getContact(user.getFirebaseUid()).phoneNumber();
+                    if (phone != null && !phone.isBlank()) {
+                        smsService.send(phone, buildSmsText(notification));
                         log.info("[SmsFallback] SMS sent for notificationId={} userId={}",
                                 notification.getId(), notification.getUserId());
                     } else {

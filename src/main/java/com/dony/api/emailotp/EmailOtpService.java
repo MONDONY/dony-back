@@ -1,5 +1,6 @@
 package com.dony.api.emailotp;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.DonyBusinessException;
 import com.google.firebase.auth.FirebaseAuth;
@@ -35,17 +36,20 @@ public class EmailOtpService {
     private final ResendEmailService resendEmailService;
     private final FirebaseAuth firebaseAuth;
     private final UserRepository userRepository;
+    private final FirebaseContactService firebaseContact;
 
     public EmailOtpService(EmailOtpRepository emailOtpRepository,
                            PasswordEncoder passwordEncoder,
                            ResendEmailService resendEmailService,
                            @Autowired(required = false) FirebaseAuth firebaseAuth,
-                           UserRepository userRepository) {
+                           UserRepository userRepository,
+                           FirebaseContactService firebaseContact) {
         this.emailOtpRepository = emailOtpRepository;
         this.passwordEncoder    = passwordEncoder;
         this.resendEmailService = resendEmailService;
         this.firebaseAuth       = firebaseAuth;
         this.userRepository     = userRepository;
+        this.firebaseContact    = firebaseContact;
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -123,9 +127,11 @@ public class EmailOtpService {
         }
         try {
             // Si l'utilisateur existe déjà, on crée le token avec son firebase_uid existant
-            // pour que GET /auth/me fonctionne même si le compte a été créé via un autre provider
-            String uid = userRepository.findByEmail(email)
-                    .map(u -> u.getFirebaseUid())
+            // pour que GET /auth/me fonctionne même si le compte a été créé via un autre
+            // provider. L'adresse n'étant plus stockée en base, c'est Firebase — seule
+            // source de vérité — qui donne l'UID rattaché à cet email.
+            String uid = firebaseContact.findUidByEmail(email)
+                    .filter(u -> userRepository.findByFirebaseUid(u).isPresent())
                     .orElse(email);
             return firebaseAuth.createCustomToken(uid);
         } catch (FirebaseAuthException e) {

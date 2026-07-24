@@ -52,7 +52,6 @@ class ReferralControllerIntegrationTest {
         // Seed sender user
         UserEntity sender = new UserEntity();
         sender.setFirebaseUid(FIREBASE_UID_SENDER);
-        sender.setPhoneNumber("+33600000091");
         sender.setFirstName("Ali");
         sender.setLastName("Diallo");
         sender.setStatus(UserStatus.ACTIVE);
@@ -63,7 +62,6 @@ class ReferralControllerIntegrationTest {
         // Seed referrer user with a pre-generated code
         UserEntity referrer = new UserEntity();
         referrer.setFirebaseUid(FIREBASE_UID_REFERRER);
-        referrer.setPhoneNumber("+33600000092");
         referrer.setFirstName("Jean");
         referrer.setLastName("Dupont");
         referrer.setStatus(UserStatus.ACTIVE);

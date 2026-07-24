@@ -22,11 +22,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Optional<UserEntity> findByCommissionPaymentMethodId(String commissionPaymentMethodId);
 
     boolean existsByFirebaseUid(String firebaseUid);
-    boolean existsByPhoneNumber(String phoneNumber);
-    boolean existsByEmail(String email);
-
-    Optional<UserEntity> findByEmail(String email);
-    Optional<UserEntity> findByPhoneNumber(String phoneNumber);
 
     /**
      * Finds a user by Firebase UID regardless of soft-delete status.
@@ -47,14 +42,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE users SET deleted_at = NULL, status = :status, updated_at = NOW() WHERE firebase_uid = :firebaseUid", nativeQuery = true)
     void reactivateByFirebaseUid(@Param("firebaseUid") String firebaseUid, @Param("status") String status);
-
-    /**
-     * Releases an email address claimed by a soft-deleted account so another account can use it.
-     * Needed when a user re-registers via phone and tries to reclaim their old email.
-     */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = "UPDATE users SET email = CONCAT('deleted_', CAST(id AS TEXT), '@dony.app'), updated_at = NOW() WHERE email = :email AND deleted_at IS NOT NULL", nativeQuery = true)
-    void freeEmailFromDeletedAccounts(@Param("email") String email);
 
     /**
      * Loads a UserEntity with a pessimistic write lock to prevent concurrent
@@ -83,6 +70,12 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
            "(u.commissionCardExpYear = :year AND u.commissionCardExpMonth <= :month))")
     List<UserEntity> findUsersWithCardExpiringBefore(@Param("year") int year, @Param("month") int month);
 
+    /**
+     * Recherche admin. Le terme libre {@code queryLike} ne balaie plus que les noms :
+     * téléphone et email ont quitté la base pour Firebase. Une recherche sur l'un des
+     * deux est résolue en amont en UID Firebase, passé ici via {@code queryFirebaseUid}
+     * et apparié exactement.
+     */
     @Query(value = """
             SELECT u.* FROM users u
             WHERE u.deleted_at IS NULL
@@ -93,8 +86,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             AND (CAST(:queryLike AS VARCHAR) IS NULL
                  OR u.first_name ILIKE :queryLike
                  OR u.last_name  ILIKE :queryLike
-                 OR u.phone_number ILIKE :queryLike
-                 OR u.email ILIKE :queryLike)
+                 OR (CAST(:queryFirebaseUid AS VARCHAR) IS NOT NULL
+                     AND u.firebase_uid = :queryFirebaseUid))
             AND (CAST(:role AS VARCHAR) IS NULL OR EXISTS (
                  SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = :role))
             ORDER BY u.created_at DESC
@@ -109,8 +102,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             AND (CAST(:queryLike AS VARCHAR) IS NULL
                  OR u.first_name ILIKE :queryLike
                  OR u.last_name  ILIKE :queryLike
-                 OR u.phone_number ILIKE :queryLike
-                 OR u.email ILIKE :queryLike)
+                 OR (CAST(:queryFirebaseUid AS VARCHAR) IS NOT NULL
+                     AND u.firebase_uid = :queryFirebaseUid))
             AND (CAST(:role AS VARCHAR) IS NULL OR EXISTS (
                  SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = :role))
             """,
@@ -122,6 +115,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             @Param("city") String city,
             @Param("query") String query,
             @Param("queryLike") String queryLike,
+            @Param("queryFirebaseUid") String queryFirebaseUid,
             @Param("role") String role,
             Pageable pageable);
 
