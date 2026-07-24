@@ -111,9 +111,10 @@ public class UserEntity extends BaseEntity {
     @Column(name = "pro_company_name", length = 255)
     private String proCompanyName;
 
-    // TODO(security): proSiret stored unencrypted. Evaluate AES-256 encryption (like kyc_schema)
-    // before production — SIRET can identify individual entrepreneurs under GDPR.
-    @Column(name = "pro_siret", length = 14)
+    // Chiffré au repos (AES-256-GCM) : le SIRET identifie un entrepreneur (PII RGPD).
+    // Jamais utilisé dans un WHERE → chiffrement randomisé sûr.
+    @Column(name = "pro_siret", length = 255)
+    @jakarta.persistence.Convert(converter = com.dony.api.common.EncryptedStringConverter.class)
     private String proSiret;
 
     @Column(name = "bio", length = 280)

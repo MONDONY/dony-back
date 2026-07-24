@@ -10,4 +10,17 @@
         <Class name="com.dony.api.config.StripeConfig"/>
         <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
     </Match>
+
+    <!--
+        ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD — EncryptionSupport
+        Pont Spring→JPA : un AttributeConverter est instancié par Hibernate, pas
+        par Spring, donc EncryptionService ne peut pas y être injecté. Ce composant
+        le capture dans un champ statique volatile au démarrage du contexte (avant
+        toute requête Hibernate), lu ensuite par le converter. Écriture unique au
+        boot, lecture thread-safe. Même pattern accepté que StripeConfig ci-dessus.
+    -->
+    <Match>
+        <Class name="com.dony.api.common.EncryptionSupport"/>
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+    </Match>
 </FindBugsFilter>
