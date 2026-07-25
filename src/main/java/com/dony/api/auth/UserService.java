@@ -58,8 +58,6 @@ public class UserService {
 
                 eventPublisher.publishEvent(new UserSuspendedEvent(
                         senderId,
-                        sender.getPhoneNumber(),
-                        sender.getEmail(),
                         "Suspension automatique suite à " + sender.getRefusedCount() + " colis refusés"
                 ));
 
@@ -200,7 +198,7 @@ public class UserService {
         UserEntity saved = userRepository.save(user);
         auditService.log("USER", userId, "USER_SUSPENDED_BY_ADMIN", userId,
                 Map.of("reason", reason != null ? reason : ""));
-        eventPublisher.publishEvent(new UserSuspendedEvent(userId, user.getPhoneNumber(), user.getEmail(), reason));
+        eventPublisher.publishEvent(new UserSuspendedEvent(userId, reason));
         log.info("User {} suspended by admin", userId);
         return saved;
     }

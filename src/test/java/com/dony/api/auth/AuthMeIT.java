@@ -56,6 +56,10 @@ class AuthMeIT {
     @MockitoBean
     FirebaseAuth firebaseAuth;
 
+    /** Téléphone et email ne sont plus en base : c'est Firebase qui les sert. */
+    @MockitoBean
+    FirebaseContactService firebaseContact;
+
     private static final String FIREBASE_UID_REGULAR = "uid-regular-001";
     private static final String FIREBASE_UID_ADMIN = "uid-admin-001";
 
@@ -66,7 +70,6 @@ class AuthMeIT {
         // Seed a regular user (non-admin)
         UserEntity regularUser = new UserEntity();
         regularUser.setFirebaseUid(FIREBASE_UID_REGULAR);
-        regularUser.setPhoneNumber("+33612000001");
         regularUser.setStatus(UserStatus.ACTIVE);
         regularUser.setKycStatus(KycStatus.PENDING);
         regularUser.setRoles(Set.of(Role.SENDER, Role.TRAVELER));
@@ -76,12 +79,16 @@ class AuthMeIT {
         // Seed an admin user
         UserEntity adminUser = new UserEntity();
         adminUser.setFirebaseUid(FIREBASE_UID_ADMIN);
-        adminUser.setPhoneNumber("+33612000002");
         adminUser.setStatus(UserStatus.ACTIVE);
         adminUser.setKycStatus(KycStatus.PENDING);
         adminUser.setRoles(Set.of(Role.SENDER));
         adminUser.setStripeAccountStatus(StripeAccountStatus.NOT_CREATED);
         userRepository.save(adminUser);
+
+        org.mockito.Mockito.when(firebaseContact.getContact(FIREBASE_UID_REGULAR))
+                .thenReturn(new FirebaseContactService.Contact("+33612000001", null));
+        org.mockito.Mockito.when(firebaseContact.getContact(FIREBASE_UID_ADMIN))
+                .thenReturn(new FirebaseContactService.Contact("+33612000002", null));
     }
 
     private UsernamePasswordAuthenticationToken regularUserAuth() {
@@ -117,6 +124,22 @@ class AuthMeIT {
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.phoneNumber").value("+33612000001"))
                 .andExpect(jsonPath("$.admin").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /auth/me — token valide mais aucune ligne users → 404, jamais 401")
+    void getMe_authenticatedButNotRegistered_returns404() throws Exception {
+        // Contrat dont dépend le client : « pas encore inscrit » doit se distinguer de
+        // « session invalide ». Un 401 ici renverrait tout nouvel utilisateur — ou tout
+        // le monde après une remise à zéro de la base de dev — vers l'écran de login
+        // au lieu de l'onboarding.
+        String inconnu = "uid-jamais-inscrit-999";
+        when(adminAuthService.resolve(inconnu)).thenReturn(Optional.empty());
+        var auth = new UsernamePasswordAuthenticationToken(inconnu, null, List.of());
+
+        mockMvc.perform(get("/auth/me").with(authentication(auth)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("user-not-found"));
     }
 
     @Test

@@ -52,7 +52,9 @@ public class TestFirebaseTokenFilter extends FirebaseTokenFilter {
         if (testUid != null && !testUid.isBlank()) {
             String provider = request.getHeader("X-Test-Provider");
             FirebaseToken token = stubToken(provider != null && !provider.isBlank() ? provider.trim() : "phone",
-                    request.getHeader("X-Test-Email"));
+                    request.getHeader("X-Test-Email"),
+                    request.getHeader("X-Test-Phone"),
+                    testUid.trim());
             List<SimpleGrantedAuthority> authorities = parseRoles(testRoles);
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(testUid.trim(), token, authorities);
@@ -62,12 +64,28 @@ public class TestFirebaseTokenFilter extends FirebaseTokenFilter {
         chain.doFilter(request, response);
     }
 
-    /** Builds a minimal FirebaseToken stub carrying the sign-in provider (and optional email). */
-    private FirebaseToken stubToken(String provider, String email) {
+    /**
+     * Builds a minimal FirebaseToken stub carrying the sign-in provider, and — for the
+     * phone provider — the {@code phone_number} claim, désormais seule source du numéro
+     * (il n'est plus stocké en base). Sans en-tête {@code X-Test-Phone}, un numéro
+     * déterministe est dérivé de l'UID : un compte Firebase = un numéro.
+     */
+    private FirebaseToken stubToken(String provider, String email, String phone, String uid) {
         FirebaseToken token = Mockito.mock(FirebaseToken.class);
-        Mockito.when(token.getClaims()).thenReturn(Map.of("firebase", Map.of("sign_in_provider", provider)));
+        Map<String, Object> claims = new java.util.HashMap<>();
+        claims.put("firebase", Map.of("sign_in_provider", provider));
+        if ("phone".equals(provider)) {
+            claims.put("phone_number",
+                    phone != null && !phone.isBlank() ? phone.trim() : derivePhone(uid));
+        }
+        Mockito.when(token.getClaims()).thenReturn(claims);
         Mockito.when(token.getEmail()).thenReturn(email);
         return token;
+    }
+
+    /** Numéro stable pour un UID donné, au format E.164. */
+    private static String derivePhone(String uid) {
+        return String.format("+336%08d", Math.abs(uid.hashCode()) % 100_000_000);
     }
 
     private List<SimpleGrantedAuthority> parseRoles(String testRoles) {

@@ -252,11 +252,14 @@ public class ConversationService {
         return buildResponse(conv, currentUserId, meta);
     }
 
+    /** Interlocuteur de la conversation, déduit de l'entité sans requête. */
+    private static UUID otherUserId(ConversationEntity conv, UUID currentUserId) {
+        return conv.getSenderId().equals(currentUserId) ? conv.getTravelerId() : conv.getSenderId();
+    }
+
     private ConversationResponse buildResponse(ConversationEntity conv, UUID currentUserId,
                                                 Map<String, Object> meta) {
-        UUID otherUserId = conv.getSenderId().equals(currentUserId)
-            ? conv.getTravelerId()
-            : conv.getSenderId();
+        UUID otherUserId = otherUserId(conv, currentUserId);
 
         UserEntity other = userRepository.findById(otherUserId).orElse(null);
         String role = otherUserId.equals(conv.getTravelerId()) ? "Voyageur" : "Expéditeur";
@@ -332,14 +335,15 @@ public class ConversationService {
 
     private ParticipantDTO buildParticipant(UUID userId, UserEntity user, boolean revealPhone, String role) {
         if (user == null) {
-            return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null, null, role, false);
+            return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null, false, role, false);
         }
         String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
             + (user.getLastName() != null ? user.getLastName() : "")).strip();
-        String phone = revealPhone ? user.getPhoneNumber() : null;
+        // Aucun numéro ici : le client reçoit un booléen et demande le numéro au tap
+        // (GET /bids/{bidId}/contact). Aucune lecture Firebase au rendu d'une liste.
         boolean kyc = user.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
-                storageService.avatarUrl(user.getAvatarUrl()), phone, role, kyc);
+                storageService.avatarUrl(user.getAvatarUrl()), revealPhone, role, kyc);
     }
 
     private String mapBidStatus(BidStatus status) {

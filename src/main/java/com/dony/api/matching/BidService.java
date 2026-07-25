@@ -1,5 +1,6 @@
 package com.dony.api.matching;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.BlockService;
 import com.dony.api.auth.KycStatus;
 import com.dony.api.auth.Role;
@@ -16,6 +17,7 @@ import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
+import com.dony.api.matching.dto.ContactPhoneResponse;
 import com.dony.api.promo.PromoService;
 import com.dony.api.matching.events.BidAcceptedEvent;
 import com.dony.api.matching.events.BidRejectedEvent;
@@ -66,6 +68,8 @@ public class BidService {
     @Value("${dony.kyc.enforce:true}")
     private boolean enforceKyc;
 
+    private final FirebaseContactService firebaseContact;
+
     public BidService(BidRepository bidRepository, AnnouncementRepository announcementRepository,
                       UserRepository userRepository, AuditService auditService,
                       ApplicationEventPublisher eventPublisher, RatingRepository ratingRepository,
@@ -76,7 +80,8 @@ public class BidService {
                       CommissionRateResolver commissionRateResolver,
                       PromoService promoService,
                       StorageService storageService,
-                      BidPhotoService bidPhotoService) {
+                      BidPhotoService bidPhotoService,
+                      FirebaseContactService firebaseContact) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.userRepository = userRepository;
@@ -91,6 +96,7 @@ public class BidService {
         this.promoService = promoService;
         this.storageService = storageService;
         this.bidPhotoService = bidPhotoService;
+        this.firebaseContact = firebaseContact;
     }
 
     /**
@@ -410,6 +416,53 @@ public class BidService {
         return toResponse(bid, sender, requester.getId());
     }
 
+    /**
+     * Numéro de la contrepartie d'un colis, révélé à la demande.
+     *
+     * <p>Point unique où un numéro sort du serveur pour un colis : le numéro ne voyage
+     * plus dans les réponses de liste, il n'est lu dans Firebase que lorsque quelqu'un
+     * veut réellement appeler. Trois conditions, toutes vérifiées ici :
+     * l'appelant est partie au colis, le statut autorise la révélation, et l'accès est
+     * journalisé — on peut donc dire qui a obtenu le numéro de qui, et quand.
+     */
+    // Transaction en écriture, et non readOnly : la révélation journalise un accès
+    // dans audit_log. AuditService.log rejoint la transaction de l'appelant, donc un
+    // readOnly ferait échouer l'INSERT ("cannot execute INSERT in a read-only
+    // transaction") alors que la lecture, elle, aurait réussi.
+    @Transactional
+    public ContactPhoneResponse getCounterpartyPhone(UUID bidId, String firebaseUid) {
+        BidEntity bid = findBid(bidId);
+        AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());
+        UserEntity requester = findUserByFirebaseUid(firebaseUid);
+
+        boolean isTraveler = announcement.getTravelerId().equals(requester.getId());
+        boolean isSender = bid.getSenderId().equals(requester.getId());
+        if (!isTraveler && !isSender) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Accès non autorisé à ce colis");
+        }
+        if (!PHONE_VISIBLE_STATUSES.contains(bid.getStatus())) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "phone-not-revealable",
+                    "Phone Not Revealable",
+                    "Le numéro n'est communiqué qu'une fois le colis accepté");
+        }
+
+        // La contrepartie : l'expéditeur voit le voyageur, le voyageur voit l'expéditeur.
+        UUID counterpartyId = isSender ? announcement.getTravelerId() : bid.getSenderId();
+        UserEntity counterparty = userRepository.findById(counterpartyId)
+                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found",
+                        "Not Found", "Utilisateur introuvable"));
+
+        String phone = firebaseContact.getContact(counterparty.getFirebaseUid()).phoneNumber();
+
+        // Payload sans PII : le numéro lui-même ne doit pas atterrir dans audit_log.
+        auditService.log("BID", bidId, "CONTACT_PHONE_REVEALED", requester.getId(),
+                Map.of("counterpartyId", counterpartyId.toString(),
+                        "status", bid.getStatus().name()));
+
+        return new ContactPhoneResponse(phone);
+    }
+
     @Transactional(readOnly = true)
     public List<BidResponse> getBidsForAnnouncement(UUID announcementId, String firebaseUid) {
         AnnouncementEntity announcement = findAnnouncement(announcementId);
@@ -420,10 +473,12 @@ public class BidService {
                     "Vous n'êtes pas autorisé à voir ces demandes");
         }
 
-        return bidRepository.findByAnnouncementId(announcementId)
+        List<BidEntity> visible = bidRepository.findByAnnouncementId(announcementId)
                 .stream()
                 .filter(b -> !b.isDeletedByTraveler())
                 .filter(b -> b.getStatus() != BidStatus.AWAITING_PAYMENT)
+                .toList();
+        return visible.stream()
                 .map(b -> {
                     UserEntity sender = userRepository.findById(b.getSenderId()).orElse(null);
                     return toResponse(b, sender);
@@ -433,9 +488,11 @@ public class BidService {
     @Transactional(readOnly = true)
     public List<BidResponse> getMyBids(String firebaseUid) {
         UserEntity user = findUserByFirebaseUid(firebaseUid);
-        return bidRepository.findBySenderId(user.getId())
+        List<BidEntity> mine = bidRepository.findBySenderId(user.getId())
                 .stream()
                 .filter(b -> !b.isDeletedBySender())
+                .toList();
+        return mine.stream()
                 .map(b -> toResponse(b, user))
                 .toList();
     }
@@ -888,9 +945,18 @@ public class BidService {
         return PHONE_VISIBLE_STATUSES.contains(status) ? phone : null;
     }
 
+    /**
+     * Le numéro de cet utilisateur est-il communicable pour ce statut ? Ne lit rien
+     * dans Firebase : le client reçoit un booléen pour décider d'afficher son bouton
+     * d'appel, et ne demande le numéro qu'au tap (cf. {@link #getCounterpartyPhone}).
+     */
+    private static boolean phoneAvailableForStatus(UserEntity user, BidStatus status) {
+        return user != null && PHONE_VISIBLE_STATUSES.contains(status);
+    }
+
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
         String senderName = buildSenderName(sender);
-        String senderPhone = sender != null ? phoneForStatus(sender.getPhoneNumber(), bid.getStatus()) : null;
+        boolean senderPhoneAvailable = phoneAvailableForStatus(sender, bid.getStatus());
         Integer senderTotalShipments = sender != null ? sender.getTotalShipments() : null;
         boolean senderKycVerified = sender != null
                 && sender.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
@@ -924,7 +990,7 @@ public class BidService {
                 : null;
         UUID travelerId = traveler != null ? traveler.getId() : null;
         String travelerName = buildSenderName(traveler);
-        String travelerPhone = traveler != null ? phoneForStatus(traveler.getPhoneNumber(), bid.getStatus()) : null;
+        boolean travelerPhoneAvailable = phoneAvailableForStatus(traveler, bid.getStatus());
         boolean travelerKycVerified = traveler != null
                 && traveler.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
         boolean travelerIsProAccount = traveler != null && traveler.isProAccount();
@@ -1040,7 +1106,7 @@ public class BidService {
                 bid.getAnnouncementId(),
                 bid.getSenderId(),
                 senderName,
-                senderPhone,
+                senderPhoneAvailable,
                 senderTotalShipments,
                 senderKycVerified,
                 senderIsProAccount,
@@ -1077,7 +1143,7 @@ public class BidService {
                 confirmationCode,
                 travelerId,
                 travelerName,
-                travelerPhone,
+                travelerPhoneAvailable,
                 travelerKycVerified,
                 travelerIsProAccount,
                 travelerKiloPro,

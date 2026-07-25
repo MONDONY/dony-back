@@ -15,11 +15,14 @@ public class UserRoleService {
 
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final FirebaseContactService firebaseContact;
 
     public UserRoleService(UserRepository userRepository,
-                           AuditService auditService) {
+                           AuditService auditService,
+                           FirebaseContactService firebaseContact) {
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Transactional
@@ -68,10 +71,11 @@ public class UserRoleService {
     }
 
     private UserResponse toResponse(UserEntity user) {
+        FirebaseContactService.Contact contact = firebaseContact.getContact(user.getFirebaseUid());
         return new UserResponse(
                 user.getId(),
-                user.getPhoneNumber(),
-                user.getEmail(),
+                contact.phoneNumber(),
+                contact.email(),
                 user.getFirstName(),
                 user.getLastName(),
                 user.getBirthDate(),

@@ -1,5 +1,7 @@
 package com.dony.api.notifications;
 
+import com.dony.api.auth.FirebaseContactService;
+import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Runs every 30 seconds. Finds critical notifications older than 60s with no ACK
@@ -22,13 +28,16 @@ public class SmsFallbackScheduler {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final SmsService smsService;
+    private final FirebaseContactService firebaseContact;
 
     public SmsFallbackScheduler(NotificationRepository notificationRepository,
                                 UserRepository userRepository,
-                                SmsService smsService) {
+                                SmsService smsService,
+                                FirebaseContactService firebaseContact) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.smsService = smsService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Scheduled(fixedDelay = 30_000)
@@ -41,11 +50,24 @@ public class SmsFallbackScheduler {
 
         log.debug("[SmsFallback] Processing {} pending fallback(s)", pending.size());
 
+        // Les numéros vivent dans Firebase : on les résout en un lot avant la boucle,
+        // sinon chaque notification en attente coûterait un aller-retour réseau, en
+        // série et transaction ouverte.
+        Map<UUID, UserEntity> usersById = userRepository
+                .findAllById(pending.stream().map(NotificationEntity::getUserId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(UserEntity::getId, u -> u));
+        Map<String, FirebaseContactService.Contact> contacts = firebaseContact.getContacts(
+                usersById.values().stream().map(UserEntity::getFirebaseUid).toList());
+
         for (var notification : pending) {
             try {
-                userRepository.findById(notification.getUserId()).ifPresentOrElse(user -> {
-                    if (user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
-                        smsService.send(user.getPhoneNumber(), buildSmsText(notification));
+                Optional.ofNullable(usersById.get(notification.getUserId())).ifPresentOrElse(user -> {
+                    String phone = contacts
+                            .getOrDefault(user.getFirebaseUid(), FirebaseContactService.Contact.EMPTY)
+                            .phoneNumber();
+                    if (phone != null && !phone.isBlank()) {
+                        smsService.send(phone, buildSmsText(notification));
                         log.info("[SmsFallback] SMS sent for notificationId={} userId={}",
                                 notification.getId(), notification.getUserId());
                     } else {

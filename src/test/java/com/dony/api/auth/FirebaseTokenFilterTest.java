@@ -28,6 +28,7 @@ import java.util.UUID;
 import static jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -122,6 +123,36 @@ class FirebaseTokenFilterTest {
                 SecurityContextHolder.getContext().getAuthentication();
         assertThat(auth).isNotNull();
         assertThat(auth.getCredentials()).isEqualTo(mockToken);
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    @DisplayName("uid valide sans ligne users → authentifié sans rôle, pas de 401 (l'app doit voir un 404)")
+    void unregisteredUser_isAuthenticatedWithoutRoles() throws Exception {
+        // Contrat dont dépend le client : token valide + utilisateur absent de la base
+        // doit laisser passer la requête authentifiée, pour que /auth/me réponde 404
+        // (« pas encore inscrit » → onboarding) et non 401 (« session invalide » → login).
+        when(request.getHeader("Authorization")).thenReturn("Bearer fake-token");
+        when(mockToken.getUid()).thenReturn(FIREBASE_UID);
+        when(userLinkerService.resolveAndLink(eq(FIREBASE_UID), any()))
+                .thenReturn(Optional.empty());
+
+        try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class);
+             MockedStatic<FirebaseApp> staticApp = mockStatic(FirebaseApp.class)) {
+            staticApp.when(FirebaseApp::getApps).thenReturn(List.of(mock(FirebaseApp.class)));
+            staticAuth.when(FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+            when(mockFirebaseAuth.verifyIdToken("fake-token")).thenReturn(mockToken);
+
+            buildFilter().doFilterInternal(request, response, filterChain);
+        }
+
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        assertThat(auth.isAuthenticated()).isTrue();
+        assertThat(auth.getPrincipal()).isEqualTo(FIREBASE_UID);
+        assertThat(auth.getAuthorities()).isEmpty();
+        // Aucun statut d'erreur écrit : la requête poursuit sa route
+        verify(response, never()).sendError(anyInt(), anyString());
         verify(filterChain).doFilter(request, response);
     }
 

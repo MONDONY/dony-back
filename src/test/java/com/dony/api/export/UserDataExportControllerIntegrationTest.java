@@ -48,7 +48,6 @@ class UserDataExportControllerIntegrationTest {
 
         var user = new UserEntity();
         user.setFirebaseUid(SENDER_UID);
-        user.setPhoneNumber("+33600000099");
         user.setFirstName("Fatou");
         user.setLastName("Diop");
         user.setStatus(UserStatus.ACTIVE);
@@ -88,7 +87,6 @@ class UserDataExportControllerIntegrationTest {
     void export_neverIncludesOtherUsersRecipients() throws Exception {
         var other = new UserEntity();
         other.setFirebaseUid("firebase-export-other");
-        other.setPhoneNumber("+33600000098");
         other.setStatus(UserStatus.ACTIVE);
         other.setKycStatus(KycStatus.PENDING);
         other.setRoles(new HashSet<>(List.of(Role.SENDER)));

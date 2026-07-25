@@ -35,8 +35,17 @@ class UserRoleServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
+    @Mock private FirebaseContactService firebaseContact;
 
     @InjectMocks private UserRoleService userRoleService;
+
+    /** Coordonnées servies par Firebase, plus par la base. */
+    @org.junit.jupiter.api.BeforeEach
+    void stubFirebaseContact() {
+        org.mockito.Mockito.lenient()
+                .when(firebaseContact.getContact(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(FirebaseContactService.Contact.EMPTY);
+    }
 
     private UserEntity user;
 

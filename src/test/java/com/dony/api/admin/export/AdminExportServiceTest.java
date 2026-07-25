@@ -33,9 +33,13 @@ class AdminExportServiceTest {
     @Mock PaymentRepository paymentRepository;
     @Mock UserRepository userRepository;
     @Mock DisputeRepository disputeRepository;
+    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     private AdminExportService service() {
-        return new AdminExportService(paymentRepository, userRepository, disputeRepository);
+        org.mockito.Mockito.lenient()
+                .when(firebaseContact.getContacts(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new java.util.HashMap<>());
+        return new AdminExportService(paymentRepository, userRepository, disputeRepository, firebaseContact);
     }
 
     private static String text(byte[] csv) {
@@ -80,6 +84,7 @@ class AdminExportServiceTest {
     @Test
     void exportUsers_escapesCommasAndQuotes() {
         UserEntity u = new UserEntity();
+        u.setFirebaseUid("uid-jean");
         u.setFirstName("Jean, dit \"Jeannot\"");
         u.setLastName("Dupont");
         when(userRepository.findAllByCreatedAtBetweenOrderByCreatedAtAsc(any(), any()))

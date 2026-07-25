@@ -582,8 +582,6 @@ class AnnouncementControllerIntegrationTest {
         user.setFirebaseUid(firebaseUid);
         // Dérivé du firebaseUid (et non une constante) : certains tests seedent plusieurs
         // voyageurs (ex. propriétaire + tiers pour un contrôle d'ownership) — un numéro fixe
-        // violerait la contrainte d'unicité phone_number dès le 2e appel dans le même test.
-        user.setPhoneNumber(String.format("+336%08d", Math.abs(firebaseUid.hashCode()) % 100_000_000));
         user.setStatus(com.dony.api.auth.UserStatus.ACTIVE);
         user.setKycStatus(com.dony.api.auth.KycStatus.PENDING);
         user.setRoles(new java.util.HashSet<>(List.of(com.dony.api.auth.Role.TRAVELER)));

@@ -15,10 +15,24 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 class PaymentServiceTestFactory {
+
+    /**
+     * Coordonnées de test servies par Firebase — elles ne sont plus stockées en base
+     * (cf. {@link com.dony.api.auth.FirebaseContactService}). Stripe lit l'email par ce
+     * canal, donc tout PaymentService de test doit recevoir un contact non vide.
+     */
+    static com.dony.api.auth.FirebaseContactService stubbedContacts() {
+        var svc = mock(com.dony.api.auth.FirebaseContactService.class);
+        lenient().when(svc.getContact(any())).thenReturn(
+                new com.dony.api.auth.FirebaseContactService.Contact("+33600000000", "test@dony.app"));
+        return svc;
+    }
+
 
     /**
      * Sets the {@code id} field on a {@link com.dony.api.common.BaseEntity} subclass via reflection.
@@ -66,7 +80,8 @@ class PaymentServiceTestFactory {
                 mock(AdminAlertService.class),
                 stubbedResolver(),
                 mock(PromoService.class),
-                new StripeGatewayImpl()
+                new StripeGatewayImpl(),
+                PaymentServiceTestFactory.stubbedContacts()
         );
     }
 
@@ -99,7 +114,8 @@ class PaymentServiceTestFactory {
                 adminAlert,
                 stubbedResolver(),
                 mock(PromoService.class),
-                new StripeGatewayImpl()
+                new StripeGatewayImpl(),
+                PaymentServiceTestFactory.stubbedContacts()
         );
     }
 }

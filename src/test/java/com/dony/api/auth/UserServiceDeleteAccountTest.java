@@ -43,8 +43,6 @@ class UserServiceDeleteAccountTest {
         UserEntity u = new UserEntity();
         setId(u, USER_ID);
         u.setFirebaseUid(FIREBASE_UID);
-        u.setPhoneNumber("+33600000001");
-        u.setEmail("test@example.com");
         u.setFirstName("Jean");
         u.setLastName("Dupont");
         u.setStatus(status);

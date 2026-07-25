@@ -1,5 +1,6 @@
 package com.dony.api.admin.dto;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserEntity;
 
 import java.math.BigDecimal;
@@ -34,12 +35,13 @@ public record AdminUserDetailResponse(
         int ratingCount,
         LocalDateTime deletionRequestedAt
 ) {
-    public static AdminUserDetailResponse from(UserEntity u) {
+    /** Téléphone et email proviennent de Firebase : ils ne sont plus stockés en base. */
+    public static AdminUserDetailResponse from(UserEntity u, FirebaseContactService.Contact contact) {
         return new AdminUserDetailResponse(
                 u.getId(),
                 u.getFirstName(),
                 u.getLastName(),
-                u.getPhoneNumber(),
+                contact.phoneNumber(),
                 u.getCity(),
                 u.getCountry(),
                 u.getStatus().name(),
@@ -49,7 +51,7 @@ public record AdminUserDetailResponse(
                 u.getTotalTrips(),
                 u.getTotalShipments(),
                 u.getCreatedAt(),
-                u.getEmail(),
+                contact.email(),
                 u.getRoles().stream().map(Enum::name).toList(),
                 u.getStripeAccountStatus() != null ? u.getStripeAccountStatus().name() : null,
                 u.getCommissionRateOverride(),

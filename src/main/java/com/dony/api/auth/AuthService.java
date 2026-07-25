@@ -49,6 +49,7 @@ public class AuthService {
     private final ConnectedDevicesService connectedDevicesService;
     private final StorageService storageService;
     private final AdminAuthService adminAuthService;
+    private final FirebaseContactService firebaseContact;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
@@ -58,7 +59,8 @@ public class AuthService {
                        ApplicationEventPublisher eventPublisher,
                        ConnectedDevicesService connectedDevicesService,
                        StorageService storageService,
-                       AdminAuthService adminAuthService) {
+                       AdminAuthService adminAuthService,
+                       FirebaseContactService firebaseContact) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
@@ -68,6 +70,7 @@ public class AuthService {
         this.connectedDevicesService = connectedDevicesService;
         this.storageService = storageService;
         this.adminAuthService = adminAuthService;
+        this.firebaseContact = firebaseContact;
     }
 
     @Transactional
@@ -87,26 +90,16 @@ public class AuthService {
             // Reset pseudonymized fields (GDPR deletion sets placeholder values)
             reactivated.setFirstName(null);
             reactivated.setLastName(null);
-            reactivated.setPhoneNumber(null);
-            reactivated.setEmail(null);
             reactivated.setKycStatus(KycStatus.NOT_STARTED);
-            // Restore contact info from the re-registration provider
-            String signInProvider = null;
-            if (decodedToken != null) {
-                Object firebaseClaim = decodedToken.getClaims().get("firebase");
-                if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
-                    Object provider = firebaseMap.get("sign_in_provider");
-                    if (provider instanceof String s) signInProvider = s;
-                }
+            // Coordonnées : rien à restaurer localement, elles vivent dans Firebase.
+            // Le compte Firebase qui se ré-inscrit porte déjà son téléphone (provider
+            // phone) ou son email (google/apple) ; seul le custom token doit se voir
+            // écrire son email, un compte custom n'en portant aucun.
+            String signInProvider = extractSignInProvider(decodedToken);
+            if ("custom".equals(signInProvider) && request.email() != null) {
+                firebaseContact.updateEmail(firebaseUid, request.email());
             }
-            if ("phone".equals(signInProvider) && request.phoneNumber() != null) {
-                reactivated.setPhoneNumber(request.phoneNumber());
-            } else if (("google.com".equals(signInProvider) || "apple.com".equals(signInProvider))
-                    && decodedToken != null && decodedToken.getEmail() != null) {
-                reactivated.setEmail(decodedToken.getEmail());
-            } else if ("custom".equals(signInProvider) && request.email() != null) {
-                reactivated.setEmail(request.email());
-            }
+            firebaseContact.evict(firebaseUid);
             userRepository.save(reactivated);
             auditService.log("USER", reactivated.getId(), "USER_REACTIVATED", reactivated.getId(),
                     Map.of("firebaseUid", firebaseUid));
@@ -145,20 +138,6 @@ public class AuthService {
             String v = request.lastName().trim();
             user.setLastName(v.isEmpty() ? null : v);
         }
-        if (request.email() != null) {
-            String v = request.email().trim();
-            if (!v.isEmpty() && !v.equals(user.getEmail())) {
-                if (userRepository.existsByEmail(v)) {
-                    throw new DonyBusinessException(HttpStatus.CONFLICT, "email-already-exists",
-                            "Email Already Registered", "Cet email est déjà associé à un compte actif");
-                }
-                // The email may still be held by a soft-deleted account — free it before claiming it
-                userRepository.freeEmailFromDeletedAccounts(v);
-                user.setEmail(v);
-            } else if (v.isEmpty()) {
-                user.setEmail(null);
-            }
-        }
         if (request.birthDate() != null) {
             user.setBirthDate(request.birthDate());
         }
@@ -168,12 +147,15 @@ public class AuthService {
         }
         if (request.phoneNumber() != null) {
             String v = request.phoneNumber().trim();
-            if (!v.isEmpty() && !v.equals(user.getPhoneNumber())) {
-                if (userRepository.existsByPhoneNumber(v)) {
+            // Lu ici seulement : une mise à jour qui ne touche pas au numéro n'a
+            // aucune raison d'interroger Firebase.
+            String currentPhone = firebaseContact.getContact(firebaseUid).phoneNumber();
+            if (!v.isEmpty() && !v.equals(currentPhone)) {
+                if (firebaseContact.isPhoneTakenByAnother(v, firebaseUid)) {
                     throw new DonyBusinessException(HttpStatus.CONFLICT, "phone-already-exists",
                             "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
                 }
-                user.setPhoneNumber(v);
+                firebaseContact.updatePhone(firebaseUid, v);
             }
         }
         if (request.bio() != null) {
@@ -386,14 +368,7 @@ public class AuthService {
         // les capacités (carte via Stripe) sont gérées séparément.
         Set<Role> roles = new java.util.HashSet<>(Set.of(Role.SENDER, Role.TRAVELER));
 
-        String signInProvider = null;
-        if (decodedToken != null) {
-            Object firebaseClaim = decodedToken.getClaims().get("firebase");
-            if (firebaseClaim instanceof java.util.Map<?, ?> firebaseMap) {
-                Object provider = firebaseMap.get("sign_in_provider");
-                if (provider instanceof String s) signInProvider = s;
-            }
-        }
+        String signInProvider = extractSignInProvider(decodedToken);
 
         UserEntity user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
@@ -401,19 +376,19 @@ public class AuthService {
         user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
 
+        // Aucune coordonnée n'est écrite en base : téléphone et email restent dans
+        // Firebase, qui garantit aussi leur unicité (un numéro / une adresse = un
+        // compte Firebase). Les branches ci-dessous ne font donc que valider le
+        // provider et rattacher un éventuel compte local déjà existant.
         switch (signInProvider == null ? "" : signInProvider) {
             case "phone" -> {
-                if (request.phoneNumber() == null) {
+                // Le numéro vient du token, jamais du corps de requête : ce dernier
+                // n'est pas authentifié et permettrait d'usurper un autre numéro.
+                if (extractPhoneClaim(decodedToken) == null) {
                     throw new DonyBusinessException(
                             HttpStatus.UNPROCESSABLE_ENTITY, "phone-required",
                             "Phone Required", "Le numéro de téléphone est requis");
                 }
-                if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
-                    throw new DonyBusinessException(
-                            HttpStatus.CONFLICT, "phone-already-exists",
-                            "Phone Number Already Registered", "Ce numéro est déjà associé à un compte");
-                }
-                user.setPhoneNumber(request.phoneNumber());
             }
             case "google.com", "apple.com" -> {
                 if (decodedToken == null) {
@@ -427,10 +402,10 @@ public class AuthService {
                             HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
                             "Email Required", "L'email est introuvable dans le token Firebase");
                 }
-                if (userRepository.existsByEmail(email)) {
-                    return toResponse(userRepository.findByEmail(email).orElseThrow());
+                Optional<UserResponse> existing = findLocalAccountByEmail(email, firebaseUid);
+                if (existing.isPresent()) {
+                    return existing.get();
                 }
-                user.setEmail(email);
             }
             case "custom" -> {
                 // Pour les custom tokens, l'UID Firebase est l'email utilisé dans createCustomToken(email)
@@ -445,10 +420,13 @@ public class AuthService {
                             HttpStatus.UNPROCESSABLE_ENTITY, "email-mismatch",
                             "Email Mismatch", "L'email fourni ne correspond pas au token Firebase");
                 }
-                if (userRepository.existsByEmail(request.email())) {
-                    return toResponse(userRepository.findByEmail(request.email()).orElseThrow());
+                Optional<UserResponse> existing = findLocalAccountByEmail(request.email(), firebaseUid);
+                if (existing.isPresent()) {
+                    return existing.get();
                 }
-                user.setEmail(request.email());
+                // Un compte créé par custom token ne porte aucune adresse côté Firebase :
+                // on l'y écrit pour que Firebase reste la seule source de vérité.
+                firebaseContact.updateEmail(firebaseUid, request.email());
             }
             default -> throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "invalid-provider",
@@ -467,21 +445,38 @@ public class AuthService {
         return toResponse(saved);
     }
 
-    private Set<Role> parseRoles(Set<String> rawRoles) {
-        return rawRoles.stream()
-                .map(r -> {
-                    try {
-                        return Role.valueOf(r.toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        throw new DonyBusinessException(
-                                HttpStatus.UNPROCESSABLE_ENTITY,
-                                "invalid-role",
-                                "Invalid Role",
-                                "Rôle invalide: " + r + ". Valeurs acceptées: SENDER, TRAVELER"
-                        );
-                    }
-                })
-                .collect(Collectors.toSet());
+    /** Provider de connexion porté par le token Firebase (phone, google.com, apple.com, custom). */
+    private static String extractSignInProvider(FirebaseToken decodedToken) {
+        if (decodedToken == null) {
+            return null;
+        }
+        Object firebaseClaim = decodedToken.getClaims().get("firebase");
+        if (firebaseClaim instanceof Map<?, ?> firebaseMap) {
+            Object provider = firebaseMap.get("sign_in_provider");
+            if (provider instanceof String s) return s;
+        }
+        return null;
+    }
+
+    /** Numéro porté par le token Firebase (claim {@code phone_number}), ou null. */
+    private static String extractPhoneClaim(FirebaseToken decodedToken) {
+        if (decodedToken == null) {
+            return null;
+        }
+        Object claim = decodedToken.getClaims().get("phone_number");
+        return claim instanceof String s ? s : null;
+    }
+
+    /**
+     * Compte local déjà rattaché à cette adresse côté Firebase. S'exclut lui-même :
+     * le compte qui s'authentifie porte déjà l'adresse, sans quoi toute inscription
+     * google/apple se croirait en conflit avec elle-même.
+     */
+    private Optional<UserResponse> findLocalAccountByEmail(String email, String selfUid) {
+        return firebaseContact.findUidByEmail(email)
+                .filter(uid -> !uid.equals(selfUid))
+                .flatMap(userRepository::findByFirebaseUid)
+                .map(this::toResponse);
     }
 
     @Transactional
@@ -529,10 +524,12 @@ public class AuthService {
             );
         }
 
+        FirebaseContactService.Contact contact = firebaseContact.getContact(user.getFirebaseUid());
+
         return new UserResponse(
                 user.getId(),
-                user.getPhoneNumber(),
-                user.getEmail(),
+                contact.phoneNumber(),
+                contact.email(),
                 user.getFirstName(),
                 user.getLastName(),
                 user.getBirthDate(),

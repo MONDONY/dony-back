@@ -244,8 +244,6 @@ class PackageRequestSearchMatchingIntegrationTest {
         UserEntity user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
         // Dérivé du firebaseUid (pas une constante) : plusieurs utilisateurs sont seedés par
-        // test, un numéro fixe violerait la contrainte d'unicité phone_number.
-        user.setPhoneNumber(String.format("+336%08d", Math.abs(firebaseUid.hashCode()) % 100_000_000));
         user.setStatus(UserStatus.ACTIVE);
         user.setKycStatus(KycStatus.PENDING);
         user.setRoles(new java.util.HashSet<>(List.of(role)));

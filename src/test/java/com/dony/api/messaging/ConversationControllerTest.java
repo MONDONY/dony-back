@@ -112,7 +112,7 @@ class ConversationControllerTest {
         ConversationResponse fakeResponse = new ConversationResponse(
                 conversationId, conversation.getBidId(),
                 conversation.getFirestoreConversationId(),
-                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, null, null, false),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, false, null, false),
                 null, LocalDateTime.now(), false,
                 null, null, null, null, null, false, false);
 
@@ -136,7 +136,7 @@ class ConversationControllerTest {
         ConversationResponse fakeResponse = new ConversationResponse(
                 conversationId, conversation.getBidId(),
                 conversation.getFirestoreConversationId(),
-                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, null, null, false),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, false, null, false),
                 null, LocalDateTime.now(), false,
                 null, null, null, null, null, false, false);
 
@@ -174,7 +174,7 @@ class ConversationControllerTest {
         ConversationResponse fakeResponse = new ConversationResponse(
                 conversationId, conversation.getBidId(),
                 conversation.getFirestoreConversationId(),
-                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, null, null, false),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, false, null, false),
                 null, LocalDateTime.now(), false,
                 null, null, null, null, null, false, false);
 
@@ -322,7 +322,7 @@ class ConversationControllerTest {
         ConversationResponse fakeResponse = new ConversationResponse(
                 conversationId, bidId,
                 conversation.getFirestoreConversationId(),
-                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, null, null, false),
+                new ParticipantDTO(UUID.randomUUID().toString(), "Other User", null, false, null, false),
                 null, LocalDateTime.now(), false,
                 null, null, null, null, null, false, false);
 

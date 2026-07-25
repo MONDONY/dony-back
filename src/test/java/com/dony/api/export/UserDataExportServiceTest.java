@@ -39,11 +39,17 @@ class UserDataExportServiceTest {
     @Mock private DeliveryAddressRepository deliveryAddressRepository;
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private KycRepository kycRepository;
+    @Mock private com.dony.api.auth.FirebaseContactService firebaseContact;
 
     private UserDataExportService service() {
+        // L'export RGPD lit les coordonnées dans Firebase, elles ne sont plus en base
+        org.mockito.Mockito.lenient()
+                .when(firebaseContact.getContact(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.dony.api.auth.FirebaseContactService.Contact(
+                        "+221771234567", "aissatou@example.com"));
         return new UserDataExportService(
                 recipientRepository, pickupAddressRepository, deliveryAddressRepository,
-                favoriteRepository, kycRepository);
+                favoriteRepository, kycRepository, firebaseContact);
     }
 
     private static void setId(Object entity, UUID id) {
@@ -69,8 +75,7 @@ class UserDataExportServiceTest {
         setId(u, id);
         u.setFirstName("Aïssatou");
         u.setLastName("Ba");
-        u.setEmail("aissatou@example.com");
-        u.setPhoneNumber("+221771234567");
+        u.setFirebaseUid("uid-aissatou");
         u.setCity("Dakar");
         u.setCountry("SN");
         u.setRoles(new HashSet<>(List.of(Role.SENDER)));

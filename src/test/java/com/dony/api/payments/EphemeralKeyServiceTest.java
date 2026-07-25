@@ -62,7 +62,9 @@ class EphemeralKeyServiceTest {
                 mock(com.dony.api.common.stripe.AdminAlertService.class),
                 PaymentServiceTestFactory.stubbedResolver(),
                 mock(com.dony.api.promo.PromoService.class),
-                stripeGateway);
+                stripeGateway,
+                PaymentServiceTestFactory.stubbedContacts()
+                );
     }
 
     private void setId(Object entity, UUID id) {
@@ -85,7 +87,6 @@ class EphemeralKeyServiceTest {
         UserEntity u = new UserEntity();
         setId(u, userId);
         u.setFirebaseUid("uid-user");
-        u.setEmail("user@example.com");
         u.setStripeCustomerId(stripeCustomerId);
         return u;
     }

@@ -33,6 +33,8 @@ class EmailOtpServiceTest {
     @Mock private ResendEmailService resendEmailService;
     @Mock private FirebaseAuth firebaseAuth;
     @Mock private UserRepository userRepository;
+    @Mock private com.dony.api.auth.FirebaseContactService firebaseContact;
+    @Mock private com.dony.api.common.AuditService auditService;
     @InjectMocks private EmailOtpService emailOtpService;
 
     private static final String EMAIL = "test@example.com";
@@ -73,6 +75,112 @@ class EmailOtpServiceTest {
     }
 
     @Nested
+    @DisplayName("attachEmailToAccount")
+    class AttachEmail {
+
+        private static final String UID = "uid-inscrit-par-sms";
+
+        private EmailOtpEntity validToken() {
+            EmailOtpEntity t = new EmailOtpEntity();
+            t.setEmail(EMAIL);
+            t.setCodeHash("$2a$10$hash");
+            t.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(5));
+            t.setAttempts(0);
+            return t;
+        }
+
+        private void givenValidOtp() {
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.of(validToken()));
+            when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
+            when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        }
+
+        private UserEntity account() {
+            UserEntity u = new UserEntity();
+            u.setFirebaseUid(UID);
+            org.springframework.test.util.ReflectionTestUtils.setField(u, "id", java.util.UUID.randomUUID());
+            return u;
+        }
+
+        @Test
+        @DisplayName("compte sans email + code valide → écrit l'adresse dans Firebase")
+        void attach_success() {
+            when(userRepository.findByFirebaseUid(UID)).thenReturn(Optional.of(account()));
+            givenValidOtp();
+            when(firebaseContact.getContact(UID))
+                    .thenReturn(com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
+            when(firebaseContact.isEmailTakenByAnother(EMAIL, UID)).thenReturn(false);
+
+            emailOtpService.attachEmailToAccount(UID, EMAIL, "123456");
+
+            verify(firebaseContact).updateEmail(UID, EMAIL);
+            verify(auditService).log(eq("USER"), any(), eq("USER_EMAIL_ATTACHED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("code faux → aucune écriture : la preuve de possession est exigée")
+        void attach_wrongCode_writesNothing() {
+            when(userRepository.findByFirebaseUid(UID)).thenReturn(Optional.of(account()));
+            when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
+                    .thenReturn(Optional.of(validToken()));
+            when(passwordEncoder.matches("000000", "$2a$10$hash")).thenReturn(false);
+            when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            assertThatThrownBy(() -> emailOtpService.attachEmailToAccount(UID, EMAIL, "000000"))
+                    .isInstanceOf(DonyBusinessException.class);
+
+            // Le cœur de la protection : sans code valide, rien n'atteint Firebase
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("compte portant déjà un email → 409, pas de remplacement")
+        void attach_emailAlreadySet_conflict() {
+            when(userRepository.findByFirebaseUid(UID)).thenReturn(Optional.of(account()));
+            givenValidOtp();
+            when(firebaseContact.getContact(UID)).thenReturn(
+                    new com.dony.api.auth.FirebaseContactService.Contact(null, "deja@dony.app"));
+
+            assertThatThrownBy(() -> emailOtpService.attachEmailToAccount(UID, EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> {
+                        DonyBusinessException ex = (DonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("email-already-set");
+                    });
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("adresse déjà rattachée à un autre compte → 409")
+        void attach_emailTakenByAnother_conflict() {
+            when(userRepository.findByFirebaseUid(UID)).thenReturn(Optional.of(account()));
+            givenValidOtp();
+            when(firebaseContact.getContact(UID))
+                    .thenReturn(com.dony.api.auth.FirebaseContactService.Contact.EMPTY);
+            when(firebaseContact.isEmailTakenByAnother(EMAIL, UID)).thenReturn(true);
+
+            assertThatThrownBy(() -> emailOtpService.attachEmailToAccount(UID, EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
+                            .isEqualTo("email-already-exists"));
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("compte inconnu → 404")
+        void attach_unknownAccount_404() {
+            when(userRepository.findByFirebaseUid(UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> emailOtpService.attachEmailToAccount(UID, EMAIL, "123456"))
+                    .isInstanceOf(DonyBusinessException.class)
+                    .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    @Nested
     @DisplayName("verifyOtp")
     class VerifyOtp {
 
@@ -92,7 +200,8 @@ class EmailOtpServiceTest {
             when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
                     .thenReturn(Optional.of(token));
             when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
-            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+            // Aucun compte Firebase ne porte cette adresse → l'UID retombe sur l'email
+            when(firebaseContact.findUidByEmail(EMAIL)).thenReturn(Optional.empty());
             when(firebaseAuth.createCustomToken(EMAIL)).thenReturn("firebase-custom-token");
             when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
@@ -108,12 +217,15 @@ class EmailOtpServiceTest {
             EmailOtpEntity token = validToken();
             UserEntity existingUser = new UserEntity();
             existingUser.setFirebaseUid("existing-firebase-uid-from-phone");
-            existingUser.setEmail(EMAIL);
 
             when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
                     .thenReturn(Optional.of(token));
             when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
-            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(existingUser));
+            // L'adresse n'est plus en base : Firebase donne l'UID qui la porte
+            when(firebaseContact.findUidByEmail(EMAIL))
+                    .thenReturn(Optional.of("existing-firebase-uid-from-phone"));
+            when(userRepository.findByFirebaseUid("existing-firebase-uid-from-phone"))
+                    .thenReturn(Optional.of(existingUser));
             when(firebaseAuth.createCustomToken("existing-firebase-uid-from-phone"))
                     .thenReturn("firebase-token-with-existing-uid");
             when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -214,7 +326,8 @@ class EmailOtpServiceTest {
         @DisplayName("succès — retourne null si firebaseAuth non disponible (mode test)")
         void firebaseAuth_null_returnsNull() {
             EmailOtpService serviceWithoutFirebase = new EmailOtpService(
-                    emailOtpRepository, passwordEncoder, resendEmailService, null, userRepository);
+                    emailOtpRepository, passwordEncoder, resendEmailService, null,
+                    userRepository, firebaseContact, auditService);
             EmailOtpEntity token = validToken();
             when(emailOtpRepository.findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc(EMAIL))
                     .thenReturn(Optional.of(token));
@@ -234,7 +347,7 @@ class EmailOtpServiceTest {
                     .thenReturn(Optional.of(token));
             when(passwordEncoder.matches("123456", "$2a$10$hash")).thenReturn(true);
             when(emailOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+            when(firebaseContact.findUidByEmail(EMAIL)).thenReturn(Optional.empty());
             doThrow(mock(com.google.firebase.auth.FirebaseAuthException.class))
                     .when(firebaseAuth).createCustomToken(EMAIL);
 

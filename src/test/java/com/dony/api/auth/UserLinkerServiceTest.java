@@ -18,7 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("UserLinkerService — résolution et liaison de compte")
+@DisplayName("UserLinkerService — résolution de compte par UID Firebase")
 class UserLinkerServiceTest {
 
     @Mock private UserRepository userRepository;
@@ -26,7 +26,6 @@ class UserLinkerServiceTest {
 
     private static final String NEW_UID    = "new-phone-uid-abc";
     private static final String PHONE      = "+33612345678";
-    private static final String OLD_UID    = "old-email-uid-xyz";
 
     private UserEntity makeUser(String firebaseUid) {
         UserEntity u = new UserEntity();
@@ -38,17 +37,9 @@ class UserLinkerServiceTest {
 
     private FirebaseToken phoneToken() {
         FirebaseToken t = mock(FirebaseToken.class);
-        when(t.getClaims()).thenReturn(Map.of(
+        lenient().when(t.getClaims()).thenReturn(Map.of(
                 "firebase", Map.of("sign_in_provider", "phone"),
                 "phone_number", PHONE
-        ));
-        return t;
-    }
-
-    private FirebaseToken tokenWithProvider(String provider) {
-        FirebaseToken t = mock(FirebaseToken.class);
-        when(t.getClaims()).thenReturn(Map.of(
-                "firebase", Map.of("sign_in_provider", provider)
         ));
         return t;
     }
@@ -58,7 +49,7 @@ class UserLinkerServiceTest {
     void directMatch_returnsUser() {
         UserEntity user = makeUser(NEW_UID);
         when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.of(user));
-        // Token jamais inspecté quand le lookup direct réussit
+        // Token jamais inspecté : l'UID suffit
         FirebaseToken anyToken = mock(FirebaseToken.class);
 
         Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, anyToken);
@@ -68,71 +59,37 @@ class UserLinkerServiceTest {
     }
 
     @Test
-    @DisplayName("phone provider, uid inconnu, numéro connu → lie et retourne le user")
-    void phoneProvider_unknownUid_knownPhone_links() {
-        UserEntity existing = makeUser(OLD_UID);
-        existing.setPhoneNumber(PHONE);
-
+    @DisplayName("uid inconnu → vide, sans repli par téléphone (le numéro n'est plus en base)")
+    void unknownUid_returnsEmpty_noPhoneFallback() {
         when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByPhoneNumber(PHONE)).thenReturn(Optional.of(existing));
-        when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, phoneToken());
 
-        assertThat(result).isPresent();
-        assertThat(result.get().getFirebaseUid()).isEqualTo(NEW_UID);
-        verify(userRepository).save(argThat(u -> NEW_UID.equals(u.getFirebaseUid())));
+        assertThat(result).isEmpty();
+        // Aucune ré-écriture d'UID : la fusion de deux comptes Firebase relève de Firebase
+        verify(userRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("phone provider, uid inconnu, numéro inconnu → vide (nouvel utilisateur)")
-    void phoneProvider_unknownUid_unknownPhone_returnsEmpty() {
+    @DisplayName("provider non-phone (google), uid inconnu → vide")
+    void nonPhoneProvider_unknownUid_returnsEmpty() {
         when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByPhoneNumber(PHONE)).thenReturn(Optional.empty());
+        FirebaseToken t = mock(FirebaseToken.class);
 
-        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, phoneToken());
+        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, t);
 
         assertThat(result).isEmpty();
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("provider non-phone (google), uid inconnu → vide (pas de fallback)")
-    void nonPhoneProvider_unknownUid_returnsEmpty() {
+    @DisplayName("token null → vide, sans exception (le token n'est jamais lu)")
+    void nullToken_returnsEmpty() {
         when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
 
-        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, tokenWithProvider("google.com"));
+        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, null);
 
         assertThat(result).isEmpty();
-        verify(userRepository, never()).findByPhoneNumber(any());
-    }
-
-    @Test
-    @DisplayName("claims sans clé 'firebase' → vide (pas de provider détecté)")
-    void noFirebaseClaim_returnsEmpty() {
-        FirebaseToken t = mock(FirebaseToken.class);
-        when(t.getClaims()).thenReturn(Map.of());
-        when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
-
-        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, t);
-
-        assertThat(result).isEmpty();
-        verify(userRepository, never()).findByPhoneNumber(any());
-    }
-
-    @Test
-    @DisplayName("phone provider, phone_number absent des claims → vide")
-    void phoneProvider_noPhoneNumberClaim_returnsEmpty() {
-        FirebaseToken t = mock(FirebaseToken.class);
-        when(t.getClaims()).thenReturn(Map.of(
-                "firebase", Map.of("sign_in_provider", "phone")
-        ));
-        when(userRepository.findByFirebaseUid(NEW_UID)).thenReturn(Optional.empty());
-
-        Optional<UserEntity> result = userLinkerService.resolveAndLink(NEW_UID, t);
-
-        assertThat(result).isEmpty();
-        verify(userRepository, never()).findByPhoneNumber(any());
     }
 
     private static void setId(Object entity, UUID id) {

@@ -28,11 +28,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "firebase_uid", nullable = false, unique = true, length = 128)
     private String firebaseUid;
 
-    @Column(name = "phone_number", unique = true, length = 20)
-    private String phoneNumber;
-
-    @Column(name = "email", length = 255)
-    private String email;
+    // Téléphone et email ne sont volontairement pas stockés ici : Firebase Auth en
+    // est la seule source de vérité, lue à la demande par FirebaseContactService à
+    // partir de firebaseUid. Un vol de la base dony ne les révèle donc pas.
 
     @Column(name = "first_name", length = 100)
     private String firstName;
@@ -199,11 +197,7 @@ public class UserEntity extends BaseEntity {
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
-    public String getPhoneNumber() { return phoneNumber; }
-    public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }

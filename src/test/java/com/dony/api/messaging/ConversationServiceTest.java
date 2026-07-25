@@ -79,29 +79,47 @@ class ConversationServiceTest {
     }
 
     @Test
-    void toResponse_revealsPhone_whenDealActive_andHidesWhenNot() {
+    void toResponse_marksPhoneAvailable_whenDealActive_andNotWhenNot() {
         UserEntity traveler = mock(UserEntity.class);
         when(traveler.getFirstName()).thenReturn("Bob");
         when(traveler.getLastName()).thenReturn("Dupont");
-        lenient().when(traveler.getPhoneNumber()).thenReturn("+33612345678");
         lenient().when(traveler.getKycStatus()).thenReturn(KycStatus.VERIFIED);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
 
         ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
 
-        // Deal actif (ACCEPTED) → téléphone révélé + rôle "Voyageur".
+        // Deal actif (ACCEPTED) → joignable + rôle "Voyageur".
         BidEntity acceptedBid = mockBid(BidStatus.ACCEPTED);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(acceptedBid));
         var active = service.toResponse(conv, senderId);
-        assertThat(active.otherParticipant().phone()).isEqualTo("+33612345678");
+        assertThat(active.otherParticipant().phoneAvailable()).isTrue();
         assertThat(active.otherParticipant().role()).isEqualTo("Voyageur");
         assertThat(active.otherParticipant().kycVerified()).isTrue();
 
-        // Deal non actif (PENDING) → téléphone masqué.
+        // Deal non actif (PENDING) → non joignable.
         BidEntity pendingBid = mockBid(BidStatus.PENDING);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(pendingBid));
         var pending = service.toResponse(conv, senderId);
-        assertThat(pending.otherParticipant().phone()).isNull();
+        assertThat(pending.otherParticipant().phoneAvailable()).isFalse();
+    }
+
+    @Test
+    void toResponse_neverReadsPhoneNumber_evenWhenDealActive() {
+        // Le numéro ne doit plus jamais transiter par une conversation : il s'obtient
+        // uniquement via GET /bids/{bidId}/contact, au tap sur « appeler ».
+        UserEntity traveler = mock(UserEntity.class);
+        lenient().when(traveler.getFirstName()).thenReturn("Bob");
+        lenient().when(traveler.getLastName()).thenReturn("Dupont");
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        // Construit hors du when(...) : imbriquer le stubbing lève UnfinishedStubbing.
+        BidEntity inTransit = mockBid(BidStatus.IN_TRANSIT);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(inTransit));
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.otherParticipant().phoneAvailable()).isTrue();
+        verify(traveler, never()).getFirebaseUid();
     }
 
     @Test
@@ -183,4 +201,5 @@ class ConversationServiceTest {
         lenient().when(u.getFirebaseUid()).thenReturn(uid);
         return u;
     }
+
 }

@@ -1,5 +1,6 @@
 package com.dony.api.export;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.addressbook.delivery.DeliveryAddressEntity;
 import com.dony.api.addressbook.delivery.DeliveryAddressRepository;
 import com.dony.api.addressbook.delivery.dto.DeliveryAddressDto;
@@ -31,26 +32,32 @@ public class UserDataExportService {
     private final DeliveryAddressRepository deliveryAddressRepository;
     private final FavoriteRepository favoriteRepository;
     private final KycRepository kycRepository;
+    private final FirebaseContactService firebaseContact;
 
     public UserDataExportService(RecipientRepository recipientRepository,
                                   PickupAddressRepository pickupAddressRepository,
                                   DeliveryAddressRepository deliveryAddressRepository,
                                   FavoriteRepository favoriteRepository,
-                                  KycRepository kycRepository) {
+                                  KycRepository kycRepository,
+                                  FirebaseContactService firebaseContact) {
         this.recipientRepository = recipientRepository;
         this.pickupAddressRepository = pickupAddressRepository;
         this.deliveryAddressRepository = deliveryAddressRepository;
         this.favoriteRepository = favoriteRepository;
         this.kycRepository = kycRepository;
+        this.firebaseContact = firebaseContact;
     }
 
     public UserDataExportDto export(UserEntity user) {
+        // Coordonnées lues dans Firebase : l'export RGPD doit rester complet même
+        // si la base dony ne les stocke plus.
+        var contact = firebaseContact.getContact(user.getFirebaseUid());
         ProfileExport profile = new ProfileExport(
                 user.getId(),
                 user.getFirstName(),
                 user.getLastName(),
-                user.getEmail(),
-                user.getPhoneNumber(),
+                contact.email(),
+                contact.phoneNumber(),
                 user.getBirthDate(),
                 user.getCity(),
                 user.getCountry(),

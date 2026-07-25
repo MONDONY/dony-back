@@ -25,12 +25,35 @@ class SmsFallbackSchedulerTest {
     @Mock NotificationRepository notificationRepository;
     @Mock UserRepository userRepository;
     @Mock SmsService smsService;
+    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     SmsFallbackScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new SmsFallbackScheduler(notificationRepository, userRepository, smsService);
+        scheduler = new SmsFallbackScheduler(
+                notificationRepository, userRepository, smsService, firebaseContact);
+    }
+
+    private UserEntity user(UUID userId, String uid) {
+        UserEntity u = new UserEntity();
+        u.setFirebaseUid(uid);
+        org.springframework.test.util.ReflectionTestUtils.setField(u, "id", userId);
+        return u;
+    }
+
+    /**
+     * Les users et leurs coordonnées Firebase sont résolus en un lot avant la boucle
+     * d'envoi, pas notification par notification.
+     */
+    private void stubBatch(List<UserEntity> users,
+                           Map<String, com.dony.api.auth.FirebaseContactService.Contact> contacts) {
+        when(userRepository.findAllById(any())).thenReturn(users);
+        when(firebaseContact.getContacts(any())).thenReturn(contacts);
+    }
+
+    private com.dony.api.auth.FirebaseContactService.Contact phone(String phone) {
+        return new com.dony.api.auth.FirebaseContactService.Contact(phone, null);
     }
 
     @Test
@@ -48,9 +71,7 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber("+221701234567");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        stubBatch(List.of(user(userId, "uid-1")), Map.of("uid-1", phone("+221701234567")));
 
         scheduler.processPendingFallbacks();
 
@@ -64,9 +85,7 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber("+221701234567");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        stubBatch(List.of(user(userId, "uid-1")), Map.of("uid-1", phone("+221701234567")));
 
         scheduler.processPendingFallbacks();
 
@@ -81,9 +100,8 @@ class SmsFallbackSchedulerTest {
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
 
-        UserEntity user = new UserEntity();
-        user.setPhoneNumber(null);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        // Aucun numéro côté Firebase (compte créé par email OTP par exemple)
+        stubBatch(List.of(user(userId, "uid-sans-tel")), Map.of("uid-sans-tel", phone(null)));
 
         scheduler.processPendingFallbacks();
 
@@ -96,7 +114,7 @@ class SmsFallbackSchedulerTest {
         UUID userId = UUID.randomUUID();
         var notification = criticalNotification(userId);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(notification));
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        stubBatch(List.of(), Map.of());
 
         scheduler.processPendingFallbacks();
 
@@ -112,14 +130,14 @@ class SmsFallbackSchedulerTest {
         var n2 = criticalNotification(userId2);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(n1, n2));
 
-        UserEntity u1 = new UserEntity(); u1.setPhoneNumber("+221111111111");
-        UserEntity u2 = new UserEntity(); u2.setPhoneNumber("+221222222222");
-        when(userRepository.findById(userId1)).thenReturn(Optional.of(u1));
-        when(userRepository.findById(userId2)).thenReturn(Optional.of(u2));
+        stubBatch(List.of(user(userId1, "uid-1"), user(userId2, "uid-2")),
+                Map.of("uid-1", phone("+221111111111"), "uid-2", phone("+221222222222")));
 
         scheduler.processPendingFallbacks();
 
         verify(smsService, times(2)).send(anyString(), anyString());
+        // Un seul aller-retour Firebase pour les deux notifications
+        verify(firebaseContact, times(1)).getContacts(any());
     }
 
     @Test
@@ -130,8 +148,8 @@ class SmsFallbackSchedulerTest {
         var n2 = criticalNotification(userId2);
         when(notificationRepository.findPendingSmsFallbacks(any())).thenReturn(List.of(n1, n2));
 
-        UserEntity u = new UserEntity(); u.setPhoneNumber("+221111111111");
-        when(userRepository.findById(any())).thenReturn(Optional.of(u));
+        stubBatch(List.of(user(userId1, "uid-1"), user(userId2, "uid-2")),
+                Map.of("uid-1", phone("+221111111111"), "uid-2", phone("+221222222222")));
         doThrow(new RuntimeException("SMS provider down")).when(smsService).send(anyString(), anyString());
 
         // Must not throw

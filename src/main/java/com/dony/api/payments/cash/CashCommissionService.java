@@ -1,5 +1,6 @@
 package com.dony.api.payments.cash;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
 import com.dony.api.common.CommissionRateResolver;
@@ -81,6 +82,7 @@ public class CashCommissionService {
     private final CommissionRateResolver commissionRateResolver;
     private final com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
     private final StripeCashGateway stripeCashGateway;
+    private final FirebaseContactService firebaseContact;
     private final com.dony.api.matching.BidGridItemRepository bidGridItemRepository;
     private Clock clock = Clock.systemUTC();
 
@@ -95,7 +97,8 @@ public class CashCommissionService {
                                  CommissionRateResolver commissionRateResolver,
                                  com.dony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository,
                                  StripeCashGateway stripeCashGateway,
-                                 com.dony.api.matching.BidGridItemRepository bidGridItemRepository) {
+                                 com.dony.api.matching.BidGridItemRepository bidGridItemRepository,
+                                 FirebaseContactService firebaseContact) {
         this.props = props;
         this.userRepo = userRepo;
         this.bidRepo = bidRepo;
@@ -108,6 +111,7 @@ public class CashCommissionService {
         this.negotiationThreadRepository = negotiationThreadRepository;
         this.stripeCashGateway = stripeCashGateway;
         this.bidGridItemRepository = bidGridItemRepository;
+        this.firebaseContact = firebaseContact;
     }
 
     /** Visible for testing — injects a fixed clock. */
@@ -737,7 +741,7 @@ public class CashCommissionService {
         if (user.getStripeCustomerId() != null) return;
         try {
             Customer c = stripeCashGateway.createCustomer(CustomerCreateParams.builder()
-                    .setEmail(user.getEmail())
+                    .setEmail(firebaseContact.getContact(user.getFirebaseUid()).email())
                     .putMetadata("dony_user_id", user.getId().toString())
                     .build());
             user.setStripeCustomerId(c.getId());

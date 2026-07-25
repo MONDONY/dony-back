@@ -77,7 +77,6 @@ class TripsSummaryRepositoryIT {
     private UserEntity persistTraveler() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid("uid-" + UUID.randomUUID());
-        u.setPhoneNumber("+33" + System.nanoTime());
         u.setStatus(UserStatus.ACTIVE);
         u.setKycStatus(KycStatus.PENDING);
         Set<Role> roles = new HashSet<>();

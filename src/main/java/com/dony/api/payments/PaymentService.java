@@ -1,5 +1,6 @@
 package com.dony.api.payments;
 
+import com.dony.api.auth.FirebaseContactService;
 import com.dony.api.auth.StripeAccountStatus;
 import com.dony.api.auth.UserEntity;
 import com.dony.api.auth.UserRepository;
@@ -79,6 +80,7 @@ public class PaymentService {
     private final CommissionRateResolver commissionRateResolver;
     private final PromoService promoService;
     private final StripeGateway stripeGateway;
+    private final FirebaseContactService firebaseContact;
 
     public PaymentService(UserRepository userRepository,
                           BidRepository bidRepository,
@@ -92,7 +94,8 @@ public class PaymentService {
                           AdminAlertService adminAlert,
                           CommissionRateResolver commissionRateResolver,
                           PromoService promoService,
-                          StripeGateway stripeGateway) {
+                          StripeGateway stripeGateway,
+                          FirebaseContactService firebaseContact) {
         this.userRepository = userRepository;
         this.bidRepository = bidRepository;
         this.bidGridItemRepository = bidGridItemRepository;
@@ -106,6 +109,7 @@ public class PaymentService {
         this.commissionRateResolver = commissionRateResolver;
         this.promoService = promoService;
         this.stripeGateway = stripeGateway;
+        this.firebaseContact = firebaseContact;
     }
 
     // ── Story 6.2 : Onboarding Stripe Connect ────────────────────────────────
@@ -149,7 +153,7 @@ public class PaymentService {
             AccountCreateParams params = AccountCreateParams.builder()
                     .setType(AccountCreateParams.Type.EXPRESS)
                     .setCountry(user.getCountry())
-                    .setEmail(user.getEmail())
+                    .setEmail(firebaseContact.getContact(user.getFirebaseUid()).email())
                     .setBusinessType(
                             user.isProAccount()
                                     ? AccountCreateParams.BusinessType.COMPANY
@@ -542,7 +546,7 @@ public class PaymentService {
             return user.getStripeCustomerId();
         }
         Customer customer = stripeGateway.createCustomer(CustomerCreateParams.builder()
-                .setEmail(user.getEmail())
+                .setEmail(firebaseContact.getContact(user.getFirebaseUid()).email())
                 .putMetadata("dony_user_id", user.getId().toString())
                 .build());
         user.setStripeCustomerId(customer.getId());

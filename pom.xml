@@ -16,6 +16,8 @@
 	<description>dony P2P marketplace backend</description>
 
 	<properties>
+		<!-- Tags exclus par défaut ; -DexcludedGroups= (vide) pour lancer firebase-live -->
+		<excludedGroups>firebase-live</excludedGroups>
 		<java.version>21</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<stripe.version>26.12.0</stripe.version>
@@ -309,6 +311,10 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
+					<!-- Tests marqués @Tag("firebase-live") frappent le vrai Firebase :
+					     jamais dans la suite normale ni la CI. Lancer à la demande via
+					     -Dgroups=firebase-live (voir FirebaseContactLiveIT). -->
+					<excludedGroups>${excludedGroups}</excludedGroups>
 					<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 					<!-- Force English locale so Cucumber's {double} uses '.' as decimal separator -->
 					<!-- @{argLine} preserves JaCoCo's prepare-agent argLine so coverage is captured -->

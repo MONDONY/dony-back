@@ -33,6 +33,7 @@ class AccountFinalizationServiceTest {
     @Mock private StorageService storageService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AuditService auditService;
+    @Mock private FirebaseContactService firebaseContact;
 
     @InjectMocks private AccountFinalizationService service;
 
@@ -40,8 +41,6 @@ class AccountFinalizationServiceTest {
         UserEntity u = new UserEntity();
         setId(u, UUID.randomUUID());
         u.setFirebaseUid("uid-test");
-        u.setEmail("test@example.com");
-        u.setPhoneNumber("+33600000001");
         u.setFirstName("Jean");
         u.setLastName("Dupont");
         u.setStatus(UserStatus.PENDING_DELETION);
@@ -76,14 +75,25 @@ class AccountFinalizationServiceTest {
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.BANNED);
         assertThat(user.getDeletedAt()).isNotNull();
-        assertThat(user.getEmail()).startsWith("deleted_");
-        assertThat(user.getPhoneNumber()).isEqualTo("+00000000000");
         assertThat(user.getFirstName()).isEqualTo("Utilisateur");
         assertThat(user.getLastName()).isEqualTo("supprimé");
         assertThat(user.getFcmToken()).isNull();
         assertThat(kyc.getDeletedAt()).isNotNull();
         assertThat(user.getBirthDate()).isNull();
         assertThat(user.getCity()).isNull();
+    }
+
+    @Test
+    @DisplayName("supprime le compte Firebase — seul porteur du téléphone et de l'email")
+    void deletesFirebaseAccountAndEvictsContactCache() {
+        UserEntity user = makeUser();
+        when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
+
+        service.finalize(user, FinalizationReason.HARD_IMMEDIATE);
+
+        // Suppression et purge du cache sont une seule opération portée par le service
+        // qui détient le cache : l'appelant ne peut plus oublier la seconde.
+        verify(firebaseContact).deleteAccount("uid-test");
     }
 
     @Test

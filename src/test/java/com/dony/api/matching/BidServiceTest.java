@@ -64,6 +64,7 @@ class BidServiceTest {
     @Mock private com.dony.api.promo.PromoService promoService;
     @Mock private StorageService storageService;
     @Mock private BidPhotoService bidPhotoService;
+    @Mock private com.dony.api.auth.FirebaseContactService firebaseContact;
     @Mock private HttpServletRequest httpRequest;
 
     @InjectMocks private BidService bidService;
@@ -98,7 +99,6 @@ class BidServiceTest {
     private UserEntity buildSender() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(SENDER_UID);
-        u.setPhoneNumber("+33612345678");
         u.getRoles().add(Role.SENDER);
         setId(u, SENDER_ID);
         return u;
@@ -107,7 +107,6 @@ class BidServiceTest {
     private UserEntity buildTraveler() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(TRAVELER_UID);
-        u.setPhoneNumber("+33611223344");
         u.getRoles().add(Role.TRAVELER);
         setId(u, TRAVELER_ID);
         return u;
@@ -151,6 +150,11 @@ class BidServiceTest {
     void stubCancellationRepository() {
         lenient().when(cancellationRepository.findAllByBidId(any()))
                 .thenReturn(java.util.List.of());
+        // Les numéros viennent de Firebase, plus de la colonne users.phone_number
+        lenient().when(firebaseContact.getContact(SENDER_UID)).thenReturn(
+                new com.dony.api.auth.FirebaseContactService.Contact("+33612345678", null));
+        lenient().when(firebaseContact.getContact(TRAVELER_UID)).thenReturn(
+                new com.dony.api.auth.FirebaseContactService.Contact("+33611223344", null));
         // Pass-through for presigned avatar URLs — tests don't care about the URL value
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Return empty photos list by default — toResponse calls this for every bid
