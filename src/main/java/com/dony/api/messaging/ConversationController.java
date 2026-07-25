@@ -59,11 +59,8 @@ public class ConversationController {
         java.util.Map<String, java.util.Map<String, Object>> meta = conversationService.fetchConversationMeta(
                 page.getContent().stream().map(ConversationEntity::getFirestoreConversationId).toList());
 
-        var contacts = conversationService.prefetchParticipantContacts(
-                page.getContent(), currentUser.getId());
-
         Page<ConversationResponse> responsePage = page.map(
-                c -> conversationService.toResponse(c, currentUser.getId(), meta, contacts));
+                c -> conversationService.toResponse(c, currentUser.getId(), meta));
         return ResponseEntity.ok(PageResponse.from(responsePage));
     }
 

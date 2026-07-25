@@ -11,7 +11,12 @@ public record BidResponse(
         UUID announcementId,
         UUID senderId,
         String senderName,
-        String senderPhone,
+        /**
+         * Le numéro de l'expéditeur est joignable : le client peut afficher le bouton
+         * d'appel. Le numéro lui-même s'obtient via {@code GET /bids/{id}/contact}, au
+         * moment du tap — il ne voyage pas dans les réponses de liste.
+         */
+        boolean senderPhoneAvailable,
         Integer senderTotalShipments,
         boolean senderKycVerified,
         boolean senderIsProAccount,
@@ -46,7 +51,8 @@ public record BidResponse(
         String confirmationCode,
         UUID travelerId,
         String travelerName,
-        String travelerPhone,
+        /** Idem {@code senderPhoneAvailable}, côté voyageur. */
+        boolean travelerPhoneAvailable,
         boolean travelerKycVerified,
         boolean travelerIsProAccount,
         boolean travelerKiloPro,

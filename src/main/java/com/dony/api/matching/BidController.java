@@ -8,6 +8,7 @@ import com.dony.api.matching.dto.BidQuoteResponse;
 import com.dony.api.matching.dto.BidRejectRequest;
 import com.dony.api.matching.dto.BidRequest;
 import com.dony.api.matching.dto.BidResponse;
+import com.dony.api.matching.dto.ContactPhoneResponse;
 import com.dony.api.matching.dto.RefuseParcelRequest;
 import com.dony.api.payments.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -104,6 +105,18 @@ public class BidController {
     public ResponseEntity<List<BidResponse>> getMyBids() {
         String firebaseUid = requireFirebaseUid();
         return ResponseEntity.ok(bidService.getMyBids(firebaseUid));
+    }
+
+    /**
+     * Numéro de la contrepartie, demandé au moment où l'utilisateur veut appeler.
+     * Les réponses de colis ne portent qu'un booléen {@code *PhoneAvailable} : le
+     * numéro ne quitte le serveur que par cet appel, et chaque révélation est
+     * journalisée.
+     */
+    @GetMapping("/bids/{bidId}/contact")
+    public ResponseEntity<ContactPhoneResponse> getCounterpartyPhone(@PathVariable UUID bidId) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(bidService.getCounterpartyPhone(bidId, firebaseUid));
     }
 
     // ── Traveler accepts a bid ────────────────────────────────────────────────

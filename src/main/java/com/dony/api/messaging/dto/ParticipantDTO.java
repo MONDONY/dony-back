@@ -4,8 +4,12 @@ public record ParticipantDTO(
         String id,
         String name,
         String avatarUrl,
-        /** Téléphone révélé uniquement quand le deal est actif (sinon null). */
-        String phone,
+        /**
+         * L'interlocuteur est joignable par téléphone (deal actif) : le client peut
+         * afficher son bouton d'appel. Le numéro s'obtient au tap via
+         * {@code GET /bids/{bidId}/contact} — il ne voyage pas dans les conversations.
+         */
+        boolean phoneAvailable,
         /** Rôle relatif à la conversation : "Voyageur" | "Expéditeur". */
         String role,
         boolean kycVerified

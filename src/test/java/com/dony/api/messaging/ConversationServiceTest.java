@@ -34,7 +34,6 @@ class ConversationServiceTest {
     @Mock BidRepository bidRepository;
     @Mock AnnouncementRepository announcementRepository;
     @Mock StorageService storageService;
-    @Mock com.dony.api.auth.FirebaseContactService firebaseContact;
 
     ConversationService service;
 
@@ -46,7 +45,7 @@ class ConversationServiceTest {
     void setUp() {
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         service = new ConversationService(conversationRepository, firestoreService, userRepository, auditService,
-                bidRepository, announcementRepository, storageService, firebaseContact);
+                bidRepository, announcementRepository, storageService);
 
         UserEntity sender   = mockUser(senderId,   "Alice", "Martin", "uid-sender");
         UserEntity traveler = mockUser(travelerId, "Bob",   "Dupont", "uid-traveler");
@@ -80,32 +79,47 @@ class ConversationServiceTest {
     }
 
     @Test
-    void toResponse_revealsPhone_whenDealActive_andHidesWhenNot() {
+    void toResponse_marksPhoneAvailable_whenDealActive_andNotWhenNot() {
         UserEntity traveler = mock(UserEntity.class);
         when(traveler.getFirstName()).thenReturn("Bob");
         when(traveler.getLastName()).thenReturn("Dupont");
-        // Le numéro vient de Firebase, plus de la colonne users.phone_number
-        lenient().when(traveler.getFirebaseUid()).thenReturn("uid-traveler");
-        lenient().when(firebaseContact.getContact("uid-traveler")).thenReturn(
-                new com.dony.api.auth.FirebaseContactService.Contact("+33612345678", null));
         lenient().when(traveler.getKycStatus()).thenReturn(KycStatus.VERIFIED);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
 
         ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
 
-        // Deal actif (ACCEPTED) → téléphone révélé + rôle "Voyageur".
+        // Deal actif (ACCEPTED) → joignable + rôle "Voyageur".
         BidEntity acceptedBid = mockBid(BidStatus.ACCEPTED);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(acceptedBid));
         var active = service.toResponse(conv, senderId);
-        assertThat(active.otherParticipant().phone()).isEqualTo("+33612345678");
+        assertThat(active.otherParticipant().phoneAvailable()).isTrue();
         assertThat(active.otherParticipant().role()).isEqualTo("Voyageur");
         assertThat(active.otherParticipant().kycVerified()).isTrue();
 
-        // Deal non actif (PENDING) → téléphone masqué.
+        // Deal non actif (PENDING) → non joignable.
         BidEntity pendingBid = mockBid(BidStatus.PENDING);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(pendingBid));
         var pending = service.toResponse(conv, senderId);
-        assertThat(pending.otherParticipant().phone()).isNull();
+        assertThat(pending.otherParticipant().phoneAvailable()).isFalse();
+    }
+
+    @Test
+    void toResponse_neverReadsPhoneNumber_evenWhenDealActive() {
+        // Le numéro ne doit plus jamais transiter par une conversation : il s'obtient
+        // uniquement via GET /bids/{bidId}/contact, au tap sur « appeler ».
+        UserEntity traveler = mock(UserEntity.class);
+        lenient().when(traveler.getFirstName()).thenReturn("Bob");
+        lenient().when(traveler.getLastName()).thenReturn("Dupont");
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        // Construit hors du when(...) : imbriquer le stubbing lève UnfinishedStubbing.
+        BidEntity inTransit = mockBid(BidStatus.IN_TRANSIT);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(inTransit));
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.otherParticipant().phoneAvailable()).isTrue();
+        verify(traveler, never()).getFirebaseUid();
     }
 
     @Test
@@ -188,62 +202,4 @@ class ConversationServiceTest {
         return u;
     }
 
-    // ── Pré-chargement des coordonnées : une page = un aller-retour Firebase ──────
-
-    private BidEntity mockBidWithId(UUID id, BidStatus status) {
-        BidEntity b = mock(BidEntity.class);
-        lenient().when(b.getId()).thenReturn(id);
-        lenient().when(b.getStatus()).thenReturn(status);
-        return b;
-    }
-
-    @Test
-    void prefetchParticipantContacts_resolvesWholePageInOneCall() {
-        UUID otherBidId = UUID.randomUUID();
-        UUID otherUserId = UUID.randomUUID();
-        ConversationEntity c1 = new ConversationEntity(bidId, senderId, travelerId, "conv_1");
-        ConversationEntity c2 = new ConversationEntity(otherBidId, senderId, otherUserId, "conv_2");
-
-        // Les mocks sont construits avant les when(...) : les créer à l'intérieur
-        // imbriquerait le stubbing (UnfinishedStubbing).
-        List<BidEntity> revealingBids = List.of(
-                mockBidWithId(bidId, BidStatus.ACCEPTED),
-                mockBidWithId(otherBidId, BidStatus.IN_TRANSIT));
-        List<UserEntity> counterparties = List.of(
-                mockUser(travelerId, "Bob", "Dupont", "uid-traveler"),
-                mockUser(otherUserId, "Cara", "Ndiaye", "uid-other"));
-
-        when(bidRepository.findAllById(any())).thenReturn(revealingBids);
-        when(userRepository.findAllById(any())).thenReturn(counterparties);
-        when(firebaseContact.getContacts(any())).thenReturn(Map.of(
-                "uid-traveler", new com.dony.api.auth.FirebaseContactService.Contact("+221701111111", null),
-                "uid-other", new com.dony.api.auth.FirebaseContactService.Contact("+221702222222", null)));
-
-        var result = service.prefetchParticipantContacts(List.of(c1, c2), senderId);
-
-        assertThat(result).hasSize(2);
-        // Deux conversations, un seul appel réseau, aucun appel unitaire.
-        verify(firebaseContact, times(1)).getContacts(any());
-        verify(firebaseContact, never()).getContact(anyString());
-    }
-
-    @Test
-    void prefetchParticipantContacts_noActiveDeal_hitsNoFirebase() {
-        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_1");
-        List<BidEntity> pending = List.of(mockBidWithId(bidId, BidStatus.PENDING));
-        when(bidRepository.findAllById(any())).thenReturn(pending);
-
-        var result = service.prefetchParticipantContacts(List.of(conv), senderId);
-
-        // Aucun numéro n'est révélable : ni appel Firebase, ni requête sur les users.
-        assertThat(result).isEmpty();
-        verifyNoInteractions(firebaseContact);
-        verify(userRepository, never()).findAllById(any());
-    }
-
-    @Test
-    void prefetchParticipantContacts_emptyPage_shortCircuits() {
-        assertThat(service.prefetchParticipantContacts(List.of(), senderId)).isEmpty();
-        verifyNoInteractions(firebaseContact, bidRepository);
-    }
 }
