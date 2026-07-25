@@ -123,6 +123,26 @@ class ConversationServiceTest {
     }
 
     @Test
+    void toResponse_marksPhoneUnavailable_whenParticipantHidesNumber() {
+        // Préférence « ne pas révéler mon numéro » : le bouton d'appel disparaît du
+        // header du chat, mais la conversation elle-même reste ouverte — c'est
+        // précisément le canal que l'utilisateur a choisi de garder.
+        UserEntity traveler = mock(UserEntity.class);
+        lenient().when(traveler.getFirstName()).thenReturn("Bob");
+        lenient().when(traveler.getLastName()).thenReturn("Dupont");
+        when(traveler.isHidePhoneNumber()).thenReturn(true);
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        BidEntity accepted = mockBid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(bidId)).thenReturn(Optional.of(accepted));
+        ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
+
+        var response = service.toResponse(conv, senderId);
+
+        assertThat(response.otherParticipant().phoneAvailable()).isFalse();
+        assertThat(response.otherParticipant().name()).isEqualTo("Bob Dupont");
+    }
+
+    @Test
     void toResponse_mergesFirestoreLastMessage_whenMetaPresent() {
         ConversationEntity conv = new ConversationEntity(bidId, senderId, travelerId, "conv_" + bidId);
         when(bidRepository.findById(bidId)).thenReturn(Optional.empty());

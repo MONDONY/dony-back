@@ -75,7 +75,8 @@ public class AuthController {
     @PutMapping("/me/privacy-settings")
     public ResponseEntity<Void> updatePrivacySettings(
             @Valid @RequestBody com.dony.api.auth.dto.PrivacySettingsRequest request) {
-        authService.updatePrivacySettings(requireFirebaseUid(), request.contactKycOnly());
+        authService.updatePrivacySettings(requireFirebaseUid(), request.contactKycOnly(),
+                request.hidePhoneNumber());
         return ResponseEntity.noContent().build();
     }
 

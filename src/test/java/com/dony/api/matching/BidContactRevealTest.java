@@ -219,6 +219,66 @@ class BidContactRevealTest {
                 .isFalse();
     }
 
+    // ── Préférence « ne pas révéler mon numéro » ─────────────────────────────
+
+    @Test
+    @DisplayName("voyageur ayant masqué son numéro → 403 phone-hidden-by-user, Firebase non interrogé")
+    void getCounterpartyPhone_counterpartyHidesNumber_forbidden() {
+        traveler.setHidePhoneNumber(true);
+        BidEntity accepted = bid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(accepted.getId())).thenReturn(Optional.of(accepted));
+        when(announcementRepository.findById(announcement.getId())).thenReturn(Optional.of(announcement));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(userRepository.findById(traveler.getId())).thenReturn(Optional.of(traveler));
+
+        assertThatThrownBy(() -> bidService.getCounterpartyPhone(accepted.getId(), "uid-sender"))
+                .isInstanceOf(DonyBusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((DonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(((DonyBusinessException) e).getErrorCode()).isEqualTo("phone-hidden-by-user");
+                });
+        // Le refus tombe avant tout accès au numéro, et rien n'est journalisé
+        // puisque aucune coordonnée n'a été consultée.
+        verifyNoInteractions(firebaseContact, auditService);
+    }
+
+    @Test
+    @DisplayName("le masquage est unilatéral : l'autre partie reste joignable")
+    void getCounterpartyPhone_hidingIsOneWay() {
+        // L'expéditeur masque son numéro ; il garde le droit d'appeler le voyageur.
+        sender.setHidePhoneNumber(true);
+        BidEntity accepted = bid(BidStatus.ACCEPTED);
+        when(bidRepository.findById(accepted.getId())).thenReturn(Optional.of(accepted));
+        when(announcementRepository.findById(announcement.getId())).thenReturn(Optional.of(announcement));
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(userRepository.findById(traveler.getId())).thenReturn(Optional.of(traveler));
+        when(firebaseContact.getContact("uid-traveler"))
+                .thenReturn(new FirebaseContactService.Contact("+221701234567", null));
+
+        assertThat(bidService.getCounterpartyPhone(accepted.getId(), "uid-sender").phoneNumber())
+                .isEqualTo("+221701234567");
+    }
+
+    @Test
+    @DisplayName("le booléen des listes suit la préférence, colis accepté compris")
+    void toResponse_hiddenNumber_marksUnavailable() {
+        traveler.setHidePhoneNumber(true);
+        BidEntity accepted = bid(BidStatus.ACCEPTED);
+        when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
+        when(bidRepository.findBySenderId(sender.getId())).thenReturn(List.of(accepted));
+        when(announcementRepository.findById(announcement.getId())).thenReturn(Optional.of(announcement));
+        when(userRepository.findById(traveler.getId())).thenReturn(Optional.of(traveler));
+
+        var result = bidService.getMyBids("uid-sender").get(0);
+
+        assertThat(result.travelerPhoneAvailable())
+                .as("bouton d'appel masqué chez l'expéditeur")
+                .isFalse();
+        assertThat(result.senderPhoneAvailable())
+                .as("l'expéditeur, lui, n'a rien masqué")
+                .isTrue();
+    }
+
     @Test
     @DisplayName("compte sans numéro côté Firebase → réponse à null, pas d'erreur")
     void getCounterpartyPhone_noNumberOnAccount_returnsNull() {
