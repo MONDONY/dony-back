@@ -28,7 +28,6 @@ import com.dony.api.cancellation.CancellationScope;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -64,9 +63,6 @@ public class BidService {
     private final PromoService promoService;
     private final StorageService storageService;
     private final BidPhotoService bidPhotoService;
-
-    @Value("${dony.kyc.enforce:true}")
-    private boolean enforceKyc;
 
     private final FirebaseContactService firebaseContact;
 
@@ -176,11 +172,11 @@ public class BidService {
 
         UserEntity sender = findUserByFirebaseUid(firebaseUid);
 
-        if (enforceKyc && sender.getKycStatus() != KycStatus.VERIFIED) {
-            throw new DonyBusinessException(
-                    HttpStatus.FORBIDDEN, "kyc-not-verified", "KYC Not Verified",
-                    "Vous devez compléter votre vérification d'identité pour effectuer cette action");
-        }
+        // Pas de garde KYC global ici : c'est le voyageur qui décide, par son réglage
+        // « profils vérifiés uniquement », s'il accepte les offres de profils non
+        // vérifiés (contrôle plus bas, une fois le voyageur connu). dony.kyc.enforce
+        // continue de gouverner la publication d'annonces
+        // (AnnouncementService#assertCanPublish), où personne d'autre ne consent.
 
         if (!sender.getRoles().contains(Role.SENDER)) {
             sender.getRoles().add(Role.SENDER);
@@ -236,8 +232,11 @@ public class BidService {
                     "Annonce introuvable");
         }
 
-        // Filtre contact KYC : seuls les senders vérifiés passent si la cible l'exige.
-        // On ne charge le voyageur que si nécessaire (sender non vérifié).
+        // Seule garde KYC de la création d'offre : le voyageur décide. Tant qu'il
+        // laisse « profils vérifiés uniquement » actif (défaut de tous les comptes),
+        // seuls les expéditeurs vérifiés peuvent lui écrire ; s'il le désactive, il
+        // accepte sciemment les profils non vérifiés et l'app l'en avertit avant.
+        // On ne charge le voyageur que si nécessaire (expéditeur non vérifié).
         if (sender.getKycStatus() != KycStatus.VERIFIED) {
             UserEntity traveler = userRepository.findById(travelerId).orElse(null);
             // traveler null (suppression/race) => on laisse passer : la FK garantit normalement sa présence.

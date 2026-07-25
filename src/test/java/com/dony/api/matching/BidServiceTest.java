@@ -533,24 +533,61 @@ class BidServiceTest {
             assertThat(sender.getRoles()).contains(Role.SENDER);
         }
 
+        /**
+         * Le voyageur décide seul, et sans lui la question ne se pose pas : il n'y a
+         * plus de garde KYC de plateforme sur la création d'offre. Un expéditeur non
+         * vérifié doit donc être refusé par le réglage du voyageur, pas par
+         * dony.kyc.enforce, qui ne gouverne plus que la publication d'annonces.
+         */
         @Test
-        @DisplayName("enforceKyc=true + KYC non vérifié → 403 FORBIDDEN")
-        void createBid_kycEnforced_notVerified_throwsForbidden() throws Exception {
-            Field enfField = BidService.class.getDeclaredField("enforceKyc");
-            enfField.setAccessible(true);
-            enfField.set(bidService, true);
-
+        @DisplayName("expéditeur non vérifié + voyageur exigeant des profils vérifiés → 403 contact-kyc-required")
+        void createBid_senderNotVerified_travelerRequiresVerified_throwsForbidden() {
             UserEntity sender = buildSender();
-            // kycStatus is null by default → null != KycStatus.VERIFIED → KYC check fires
+            // kycStatus null par défaut → != VERIFIED
+            UserEntity traveler = new UserEntity();
+            setId(traveler, TRAVELER_ID);
+            traveler.setContactKycOnly(true);
+            AnnouncementEntity announcement = buildAnnouncement();
 
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID,
                     buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
-                            .isEqualTo("kyc-not-verified"));
+                            .isEqualTo("contact-kyc-required"));
+        }
+
+        @Test
+        @DisplayName("expéditeur non vérifié + voyageur ouvert aux non vérifiés → offre créée")
+        void createBid_senderNotVerified_travelerAcceptsUnverified_createsBid() {
+            UserEntity sender = buildSender();
+            // kycStatus null par défaut → l'expéditeur n'est PAS vérifié.
+            UserEntity traveler = new UserEntity();
+            setId(traveler, TRAVELER_ID);
+            traveler.setContactKycOnly(false); // le voyageur a levé l'exigence
+            AnnouncementEntity announcement = buildAnnouncement();
+
+            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
+                    .thenReturn(false);
+            when(bidRepository.save(any(BidEntity.class))).thenAnswer(inv -> {
+                BidEntity b = inv.getArgument(0);
+                setId(b, BID_ID);
+                return b;
+            });
+
+            BidResponse response = bidService.createBid(
+                    ANNOUNCEMENT_ID, SENDER_UID,
+                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest);
+
+            assertThat(response).isNotNull();
+            verify(bidRepository).save(any(BidEntity.class));
         }
 
         @Test
