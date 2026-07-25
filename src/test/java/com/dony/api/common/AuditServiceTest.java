@@ -81,6 +81,46 @@ class AuditServiceTest {
         assertThat(saved.getEntityType()).isEqualTo("SYSTEM");
     }
 
+    @Test
+    @DisplayName("log() → masque la PII du payload, garde IDs/montants/statuts")
+    void log_redactsPii_keepsNonPii() {
+        when(auditLogRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        // PII → doit être masquée
+        payload.put("fullName", "Awa Diop");
+        payload.put("recipientPhone", "+221701234567");
+        payload.put("email", "awa@example.com");
+        payload.put("disclaimerSignedIp", "196.1.2.3");
+        payload.put("label", "12 rue de la Paix");
+        payload.put("city", "Dakar");
+        payload.put("latitude", 14.69);
+        // Non-PII → doit rester
+        payload.put("recipientId", "rid-123");   // contient "ip" mais pas PII
+        payload.put("bidId", "bid-9");
+        payload.put("amount", 42);
+        payload.put("status", "ACCEPTED");
+
+        auditService.log("BID", UUID.randomUUID(), "BID_CREATED", UUID.randomUUID(), payload);
+
+        ArgumentCaptor<AuditLogEntity> captor = ArgumentCaptor.forClass(AuditLogEntity.class);
+        verify(auditLogRepository).save(captor.capture());
+        Map<String, Object> saved = captor.getValue().getPayload();
+
+        assertThat(saved).containsEntry("fullName", AuditService.REDACTED);
+        assertThat(saved).containsEntry("recipientPhone", AuditService.REDACTED);
+        assertThat(saved).containsEntry("email", AuditService.REDACTED);
+        assertThat(saved).containsEntry("disclaimerSignedIp", AuditService.REDACTED);
+        assertThat(saved).containsEntry("label", AuditService.REDACTED);
+        assertThat(saved).containsEntry("city", AuditService.REDACTED);
+        assertThat(saved).containsEntry("latitude", AuditService.REDACTED);
+        // Non-PII intacts
+        assertThat(saved).containsEntry("recipientId", "rid-123");
+        assertThat(saved).containsEntry("bidId", "bid-9");
+        assertThat(saved).containsEntry("amount", 42);
+        assertThat(saved).containsEntry("status", "ACCEPTED");
+    }
+
     private <T> T any() {
         return org.mockito.ArgumentMatchers.any();
     }

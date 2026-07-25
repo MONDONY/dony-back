@@ -1,7 +1,9 @@
 package com.dony.api.addressbook.recipient;
 
 import com.dony.api.common.BaseEntity;
+import com.dony.api.common.EncryptedStringConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
@@ -16,16 +18,22 @@ public class RecipientEntity extends BaseEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @Column(name = "full_name", nullable = false, length = 100)
+    // PII destinataire (tiers) chiffrée au repos (AES-256-GCM). Carnet d'adresses
+    // consulté par owner_id/id uniquement — ces colonnes ne sont jamais filtrées
+    // ni uniques → chiffrement randomisé sûr.
+    @Column(name = "full_name", nullable = false, length = 255)
+    @Convert(converter = EncryptedStringConverter.class)
     private String fullName;
 
     @Column(name = "relationship", length = 50)
     private String relationship;
 
-    @Column(name = "phone_e164", nullable = false, length = 20)
+    @Column(name = "phone_e164", nullable = false, length = 255)
+    @Convert(converter = EncryptedStringConverter.class)
     private String phoneE164;
 
-    @Column(name = "whatsapp_e164", length = 20)
+    @Column(name = "whatsapp_e164", length = 255)
+    @Convert(converter = EncryptedStringConverter.class)
     private String whatsappE164;
 
     @Column(name = "street", length = 255)
