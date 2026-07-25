@@ -622,7 +622,8 @@ public class AnnouncementService {
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
                         kycVerified,
-                        storageService.avatarUrl(traveler.getAvatarUrl()))
+                        storageService.avatarUrl(traveler.getAvatarUrl()),
+                        !traveler.isContactKycOnly())
                 : null;
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> gridItems =
@@ -775,7 +776,8 @@ public class AnnouncementService {
                 user.getId(),
                 buildDisplayName(user),
                 null, null, false, user.isProAccount(), kycVerified,
-                user.getAvatarUrl());
+                user.getAvatarUrl(),
+                !user.isContactKycOnly());
 
         List<com.dony.api.matching.dto.AnnouncementPriceGridItemResponse> updatedGridItems =
                 saved.getPricingMode() == PricingMode.MIXED

@@ -85,7 +85,8 @@ public class AnnouncementSearchMapper {
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
                         kycVerified,
-                        storageService.avatarUrl(traveler.getAvatarUrl()))
+                        storageService.avatarUrl(traveler.getAvatarUrl()),
+                        !traveler.isContactKycOnly())
                 : null;
         long bidsCount = bidCountMap.getOrDefault(entity.getId(), 0L);
         List<AnnouncementPriceGridItemResponse> gridItems =
@@ -139,7 +140,8 @@ public class AnnouncementSearchMapper {
                         traveler.isKiloPro(),
                         traveler.isProAccount(),
                         kycVerified,
-                        storageService.avatarUrl(traveler.getAvatarUrl()))
+                        storageService.avatarUrl(traveler.getAvatarUrl()),
+                        !traveler.isContactKycOnly())
                 : null;
         long bidsCount = bidRepository.countVisibleByAnnouncementId(entity.getId());
         List<AnnouncementPriceGridItemResponse> gridItems =
