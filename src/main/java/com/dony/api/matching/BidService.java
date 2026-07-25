@@ -425,7 +425,11 @@ public class BidService {
      * l'appelant est partie au colis, le statut autorise la révélation, et l'accès est
      * journalisé — on peut donc dire qui a obtenu le numéro de qui, et quand.
      */
-    @Transactional(readOnly = true)
+    // Transaction en écriture, et non readOnly : la révélation journalise un accès
+    // dans audit_log. AuditService.log rejoint la transaction de l'appelant, donc un
+    // readOnly ferait échouer l'INSERT ("cannot execute INSERT in a read-only
+    // transaction") alors que la lecture, elle, aurait réussi.
+    @Transactional
     public ContactPhoneResponse getCounterpartyPhone(UUID bidId, String firebaseUid) {
         BidEntity bid = findBid(bidId);
         AnnouncementEntity announcement = findAnnouncement(bid.getAnnouncementId());

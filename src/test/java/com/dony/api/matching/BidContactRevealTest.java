@@ -200,6 +200,26 @@ class BidContactRevealTest {
     }
 
     @Test
+    @DisplayName("la révélation tourne en transaction d'écriture (elle journalise)")
+    void getCounterpartyPhone_isNotReadOnlyTransaction() throws Exception {
+        // Régression : la méthode était @Transactional(readOnly = true) alors qu'elle
+        // insère dans audit_log. PostgreSQL refuse alors l'INSERT (« cannot execute
+        // INSERT in a read-only transaction ») et l'appel échoue en 500, après avoir
+        // pourtant lu le numéro.
+        //
+        // Aucun test unitaire ne peut attraper ça — AuditService y est un mock, il ne
+        // touche aucune transaction — et H2 (profil test) n'applique pas readOnly
+        // comme PostgreSQL. D'où cette vérification directe de l'annotation.
+        var method = BidService.class.getMethod("getCounterpartyPhone", UUID.class, String.class);
+        var tx = method.getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+
+        assertThat(tx).as("getCounterpartyPhone doit être transactionnelle").isNotNull();
+        assertThat(tx.readOnly())
+                .as("readOnly interdit : la méthode écrit une entrée audit_log")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("compte sans numéro côté Firebase → réponse à null, pas d'erreur")
     void getCounterpartyPhone_noNumberOnAccount_returnsNull() {
         BidEntity accepted = bid(BidStatus.COMPLETED);
