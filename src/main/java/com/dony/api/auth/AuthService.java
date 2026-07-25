@@ -201,11 +201,17 @@ public class AuthService {
                         "User Not Found",
                         "Utilisateur introuvable"
                 ));
-        return new com.dony.api.auth.dto.PrivacySettingsResponse(user.isContactKycOnly());
+        return new com.dony.api.auth.dto.PrivacySettingsResponse(
+                user.isContactKycOnly(), user.isHidePhoneNumber());
     }
 
+    /**
+     * @param hidePhoneNumber {@code null} = préférence laissée inchangée (client
+     *        antérieur à ce champ), et non « remettre à false ».
+     */
     @Transactional
-    public void updatePrivacySettings(String firebaseUid, boolean contactKycOnly) {
+    public void updatePrivacySettings(String firebaseUid, boolean contactKycOnly,
+                                      Boolean hidePhoneNumber) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
                 .orElseThrow(() -> new DonyBusinessException(
                         HttpStatus.NOT_FOUND,
@@ -214,7 +220,20 @@ public class AuthService {
                         "Utilisateur introuvable"
                 ));
         user.setContactKycOnly(contactKycOnly);
+        boolean hideChanged = hidePhoneNumber != null
+                && hidePhoneNumber != user.isHidePhoneNumber();
+        if (hidePhoneNumber != null) {
+            user.setHidePhoneNumber(hidePhoneNumber);
+        }
         userRepository.save(user);
+
+        // Masquer son numéro retire un canal de contact à la contrepartie d'un deal
+        // en cours : on garde une trace datée de la décision, comme pour le
+        // consentement analytics. Aucune PII dans le payload.
+        if (hideChanged) {
+            auditService.log("USER", user.getId(), "PHONE_VISIBILITY_UPDATED", user.getId(),
+                    Map.of("hidePhoneNumber", hidePhoneNumber));
+        }
     }
 
     @Transactional(readOnly = true)

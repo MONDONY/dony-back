@@ -597,6 +597,73 @@ class AuthServiceTest {
         }
     }
 
+    // ─── Réglages de confidentialité ───────────────────────────────────────────
+
+    @Nested
+    @DisplayName("privacySettings()")
+    class PrivacySettingsTests {
+
+        @Test
+        @DisplayName("le masquage du numéro est enregistré et journalisé")
+        void updatePrivacySettings_hidePhone_persistsAndAudits() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            authService.updatePrivacySettings(FIREBASE_UID, true, true);
+
+            assertThat(user.isHidePhoneNumber()).isTrue();
+            verify(userRepository).save(user);
+            verify(auditService).log(eq("USER"), eq(user.getId()), eq("PHONE_VISIBILITY_UPDATED"),
+                    eq(user.getId()), argThat(p -> Boolean.TRUE.equals(p.get("hidePhoneNumber"))));
+        }
+
+        /**
+         * Une app antérieure à ce champ n'envoie que {@code contactKycOnly} : le null
+         * qui en résulte doit laisser la préférence intacte. La remettre à false
+         * rendrait le numéro à nouveau visible sans que l'utilisateur l'ait demandé,
+         * simplement parce qu'il n'a pas mis son app à jour.
+         */
+        @Test
+        @DisplayName("hidePhoneNumber null laisse la préférence inchangée, sans entrée d'audit")
+        void updatePrivacySettings_nullHidePhone_keepsPreference() {
+            UserEntity user = buildUser();
+            user.setHidePhoneNumber(true);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            authService.updatePrivacySettings(FIREBASE_UID, false, null);
+
+            assertThat(user.isHidePhoneNumber()).isTrue();
+            assertThat(user.isContactKycOnly()).isFalse();
+            verify(auditService, never()).log(any(), any(), eq("PHONE_VISIBILITY_UPDATED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("valeur identique à l'existante : pas de doublon dans audit_log")
+        void updatePrivacySettings_unchangedHidePhone_doesNotAudit() {
+            UserEntity user = buildUser();
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            authService.updatePrivacySettings(FIREBASE_UID, true, false);
+
+            assertThat(user.isHidePhoneNumber()).isFalse();
+            verify(auditService, never()).log(any(), any(), eq("PHONE_VISIBILITY_UPDATED"), any(), any());
+        }
+
+        @Test
+        @DisplayName("getPrivacySettings renvoie les deux préférences")
+        void getPrivacySettings_returnsBothFlags() {
+            UserEntity user = buildUser();
+            user.setContactKycOnly(false);
+            user.setHidePhoneNumber(true);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+
+            var resp = authService.getPrivacySettings(FIREBASE_UID);
+
+            assertThat(resp.contactKycOnly()).isFalse();
+            assertThat(resp.hidePhoneNumber()).isTrue();
+        }
+    }
+
     // ─── toResponse ────────────────────────────────────────────────────────────
 
     @Nested

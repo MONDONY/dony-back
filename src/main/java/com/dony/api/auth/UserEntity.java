@@ -55,6 +55,14 @@ public class UserEntity extends BaseEntity {
     @Column(name = "contact_kyc_only", nullable = false)
     private boolean contactKycOnly = true;
 
+    /**
+     * L'utilisateur refuse que son numéro soit révélé à sa contrepartie, même une
+     * fois l'offre acceptée. Il reste joignable par la messagerie dony, seul canal
+     * de contact dans ce cas. Opt-in explicite : false pour tous les comptes.
+     */
+    @Column(name = "hide_phone_number", nullable = false)
+    private boolean hidePhoneNumber = false;
+
     @Column(name = "fcm_token", length = 512)
     private String fcmToken;
 
@@ -219,6 +227,9 @@ public class UserEntity extends BaseEntity {
 
     public boolean isContactKycOnly() { return contactKycOnly; }
     public void setContactKycOnly(boolean contactKycOnly) { this.contactKycOnly = contactKycOnly; }
+
+    public boolean isHidePhoneNumber() { return hidePhoneNumber; }
+    public void setHidePhoneNumber(boolean hidePhoneNumber) { this.hidePhoneNumber = hidePhoneNumber; }
 
     public String getFcmToken() { return fcmToken; }
     public void setFcmToken(String fcmToken) { this.fcmToken = fcmToken; }

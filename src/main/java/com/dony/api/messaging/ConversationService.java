@@ -276,8 +276,11 @@ public class ConversationService {
             BidEntity bid = bidOpt.get();
             tripWeightKg = bid.getWeightKg() != null ? bid.getWeightKg().doubleValue() : null;
             bidStatus    = mapBidStatus(bid.getStatus());
-            // Téléphone révélé seulement quand le deal est actif (même règle que BidService).
-            revealPhone  = PHONE_VISIBLE_STATUSES.contains(bid.getStatus());
+            // Téléphone révélé seulement quand le deal est actif (même règle que
+            // BidService), et jamais si l'intéressé a masqué son numéro dans ses
+            // réglages de confidentialité — le chat reste alors son seul canal.
+            revealPhone  = PHONE_VISIBLE_STATUSES.contains(bid.getStatus())
+                    && other != null && !other.isHidePhoneNumber();
 
             Optional<AnnouncementEntity> annOpt = announcementRepository.findById(bid.getAnnouncementId());
             if (annOpt.isPresent()) {

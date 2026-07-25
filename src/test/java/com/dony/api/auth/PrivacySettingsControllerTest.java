@@ -38,20 +38,41 @@ class PrivacySettingsControllerTest {
     @Test
     void GET_privacySettings_retourne200() throws Exception {
         when(authService.getPrivacySettings(FIREBASE_UID))
-                .thenReturn(new PrivacySettingsResponse(true));
+                .thenReturn(new PrivacySettingsResponse(true, true));
 
         mvc.perform(get("/auth/me/privacy-settings")
                         .with(authentication(auth()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.contactKycOnly").value(true));
+                .andExpect(jsonPath("$.contactKycOnly").value(true))
+                .andExpect(jsonPath("$.hidePhoneNumber").value(true));
 
         verify(authService).getPrivacySettings(FIREBASE_UID);
     }
 
     @Test
     void PUT_privacySettings_retourne204_etAppelleService() throws Exception {
-        doNothing().when(authService).updatePrivacySettings(FIREBASE_UID, false);
+        doNothing().when(authService).updatePrivacySettings(FIREBASE_UID, false, true);
+
+        mvc.perform(put("/auth/me/privacy-settings")
+                        .with(authentication(auth()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"contactKycOnly": false, "hidePhoneNumber": true}
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(authService).updatePrivacySettings(FIREBASE_UID, false, true);
+    }
+
+    /**
+     * Une version de l'app antérieure à {@code hidePhoneNumber} n'envoie que
+     * {@code contactKycOnly} : la requête doit rester valide et le champ absent
+     * arriver à null au service, qui laisse alors la préférence intacte.
+     */
+    @Test
+    void PUT_privacySettings_sansHidePhoneNumber_passeNullAuService() throws Exception {
+        doNothing().when(authService).updatePrivacySettings(FIREBASE_UID, false, null);
 
         mvc.perform(put("/auth/me/privacy-settings")
                         .with(authentication(auth()))
@@ -61,7 +82,7 @@ class PrivacySettingsControllerTest {
                                 """))
                 .andExpect(status().isNoContent());
 
-        verify(authService).updatePrivacySettings(FIREBASE_UID, false);
+        verify(authService).updatePrivacySettings(FIREBASE_UID, false, null);
     }
 
     @Test

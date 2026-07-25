@@ -453,6 +453,16 @@ public class BidService {
                 .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND, "user-not-found",
                         "Not Found", "Utilisateur introuvable"));
 
+        // Réglage de confidentialité de la contrepartie : elle a choisi de n'être
+        // joignable que par la messagerie dony. Vérifié ici, et pas seulement via le
+        // booléen des DTO de liste, car cet endpoint est la seule autorité — un
+        // client qui appellerait l'URL directement ne doit pas obtenir le numéro.
+        if (counterparty.isHidePhoneNumber()) {
+            throw new DonyBusinessException(HttpStatus.FORBIDDEN, "phone-hidden-by-user",
+                    "Phone Hidden",
+                    "Ce membre préfère échanger par la messagerie dony");
+        }
+
         String phone = firebaseContact.getContact(counterparty.getFirebaseUid()).phoneNumber();
 
         // Payload sans PII : le numéro lui-même ne doit pas atterrir dans audit_log.
@@ -949,9 +959,15 @@ public class BidService {
      * Le numéro de cet utilisateur est-il communicable pour ce statut ? Ne lit rien
      * dans Firebase : le client reçoit un booléen pour décider d'afficher son bouton
      * d'appel, et ne demande le numéro qu'au tap (cf. {@link #getCounterpartyPhone}).
+     *
+     * <p>Faux aussi lorsque l'utilisateur a masqué son numéro dans ses réglages de
+     * confidentialité : le bouton d'appel disparaît alors chez la contrepartie, mais
+     * la messagerie dony reste ouverte. Le booléen et {@link #getCounterpartyPhone}
+     * appliquent la même règle — le second est l'autorité, celui-ci n'est qu'un
+     * indice d'affichage.
      */
     private static boolean phoneAvailableForStatus(UserEntity user, BidStatus status) {
-        return user != null && PHONE_VISIBLE_STATUSES.contains(status);
+        return user != null && !user.isHidePhoneNumber() && PHONE_VISIBLE_STATUSES.contains(status);
     }
 
     BidResponse toResponse(BidEntity bid, UserEntity sender, UUID callerId) {
