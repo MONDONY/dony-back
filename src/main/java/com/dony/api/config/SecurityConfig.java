@@ -69,6 +69,12 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Exception au permitAll sur /auth/** ci-dessous, déclarée AVANT lui car
+                // Spring Security applique la première règle qui matche. Cet endpoint
+                // MUTE le compte (il y rattache une adresse) : l'authentification doit
+                // être portée par la chaîne de sécurité, pas par une garde écrite dans
+                // le controller, qu'un refactor pourrait retirer sans aucun signal.
+                .requestMatchers("/auth/email-otp/attach").authenticated()
                 .requestMatchers(
                     "/auth/**",
                     "/actuator/health",

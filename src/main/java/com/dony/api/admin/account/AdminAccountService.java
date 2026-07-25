@@ -48,15 +48,18 @@ public class AdminAccountService {
     private final FirebaseAuth firebaseAuth;
     private final AuditService auditService;
     private final AdminAuthService adminAuthService;
+    private final com.dony.api.auth.FirebaseContactService firebaseContact;
 
     public AdminAccountService(AdminUserRepository adminUserRepository,
                                 @Nullable FirebaseAuth firebaseAuth,
                                 AuditService auditService,
-                                AdminAuthService adminAuthService) {
+                                AdminAuthService adminAuthService,
+                                com.dony.api.auth.FirebaseContactService firebaseContact) {
         this.adminUserRepository = adminUserRepository;
         this.firebaseAuth = firebaseAuth;
         this.auditService = auditService;
         this.adminAuthService = adminAuthService;
+        this.firebaseContact = firebaseContact;
     }
 
     // -------------------------------------------------------------------------
@@ -319,6 +322,9 @@ public class AdminAccountService {
                 UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
                         .setEmail(syntheticEmail(req.login()));
                 requireFirebase().updateUser(updateRequest);
+                // Un admin peut aussi être utilisateur dony (même firebase_uid) : sans cette
+                // purge, FirebaseContactService servirait l'ancienne adresse jusqu'à 5 min.
+                firebaseContact.evict(entity.getFirebaseUid());
             } catch (FirebaseAuthException e) {
                 log.error("Firebase updateUser (email) failed for adminId={}: {}", adminId, e.getMessage());
                 throw new DonyBusinessException(

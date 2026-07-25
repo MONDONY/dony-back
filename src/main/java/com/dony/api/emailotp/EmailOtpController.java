@@ -52,8 +52,9 @@ public class EmailOtpController {
     }
 
     /**
-     * Le préfixe /auth/** est en permitAll côté SecurityConfig : cet endroit est donc
-     * le seul à pouvoir exiger l'authentification, comme le fait déjà AuthController.
+     * L'authentification est exigée par SecurityConfig, qui déclare
+     * {@code /auth/email-otp/attach} en {@code .authenticated()} avant le permitAll du
+     * préfixe. Cette garde reste en second rideau et sert surtout à extraire l'UID.
      */
     private String requireFirebaseUid() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
