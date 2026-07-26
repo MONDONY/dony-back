@@ -14,15 +14,11 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Map;
-import java.util.Set;
 
 @Component
 public class MobileMoneyBidAcceptedListener {
 
     private static final Logger log = LoggerFactory.getLogger(MobileMoneyBidAcceptedListener.class);
-
-    private static final Set<PaymentMethod> MM_PROVIDERS =
-            Set.of(PaymentMethod.WAVE, PaymentMethod.ORANGE_MONEY);
 
     private final MobileMoneyPaymentService mmPaymentService;
     private final BidRepository bidRepository;
@@ -46,7 +42,10 @@ public class MobileMoneyBidAcceptedListener {
         }
 
         PaymentMethod pm = bid.getPaymentMethod();
-        if (!MM_PROVIDERS.contains(pm)) {
+        // Même prédicat que celui porté par BidAcceptedEvent.isMobileMoney() : les deux
+        // doivent s'accorder, sinon l'expéditeur perd « Demande acceptée ! » sans recevoir
+        // « Payez votre trajet » en échange.
+        if (pm == null || !pm.isMobileMoney()) {
             return;
         }
 
@@ -65,6 +64,16 @@ public class MobileMoneyBidAcceptedListener {
         } catch (Exception e) {
             log.error("MobileMoneyBidAcceptedListener: failed to initiate MM for bidId={}",
                     event.getBidId(), e);
+            // Filet indispensable : le push générique « Demande acceptée ! » a été supprimé
+            // en amont parce que celui-ci était censé le remplacer. Sans ce repli, un échec
+            // d'initiation (passerelle non déployée, gateway injoignable) laisserait
+            // l'expéditeur sans AUCUNE notification alors que son colis vient d'être accepté.
+            notificationDispatcher.notifyUser(
+                    event.getSenderId(),
+                    "Demande acceptée !",
+                    "Votre colis est accepté. Ouvrez l'application pour régler le paiement.",
+                    Map.of("type", "BID_ACCEPTED", "bidId", event.getBidId().toString())
+            );
         }
     }
 }

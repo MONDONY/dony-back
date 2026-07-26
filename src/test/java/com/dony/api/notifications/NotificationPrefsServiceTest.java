@@ -134,6 +134,27 @@ class NotificationPrefsServiceTest {
      * Ils suivent désormais la même préférence que les alertes corridor, l'utilisateur
      * y voyant la même chose — « on me signale un nouveau trajet ».
      */
+    /**
+     * Relance et « négociation terminée » partagent le type générique {@code negotiation},
+     * qui n'était pas dans la table : {@code isAllowed} renvoyant true pour tout type inconnu,
+     * aucune préférence ne pouvait les couper.
+     */
+    @Test
+    void isAllowed_genericNegotiationType_followsNegotiationsPref() {
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(buildEntity(true, false, true, true, false)));
+        assertThat(service.isAllowed(USER_ID, "negotiation")).isFalse();
+    }
+
+    /** Famille « quelqu'un répond à mon colis » : même interrupteur que les offres reçues. */
+    @Test
+    void isAllowed_bidFamilyTypes_followBidsPref() {
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(buildEntity(false, true, true, true, false)));
+        assertThat(service.isAllowed(USER_ID, "TRAVELER_INVITE")).isFalse();
+        assertThat(service.isAllowed(USER_ID, "CONFIRMATION_CODE_READY")).isFalse();
+        assertThat(service.isAllowed(USER_ID, "DELIVERY_NOSHOW_REPORTED")).isFalse();
+        assertThat(service.isAllowed(USER_ID, "MM_PAYMENT_PENDING")).isFalse();
+    }
+
     @Test
     void isAllowed_travelerNewAnnouncement_followsCorridorAlertsPref() {
         NotificationPrefsEntity e = buildEntity(true, true, true, true, false);

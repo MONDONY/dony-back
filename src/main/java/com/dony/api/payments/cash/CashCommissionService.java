@@ -725,7 +725,8 @@ public class CashCommissionService {
         bidRepo.save(bid);
 
         events.publishEvent(new BidAcceptedEvent(
-                bid.getId(), bid.getSenderId(), travelerId, bid.getAnnouncementId()));
+                bid.getId(), bid.getSenderId(), travelerId, bid.getAnnouncementId(),
+                bid.getPaymentMethod() != null && bid.getPaymentMethod().isMobileMoney()));
         log.info("Cash bid {} finalized as ACCEPTED for traveler {}", bid.getId(), travelerId);
     }
 

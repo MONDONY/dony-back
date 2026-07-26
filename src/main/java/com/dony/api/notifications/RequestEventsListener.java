@@ -119,6 +119,10 @@ public class RequestEventsListener {
                 "packageRequestId", e.packageRequestId().toString()
             )
         );
+        // Côté expéditeur : in-app seulement. Cet événement suit immédiatement SON paiement,
+        // qu'il vient de confirmer dans l'application — l'écran de succès le lui a déjà dit.
+        // Le voyageur, lui, garde son push : c'est une nouvelle pour lui, et elle appelle une
+        // action (préparer le retrait du colis).
         dispatcher.notifyUser(
             e.senderId(),
             "Demande finalisée ✅",
@@ -128,7 +132,8 @@ public class RequestEventsListener {
                 "type", "request_accepted",
                 "threadId", e.threadId().toString(),
                 "packageRequestId", e.packageRequestId().toString()
-            )
+            ),
+            false
         );
     }
 
@@ -184,6 +189,12 @@ public class RequestEventsListener {
         );
     }
 
+    /**
+     * In-app seulement des deux côtés : une expiration est l'absence d'événement, pas un
+     * événement. Personne n'a rien fait pendant des jours, et il n'y a rien à faire une fois
+     * le délai écoulé — réveiller deux téléphones pour annoncer que rien ne s'est passé est
+     * le pire rapport valeur/interruption de tout le catalogue.
+     */
     @EventListener
     @Async
     public void onNegotiationExpired(NegotiationExpiredEvent e) {
@@ -196,7 +207,8 @@ public class RequestEventsListener {
                 "type", "negotiation_expired",
                 "threadId", e.threadId().toString(),
                 "packageRequestId", e.packageRequestId().toString()
-            )
+            ),
+            false
         );
         // senderId may be null — only notify if present
         // (event currently passes null for senderId per scheduler; can be enriched later)
@@ -209,7 +221,8 @@ public class RequestEventsListener {
                     "type", "negotiation_expired",
                     "threadId", e.threadId().toString(),
                     "packageRequestId", e.packageRequestId().toString()
-                )
+                ),
+                false
             );
         }
     }

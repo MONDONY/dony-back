@@ -80,6 +80,23 @@ class NotificationDispatcherTest {
         assertThat(dataCaptor.getValue()).containsEntry("type", "BID_CREATED");
     }
 
+    // ── AnnouncementInProgressEvent ───────────────────────────────────────────
+
+    /**
+     * « Bon voyage ! » n'appelle aucune action et n'apprend rien au voyageur : c'est lui qui a
+     * saisi la date de départ. La notification reste persistée pour la boîte de réception,
+     * mais ne doit plus atteindre FCM.
+     */
+    @Test
+    void onAnnouncementInProgress_persistsWithoutPush() {
+        dispatcher.onAnnouncementInProgress(
+                new com.dony.api.matching.events.AnnouncementInProgressEvent(annId, travelerId));
+
+        verify(notificationService).persist(eq(travelerId), eq("TRIP_IN_PROGRESS"),
+                eq("Bon voyage !"), any(), any(), eq(false));
+        verify(fcmService, never()).sendToUser(any(), any(), any(), any());
+    }
+
     // ── BidAcceptedEvent ──────────────────────────────────────────────────────
 
     @Test
@@ -103,6 +120,37 @@ class NotificationDispatcherTest {
         dispatcher.onBidAccepted(new BidAcceptedEvent(bidId, senderId, travelerId, annId));
 
         verify(fcmService).sendToUser(eq(senderId), eq("Demande acceptée !"), contains("Le voyageur"), any());
+    }
+
+    /**
+     * Wave et Orange Money : {@code MobileMoneyBidAcceptedListener} envoie « Payez votre
+     * trajet », qui annonce déjà l'acceptation et porte le lien de paiement. Le push
+     * générique ferait un second réveil du téléphone pour la même action, en répétant la
+     * première. La trace reste persistée pour la boîte de réception.
+     */
+    @Test
+    void onBidAccepted_mobileMoney_persistsWithoutPush() {
+        UserEntity traveler = new UserEntity();
+        traveler.setFirstName("Ibrahima");
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+
+        dispatcher.onBidAccepted(new BidAcceptedEvent(bidId, senderId, travelerId, annId, true));
+
+        verify(notificationService).persist(eq(senderId), eq("BID_ACCEPTED"),
+                eq("Demande acceptée !"), any(), any(), eq(false));
+        verify(fcmService, never()).sendToUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void onBidAccepted_nonMobileMoney_keepsPush() {
+        UserEntity traveler = new UserEntity();
+        traveler.setFirstName("Ibrahima");
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(fcmService.sendToUser(any(), any(), any(), any())).thenReturn(true);
+
+        dispatcher.onBidAccepted(new BidAcceptedEvent(bidId, senderId, travelerId, annId, false));
+
+        verify(fcmService).sendToUser(eq(senderId), eq("Demande acceptée !"), any(), any());
     }
 
     // ── BidRejectedEvent ──────────────────────────────────────────────────────

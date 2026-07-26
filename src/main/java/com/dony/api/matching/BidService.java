@@ -604,7 +604,8 @@ public class BidService {
                        "weightKg", bid.getWeightKg() != null ? bid.getWeightKg().toString() : "null"));
 
         eventPublisher.publishEvent(new BidAcceptedEvent(
-                bid.getId(), bid.getSenderId(), traveler.getId(), announcement.getId()));
+                bid.getId(), bid.getSenderId(), traveler.getId(), announcement.getId(),
+                bid.getPaymentMethod() != null && bid.getPaymentMethod().isMobileMoney()));
 
         return toResponse(bid, userRepository.findById(bid.getSenderId()).orElse(null));
     }

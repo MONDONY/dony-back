@@ -60,8 +60,12 @@ class RequestEventsListenerTest {
 
         listener.onPackageRequestAccepted(event);
 
+        // Le voyageur garde son push : nouvelle information, et une action suit (préparer le
+        // retrait). L'expéditeur vient de confirmer ce paiement dans l'application, son écran
+        // de succès le lui a déjà dit — in-app suffit.
         verify(dispatcher).notifyUser(eq(travelerId), contains("Paiement reçu"), anyString(), anyMap());
-        verify(dispatcher).notifyUser(eq(senderId), contains("finalisée"), anyString(), anyMap());
+        verify(dispatcher).notifyUser(eq(senderId), contains("finalisée"), anyString(), anyMap(), eq(false));
+        verify(dispatcher, never()).notifyUser(eq(senderId), anyString(), anyString(), anyMap());
     }
 
     @Test
@@ -109,7 +113,8 @@ class RequestEventsListenerTest {
 
         listener.onNegotiationExpired(event);
 
-        verify(dispatcher).notifyUser(eq(travelerId), anyString(), anyString(), anyMap());
+        // In-app seulement : une expiration est l'absence d'événement, il n'y a rien à faire.
+        verify(dispatcher).notifyUser(eq(travelerId), anyString(), anyString(), anyMap(), eq(false));
         verifyNoMoreInteractions(dispatcher);
     }
 
@@ -123,8 +128,9 @@ class RequestEventsListenerTest {
 
         listener.onNegotiationExpired(event);
 
-        verify(dispatcher).notifyUser(eq(travelerId), anyString(), anyString(), anyMap());
-        verify(dispatcher).notifyUser(eq(senderId), anyString(), anyString(), anyMap());
+        verify(dispatcher).notifyUser(eq(travelerId), anyString(), anyString(), anyMap(), eq(false));
+        verify(dispatcher).notifyUser(eq(senderId), anyString(), anyString(), anyMap(), eq(false));
+        verify(dispatcher, never()).notifyUser(any(), anyString(), anyString(), anyMap());
     }
 
     @Test
