@@ -128,6 +128,31 @@ class NotificationPrefsServiceTest {
         assertThat(service.isAllowed(USER_ID, "TRIP_IN_PROGRESS")).isFalse();
     }
 
+    /**
+     * L'abonnement voyageur garde son interrupteur par abonnement, mais il lui manquait
+     * un garde-fou global : sans mapping, aucun réglage ne pouvait couper ces push.
+     * Ils suivent désormais la même préférence que les alertes corridor, l'utilisateur
+     * y voyant la même chose — « on me signale un nouveau trajet ».
+     */
+    @Test
+    void isAllowed_travelerNewAnnouncement_followsCorridorAlertsPref() {
+        NotificationPrefsEntity e = buildEntity(true, true, true, true, false);
+        e.setPushCorridorAlerts(false);
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(e));
+
+        assertThat(service.isAllowed(USER_ID, "TRAVELER_NEW_ANNOUNCEMENT")).isFalse();
+        assertThat(service.isAllowed(USER_ID, "CORRIDOR_ALERT")).isFalse();
+    }
+
+    @Test
+    void isAllowed_travelerNewAnnouncement_allowedWhenCorridorAlertsEnabled() {
+        NotificationPrefsEntity e = buildEntity(true, true, true, true, false);
+        e.setPushCorridorAlerts(true);
+        when(repository.findById(USER_ID)).thenReturn(Optional.of(e));
+
+        assertThat(service.isAllowed(USER_ID, "TRAVELER_NEW_ANNOUNCEMENT")).isTrue();
+    }
+
     @Test
     void getPackageMatchAlert_noRow_returnsTrueByDefault() {
         when(repository.findById(USER_ID)).thenReturn(Optional.empty());

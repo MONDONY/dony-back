@@ -56,8 +56,28 @@ class AutomationAnnouncementListenerTest {
         listener.onAnnouncementPublished(new AnnouncementPublishedEvent(
                 announcementId, travelerId, "Jean", "Paris", "Dakar"));
 
-        verify(notificationDispatcher).notifyUser(eq(senderId1), any(), any(), any());
-        verify(notificationDispatcher).notifyUser(eq(senderId2), any(), any(), any());
+        verify(notificationDispatcher).notifyUser(eq(senderId1), any(), any(), any(), eq(false));
+        verify(notificationDispatcher).notifyUser(eq(senderId2), any(), any(), any(), eq(false));
+    }
+
+    /**
+     * Seule notification déclenchée par un tiers : le destinataire n'a rien demandé, c'est
+     * le voyageur qui active la règle, et aucun réglage ne permet de la couper. Elle doit
+     * donc rester dans la boîte de réception sans réveiller le téléphone.
+     */
+    @Test
+    void onAnnouncementPublished_neverSendsPushToLoyalSenders() {
+        when(ruleRepository.findByTravelerIdOrderByCreatedAtAsc(travelerId))
+                .thenReturn(List.of(loyalRule(true)));
+        when(bidRepository.findLoyalSenderIds(travelerId, "Paris", "Dakar"))
+                .thenReturn(List.of(senderId1));
+
+        listener.onAnnouncementPublished(new AnnouncementPublishedEvent(
+                announcementId, travelerId, "Jean", "Paris", "Dakar"));
+
+        // La surcharge 4 arguments pousse un push : elle ne doit jamais être empruntée ici.
+        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any());
+        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any(), eq(true));
     }
 
     @Test
@@ -69,7 +89,7 @@ class AutomationAnnouncementListenerTest {
                 announcementId, travelerId, "Jean", "Paris", "Dakar"));
 
         verify(bidRepository, never()).findLoyalSenderIds(any(), any(), any());
-        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any());
+        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -82,6 +102,6 @@ class AutomationAnnouncementListenerTest {
         listener.onAnnouncementPublished(new AnnouncementPublishedEvent(
                 announcementId, travelerId, "Jean", "Paris", "Dakar"));
 
-        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any());
+        verify(notificationDispatcher, never()).notifyUser(any(), any(), any(), any(), anyBoolean());
     }
 }
