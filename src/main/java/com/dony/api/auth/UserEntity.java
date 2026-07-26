@@ -54,11 +54,15 @@ public class UserEntity extends BaseEntity {
      * <p>Le suffixe aléatoire n'est pas décoratif : sans lui, deux comptes créés dans la même
      * seconde produiraient la même valeur et se heurteraient à l'index unique.
      */
+    // Instance unique : réamorcer un SecureRandom à chaque insertion coûte cher et n'apporte
+    // aucune entropie supplémentaire (SpotBugs DMI_RANDOM_USED_ONLY_ONCE).
+    private static final java.security.SecureRandom FALLBACK_RANDOM = new java.security.SecureRandom();
+
     @jakarta.persistence.PrePersist
     void ensureUsername() {
         if (username == null || username.isBlank()) {
             username = "user" + java.time.Instant.now().getEpochSecond()
-                    + String.format("%04d", new java.security.SecureRandom().nextInt(10000));
+                    + String.format("%04d", FALLBACK_RANDOM.nextInt(10000));
         }
     }
 
