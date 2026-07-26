@@ -32,6 +32,40 @@ public class UserEntity extends BaseEntity {
     // est la seule source de vérité, lue à la demande par FirebaseContactService à
     // partir de firebaseUid. Un vol de la base dony ne les révèle donc pas.
 
+    /**
+     * Identifiant public généré à la création (« user » + horodatage), jamais vide.
+     *
+     * <p>Sert de repli d'affichage quand le compte n'a pas de prénom : sans lui, chaque
+     * couche inventait le sien (numéro de téléphone ou email côté client, « Expéditeur »,
+     * « Voyageur » ou « Utilisateur » côté serveur selon le service appelé), si bien qu'un
+     * même compte portait plusieurs noms selon l'écran. Voir {@link #publicDisplayName()}.
+     */
+    @Column(name = "username", nullable = false, unique = true, length = 32)
+    private String username;
+
+    /**
+     * Dernier rempart contre un {@code username} nul à l'insertion.
+     *
+     * <p>Le chemin nominal reste {@code UsernameGenerator}, appelé à l'inscription : lui seul
+     * vérifie que la valeur est libre avant de la proposer. Ce repli couvre les créations qui
+     * ne passent pas par lui — fixtures de test, futurs points d'entrée — pour lesquelles la
+     * contrainte {@code NOT NULL} produirait sinon une erreur d'insertion opaque.
+     *
+     * <p>Le suffixe aléatoire n'est pas décoratif : sans lui, deux comptes créés dans la même
+     * seconde produiraient la même valeur et se heurteraient à l'index unique.
+     */
+    // Instance unique : réamorcer un SecureRandom à chaque insertion coûte cher et n'apporte
+    // aucune entropie supplémentaire (SpotBugs DMI_RANDOM_USED_ONLY_ONCE).
+    private static final java.security.SecureRandom FALLBACK_RANDOM = new java.security.SecureRandom();
+
+    @jakarta.persistence.PrePersist
+    void ensureUsername() {
+        if (username == null || username.isBlank()) {
+            username = "user" + java.time.Instant.now().getEpochSecond()
+                    + String.format("%04d", FALLBACK_RANDOM.nextInt(10000));
+        }
+    }
+
     @Column(name = "first_name", length = 100)
     private String firstName;
 
@@ -206,6 +240,41 @@ public class UserEntity extends BaseEntity {
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
 
+
+    /**
+     * Nom affiché quand le compte est introuvable — typiquement supprimé, donc invisible au
+     * {@code @Where(deleted_at IS NULL)}.
+     *
+     * <p>Neutre à dessein : les anciens replis nommaient le <em>rôle</em> tenu dans le fil
+     * (« Expéditeur », « Voyageur »), si bien qu'un compte supprimé changeait de nom d'un écran
+     * à l'autre et se confondait avec un compte vivant sans prénom.
+     */
+    public static final String UNKNOWN_DISPLAY_NAME = "Utilisateur";
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    /**
+     * Nom affiché à une contrepartie : « Prénom N. », ou le {@link #getUsername() username}
+     * si le compte n'a pas de prénom.
+     *
+     * <p>Le nom de famille est réduit à son initiale : une contrepartie n'a pas besoin de
+     * l'identité civile complète pour traiter une offre.
+     *
+     * <p>Ne jamais retomber ici sur le numéro de téléphone ni sur l'email — c'est ce que
+     * faisaient le client et plusieurs services avant l'ajout du username, ce qui exposait
+     * une coordonnée personnelle comme nom public et contredisait le réglage
+     * « Masquer mon numéro ».
+     */
+    public String publicDisplayName() {
+        if (firstName != null && !firstName.isBlank()) {
+            if (lastName != null && !lastName.isBlank()) {
+                return firstName + " " + lastName.charAt(0) + ".";
+            }
+            return firstName;
+        }
+        return username;
+    }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }

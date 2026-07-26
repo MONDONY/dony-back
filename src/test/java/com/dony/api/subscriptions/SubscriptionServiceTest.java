@@ -202,6 +202,9 @@ class SubscriptionServiceTest {
 
         var result = service.getMySubscribers(uid);
 
-        assertThat(result.get(0).displayName()).isEqualTo("Expéditeur");
+        // Compte introuvable (supprimé) : repli neutre unique, et non plus le rôle tenu dans
+        // le fil, qui faisait changer de nom un même compte selon l'écran.
+        assertThat(result.get(0).displayName())
+                .isEqualTo(com.dony.api.auth.UserEntity.UNKNOWN_DISPLAY_NAME);
     }
 }

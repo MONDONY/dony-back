@@ -66,10 +66,11 @@ public class BlockService {
         return blocks.stream()
                 .map(b -> {
                     UserEntity u = usersById.get(b.getBlockedId());
+                    // publicDisplayName() plutôt qu'une concaténation : getFirstName() nul
+                    // produisait la chaîne littérale « null » dans la liste des comptes bloqués.
                     String name = (u != null)
-                            ? (u.getFirstName() + " " + (u.getLastName() != null && !u.getLastName().isEmpty()
-                                ? u.getLastName().charAt(0) + "." : "")).trim()
-                            : "Utilisateur";
+                            ? u.publicDisplayName()
+                            : UserEntity.UNKNOWN_DISPLAY_NAME;
                     return new BlockedUserDto(b.getBlockedId(), name, b.getCreatedAt());
                 })
                 .toList();

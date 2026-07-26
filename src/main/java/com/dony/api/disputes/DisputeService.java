@@ -131,7 +131,7 @@ public class DisputeService {
                 d.getId(), d.getBidId(), d.getType(), d.getStatus(), d.isRefundFrozen(),
                 d.getCreatedAt(),
                 isSender ? "SENDER" : "TRAVELER",
-                other != null ? MatchingTextUtil.buildName(other) : null,
+                other != null ? MatchingTextUtil.buildPublicName(other) : null,
                 ann != null ? ann.getDepartureCity() : null,
                 ann != null ? ann.getArrivalCity() : null,
                 ann != null ? ann.getDepartureCountryCode() : null,

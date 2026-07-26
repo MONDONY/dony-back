@@ -29,14 +29,17 @@ public class DevTokenController {
     private final FirebaseAuth firebaseAuth;
     private final RestClient restClient;
     private final String firebaseWebApiKey;
+    private final UsernameGenerator usernameGenerator;
 
     public DevTokenController(
             UserRepository userRepository,
             FirebaseAuth firebaseAuth,
-            @Value("${firebase.web-api-key:}") String firebaseWebApiKey) {
+            @Value("${firebase.web-api-key:}") String firebaseWebApiKey,
+            UsernameGenerator usernameGenerator) {
         this.userRepository = userRepository;
         this.firebaseAuth = firebaseAuth;
         this.firebaseWebApiKey = firebaseWebApiKey;
+        this.usernameGenerator = usernameGenerator;
         this.restClient = RestClient.create();
     }
 
@@ -87,6 +90,7 @@ public class DevTokenController {
 
         UserEntity user = new UserEntity();
         user.setFirebaseUid(uid);
+        user.setUsername(usernameGenerator.generate());
         user.setFirstName("Dev");
         user.setLastName(role.name());
         user.setStatus(UserStatus.ACTIVE);

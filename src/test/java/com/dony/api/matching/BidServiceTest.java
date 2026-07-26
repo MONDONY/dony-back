@@ -99,6 +99,9 @@ class BidServiceTest {
     private UserEntity buildSender() {
         UserEntity u = new UserEntity();
         u.setFirebaseUid(SENDER_UID);
+        // Le username est posé par le @PrePersist de UserEntity, qui ne s'exécute pas sur une
+        // entité jamais persistée : sans lui, les replis testés ici rendraient null.
+        u.setUsername("user1784907068");
         u.getRoles().add(Role.SENDER);
         setId(u, SENDER_ID);
         return u;
@@ -2372,7 +2375,7 @@ class BidServiceTest {
 
         @Test
         @DisplayName("expéditeur avec prénom ET nom → nom complet dans la réponse")
-        void toResponse_senderWithBothNames_returnsFullName() {
+        void toResponse_senderWithBothNames_abbreviatesLastName() {
             UserEntity sender = buildSender();
             sender.setFirstName("Alice");
             sender.setLastName("Dupont");
@@ -2381,7 +2384,41 @@ class BidServiceTest {
             // announcementRepository non stubbed → Optional.empty() → announcement=null → traveler=null
             BidResponse resp = bidService.toResponse(bid, sender);
 
-            assertThat(resp.senderName()).isEqualTo("Alice Dupont");
+            // Ce DTO part vers le voyageur, pas vers le back-office : patronyme abrégé.
+            assertThat(resp.senderName()).isEqualTo("Alice D.");
+        }
+
+        /**
+         * Régression signalée en recette : l'écran « Demandes › À traiter » affichait
+         * « Expéditeur » pour toute demande dont l'expéditeur n'avait pas renseigné de
+         * prénom. buildSenderName rendait null, et le client comblait avec le rôle, si bien
+         * que deux demandes de deux personnes différentes portaient le même nom.
+         */
+        @Test
+        @DisplayName("expéditeur sans prénom → username, jamais null")
+        void toResponse_senderWithoutFirstName_fallsBackToUsername() {
+            UserEntity sender = buildSender();
+            sender.setFirstName(null);
+            sender.setLastName(null);
+            BidEntity bid = buildBid();
+
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.senderName()).isEqualTo("user1784907068");
+        }
+
+        /** Chaîne vide et null doivent se comporter pareil : la base contient les deux. */
+        @Test
+        @DisplayName("expéditeur au prénom vide → username")
+        void toResponse_senderWithBlankFirstName_fallsBackToUsername() {
+            UserEntity sender = buildSender();
+            sender.setFirstName("   ");
+            sender.setLastName("");
+            BidEntity bid = buildBid();
+
+            BidResponse resp = bidService.toResponse(bid, sender);
+
+            assertThat(resp.senderName()).isEqualTo("user1784907068");
         }
 
         @Test

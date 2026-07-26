@@ -74,6 +74,7 @@ public class UserRoleService {
         FirebaseContactService.Contact contact = firebaseContact.getContact(user.getFirebaseUid());
         return new UserResponse(
                 user.getId(),
+                user.getUsername(),
                 contact.phoneNumber(),
                 contact.email(),
                 user.getFirstName(),

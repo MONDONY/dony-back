@@ -81,8 +81,7 @@ class ConversationServiceTest {
     @Test
     void toResponse_marksPhoneAvailable_whenDealActive_andNotWhenNot() {
         UserEntity traveler = mock(UserEntity.class);
-        when(traveler.getFirstName()).thenReturn("Bob");
-        when(traveler.getLastName()).thenReturn("Dupont");
+        when(traveler.publicDisplayName()).thenReturn("Bob D.");
         lenient().when(traveler.getKycStatus()).thenReturn(KycStatus.VERIFIED);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
 
@@ -108,8 +107,7 @@ class ConversationServiceTest {
         // Le numéro ne doit plus jamais transiter par une conversation : il s'obtient
         // uniquement via GET /bids/{bidId}/contact, au tap sur « appeler ».
         UserEntity traveler = mock(UserEntity.class);
-        lenient().when(traveler.getFirstName()).thenReturn("Bob");
-        lenient().when(traveler.getLastName()).thenReturn("Dupont");
+        lenient().when(traveler.publicDisplayName()).thenReturn("Bob D.");
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
         // Construit hors du when(...) : imbriquer le stubbing lève UnfinishedStubbing.
         BidEntity inTransit = mockBid(BidStatus.IN_TRANSIT);
@@ -128,8 +126,7 @@ class ConversationServiceTest {
         // header du chat, mais la conversation elle-même reste ouverte — c'est
         // précisément le canal que l'utilisateur a choisi de garder.
         UserEntity traveler = mock(UserEntity.class);
-        lenient().when(traveler.getFirstName()).thenReturn("Bob");
-        lenient().when(traveler.getLastName()).thenReturn("Dupont");
+        lenient().when(traveler.publicDisplayName()).thenReturn("Bob D.");
         when(traveler.isHidePhoneNumber()).thenReturn(true);
         when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
         BidEntity accepted = mockBid(BidStatus.ACCEPTED);
@@ -139,7 +136,8 @@ class ConversationServiceTest {
         var response = service.toResponse(conv, senderId);
 
         assertThat(response.otherParticipant().phoneAvailable()).isFalse();
-        assertThat(response.otherParticipant().name()).isEqualTo("Bob Dupont");
+        // Patronyme abrégé : ce DTO part vers l'interlocuteur, pas vers le back-office.
+        assertThat(response.otherParticipant().name()).isEqualTo("Bob D.");
     }
 
     @Test
@@ -213,13 +211,27 @@ class ConversationServiceTest {
         return b;
     }
 
+    /**
+     * L'entité est mockée, donc {@code publicDisplayName()} doit être stubbé explicitement :
+     * stubber seulement getFirstName/getLastName laisserait le nom à null, la vraie méthode
+     * n'étant jamais exécutée sur un mock.
+     */
     private UserEntity mockUser(UUID id, String first, String last, String uid) {
         UserEntity u = mock(UserEntity.class);
         lenient().when(u.getId()).thenReturn(id);
         lenient().when(u.getFirstName()).thenReturn(first);
         lenient().when(u.getLastName()).thenReturn(last);
+        lenient().when(u.publicDisplayName()).thenReturn(shortName(first, last));
         lenient().when(u.getFirebaseUid()).thenReturn(uid);
         return u;
+    }
+
+    /** Reproduit le format de UserEntity.publicDisplayName() : « Prénom N. ». */
+    private static String shortName(String first, String last) {
+        if (first == null || first.isBlank()) {
+            return "user1785153600";
+        }
+        return (last == null || last.isBlank()) ? first : first + " " + last.charAt(0) + ".";
     }
 
 }

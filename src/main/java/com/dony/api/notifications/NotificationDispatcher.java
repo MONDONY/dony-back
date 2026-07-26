@@ -278,7 +278,9 @@ public class NotificationDispatcher {
             return;
         }
 
-        String senderName = senderUser.getFirstName() != null ? senderUser.getFirstName() : "Un utilisateur";
+        // publicDisplayName() : « Un utilisateur » ne permettait pas de savoir qui écrit
+        // quand l'expéditeur du message n'a pas renseigné de prénom.
+        String senderName = senderUser.publicDisplayName();
         UUID recipientId = senderUser.getId().equals(senderId) ? travelerId : senderId;
 
         String truncated = preview.length() > MESSAGE_PREVIEW_MAX_LENGTH

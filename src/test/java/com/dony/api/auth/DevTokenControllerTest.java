@@ -13,10 +13,11 @@ class DevTokenControllerTest {
 
     @Mock UserRepository userRepository;
     @Mock FirebaseAuth firebaseAuth;
+    @Mock UsernameGenerator usernameGenerator;
 
     @Test
     void getDevToken_throwsWhenFirebaseNull() {
-        DevTokenController controller = new DevTokenController(userRepository, null, "fake-api-key");
+        DevTokenController controller = new DevTokenController(userRepository, null, "fake-api-key", usernameGenerator);
 
         assertThatThrownBy(() -> controller.getDevToken(Role.SENDER))
                 .isInstanceOf(IllegalStateException.class)
@@ -25,7 +26,7 @@ class DevTokenControllerTest {
 
     @Test
     void getDevToken_throwsWhenWebApiKeyBlank() {
-        DevTokenController controller = new DevTokenController(userRepository, firebaseAuth, "");
+        DevTokenController controller = new DevTokenController(userRepository, firebaseAuth, "", usernameGenerator);
 
         assertThatThrownBy(() -> controller.getDevToken(Role.SENDER))
                 .isInstanceOf(IllegalStateException.class)

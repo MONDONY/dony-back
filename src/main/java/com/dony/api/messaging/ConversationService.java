@@ -340,12 +340,13 @@ public class ConversationService {
         if (user == null) {
             return new ParticipantDTO(userId.toString(), "Utilisateur inconnu", null, false, role, false);
         }
-        String name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
-            + (user.getLastName() != null ? user.getLastName() : "")).strip();
+        // publicDisplayName() : la concaténation rendait « Utilisateur » pour tout compte
+        // sans prénom, si bien que deux interlocuteurs distincts portaient le même nom.
+        String name = user.publicDisplayName();
         // Aucun numéro ici : le client reçoit un booléen et demande le numéro au tap
         // (GET /bids/{bidId}/contact). Aucune lecture Firebase au rendu d'une liste.
         boolean kyc = user.getKycStatus() == com.dony.api.auth.KycStatus.VERIFIED;
-        return new ParticipantDTO(userId.toString(), name.isEmpty() ? "Utilisateur" : name,
+        return new ParticipantDTO(userId.toString(), name,
                 storageService.avatarUrl(user.getAvatarUrl()), revealPhone, role, kyc);
     }
 
@@ -359,9 +360,13 @@ public class ConversationService {
         };
     }
 
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()}.
+     *
+     * <p>Rendait auparavant la chaîne vide pour un compte sans prénom : l'en-tête de
+     * conversation n'affichait alors aucun nom du tout.
+     */
     private String fullName(UserEntity u) {
-        String fn = u.getFirstName() != null ? u.getFirstName() : "";
-        String ln = u.getLastName()  != null ? u.getLastName()  : "";
-        return (fn + " " + ln).strip();
+        return u.publicDisplayName();
     }
 }
