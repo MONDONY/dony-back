@@ -99,19 +99,26 @@ class MobileMoneyBidAcceptedListenerTest {
 
     // ── exception during initiation ──────────────────────────────────────────
 
+    /**
+     * Le push générique « Demande acceptée ! » est supprimé en amont pour les bids Mobile
+     * Money, parce que la notification de paiement est censée le remplacer. Si l'initiation
+     * échoue, ce repli est la SEULE notification que l'expéditeur recevra : sans lui, son
+     * colis serait accepté sans qu'il en soit jamais averti.
+     */
     @Test
-    void onBidAccepted_mmServiceThrows_listenerSuppressesException() {
+    void onBidAccepted_mmServiceThrows_fallsBackToAcceptanceNotification() {
         BidEntity bid = bidWithMethod(PaymentMethod.WAVE);
         bid.setSenderId(senderId);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
         when(mmPaymentService.initiate(any(), any())).thenThrow(new RuntimeException("Gateway error"));
 
-        BidAcceptedEvent event = new BidAcceptedEvent(bidId, senderId, UUID.randomUUID(), UUID.randomUUID());
+        BidAcceptedEvent event = new BidAcceptedEvent(bidId, senderId, UUID.randomUUID(), UUID.randomUUID(), true);
 
         // Should NOT propagate exception — listener catches and logs
         listener.onBidAccepted(event);
 
-        verify(notificationDispatcher, never()).notifyUser(any(), anyString(), anyString(), any());
+        verify(notificationDispatcher).notifyUser(
+                eq(senderId), eq("Demande acceptée !"), anyString(), any());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

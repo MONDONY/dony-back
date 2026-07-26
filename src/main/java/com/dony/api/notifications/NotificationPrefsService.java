@@ -32,10 +32,25 @@ public class NotificationPrefsService {
             Map.entry("request_accepted",             "pushActivityNegotiations"),
             Map.entry("request_expired",              "pushActivityNegotiations"),
             Map.entry("negotiation_expired",          "pushActivityNegotiations"),
+            // Relance et « négociation terminée » partagent ce type générique. Sans cette
+            // entrée, elles échappaient à toute préférence : isAllowed renvoie true par
+            // défaut pour un type inconnu.
+            Map.entry("negotiation",                  "pushActivityNegotiations"),
+            // Famille « quelqu'un répond à mon colis » : ces trois-là appellent une action de
+            // l'expéditeur et suivent donc le même interrupteur que les offres reçues.
+            Map.entry("TRAVELER_INVITE",              "pushActivityBids"),
+            Map.entry("CONFIRMATION_CODE_READY",      "pushActivityBids"),
+            Map.entry("DELIVERY_NOSHOW_REPORTED",     "pushActivityBids"),
+            Map.entry("MM_PAYMENT_PENDING",           "pushActivityBids"),
             Map.entry("NEW_MESSAGE",                  "pushMessages"),
             Map.entry("TRIP_IN_PROGRESS",             "pushTripReminder"),
             Map.entry("PROMO",                        "pushPromo"),
-            Map.entry("CORRIDOR_ALERT",               "pushCorridorAlerts")
+            Map.entry("CORRIDOR_ALERT",               "pushCorridorAlerts"),
+            // Même famille que les alertes corridor du point de vue de l'utilisateur :
+            // « on me signale un nouveau trajet ». L'abonnement voyageur garde en plus son
+            // propre interrupteur par abonnement ; celui-ci est le garde-fou global, pour
+            // qui coupe la découverte de trajets sans vouloir dénouer chaque abonnement.
+            Map.entry("TRAVELER_NEW_ANNOUNCEMENT",    "pushCorridorAlerts")
     );
 
     private final NotificationPrefsJpaRepository repository;

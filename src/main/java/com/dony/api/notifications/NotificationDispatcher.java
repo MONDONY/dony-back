@@ -105,9 +105,14 @@ public class NotificationDispatcher {
         String name = userRepository.findById(event.getTravelerId())
                 .map(u -> u.getFirstName() != null ? u.getFirstName() : "Le voyageur")
                 .orElse("Le voyageur");
+        // Paiement par lien externe : MobileMoneyBidAcceptedListener envoie « Payez votre
+        // trajet », qui annonce déjà l'acceptation ET porte le lien de paiement. Pousser en
+        // plus « Demande acceptée ! » ferait deux push pour la même action, le second
+        // répétant le premier. On persiste quand même la trace pour la boîte de réception.
         notifyUser(event.getSenderId(), "Demande acceptée !",
                 name + " accepte votre colis",
-                Map.of("type", "BID_ACCEPTED", "bidId", event.getBidId().toString()));
+                Map.of("type", "BID_ACCEPTED", "bidId", event.getBidId().toString()),
+                !event.isMobileMoney());
     }
 
     @EventListener @Async
@@ -232,12 +237,17 @@ public class NotificationDispatcher {
     }
 
     // Trajet en cours — notif voyageur "Bon voyage"
+    //
+    // In-app seulement : aucune action n'est demandée et rien n'est annoncé que le voyageur
+    // ignore — il sait qu'il part, c'est lui qui a saisi la date. Le rappel de scanner les QR
+    // codes garde son utilité dans la boîte de réception, mais ne justifie pas d'interrompre.
     @EventListener @Async
     public void onAnnouncementInProgress(AnnouncementInProgressEvent event) {
         notifyUser(event.getTravelerId(), "Bon voyage !",
                 "N'oublie pas de scanner les QR codes à la remise et à la livraison.",
                 Map.of("type", "TRIP_IN_PROGRESS",
-                       "announcementId", event.getAnnouncementId().toString()));
+                       "announcementId", event.getAnnouncementId().toString()),
+                false);
     }
 
     // Bid expiré au départ — notif expéditeur "Demande expirée"

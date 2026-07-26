@@ -15,6 +15,15 @@ import java.util.UUID;
  * Écoute AnnouncementPublishedEvent : si le voyageur a activé "notify_loyal_senders",
  * notifie chaque expéditeur ayant déjà eu un bid ACCEPTED avec lui sur ce corridor.
  *
+ * <p><b>Notification in-app uniquement, jamais de push.</b> C'est la seule notification
+ * déclenchée par un tiers : le destinataire n'a rien demandé, c'est le voyageur qui active
+ * la règle. Un push réveillerait le téléphone d'un expéditeur qui n'a souscrit à rien et ne
+ * dispose d'aucun réglage pour le couper — contrairement aux alertes corridor
+ * ({@code pushCorridorAlerts}) et aux abonnements voyageur ({@code isPushEnabled} par
+ * abonnement), qui reposent tous deux sur un opt-in explicite. La notification reste
+ * persistée et visible dans la boîte de réception, donc la règle du voyageur garde son
+ * effet sans imposer d'interruption.
+ *
  * <p>Volontairement PAS de {@code @Transactional} supplémentaire sur cette classe/méthode,
  * par cohérence avec {@link AutomationBidListener} : cette méthode n'appelle que
  * {@code notificationDispatcher.notifyUser} et {@code executor.recordNotification} (jamais
@@ -60,7 +69,8 @@ public class AutomationAnnouncementListener {
             notificationDispatcher.notifyUser(senderId,
                     "Nouveau trajet sur votre corridor habituel",
                     event.travelerName() + " vient de publier un nouveau trajet " + corridor + ".",
-                    Map.of("type", "automation_loyal_sender", "announcementId", event.announcementId().toString()));
+                    Map.of("type", "automation_loyal_sender", "announcementId", event.announcementId().toString()),
+                    false); // in-app seulement : voir le javadoc de classe
         }
         executor.recordNotification(rule, event.travelerId(), "NOTIFY_LOYAL_SENDERS");
     }
