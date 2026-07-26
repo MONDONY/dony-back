@@ -75,7 +75,7 @@ class AnnouncementInProgressTransitionTest {
         DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(nonPro, null);
         DonyConfigProperties config = new DonyConfigProperties(
                 new DonyConfigProperties.Commission(new java.math.BigDecimal("0.12")), limits,
-                new DonyConfigProperties.Urgency(3));
+                new DonyConfigProperties.Urgency(3), null);
         service = new AnnouncementService(
                 announcementRepository, bidRepository,
                 mock(com.dony.api.auth.UserRepository.class),

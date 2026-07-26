@@ -13,7 +13,7 @@ class DonyConfigPropertiesTest {
 
     @Test
     void urgency_defaultsToThreshold3_whenBlockAbsent() {
-        DonyConfigProperties config = new DonyConfigProperties(null, null, null);
+        DonyConfigProperties config = new DonyConfigProperties(null, null, null, null);
         assertThat(config.urgency()).isNotNull();
         assertThat(config.urgency().thresholdDays()).isEqualTo(3);
     }

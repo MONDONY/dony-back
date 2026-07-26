@@ -53,7 +53,7 @@ class PackageRequestServiceTest {
     @Mock private com.dony.api.matching.MatchingService matchingService;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (dony.urgency.threshold-days). */
     private final DonyConfigProperties donyConfig =
-            new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3));
+            new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3), null);
     private PackageRequestService service;
 
     private UserEntity sender;

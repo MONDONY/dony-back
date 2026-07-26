@@ -125,7 +125,8 @@ dony:
       monthly-announcements: ${DONY_LIMITS_NON_PRO_MONTHLY_ANNOUNCEMENTS:2}
   escrow-timeout-hours: ${DONY_ESCROW_TIMEOUT_HOURS:48}
   dispute-sla-hours: ${DONY_DISPUTE_SLA_HOURS:72}
-  max-declared-value-eur: ${DONY_MAX_DECLARED_VALUE_EUR:500}
+  reimbursement:
+    max-amount-eur: ${DONY_REIMBURSEMENT_MAX_AMOUNT_EUR:50}
   kyc:
     return-url: ${DONY_KYC_RETURN_URL:https://dony.store/kyc/complete}
   stripe:
