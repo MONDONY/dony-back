@@ -316,13 +316,14 @@ public class RatingService {
     }
 
     /** « Prénom + initiale » sans PII complète. null si auteur inconnu. */
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()}.
+     *
+     * <p>Rendait {@code null} pour un auteur sans prénom, laissant l'avis sans signature.
+     */
     private String authorShortName(UserEntity author) {
         if (author == null) return null;
-        String fn = author.getFirstName();
-        String ln = author.getLastName();
-        if (fn == null || fn.isBlank()) return null;
-        String initial = (ln != null && !ln.isBlank()) ? " " + ln.trim().charAt(0) + "." : "";
-        return fn.trim() + initial;
+        return author.publicDisplayName();
     }
 
     /** Délègue à {@link UserEntity#publicDisplayName()} : repli sur le username du compte. */

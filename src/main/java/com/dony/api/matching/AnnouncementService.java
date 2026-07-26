@@ -448,7 +448,9 @@ public class AnnouncementService {
         eventPublisher.publishEvent(new AnnouncementPublishedEvent(
             saved.getId(),
             saved.getTravelerId(),
-            user.getFirstName() + " " + user.getLastName(),
+            // publicDisplayName() plutôt qu'une concaténation : des champs nuls produisaient
+            // « null null » dans le corps de la notification envoyée aux expéditeurs.
+            user.publicDisplayName(),
             saved.getDepartureCity(),
             saved.getArrivalCity()
         ));

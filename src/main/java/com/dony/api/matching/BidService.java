@@ -857,15 +857,17 @@ public class BidService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()} : « Prénom N. », sinon le username.
+     *
+     * <p>Cette méthode retournait {@code null} pour un compte sans prénom, et le client
+     * affichait alors « Expéditeur » sur l'écran « À traiter » : deux demandes de deux
+     * personnes différentes y portaient le même nom. Elle rendait par ailleurs le patronyme
+     * entier, là où tous les autres écrans l'abrègent.
+     */
     private String buildSenderName(UserEntity user) {
         if (user == null) return null;
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank() && last != null && !last.isBlank())
-            return first.trim() + " " + last.trim();
-        if (first != null && !first.isBlank()) return first.trim();
-        if (last != null && !last.isBlank()) return last.trim();
-        return null;
+        return user.publicDisplayName();
     }
 
     private UserEntity findUserByFirebaseUid(String firebaseUid) {

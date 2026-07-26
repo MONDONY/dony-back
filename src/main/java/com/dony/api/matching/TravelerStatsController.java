@@ -194,11 +194,9 @@ public class TravelerStatsController {
         return ResponseEntity.ok().build();
     }
 
+    /** Délègue à {@link UserEntity#publicDisplayName()} : repli sur le username, pas « Un voyageur ». */
     private String buildTravelerName(UserEntity user) {
-        String first = user.getFirstName() != null ? user.getFirstName() : "";
-        String last = user.getLastName() != null ? user.getLastName() : "";
-        String name = (first + " " + last).trim();
-        return name.isEmpty() ? "Un voyageur" : name;
+        return user.publicDisplayName();
     }
 
     @GetMapping("/me/bids")
