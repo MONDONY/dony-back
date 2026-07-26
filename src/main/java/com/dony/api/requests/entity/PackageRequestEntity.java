@@ -108,9 +108,6 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "recipient_city", length = 100)
     private String recipientCity;
 
-    @Column(name = "declared_value_eur", precision = 10, scale = 2)
-    private BigDecimal declaredValueEur;
-
     @Column(name = "disclaimer_signed_at")
     private LocalDateTime disclaimerSignedAt;
 
@@ -175,8 +172,6 @@ public class PackageRequestEntity extends BaseEntity {
 
     public String getRecipientCity() { return recipientCity; }
 
-    public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
-
     public LocalDateTime getDisclaimerSignedAt() { return disclaimerSignedAt; }
 
     public String getDisclaimerSignedIp() { return disclaimerSignedIp; }
@@ -234,8 +229,6 @@ public class PackageRequestEntity extends BaseEntity {
     public void setRecipientPhone(String recipientPhone) { this.recipientPhone = recipientPhone; }
 
     public void setRecipientCity(String recipientCity) { this.recipientCity = recipientCity; }
-
-    public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
 
     public void setDisclaimerSignedAt(LocalDateTime disclaimerSignedAt) { this.disclaimerSignedAt = disclaimerSignedAt; }
 
