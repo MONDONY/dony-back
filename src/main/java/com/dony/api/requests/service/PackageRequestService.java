@@ -369,7 +369,6 @@ public class PackageRequestService {
         entity.setRecipientName(req.recipientName());
         entity.setRecipientPhone(req.recipientPhone());
         entity.setRecipientCity(req.recipientCity());
-        entity.setDeclaredValueEur(req.declaredValueEur());
         // The disclaimer is normally signed at creation; set it defensively here
         // for legacy requests created before this behaviour existed.
         if (entity.getDisclaimerSignedAt() == null) {
@@ -399,7 +398,6 @@ public class PackageRequestService {
                     callerUid,
                     req.recipientName(),
                     req.recipientPhone(),
-                    saved.getDeclaredValueEur(),
                     saved.getDisclaimerSignedAt(),
                     saved.getDisclaimerSignedIp()
                 )));

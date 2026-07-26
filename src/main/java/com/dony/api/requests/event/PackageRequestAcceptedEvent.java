@@ -15,7 +15,6 @@ public record PackageRequestAcceptedEvent(
     String paymentIntentId,
     String recipientName,
     String recipientPhone,
-    BigDecimal declaredValueEur,
     LocalDateTime disclaimerSignedAt,
     String disclaimerSignedIp,
     com.dony.api.payments.cash.PaymentMethod paymentMethod,

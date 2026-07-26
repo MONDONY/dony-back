@@ -15,7 +15,6 @@ public record AdminBidDetailResponse(
     BigDecimal netEur,
     String paymentMethod,
     LocalDateTime createdAt,
-    BigDecimal declaredValueEur,
     String contentCategory,
     String recipientName,
     String trackingNumber,

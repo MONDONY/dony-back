@@ -93,7 +93,7 @@ public class AdminExportService {
     public byte[] exportDisputes(LocalDate from, LocalDate to) {
         List<DisputeEntity> disputes = disputeRepository
                 .findAllByCreatedAtBetweenOrderByCreatedAtAsc(lower(from), upper(to));
-        StringBuilder sb = header("id,bidId,type,statut,resolution,valeurDeclareeEur,noteResolution,creeLe,resoluLe");
+        StringBuilder sb = header("id,bidId,type,statut,resolution,noteResolution,creeLe,resoluLe");
         for (DisputeEntity d : disputes) {
             row(sb,
                 str(d.getId()),
@@ -101,7 +101,6 @@ public class AdminExportService {
                 d.getType(),
                 d.getStatus(),
                 d.getResolutionType(),
-                money(d.getDeclaredValueEur()),
                 d.getResolutionNote(),
                 str(d.getCreatedAt()),
                 str(d.getResolvedAt()));

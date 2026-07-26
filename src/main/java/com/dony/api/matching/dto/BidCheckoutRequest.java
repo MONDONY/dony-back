@@ -14,7 +14,6 @@ public record BidCheckoutRequest(
         @NotNull UUID announcementId,
         // Nullable en mode MIXED (grille seule) — validé côté service
         @DecimalMin(value = "0.0") BigDecimal weightKg,
-        @NotNull @DecimalMin(value = "0.01", inclusive = true) BigDecimal declaredValueEur,
         @Size(max = 1000) String description,
         // Multi-sélection jointe par virgule côté front : le catalogue canonique complet
         // joint fait 216 caractères, donc 500 laisse de la marge pour la saisie libre.
@@ -31,11 +30,11 @@ public record BidCheckoutRequest(
         Boolean savePaymentMethod
 ) {
     /** Constructeur historique (sans savePaymentMethod) — équivalent au défaut null. */
-    public BidCheckoutRequest(UUID announcementId, BigDecimal weightKg, BigDecimal declaredValueEur,
+    public BidCheckoutRequest(UUID announcementId, BigDecimal weightKg,
                               String description, String contentCategory, String recipientName,
                               String recipientPhone, Boolean disclaimerSigned, List<String> photoKeys,
                               List<BidGridItemRequest> gridItems) {
-        this(announcementId, weightKg, declaredValueEur, description, contentCategory,
+        this(announcementId, weightKg, description, contentCategory,
                 recipientName, recipientPhone, disclaimerSigned, photoKeys, gridItems, null);
     }
 }

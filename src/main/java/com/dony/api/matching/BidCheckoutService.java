@@ -155,12 +155,6 @@ public class BidCheckoutService {
                 "Poids demandé supérieur à la capacité disponible");
         }
 
-        if (req.declaredValueEur().compareTo(BigDecimal.valueOf(500)) > 0) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "value-exceeds-limit", "Value Exceeds Limit",
-                "Valeur maximum : 500 €");
-        }
-
         List<BidGridItemRequest> gridItems = req.gridItems() != null ? req.gridItems() : List.of();
         boolean hasGrid = !gridItems.isEmpty();
         boolean hasKg   = req.weightKg() != null && req.weightKg().compareTo(BigDecimal.ZERO) > 0;
@@ -183,7 +177,6 @@ public class BidCheckoutService {
         bid.setSenderId(sender.getId());
         bid.setWeightKg(hasKg ? req.weightKg() : null);
         bid.setPricingMode(bidMode);
-        bid.setDeclaredValueEur(req.declaredValueEur());
         bid.setDescription(req.description());
         bid.setContentCategory(normalizedContentCategory);
         bid.setRecipientName(req.recipientName());

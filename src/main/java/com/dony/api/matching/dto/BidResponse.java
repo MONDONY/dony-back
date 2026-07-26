@@ -22,7 +22,6 @@ public record BidResponse(
         boolean senderIsProAccount,
         boolean senderKiloPro,
         BigDecimal weightKg,
-        BigDecimal declaredValueEur,
         String description,
         String contentCategory,
         String recipientName,

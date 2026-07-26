@@ -1,6 +1,5 @@
 package com.dony.api.requests.event;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -15,7 +14,6 @@ public record PackageRequestDetailsCompletedEvent(
     UUID senderId,
     String recipientName,
     String recipientPhone,
-    BigDecimal declaredValueEur,
     LocalDateTime disclaimerSignedAt,
     String disclaimerSignedIp
 ) {}
