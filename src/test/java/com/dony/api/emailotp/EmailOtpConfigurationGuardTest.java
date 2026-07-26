@@ -2,11 +2,11 @@ package com.dony.api.emailotp;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.health.Status;
 import org.springframework.mock.env.MockEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("EmailOtpConfigurationGuard")
 class EmailOtpConfigurationGuardTest {
@@ -20,50 +20,56 @@ class EmailOtpConfigurationGuardTest {
     }
 
     /**
-     * Sans clé, aucun OTP ne peut partir : l'inscription et la connexion par email sont
-     * mortes. Démarrer quand même servirait un parcours cassé en silence, exactement le
-     * scénario qui a coûté deux jours en local.
+     * Le démarrage ne doit JAMAIS être bloqué, quel que soit le profil.
+     *
+     * <p>L'authentification principale est Firebase Phone : arrêter toute l'API parce qu'un
+     * canal secondaire est mal configuré transformerait une panne partielle en indisponibilité
+     * totale. Et les secrets de production vivent dans un {@code .env} sur l'hôte, invisible
+     * depuis le dépôt : impossible de garantir avant déploiement que la clé y figure.
      */
     @Test
-    void prodProfile_blankKey_refusesToStart() {
-        assertThatThrownBy(() -> guard("", "prod").verifyEmailSendingIsConfigured())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("resend-api-key");
-    }
-
-    @Test
-    void prodProfile_nullKey_refusesToStart() {
-        assertThatThrownBy(() -> guard(null, "prod").verifyEmailSendingIsConfigured())
-                .isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void prodProfile_keyConfigured_starts() {
-        assertThatCode(() -> guard("re_test_key", "prod").verifyEmailSendingIsConfigured())
+    void neverBlocksStartup_whateverTheProfile() {
+        for (String profile : new String[] {"prod", "staging", "dev", "test"}) {
+            assertThatCode(() -> guard("", profile).reportConfigurationAtStartup())
+                    .as("profil %s", profile)
+                    .doesNotThrowAnyException();
+        }
+        assertThatCode(() -> guard(null, "prod").reportConfigurationAtStartup())
                 .doesNotThrowAnyException();
-    }
-
-    /** Un développeur local n'a pas toujours besoin d'emails réels : avertir, pas bloquer. */
-    @Test
-    void devProfile_blankKey_startsAnyway() {
-        assertThatCode(() -> guard("", "dev").verifyEmailSendingIsConfigured())
+        assertThatCode(() -> guard("").reportConfigurationAtStartup())
                 .doesNotThrowAnyException();
     }
 
     /**
-     * Le profil test monte le contexte Spring complet sans clé Resend : si le garde-fou
-     * bloquait ici, toute la suite d'intégration tomberait.
+     * Le statut doit rester UP même sans clé.
+     *
+     * <p>{@code docker-compose.prod.yml} sonde {@code /actuator/health} et le conteneur est en
+     * {@code restart: unless-stopped} : un {@code DOWN} ferait échouer la sonde et mettrait le
+     * conteneur en boucle de redémarrage. Ce test existe pour qu'un futur passage à
+     * {@code Health.down()} casse ici plutôt qu'en production.
      */
     @Test
-    void testProfile_blankKey_startsAnyway() {
-        assertThatCode(() -> guard("", "test").verifyEmailSendingIsConfigured())
-                .doesNotThrowAnyException();
+    void healthStaysUp_evenWithoutApiKey() {
+        assertThat(guard("", "prod").health().getStatus()).isEqualTo(Status.UP);
     }
 
     @Test
-    void noActiveProfile_blankKey_startsAnyway() {
-        assertThatCode(() -> guard("").verifyEmailSendingIsConfigured())
-                .doesNotThrowAnyException();
+    void healthReportsMissingKeyInDetails() {
+        assertThat(guard("", "prod").health().getDetails())
+                .containsEntry("resendApiKey", "MISSING");
+    }
+
+    @Test
+    void healthReportsConfiguredKeyInDetails() {
+        assertThat(guard("re_test_key", "prod").health().getDetails())
+                .containsEntry("resendApiKey", "configured");
+    }
+
+    @Test
+    void blankKeyCountsAsMissing() {
+        assertThat(guard("   ", "prod").isEmailSendingConfigured()).isFalse();
+        assertThat(guard(null, "prod").isEmailSendingConfigured()).isFalse();
+        assertThat(guard("re_test_key", "prod").isEmailSendingConfigured()).isTrue();
     }
 
     /** La valeur par défaut des propriétés est vide : c'est bien ce cas que le garde couvre. */
