@@ -2,6 +2,7 @@ package com.dony.api.config;
 
 import com.dony.api.config.dto.CommissionRateResponse;
 import com.dony.api.config.dto.ContentCategoryResponse;
+import com.dony.api.config.dto.ReimbursementCapResponse;
 import com.dony.api.config.dto.UrgencyThresholdResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +29,11 @@ public class ConfigController {
     @GetMapping("/urgency-threshold")
     public ResponseEntity<UrgencyThresholdResponse> getUrgencyThreshold() {
         return ResponseEntity.ok(new UrgencyThresholdResponse(config.urgency().thresholdDays()));
+    }
+
+    @GetMapping("/reimbursement-cap")
+    public ResponseEntity<ReimbursementCapResponse> getReimbursementCap() {
+        return ResponseEntity.ok(new ReimbursementCapResponse(config.reimbursement().maxAmountEur()));
     }
 
     @GetMapping("/content-categories")
