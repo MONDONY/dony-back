@@ -42,7 +42,7 @@ class UserRoleControllerTest {
                 new UsernamePasswordAuthenticationToken("uid-1", null, List.of()));
 
         UserResponse fakeResponse = new UserResponse(
-                UUID.randomUUID(), null, null, null, null, null, null,
+                UUID.randomUUID(), "user1785000000", null, null, null, null, null, null,
                 Set.of("SENDER", "TRAVELER"), "NOT_STARTED", "ACTIVE", 0, 0,
                 false, null, "FR", null, null, null, null, null, null);
         when(userRoleService.activateTravelerRole("uid-1")).thenReturn(fakeResponse);
@@ -82,7 +82,7 @@ class UserRoleControllerTest {
                 new UsernamePasswordAuthenticationToken("uid-1", null, List.of()));
 
         UserResponse fakeResponse = new UserResponse(
-                UUID.randomUUID(), null, null, null, null, null, null,
+                UUID.randomUUID(), "user1785000000", null, null, null, null, null, null,
                 Set.of("SENDER"), "NOT_STARTED", "ACTIVE", 0, 0,
                 false, null, "FR", null, null, null, null, null, null);
         when(userRoleService.deactivateTravelerRole("uid-1")).thenReturn(fakeResponse);

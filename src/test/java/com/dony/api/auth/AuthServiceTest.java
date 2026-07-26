@@ -51,6 +51,7 @@ class AuthServiceTest {
     @Mock private StorageService storageService;
     @Mock private AdminAuthService adminAuthService;
     @Mock private FirebaseContactService firebaseContact;
+    @Mock private UsernameGenerator usernameGenerator;
 
     @InjectMocks private AuthService authService;
 
@@ -65,7 +66,10 @@ class AuthServiceTest {
                 .thenReturn(new FirebaseContactService.Contact(PHONE, null));
         lenient().when(firebaseContact.findUidByEmail(anyString())).thenReturn(Optional.empty());
         lenient().when(firebaseContact.findUidByPhone(anyString())).thenReturn(Optional.empty());
+        lenient().when(usernameGenerator.generate()).thenReturn(GENERATED_USERNAME);
     }
+
+    private static final String GENERATED_USERNAME = "user1785153600";
 
     private static final String FIREBASE_UID = "uid-test-123";
     private static final String PHONE = "+33612345678";

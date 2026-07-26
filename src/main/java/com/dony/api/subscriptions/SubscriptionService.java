@@ -116,19 +116,15 @@ public class SubscriptionService {
             .map(sub -> {
                 String name = userRepository.findById(sub.getSenderId())
                     .map(this::buildSubscriberName)
-                    .orElse("Expéditeur");
+                    .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
                 return new SubscriberResponse(sub.getSenderId(), name, sub.getCreatedAt());
             })
             .toList();
     }
 
+    /** Délègue à {@link UserEntity#publicDisplayName()} : repli sur le username du compte. */
     private String buildSubscriberName(UserEntity u) {
-        String first = u.getFirstName();
-        if (first != null && !first.isBlank()) {
-            String last = u.getLastName();
-            return (last != null && !last.isBlank()) ? first + " " + last.charAt(0) + "." : first;
-        }
-        return "Expéditeur";
+        return u.publicDisplayName();
     }
 
     private SubscriptionItemResponse mapRow(Object[] r) {

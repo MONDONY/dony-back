@@ -123,7 +123,10 @@ class AlertServiceTripMatchesTest {
         assertThat(matches).hasSize(1);
         AlertTripMatchDto dto = matches.get(0);
         assertThat(dto.departureDate()).isEqualTo(LocalDate.of(2026, 7, 10));
-        assertThat(dto.travelerName()).isEqualTo(MatchingTextUtil.buildName(travelerEntity));
+        // Valeur littérale, et non MatchingTextUtil.buildName(travelerEntity) : rederiver
+        // l'attendu depuis le helper testé rendait l'assertion toujours vraie. Ce DTO part
+        // vers un expéditeur, le patronyme y est donc abrégé.
+        assertThat(dto.travelerName()).isEqualTo("Moussa D.");
         assertThat(dto.travelerInitials()).isEqualTo(MatchingTextUtil.buildInitials(travelerEntity));
         assertThat(dto.availableKg()).isEqualTo(new BigDecimal("15.00"));
         assertThat(dto.pricePerKg()).isEqualTo(new BigDecimal("8.50"));

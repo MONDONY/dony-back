@@ -6,8 +6,14 @@ import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * @param username identifiant public généré à la création (« user » + horodatage). Toujours
+ *        présent : le client s'en sert comme nom de repli quand {@code firstName} est vide,
+ *        au lieu d'afficher le numéro de téléphone ou l'email du compte.
+ */
 public record UserResponse(
     UUID id,
+    String username,
     String phoneNumber,
     String email,
     String firstName,

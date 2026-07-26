@@ -219,13 +219,13 @@ public class AnnouncementSearchMapper {
         return net == null ? null : priceGridService.displayPrice(net, travelerId);
     }
 
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()}, qui ne rend jamais {@code null}.
+     *
+     * <p>Voir {@code AnnouncementService.buildDisplayName} : le {@code null} d'origine faisait
+     * afficher le numéro de téléphone du voyageur en guise de nom côté client.
+     */
     private String buildDisplayName(UserEntity user) {
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank() && last != null && !last.isBlank())
-            return first.trim() + " " + last.trim();
-        if (first != null && !first.isBlank()) return first.trim();
-        if (last != null && !last.isBlank()) return last.trim();
-        return null;
+        return user.publicDisplayName();
     }
 }

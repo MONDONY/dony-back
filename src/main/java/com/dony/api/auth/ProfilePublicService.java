@@ -95,16 +95,9 @@ public class ProfilePublicService {
         );
     }
 
+    /** Délègue à {@link UserEntity#publicDisplayName()} : repli sur le username du compte. */
     private String buildDisplayName(UserEntity user) {
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank()) {
-            if (last != null && !last.isBlank()) {
-                return first + " " + last.charAt(0) + ".";
-            }
-            return first;
-        }
-        return "Utilisateur";
+        return user.publicDisplayName();
     }
 
     private String buildMemberSince(UserEntity user) {

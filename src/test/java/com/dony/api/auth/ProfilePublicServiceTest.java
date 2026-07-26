@@ -51,6 +51,7 @@ class ProfilePublicServiceTest {
     void setUp() throws Exception {
         user = new UserEntity();
         setId(user, USER_ID);
+        setField(user, "username", "user1785153600");
         setField(user, "firstName", "Moussa");
         setField(user, "lastName", "Diallo");
         setField(user, "kycStatus", KycStatus.VERIFIED);
@@ -179,7 +180,9 @@ class ProfilePublicServiceTest {
 
         ProfilePublicResponse response = profilePublicService.getProfilePublic(USER_ID);
 
-        assertThat(response.displayName()).isEqualTo("Utilisateur");
+        // Le repli n'est plus « Utilisateur » mais le username du compte : deux profils sans
+        // prénom restaient sinon indiscernables l'un de l'autre.
+        assertThat(response.displayName()).isEqualTo("user1785153600");
     }
 
     @Test

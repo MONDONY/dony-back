@@ -88,7 +88,8 @@ class MatchingServiceTest {
             assertThat(dto.tripId()).isEqualTo(ANNOUNCEMENT_ID.toString());
             assertThat(dto.tripCorridor()).isEqualTo("Paris → Dakar");
             assertThat(dto.senderId()).isEqualTo(SENDER_ID.toString());
-            assertThat(dto.senderName()).isEqualTo("Marie Dupont");
+            // Nom de famille abrégé : ce DTO part vers un voyageur, pas vers le back-office.
+            assertThat(dto.senderName()).isEqualTo("Marie D.");
             assertThat(dto.senderInitials()).isEqualTo("MD");
             assertThat(dto.senderRating()).isEqualTo(4.5);
             assertThat(dto.weightKg()).isEqualTo(5.0);
@@ -171,6 +172,7 @@ class MatchingServiceTest {
         void handlesNullSenderFields_gracefully() throws Exception {
             UserEntity senderNoName = new UserEntity();
             setField(senderNoName, "id", SENDER_ID);
+            setField(senderNoName, "username", "user1785153600");
             setField(senderNoName, "totalShipments", 0);
 
             PackageRequestEntity request = buildRequest(5, LocalDate.now().plusDays(10), 3);
@@ -183,7 +185,8 @@ class MatchingServiceTest {
             List<MatchingRequestDto> results = matchingService.findMatchingRequests(TRAVELER_ID);
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).senderName()).isEqualTo("Expéditeur");
+            // Expéditeur sans prénom : c'est le username qui le nomme, plus son rôle.
+            assertThat(results.get(0).senderName()).isEqualTo("user1785153600");
             assertThat(results.get(0).senderRating()).isEqualTo(0.0);
         }
     }

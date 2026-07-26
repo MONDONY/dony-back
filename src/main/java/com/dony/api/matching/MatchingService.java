@@ -195,7 +195,7 @@ public class MatchingService {
                                      AnnouncementEntity announcement,
                                      UserEntity sender) {
         String corridor = MatchingTextUtil.corridorLabel(announcement.getDepartureCity(), announcement.getArrivalCity());
-        String senderName = MatchingTextUtil.buildName(sender);
+        String senderName = MatchingTextUtil.buildPublicName(sender);
         String senderInitials = MatchingTextUtil.buildInitials(sender);
         double senderRating = sender.getAverageRating() != null
                 ? sender.getAverageRating().doubleValue() : 0.0;

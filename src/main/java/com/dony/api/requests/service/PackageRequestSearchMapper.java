@@ -184,16 +184,9 @@ public class PackageRequestSearchMapper {
         return result;
     }
 
+    /** Délègue à {@link UserEntity#publicDisplayName()} : repli sur le username du compte. */
     private String buildSenderDisplayName(UserEntity user) {
-        if (user == null) return "Expéditeur";
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank()) {
-            if (last != null && !last.isBlank()) {
-                return first + " " + last.charAt(0) + ".";
-            }
-            return first;
-        }
-        return "Expéditeur";
+        if (user == null) return UserEntity.UNKNOWN_DISPLAY_NAME;
+        return user.publicDisplayName();
     }
 }

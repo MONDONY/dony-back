@@ -24,6 +24,16 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     boolean existsByFirebaseUid(String firebaseUid);
 
     /**
+     * Le username est-il déjà pris, y compris par un compte supprimé ?
+     *
+     * <p>Requête native délibérée : une méthode dérivée subirait le {@code @Where(deleted_at IS
+     * NULL)} de {@link UserEntity} et déclarerait libre un username encore porté par une ligne
+     * soft-deleted, que l'index unique {@code ux_users_username} refuserait ensuite.
+     */
+    @Query(value = "SELECT EXISTS(SELECT 1 FROM users WHERE username = :username)", nativeQuery = true)
+    boolean existsByUsername(@Param("username") String username);
+
+    /**
      * Finds a user by Firebase UID regardless of soft-delete status.
      * Used to detect and reactivate accounts that were previously deleted.
      */

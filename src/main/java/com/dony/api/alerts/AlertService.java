@@ -380,7 +380,7 @@ public class AlertService {
                     ? traveler.getAverageRating().doubleValue() : 0.0;
             result.add(new AlertTripMatchDto(
                     a.getId(), a.getDepartureCity(), a.getArrivalCity(), a.getDepartureDate(),
-                    traveler.getId(), MatchingTextUtil.buildName(traveler),
+                    traveler.getId(), MatchingTextUtil.buildPublicName(traveler),
                     MatchingTextUtil.buildInitials(traveler), rating,
                     a.getAvailableKg(), a.getPricePerKg(), a.getTransportMode(), null));
         }
@@ -445,7 +445,7 @@ public class AlertService {
     // Item 1: use MatchingTextUtil helpers (corridorLabel, buildName, buildInitials, truncate)
     private MatchingRequestDto toMatchingDto(PackageRequestEntity p, UserEntity sender) {
         String corridor = MatchingTextUtil.corridorLabel(p.getDepartureCity(), p.getArrivalCity());
-        String senderName = MatchingTextUtil.buildName(sender);
+        String senderName = MatchingTextUtil.buildPublicName(sender);
         String senderInitials = MatchingTextUtil.buildInitials(sender);
         double senderRating = sender.getAverageRating() != null
                 ? sender.getAverageRating().doubleValue() : 0.0;

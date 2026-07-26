@@ -281,14 +281,16 @@ public class AnnouncementService {
         return announcementSearchMapper.toSearchResponse(entity, isFavorite);
     }
 
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()}, qui ne rend jamais {@code null}.
+     *
+     * <p>Cette méthode retournait auparavant {@code null} pour un compte sans nom, et le client
+     * comblait ce vide avec le numéro de téléphone du voyageur : une coordonnée personnelle
+     * s'affichait comme nom sur les cartes de recherche. Le nom de famille est par ailleurs
+     * réduit à son initiale, comme partout ailleurs, alors qu'il était ici rendu en entier.
+     */
     private String buildDisplayName(UserEntity user) {
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank() && last != null && !last.isBlank())
-            return first.trim() + " " + last.trim();
-        if (first != null && !first.isBlank()) return first.trim();
-        if (last != null && !last.isBlank()) return last.trim();
-        return null;
+        return user.publicDisplayName();
     }
 
     @Transactional

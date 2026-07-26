@@ -178,7 +178,7 @@ public class NegotiationService {
 
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         return toResponse(saved, List.of(toMessageResponse(msg)), null, traveler, request, travelerId, senderName, null);
     }
 
@@ -242,7 +242,7 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         return toResponse(thread, responses, null, traveler, request, callerId, senderName, null);
     }
 
@@ -329,7 +329,7 @@ public class NegotiationService {
         threadRepo.save(thread);
 
         UUID otherParty = isSender ? thread.getTravelerId() : request.getSenderId();
-        String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse("Un utilisateur");
+        String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         eventPublisher.publishEvent(new NegotiationCancelledEvent(
             thread.getId(), request.getId(), callerId, otherParty, byName, releaseEscrow));
         auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
@@ -440,7 +440,7 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
@@ -527,7 +527,7 @@ public class NegotiationService {
             .stream().map(this::toMessageResponse).toList();
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         return toResponse(thread, allMsgs, null, traveler, request, callerId, senderName, ann);
     }
 
@@ -657,7 +657,7 @@ public class NegotiationService {
             .stream().map(this::toMessageResponse).toList();
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         return toResponse(thread, allMsgs, null, traveler, request, callerId, senderName, savedAnn);
     }
 
@@ -906,7 +906,7 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
@@ -1031,7 +1031,7 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         // linkedAnn est null car on vient de clear le travelerAnnouncementId
         return toResponse(thread, messages, null, traveler, request, callerId, senderName, null);
     }
@@ -1086,7 +1086,7 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "nudge/rate-limited");
         }
 
-        String callerName = userRepository.findById(callerId).map(this::buildDisplayName).orElse("Un utilisateur");
+        String callerName = userRepository.findById(callerId).map(this::buildDisplayName).orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         eventPublisher.publishEvent(new NegotiationNudgeSentEvent(
             thread.getId(), request.getId(), callerId, mustActUserId, callerName));
 
@@ -1100,7 +1100,7 @@ public class NegotiationService {
         UserEntity travelerEntity = userRepository.findById(thread.getTravelerId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
-            .map(this::buildDisplayName).orElse("Expéditeur");
+            .map(this::buildDisplayName).orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null) : null;
         return toResponse(thread, msgs, null, travelerEntity, request, callerId, senderName, linkedAnn);
@@ -1124,7 +1124,7 @@ public class NegotiationService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         com.dony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null)
             : null;
@@ -1157,7 +1157,7 @@ public class NegotiationService {
                 }
                 String senderName = userRepository.findById(requestOpt.get().getSenderId())
                     .map(this::buildDisplayName)
-                    .orElse("Expéditeur");
+                    .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
                 com.dony.api.matching.AnnouncementEntity linkedAnn = t.getTravelerAnnouncementId() != null
                     ? annMap.get(t.getTravelerAnnouncementId())
                     : null;
@@ -1180,7 +1180,7 @@ public class NegotiationService {
         }
         String senderName = userRepository.findById(request.getSenderId())
             .map(this::buildDisplayName)
-            .orElse("Expéditeur");
+            .orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
         var threads = threadRepo.findByPackageRequestId(requestId);
         // Batch-load announcements pour éviter N+1
         List<UUID> announcementIds = threads.stream()
@@ -1327,16 +1327,13 @@ public class NegotiationService {
         );
     }
 
+    /**
+     * Délègue à {@link UserEntity#publicDisplayName()} : le repli est le username du compte,
+     * pas le rôle qu'il tient dans ce fil. Un même compte apparaissait sinon « Voyageur » ici
+     * et « Expéditeur » ailleurs selon le sens de la négociation.
+     */
     private String buildDisplayName(UserEntity user) {
-        String first = user.getFirstName();
-        String last = user.getLastName();
-        if (first != null && !first.isBlank()) {
-            if (last != null && !last.isBlank()) {
-                return first + " " + last.charAt(0) + ".";
-            }
-            return first;
-        }
-        return "Voyageur";
+        return user.publicDisplayName();
     }
 
     NegotiationMessageResponse toMessageResponse(NegotiationMessageEntity m) {

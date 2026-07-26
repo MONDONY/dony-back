@@ -50,6 +50,7 @@ public class AuthService {
     private final StorageService storageService;
     private final AdminAuthService adminAuthService;
     private final FirebaseContactService firebaseContact;
+    private final UsernameGenerator usernameGenerator;
 
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
@@ -60,7 +61,8 @@ public class AuthService {
                        ConnectedDevicesService connectedDevicesService,
                        StorageService storageService,
                        AdminAuthService adminAuthService,
-                       FirebaseContactService firebaseContact) {
+                       FirebaseContactService firebaseContact,
+                       UsernameGenerator usernameGenerator) {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
@@ -71,6 +73,7 @@ public class AuthService {
         this.storageService = storageService;
         this.adminAuthService = adminAuthService;
         this.firebaseContact = firebaseContact;
+        this.usernameGenerator = usernameGenerator;
     }
 
     @Transactional
@@ -391,6 +394,9 @@ public class AuthService {
 
         UserEntity user = new UserEntity();
         user.setFirebaseUid(firebaseUid);
+        // Identifiant public immédiat : le compte naît sans prénom (celui-ci n'arrive qu'au
+        // KYC ou à l'édition du profil) et doit pourtant être nommable dès sa première offre.
+        user.setUsername(usernameGenerator.generate());
         user.setStatus(UserStatus.ACTIVE);
         user.setKycStatus(KycStatus.NOT_STARTED);
         user.setRoles(roles);
@@ -547,6 +553,7 @@ public class AuthService {
 
         return new UserResponse(
                 user.getId(),
+                user.getUsername(),
                 contact.phoneNumber(),
                 contact.email(),
                 user.getFirstName(),
