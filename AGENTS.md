@@ -71,6 +71,8 @@ Le code vit sous `com.dony.api`. Un package correspond à une feature métier :
 
 - `FirebaseTokenFilter` valide le token Firebase à chaque requête et reconstruit le
   `SecurityContext`; aucune session serveur.
+- `FirebaseTokenFilter` vérifie le statut utilisateur avant chaque action. Refuser
+  explicitement en 403 les comptes `SUSPENDED` ou `BANNED`.
 - En cas d'indisponibilité de la base pendant le chargement utilisateur, vider le
   `SecurityContext` et répondre 503, jamais autoriser par défaut.
 - Rôles : `ROLE_SENDER`, `ROLE_TRAVELER`, `ROLE_ADMIN`. Protéger les contrôleurs
@@ -81,8 +83,11 @@ Le code vit sous `com.dony.api`. Un package correspond à une feature métier :
   jamais la source de vérité.
 - Les secrets et drapeaux d'environnement restent dans les variables d'environnement.
   En production, `dony.kyc.enforce` et `dony.stripe.enforce` doivent être vrais.
-- Pour `X-Forwarded-For`, utiliser l'élément ajouté par le proxy de confiance, pas
-  une valeur contrôlable par le client.
+- Pour `X-Forwarded-For`, prendre le **dernier** élément, ajouté par le proxy de
+  confiance. Ne jamais prendre le premier élément : il est contrôlable par le client
+  et permettrait de spoofer l'adresse IP.
+- Rejeter en HTTP 422 toute valeur déclarée supérieure à 500 €.
+- Valider `offlineTimestamp` côté serveur et rejeter toute date située dans le futur.
 - Rate limiting Nginx attendu : 30 requêtes/min en général, 5 requêtes/min pour
   l'authentification et le KYC.
 
