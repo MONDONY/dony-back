@@ -13,7 +13,6 @@ public record RequestsConfig(
     int dateToleranceMaxDays,
     BigDecimal weightKgMin,
     BigDecimal weightKgMax,
-    BigDecimal declaredValueMaxEur,
     int bodyMaxChars,
     int maxOpenRequestsPerSender,
     int maxOpenThreadsPerTraveler,

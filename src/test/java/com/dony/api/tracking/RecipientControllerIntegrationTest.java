@@ -74,7 +74,6 @@ class RecipientControllerIntegrationTest {
         bid.setAnnouncementId(announcement.getId());
         bid.setSenderId(UUID.randomUUID());
         bid.setWeightKg(new BigDecimal("3.00"));
-        bid.setDeclaredValueEur(new BigDecimal("100.00"));
         bid.setStatus(BidStatus.IN_TRANSIT);
         bid.setTrackingToken(trackingToken);
         bid.setTrackingNumber("DNY123456789");

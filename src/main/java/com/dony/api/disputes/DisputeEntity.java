@@ -6,7 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Where;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -42,9 +41,6 @@ public class DisputeEntity extends BaseEntity {
     @Column(name = "resolution_note", columnDefinition = "TEXT")
     private String resolutionNote;
 
-    @Column(name = "declared_value_eur", precision = 10, scale = 2)
-    private BigDecimal declaredValueEur;
-
     @Column(name = "beneficiary_user_id")
     private UUID beneficiaryUserId;
 
@@ -77,9 +73,6 @@ public class DisputeEntity extends BaseEntity {
 
     public String getResolutionNote() { return resolutionNote; }
     public void setResolutionNote(String resolutionNote) { this.resolutionNote = resolutionNote; }
-
-    public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
-    public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
 
     public UUID getBeneficiaryUserId() { return beneficiaryUserId; }
     public void setBeneficiaryUserId(UUID beneficiaryUserId) { this.beneficiaryUserId = beneficiaryUserId; }

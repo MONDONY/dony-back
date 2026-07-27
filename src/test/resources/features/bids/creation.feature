@@ -16,14 +16,6 @@ Fonctionnalité: Dépôt d'offres sur les annonces
     Et l'offre "offre-1" est sauvegardée
 
   @error-case
-  Scénario: Valeur déclarée supérieure à 500 € — refusée
-    Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-bid-002" et le téléphone "+33666000003"
-    Et il existe une annonce de "Paris" à "Dakar" avec 20 kg disponibles à 5.0 €/kg sauvegardée sous "annonce-max-val"
-    Etant donné un utilisateur EXPÉDITEUR enregistré avec l'uid "sender-bid-002" et le téléphone "+33666000004"
-    Quand je dépose une offre avec une valeur déclarée de 501.0 € sur l'annonce "annonce-max-val"
-    Alors la réponse HTTP est 422
-
-  @error-case
   Scénario: Disclaimer non accepté — refusé
     Etant donné un utilisateur VOYAGEUR enregistré avec l'uid "traveler-bid-003" et le téléphone "+33666000005"
     Et il existe une annonce de "Paris" à "Dakar" avec 20 kg disponibles à 5.0 €/kg sauvegardée sous "annonce-disclaimer"

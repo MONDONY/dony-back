@@ -69,7 +69,7 @@ class AnnouncementServiceTest {
     @org.junit.jupiter.api.BeforeEach
     void initService() {
         DonyConfigProperties config = new DonyConfigProperties(null, null,
-                new DonyConfigProperties.Urgency(3));
+                new DonyConfigProperties.Urgency(3), null);
         // Pass-through: return the key/URL as-is so avatar URL assertions remain valid
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Real mapper wired to the same mocks so SearchTests assertions remain valid
@@ -1762,7 +1762,7 @@ class AnnouncementServiceTest {
             DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
                     new DonyConfigProperties.Limits.NonPro(2), null);
             DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits,
-                    new DonyConfigProperties.Urgency(3));
+                    new DonyConfigProperties.Urgency(3), null);
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
                     userRepository, bidRepository, priceGridService, storageService, configWithLimits);
             AnnouncementService serviceWithLimits = new AnnouncementService(
@@ -2093,7 +2093,7 @@ class AnnouncementServiceTest {
             DonyConfigProperties.Limits limits = new DonyConfigProperties.Limits(
                     new DonyConfigProperties.Limits.NonPro(2), null);
             DonyConfigProperties configWithLimits = new DonyConfigProperties(null, limits,
-                    new DonyConfigProperties.Urgency(3));
+                    new DonyConfigProperties.Urgency(3), null);
             AnnouncementSearchMapper mapperWithLimits = new AnnouncementSearchMapper(
                     userRepository, bidRepository, priceGridService, storageService, configWithLimits);
             AnnouncementService serviceWithLimits = new AnnouncementService(

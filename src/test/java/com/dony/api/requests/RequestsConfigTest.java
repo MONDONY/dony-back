@@ -30,7 +30,6 @@ class RequestsConfigTest {
         assertThat(requestsConfig.dateToleranceMaxDays()).isEqualTo(7);
         assertThat(requestsConfig.weightKgMin()).isEqualByComparingTo(new BigDecimal("0.5"));
         assertThat(requestsConfig.weightKgMax()).isEqualByComparingTo(new BigDecimal("32"));
-        assertThat(requestsConfig.declaredValueMaxEur()).isEqualByComparingTo(new BigDecimal("500"));
         assertThat(requestsConfig.bodyMaxChars()).isEqualTo(280);
         assertThat(requestsConfig.maxOpenRequestsPerSender()).isEqualTo(10);
         assertThat(requestsConfig.maxOpenThreadsPerTraveler()).isEqualTo(5);

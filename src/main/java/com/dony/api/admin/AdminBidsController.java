@@ -161,7 +161,7 @@ public class AdminBidsController {
                 item.id(), item.status(), item.announcementId(),
                 item.senderName(), item.travelerName(), item.corridor(),
                 item.weightKg(), item.netEur(), item.paymentMethod(), item.createdAt(),
-                b.getDeclaredValueEur(), b.getContentCategory(), b.getRecipientName(),
+                b.getContentCategory(), b.getRecipientName(),
                 b.getTrackingNumber(), b.getCommissionRate(), b.getRefusalReason());
     }
 

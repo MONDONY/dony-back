@@ -13,11 +13,15 @@ import java.math.BigDecimal;
 public record DonyConfigProperties(
     Commission commission,
     Limits limits,
-    Urgency urgency
+    Urgency urgency,
+    Reimbursement reimbursement
 ) {
     public DonyConfigProperties {
         if (urgency == null) {
             urgency = new Urgency(null);
+        }
+        if (reimbursement == null) {
+            reimbursement = new Reimbursement(null);
         }
     }
 
@@ -27,6 +31,15 @@ public record DonyConfigProperties(
         public Urgency {
             if (thresholdDays == null) {
                 thresholdDays = 3;
+            }
+        }
+    }
+
+    /** Plafond de remboursement dony en cas de perte de colis (défaut 50 €). */
+    public record Reimbursement(BigDecimal maxAmountEur) {
+        public Reimbursement {
+            if (maxAmountEur == null) {
+                maxAmountEur = new BigDecimal("50");
             }
         }
     }

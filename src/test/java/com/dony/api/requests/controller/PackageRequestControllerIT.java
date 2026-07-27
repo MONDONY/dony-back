@@ -307,8 +307,7 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Mamadou Diallo",
             "+221771234567",
-            "Dakar",
-            new BigDecimal("150.00")
+            "Dakar"
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -328,8 +327,7 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Fatou Diop",
             "+221771234567",
-            null,
-            new BigDecimal("150.00")
+            null
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")
@@ -349,8 +347,7 @@ class PackageRequestControllerIT {
         var req = new com.dony.api.requests.dto.PackageRequestCompleteDetailsRequest(
             "Mamadou Diallo",
             "+221771234567",
-            "Dakar",
-            new BigDecimal("150.00")
+            "Dakar"
         );
 
         mockMvc.perform(post("/package-requests/" + id + "/complete-details")

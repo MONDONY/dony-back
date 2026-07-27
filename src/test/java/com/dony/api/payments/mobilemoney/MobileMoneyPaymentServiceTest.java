@@ -8,7 +8,6 @@ import com.dony.api.matching.BidEntity;
 import com.dony.api.matching.BidRepository;
 import com.dony.api.payments.cash.PaymentMethod;
 import com.dony.api.payments.mobilemoney.events.BidPaidByMobileMoneyEvent;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
@@ -46,69 +45,43 @@ class MobileMoneyPaymentServiceTest {
     private final UUID senderId    = UUID.randomUUID();
     private final UUID annoId      = UUID.randomUUID();
 
-    @BeforeEach
-    void setUp() {
-        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
-        when(registry.isMobileMoneyProvider(PaymentMethod.WAVE)).thenReturn(true);
-        when(registry.isMobileMoneyProvider(PaymentMethod.CASH)).thenReturn(false);
-    }
+    // --- initiate() : le paiement mobile money direct par l'expéditeur a été
+    // retiré (cf. BidService : 422 mobile-money-bid-payment-retired à la
+    // création du bid). initiate() reste exposée pour d'éventuels bids
+    // WAVE/ORANGE_MONEY legacy encore PENDING, mais renvoie désormais
+    // systématiquement la même erreur au lieu de générer un lien de paiement.
 
     @Test
-    void initiate_validWaveBid_savesEntityAndReturnsLink() {
-        BidEntity bid = waveBid();
-        AnnouncementEntity ann = announcement();
+    void initiateAlwaysRejectsAsRetired() {
+        BidEntity bid = new BidEntity();
+        bid.setSenderId(senderId);
+        bid.setPaymentMethod(PaymentMethod.WAVE);
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
-        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId)).thenReturn(Optional.empty());
 
-        MobileMoneyLinkResult stubResult = new MobileMoneyLinkResult(
-                "wave_ref_123", "https://wave.test/pay?ref=wave_ref_123",
-                LocalDateTime.now(ZoneOffset.UTC).plusMinutes(30));
-        when(waveGateway.generatePaymentLink(any())).thenReturn(stubResult);
+        assertThatThrownBy(() -> service.initiate(bidId, senderId))
+                .isInstanceOf(DonyBusinessException.class)
+                .hasMessageContaining("plus disponible");
 
-        ArgumentCaptor<MobileMoneyPaymentEntity> captor = ArgumentCaptor.forClass(MobileMoneyPaymentEntity.class);
-        when(repository.save(captor.capture())).thenAnswer(inv -> inv.getArgument(0));
-
-        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
-
-        assertThat(result.getStatus()).isEqualTo("PENDING");
-        assertThat(result.getExternalReference()).isEqualTo("wave_ref_123");
-        assertThat(result.getTravelerId()).isEqualTo(travelerId);
+        verifyNoInteractions(registry);
     }
 
     @Test
     void initiate_callerIsNotSender_throwsForbidden() {
         BidEntity bid = waveBid();
         when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId)).thenReturn(Optional.empty());
 
         UUID randomCaller = UUID.randomUUID();
         assertThatThrownBy(() -> service.initiate(bidId, randomCaller))
                 .isInstanceOf(DonyBusinessException.class)
                 .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
                         .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
-    }
 
-    @Test
-    void initiate_existingPendingNotExpired_returnsExistingWithoutNewGatewayCall() {
-        BidEntity bid = waveBid();
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-
-        MobileMoneyPaymentEntity existing = new MobileMoneyPaymentEntity();
-        existing.setBidId(bidId);
-        existing.setStatus("PENDING");
-        existing.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(25));
-        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
-                .thenReturn(Optional.of(existing));
-
-        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
-
-        assertThat(result).isSameAs(existing);
-        verify(waveGateway, never()).generatePaymentLink(any());
+        verifyNoInteractions(registry);
     }
 
     @Test
     void handleWebhook_validSignatureConfirmed_marksCompletedAndPublishesEvent() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         String payload = "{\"reference\":\"wave_ref_xyz\",\"status\":\"SUCCEEDED\"}";
         String signature = "some-valid-sig";
 
@@ -134,6 +107,7 @@ class MobileMoneyPaymentServiceTest {
 
     @Test
     void handleWebhook_invalidSignature_throwsUnauthorized() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         when(waveGateway.verifyWebhookSignature(any(), any())).thenReturn(false);
 
         assertThatThrownBy(() -> service.handleWebhook(PaymentMethod.WAVE, "{}", "bad-sig"))
@@ -144,6 +118,7 @@ class MobileMoneyPaymentServiceTest {
 
     @Test
     void handleWebhook_alreadyCompleted_idempotentNoEvent() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         String payload = "{\"reference\":\"wave_ref_abc\",\"status\":\"SUCCEEDED\"}";
         when(waveGateway.verifyWebhookSignature(any(), any())).thenReturn(true);
         when(waveGateway.extractExternalReference(payload)).thenReturn("wave_ref_abc");
@@ -188,6 +163,7 @@ class MobileMoneyPaymentServiceTest {
 
     @Test
     void handleWebhook_paymentFailed_marksFailedAndLogsAudit() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         String payload = "{\"reference\":\"wave_ref_fail\",\"status\":\"FAILED\",\"failure_reason\":\"insufficient funds\"}";
         String signature = "sig";
 
@@ -212,6 +188,7 @@ class MobileMoneyPaymentServiceTest {
 
     @Test
     void handleWebhook_nullReference_returnsEarly() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         String payload = "{\"no_reference\":true}";
         String signature = "sig";
 
@@ -226,6 +203,7 @@ class MobileMoneyPaymentServiceTest {
 
     @Test
     void handleWebhook_paymentNotFound_returnsEarly() {
+        when(registry.getGateway(PaymentMethod.WAVE)).thenReturn(waveGateway);
         String payload = "{\"reference\":\"unknown_ref\",\"status\":\"SUCCEEDED\"}";
         String signature = "sig";
 
@@ -236,46 +214,6 @@ class MobileMoneyPaymentServiceTest {
         service.handleWebhook(PaymentMethod.WAVE, payload, signature);
 
         verify(events, never()).publishEvent(any());
-    }
-
-    @Test
-    void initiate_existingExpiredPending_generatesNewLink() {
-        BidEntity bid = waveBid();
-        AnnouncementEntity ann = announcement();
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-        when(announcementRepository.findById(annoId)).thenReturn(Optional.of(ann));
-
-        // Expired PENDING entity
-        MobileMoneyPaymentEntity expired = new MobileMoneyPaymentEntity();
-        expired.setBidId(bidId);
-        expired.setStatus("PENDING");
-        expired.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5)); // expired
-        when(repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId))
-                .thenReturn(Optional.of(expired));
-
-        MobileMoneyLinkResult stubResult = new MobileMoneyLinkResult(
-                "wave_new_ref", "https://wave.test/pay?ref=wave_new_ref",
-                LocalDateTime.now(ZoneOffset.UTC).plusMinutes(30));
-        when(waveGateway.generatePaymentLink(any())).thenReturn(stubResult);
-        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        MobileMoneyPaymentEntity result = service.initiate(bidId, senderId);
-
-        assertThat(result.getExternalReference()).isEqualTo("wave_new_ref");
-        verify(waveGateway).generatePaymentLink(any());
-    }
-
-    @Test
-    void initiate_nonMobileMoneyBid_throwsUnprocessableEntity() {
-        BidEntity bid = new BidEntity();
-        bid.setPaymentMethod(PaymentMethod.CASH);
-        bid.setSenderId(senderId);
-        when(bidRepository.findById(bidId)).thenReturn(Optional.of(bid));
-
-        assertThatThrownBy(() -> service.initiate(bidId, senderId))
-                .isInstanceOf(DonyBusinessException.class)
-                .satisfies(ex -> assertThat(((DonyBusinessException) ex).getStatus())
-                        .isEqualTo(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY));
     }
 
     @Test
@@ -319,7 +257,6 @@ class MobileMoneyPaymentServiceTest {
         bid.setPaymentMethod(PaymentMethod.WAVE);
         bid.setMobileMoneyPhone("+2250700000001");
         bid.setMobileMoneyCountryCode("CI");
-        bid.setDeclaredValueEur(new BigDecimal("50.00"));
         bid.setAnnouncementId(annoId);
         bid.setSenderId(senderId);
         // Injecter l'ID via réflexion (BaseEntity champ privé)

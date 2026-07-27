@@ -111,7 +111,6 @@ class TripsSummaryRepositoryIT {
         bid.setAnnouncementId(announcementId);
         bid.setSenderId(UUID.randomUUID());
         bid.setWeightKg(weightKg);
-        bid.setDeclaredValueEur(new BigDecimal("100.00"));
         bid.setStatus(status);
         return bidRepository.save(bid);
     }

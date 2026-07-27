@@ -30,9 +30,6 @@ public class BidEntity extends BaseEntity {
     @Column(name = "weight_kg", precision = 5, scale = 2)
     private BigDecimal weightKg;
 
-    @Column(name = "declared_value_eur", precision = 10, scale = 2)
-    private BigDecimal declaredValueEur;
-
     /** Net négocié figé (= prix d'accord du thread) pour un bid issu d'une
      * demande. Prime sur le tarif de l'annonce dans le calcul d'affichage,
      * qui peut dériver. Null pour un bid d'offre directe. */
@@ -211,9 +208,6 @@ public class BidEntity extends BaseEntity {
 
     public BigDecimal getWeightKg() { return weightKg; }
     public void setWeightKg(BigDecimal weightKg) { this.weightKg = weightKg; }
-
-    public BigDecimal getDeclaredValueEur() { return declaredValueEur; }
-    public void setDeclaredValueEur(BigDecimal declaredValueEur) { this.declaredValueEur = declaredValueEur; }
 
     public BigDecimal getNegotiatedNetEur() { return negotiatedNetEur; }
     public void setNegotiatedNetEur(BigDecimal negotiatedNetEur) { this.negotiatedNetEur = negotiatedNetEur; }

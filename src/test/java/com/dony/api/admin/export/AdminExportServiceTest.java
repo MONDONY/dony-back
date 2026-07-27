@@ -102,14 +102,12 @@ class AdminExportServiceTest {
         d.setType("DAMAGED");
         d.setStatus("RESOLVED");
         d.setResolutionType("RESOLVED_FOR_SENDER");
-        d.setDeclaredValueEur(new BigDecimal("250.00"));
         when(disputeRepository.findAllByCreatedAtBetweenOrderByCreatedAtAsc(any(), any()))
                 .thenReturn(List.of(d));
 
         String csv = text(service().exportDisputes(null, null));
 
         assertThat(csv).contains("RESOLVED_FOR_SENDER");
-        assertThat(csv).contains("250.00");
     }
 
     @Test

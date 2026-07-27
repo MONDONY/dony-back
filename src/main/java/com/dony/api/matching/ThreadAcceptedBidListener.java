@@ -89,7 +89,6 @@ public class ThreadAcceptedBidListener {
         // (edited afterwards), onPackageRequestDetailsCompleted re-applies them.
         bid.setRecipientName(e.recipientName());
         bid.setRecipientPhone(e.recipientPhone());
-        bid.setDeclaredValueEur(e.declaredValueEur());
         bid.setDisclaimerSignedAt(e.disclaimerSignedAt());
         bid.setDisclaimerSignedIp(e.disclaimerSignedIp());
         // Tracking artefacts generated at acceptance, mirroring BidService.acceptBid
@@ -175,7 +174,6 @@ public class ThreadAcceptedBidListener {
         BidEntity bid = bidOpt.get();
         bid.setRecipientName(e.recipientName());
         bid.setRecipientPhone(e.recipientPhone());
-        bid.setDeclaredValueEur(e.declaredValueEur());
         bid.setDisclaimerSignedAt(e.disclaimerSignedAt());
         bid.setDisclaimerSignedIp(e.disclaimerSignedIp());
         bidRepository.save(bid);

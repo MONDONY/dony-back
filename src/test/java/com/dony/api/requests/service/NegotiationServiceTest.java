@@ -2697,7 +2697,6 @@ class NegotiationServiceTest {
             request.setRecipientPhone("+221771234567");
             request.setPickupAddressLabel("10 rue de la Paix, Paris");
             request.setDeliveryAddressLabel("Plateau, Dakar");
-            request.setDeclaredValueEur(new BigDecimal("150"));
             request.setDisclaimerSignedAt(java.time.LocalDateTime.now());
             request.setDepartureCity("Paris");
             request.setArrivalCity("Dakar");
@@ -2730,7 +2729,6 @@ class NegotiationServiceTest {
             PackageRequestAcceptedEvent published = captor.getValue();
             assertThat(published.recipientName()).isEqualTo("Mamadou Diallo");
             assertThat(published.recipientPhone()).isEqualTo("+221771234567");
-            assertThat(published.declaredValueEur()).isEqualByComparingTo(new BigDecimal("150"));
             assertThat(published.disclaimerSignedAt()).isEqualTo(request.getDisclaimerSignedAt());
         }
 

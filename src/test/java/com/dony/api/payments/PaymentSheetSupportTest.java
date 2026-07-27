@@ -116,7 +116,6 @@ class PaymentSheetSupportTest {
         b.setAnnouncementId(annId);
         b.setSenderId(senderId);
         b.setWeightKg(BigDecimal.valueOf(5.0));
-        b.setDeclaredValueEur(BigDecimal.valueOf(100.0));
         b.setStatus(BidStatus.ACCEPTED);
         return b;
     }

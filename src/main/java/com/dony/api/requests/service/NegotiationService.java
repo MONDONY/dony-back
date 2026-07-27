@@ -876,7 +876,6 @@ public class NegotiationService {
             paymentIntentId,
             request.getRecipientName(),
             request.getRecipientPhone(),
-            request.getDeclaredValueEur(),
             request.getDisclaimerSignedAt(),
             request.getDisclaimerSignedIp(),
             thread.getPaymentMethod(),

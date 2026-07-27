@@ -234,7 +234,6 @@ public class AdminDisputesController {
                 d.getResolutionType(),
                 d.getResolvedAt(),
                 d.getResolutionNote(),
-                d.getDeclaredValueEur(),
                 d.getBeneficiaryUserId());
     }
 

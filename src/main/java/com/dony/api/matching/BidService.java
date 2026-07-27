@@ -264,12 +264,6 @@ public class BidService {
                     "Poids demandé supérieur à la capacité disponible");
         }
 
-        if (request.declaredValueEur().compareTo(BigDecimal.valueOf(500)) > 0) {
-            throw new DonyBusinessException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, "value-exceeds-limit", "Value Exceeds Limit",
-                    "Valeur maximum : 500 €");
-        }
-
         if (Boolean.FALSE.equals(request.disclaimerSigned())) {
             throw new DonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "disclaimer-not-signed", "Disclaimer Not Signed",
@@ -329,7 +323,6 @@ public class BidService {
         bid.setSenderId(sender.getId());
         bid.setWeightKg(request.weightKg());  // peut être null pour GRID mode
         bid.setPricingMode(bidMode);
-        bid.setDeclaredValueEur(request.declaredValueEur());
         bid.setDescription(request.description());
         bid.setContentCategory(normalizedContentCategory);
         bid.setRecipientName(request.recipientName());
@@ -351,7 +344,6 @@ public class BidService {
                         "announcementId", announcementId.toString(),
                         "weightKg", saved.getWeightKg() != null ? saved.getWeightKg().toString() : "null",
                         "pricingMode", bidMode.name(),
-                        "declaredValueEur", saved.getDeclaredValueEur().toString(),
                         "contentCategory", String.valueOf(saved.getContentCategory()),
                         "disclaimerSignedAt", saved.getDisclaimerSignedAt().toString(),
                         "disclaimerSignedIp", clientIp
@@ -1130,7 +1122,6 @@ public class BidService {
                 senderIsProAccount,
                 senderKiloPro,
                 bid.getWeightKg(),
-                bid.getDeclaredValueEur(),
                 bid.getDescription(),
                 bid.getContentCategory(),
                 bid.getRecipientName(),

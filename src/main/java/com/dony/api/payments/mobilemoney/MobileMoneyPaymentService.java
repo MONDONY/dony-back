@@ -14,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
@@ -48,9 +47,11 @@ public class MobileMoneyPaymentService {
     }
 
     /**
-     * Initiate (or retrieve an existing non-expired) Mobile Money payment for a bid.
-     * Idempotent: returns the existing PENDING entity if it has not yet expired.
-     * Only the sender of the bid is allowed to initiate a Mobile Money payment.
+     * Le paiement mobile money direct par l'expéditeur a été retiré (cf.
+     * BidService : 422 mobile-money-bid-payment-retired à la création). Cette
+     * méthode reste exposée pour d'éventuels bids WAVE/ORANGE_MONEY legacy encore
+     * PENDING : elle renvoie désormais la même erreur cohérente plutôt que de
+     * générer un lien de paiement basé sur un champ supprimé.
      */
     @Transactional
     public MobileMoneyPaymentEntity initiate(UUID bidId, UUID callerId) {
@@ -63,55 +64,9 @@ public class MobileMoneyPaymentService {
                     "Vous n'êtes pas l'expéditeur de ce bid");
         }
 
-        PaymentMethod pm = bid.getPaymentMethod();
-
-        if (!registry.isMobileMoneyProvider(pm)) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "bid-not-mobile-money", "Not Mobile Money Bid",
-                    "Ce bid n'utilise pas un mode de paiement Mobile Money");
-        }
-
-        // Idempotence: return existing PENDING payment if still valid
-        Optional<MobileMoneyPaymentEntity> existing =
-                repository.findTopByBidIdAndDeletedAtIsNullOrderByCreatedAtDesc(bidId);
-        if (existing.isPresent()) {
-            MobileMoneyPaymentEntity e = existing.get();
-            if ("PENDING".equals(e.getStatus()) && e.getExpiresAt() != null
-                    && e.getExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
-                return e;
-            }
-        }
-
-        // Resolve travelerId via announcement
-        var announcement = announcementRepository
-                .findById(bid.getAnnouncementId())
-                .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
-                        "announcement-not-found", "Announcement Not Found",
-                        "Annonce introuvable : " + bid.getAnnouncementId()));
-        UUID travelerId = announcement.getTravelerId();
-
-        MobileMoneyGateway gateway = registry.getGateway(pm);
-        BigDecimal amount = bid.getDeclaredValueEur();
-
-        MobileMoneyPaymentRequest req = new MobileMoneyPaymentRequest(
-                bidId, bid.getMobileMoneyPhone(), bid.getMobileMoneyCountryCode(), amount, "XOF");
-
-        MobileMoneyLinkResult result = gateway.generatePaymentLink(req);
-
-        MobileMoneyPaymentEntity entity = new MobileMoneyPaymentEntity();
-        entity.setBidId(bidId);
-        entity.setTravelerId(travelerId);
-        entity.setProvider(pm.name());
-        entity.setCountryCode(bid.getMobileMoneyCountryCode());
-        entity.setPhoneNumber(bid.getMobileMoneyPhone());
-        entity.setAmount(amount);
-        entity.setCurrency("XOF");
-        entity.setExternalReference(result.externalReference());
-        entity.setPaymentLink(result.paymentLink());
-        entity.setStatus("PENDING");
-        entity.setExpiresAt(result.expiresAt());
-
-        return repository.save(entity);
+        throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "mobile-money-bid-payment-retired", "Mobile Money Bid Payment Retired",
+                "Le paiement mobile money direct par l'expéditeur n'est plus disponible.");
     }
 
     /**

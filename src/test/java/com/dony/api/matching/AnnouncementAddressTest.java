@@ -77,7 +77,7 @@ class AnnouncementServiceAddressTest {
     @org.junit.jupiter.api.BeforeEach
     void initService() {
         com.dony.api.config.DonyConfigProperties cfg = new com.dony.api.config.DonyConfigProperties(null, null,
-                new com.dony.api.config.DonyConfigProperties.Urgency(3));
+                new com.dony.api.config.DonyConfigProperties.Urgency(3), null);
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, cfg, priceGridService, flagService,

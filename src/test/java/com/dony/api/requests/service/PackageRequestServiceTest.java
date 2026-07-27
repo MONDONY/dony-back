@@ -53,7 +53,7 @@ class PackageRequestServiceTest {
     @Mock private com.dony.api.matching.MatchingService matchingService;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (dony.urgency.threshold-days). */
     private final DonyConfigProperties donyConfig =
-            new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3));
+            new DonyConfigProperties(null, null, new DonyConfigProperties.Urgency(3), null);
     private PackageRequestService service;
 
     private UserEntity sender;
@@ -595,7 +595,7 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Marie", "+221771234567", "Dakar", new BigDecimal("120.00")
+                "Marie", "+221771234567", "Dakar"
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
@@ -603,7 +603,6 @@ class PackageRequestServiceTest {
             assertThat(entity.getRecipientName()).isEqualTo("Marie");
             assertThat(entity.getRecipientPhone()).isEqualTo("+221771234567");
             assertThat(entity.getRecipientCity()).isEqualTo("Dakar");
-            assertThat(entity.getDeclaredValueEur()).isEqualByComparingTo("120.00");
             // The entity had no disclaimerSignedAt (bare entity), so the defensive
             // branch signs it now using the client IP.
             assertThat(entity.getDisclaimerSignedAt()).isNotNull();
@@ -623,7 +622,7 @@ class PackageRequestServiceTest {
             when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Fatou Diop", "+221771234567", null, new BigDecimal("80.00")
+                "Fatou Diop", "+221771234567", null
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.5");
@@ -646,7 +645,7 @@ class PackageRequestServiceTest {
             when(repository.findById(reqId)).thenReturn(Optional.of(entity));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Z", "+221771234567", "Dakar", new BigDecimal("50.00")
+                "Z", "+221771234567", "Dakar"
             );
 
             assertThatThrownBy(() -> service.completeDetails(SENDER_ID, reqId, req, "1.2.3.4"))
@@ -671,7 +670,7 @@ class PackageRequestServiceTest {
                 .thenReturn(List.of(thread));
 
             var req = new PackageRequestCompleteDetailsRequest(
-                "Awa", "+221770000000", "Abobo", new BigDecimal("99.00")
+                "Awa", "+221770000000", "Abobo"
             );
 
             service.completeDetails(SENDER_ID, reqId, req, "203.0.113.9");
