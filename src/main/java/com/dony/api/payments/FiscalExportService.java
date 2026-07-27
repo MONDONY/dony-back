@@ -58,7 +58,7 @@ public class FiscalExportService {
 
     private String buildSummaryCsv(List<PaymentEntity> payments, UserEntity traveler, int year) {
         var sb = new StringBuilder();
-        sb.append("Export fiscal Dony — Résumé annuel\n");
+        sb.append("Export fiscal Yadony — Résumé annuel\n");
         sb.append("Année,Nom,Revenu brut (€),Commissions (€),Revenu net (€)\n");
         BigDecimal gross = payments.stream().map(PaymentEntity::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -87,9 +87,9 @@ public class FiscalExportService {
 
     private String buildDac7Csv(List<PaymentEntity> payments, UserEntity traveler, int year) {
         var sb = new StringBuilder();
-        sb.append("# Export DAC7 — Dony — ").append(year).append("\n");
+        sb.append("# Export DAC7 — Yadony — ").append(year).append("\n");
         sb.append("Champ,Valeur\n");
-        sb.append("Plateforme,Dony SAS\n");
+        sb.append("Plateforme,Yadony SAS\n");
         sb.append("Année,").append(year).append("\n");
         sb.append("Prénom,").append(csv(traveler.getFirstName())).append("\n");
         sb.append("Nom,").append(csv(traveler.getLastName())).append("\n");
@@ -115,7 +115,7 @@ public class FiscalExportService {
         BigDecimal net = gross.subtract(commission);
         return "<h2>Résumé annuel " + year + "</h2>" +
                 "<p><strong>Nom :</strong> " + esc(traveler.getFirstName() + " " + traveler.getLastName()) + "</p>" +
-                "<table><tr><th>Revenu brut</th><th>Commissions Dony</th><th>Revenu net</th></tr>" +
+                "<table><tr><th>Revenu brut</th><th>Commissions Yadony</th><th>Revenu net</th></tr>" +
                 "<tr><td>" + eur(gross) + " €</td><td>" + eur(commission) + " €</td><td>" + eur(net) + " €</td></tr>" +
                 "</table>";
     }
@@ -143,25 +143,25 @@ public class FiscalExportService {
         BigDecimal commission = payments.stream().map(PaymentEntity::getCommissionAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return "<h2>Déclaration DAC7 — " + year + "</h2>" +
-                "<p><strong>Plateforme :</strong> Dony SAS</p>" +
+                "<p><strong>Plateforme :</strong> Yadony SAS</p>" +
                 "<p><strong>Prestataire :</strong> " + esc(traveler.getFirstName() + " " + traveler.getLastName()) + "</p>" +
                 "<p><strong>Pays :</strong> " + esc(traveler.getCountry()) + "</p>" +
                 "<table><tr><th>Revenu brut</th><th>Commissions</th><th>Revenu net</th><th>Transactions</th></tr>" +
                 "<tr><td>" + eur(gross) + " €</td><td>" + eur(commission) + " €</td>" +
                 "<td>" + eur(gross.subtract(commission)) + " €</td><td>" + payments.size() + "</td></tr>" +
                 "</table>" +
-                "<p style='margin-top:20px;font-size:11px;color:#666;'>Document généré automatiquement par Dony. " +
+                "<p style='margin-top:20px;font-size:11px;color:#666;'>Document généré automatiquement par Yadony. " +
                 "Ouvrez ce fichier dans un navigateur puis imprimez-le (Ctrl+P) pour obtenir un PDF.</p>";
     }
 
     private String wrapHtml(String body, int year, String type) {
         return "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'>" +
-                "<title>Export fiscal Dony " + year + "</title>" +
+                "<title>Export fiscal Yadony " + year + "</title>" +
                 "<style>body{font-family:Arial,sans-serif;margin:40px;color:#333}" +
                 "h1{color:#0B5FFF}h2{color:#333;border-bottom:1px solid #ddd;padding-bottom:8px}" +
                 "table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px 12px;text-align:left}" +
                 "th{background:#f5f5f5;font-weight:600}@media print{body{margin:20px}}</style>" +
-                "</head><body><h1>Export fiscal Dony</h1>" + body + "</body></html>";
+                "</head><body><h1>Export fiscal Yadony</h1>" + body + "</body></html>";
     }
 
     // ---- Helpers ----

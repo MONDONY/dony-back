@@ -322,7 +322,7 @@ public class AdminAccountService {
                 UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
                         .setEmail(syntheticEmail(req.login()));
                 requireFirebase().updateUser(updateRequest);
-                // Un admin peut aussi être utilisateur dony (même firebase_uid) : sans cette
+                // Un admin peut aussi être utilisateur Yadony (même firebase_uid) : sans cette
                 // purge, FirebaseContactService servirait l'ancienne adresse jusqu'à 5 min.
                 firebaseContact.evict(entity.getFirebaseUid());
             } catch (FirebaseAuthException e) {

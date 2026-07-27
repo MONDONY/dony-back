@@ -38,7 +38,7 @@ public record NegotiationThreadResponse(
     // Bid matérialisé après acceptation (null tant que non matérialisé) — permet
     // au mobile d'ouvrir le détail du bid (suivi, no-show…) depuis le thread
     UUID materializedBidId,
-    // Vrai si le voyageur peut payer la commission Dony en cash (wallet suffisant ou carte enregistrée).
+    // Vrai si le voyageur peut payer la commission Yadony en cash (wallet suffisant ou carte enregistrée).
     // Sert à masquer l'option CASH côté sender et traveler si elle n'est pas viable.
     boolean cashCommissionAvailable,
     // SET des modes de paiement effectivement fournissables (colis.acceptedPaymentMethods ∩

@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * SOURCE UNIQUE du taux de commission Dony effectif pour une transaction.
+ * SOURCE UNIQUE du taux de commission Yadony effectif pour une transaction.
  *
  * <p>Placé dans {@code common/} car il s'agit de logique partagée (matching,
  * payments, promo).

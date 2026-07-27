@@ -14,7 +14,7 @@ import java.util.Optional;
  * dans Firebase, voir {@link FirebaseContactService}) et l'interroger côté Firebase
  * renverrait l'UID du compte qui vient justement de s'authentifier, donc rien d'utile.
  * Un utilisateur créé par email OTP qui se reconnecte ensuite par SMS OTP obtient donc
- * un compte Firebase distinct — la fusion des deux relève de Firebase, pas de dony.
+ * un compte Firebase distinct — la fusion des deux relève de Firebase, pas de Yadony.
  */
 @Service
 public class UserLinkerService {

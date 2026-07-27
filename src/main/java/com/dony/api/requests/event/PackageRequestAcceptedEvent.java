@@ -21,7 +21,7 @@ public record PackageRequestAcceptedEvent(
     /** Clés S3 des photos colis de la demande (package_requests/…) à copier vers le bid. */
     java.util.List<String> photoObjectKeys,
     /**
-     * "WALLET"/"CARD" si la commission Dony a été prélevée au voyageur pour ce thread
+     * "WALLET"/"CARD" si la commission Yadony a été prélevée au voyageur pour ce thread
      * CASH (cf. {@code NegotiationThreadEntity.commissionChargedVia}), null sinon
      * (STRIPE — pas de prélèvement commission ici). Permet au bid matérialisé de savoir
      * comment rembourser si le bid est annulé avant remise (cf. BidCancelledCommissionRefundListener).

@@ -50,7 +50,7 @@ public class UserDataExportService {
 
     public UserDataExportDto export(UserEntity user) {
         // Coordonnées lues dans Firebase : l'export RGPD doit rester complet même
-        // si la base dony ne les stocke plus.
+        // si la base Yadony ne les stocke plus.
         var contact = firebaseContact.getContact(user.getFirebaseUid());
         ProfileExport profile = new ProfileExport(
                 user.getId(),

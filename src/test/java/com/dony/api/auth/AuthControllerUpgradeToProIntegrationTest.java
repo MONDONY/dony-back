@@ -85,7 +85,7 @@ class AuthControllerUpgradeToProIntegrationTest {
     @Test
     @DisplayName("200 OK with valid body → isProAccount=true, stripeAccountStatus=NOT_CREATED, country=FR in response")
     void upgradeToPro_success_returns200() throws Exception {
-        UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+        UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "12345678901234");
 
         mockMvc.perform(post("/auth/me/upgrade-to-pro")
                         .with(authentication(authenticatedAs(FIREBASE_UID)))
@@ -102,7 +102,7 @@ class AuthControllerUpgradeToProIntegrationTest {
     @Test
     @DisplayName("200 OK when user already has a Stripe Connect account → compte pro indépendant de Stripe")
     void upgradeToPro_withStripeAccount_returns200() throws Exception {
-        UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+        UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "12345678901234");
 
         mockMvc.perform(post("/auth/me/upgrade-to-pro")
                         .with(authentication(authenticatedAs(FIREBASE_UID_WITH_STRIPE)))
@@ -116,7 +116,7 @@ class AuthControllerUpgradeToProIntegrationTest {
     @Test
     @DisplayName("401 Unauthorized when no authentication provided")
     void upgradeToPro_noAuth_returns401() throws Exception {
-        UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+        UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "12345678901234");
 
         mockMvc.perform(post("/auth/me/upgrade-to-pro")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -127,7 +127,7 @@ class AuthControllerUpgradeToProIntegrationTest {
     @Test
     @DisplayName("422 Unprocessable when siret is invalid (not 14 digits)")
     void upgradeToPro_invalidSiret_returns422() throws Exception {
-        UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "1234567"); // too short
+        UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "1234567"); // too short
 
         mockMvc.perform(post("/auth/me/upgrade-to-pro")
                         .with(authentication(authenticatedAs(FIREBASE_UID)))

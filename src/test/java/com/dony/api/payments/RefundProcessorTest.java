@@ -82,7 +82,7 @@ class RefundProcessorTest {
 
     @Test
     void escrow_uncaptured_payment_is_cancelled_not_refunded() throws Exception {
-        // Cas normal chez dony : PI autorisé non capturé (requires_capture) →
+        // Cas normal chez Yadony : PI autorisé non capturé (requires_capture) →
         // l'autorisation est annulée (pi.cancel), JAMAIS Refund.create (que Stripe
         // refuse sur une charge non capturée).
         PaymentEntity p = payment(PaymentStatus.ESCROW);

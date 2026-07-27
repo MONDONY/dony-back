@@ -219,7 +219,7 @@ public class ReferralService {
         String lastName = user.getLastName();
         String raw = (firstName != null ? firstName : "") + (lastName != null ? lastName : "");
         if (raw.length() < 4) {
-            raw = raw + "DONY";
+            raw = raw + "YADONY";
         }
         return raw.substring(0, 4).toUpperCase().replaceAll("[^A-Z0-9]", "X");
     }

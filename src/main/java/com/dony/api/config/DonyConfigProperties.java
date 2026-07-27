@@ -35,7 +35,7 @@ public record DonyConfigProperties(
         }
     }
 
-    /** Plafond de remboursement dony en cas de perte de colis (défaut 50 €). */
+    /** Plafond de remboursement Yadony en cas de perte de colis (défaut 50 €). */
     public record Reimbursement(BigDecimal maxAmountEur) {
         public Reimbursement {
             if (maxAmountEur == null) {

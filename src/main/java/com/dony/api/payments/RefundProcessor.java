@@ -26,7 +26,7 @@ import java.util.UUID;
  *   <li>PENDING → le PaymentIntent est annulé (un PI non capturé ne se rembourse pas) ;</li>
  *   <li>ESCROW → claim atomique {@code markRefundedIfEscrow} (anti double-refund intra-instance)
  *       puis, selon l'état réel du PaymentIntent : {@code pi.cancel()} si autorisé non capturé
- *       (requires_capture — cas normal chez dony, capture à la livraison seulement), ou
+ *       (requires_capture — cas normal chez Yadony, capture à la livraison seulement), ou
  *       {@code Refund.create} (clé d'idempotence {@code "refund-" + paymentId}) si déjà capturé
  *       (succeeded) ; un PI déjà {@code canceled} est un no-op idempotent ;</li>
  *   <li>échec Stripe → alerte admin + exception : la transaction REQUIRES_NEW rollback le claim,
@@ -109,7 +109,7 @@ public class RefundProcessor {
 
         final String stripeAction;
         try {
-            // Chez dony, la capture du PaymentIntent n'a lieu qu'à la livraison
+            // Chez Yadony, la capture du PaymentIntent n'a lieu qu'à la livraison
             // (DeliveryConfirmedEvent). Un paiement ESCROW correspond donc, dans la
             // quasi-totalité des cas, à un PaymentIntent AUTORISÉ mais NON CAPTURÉ
             // (status=requires_capture). Stripe refuse Refund.create sur une charge

@@ -30,7 +30,7 @@ public class UserEntity extends BaseEntity {
 
     // Téléphone et email ne sont volontairement pas stockés ici : Firebase Auth en
     // est la seule source de vérité, lue à la demande par FirebaseContactService à
-    // partir de firebaseUid. Un vol de la base dony ne les révèle donc pas.
+    // partir de firebaseUid. Un vol de la base Yadony ne les révèle donc pas.
 
     /**
      * Identifiant public généré à la création (« user » + horodatage), jamais vide.
@@ -91,7 +91,7 @@ public class UserEntity extends BaseEntity {
 
     /**
      * L'utilisateur refuse que son numéro soit révélé à sa contrepartie, même une
-     * fois l'offre acceptée. Il reste joignable par la messagerie dony, seul canal
+     * fois l'offre acceptée. Il reste joignable par la messagerie Yadony, seul canal
      * de contact dans ce cas. Opt-in explicite : false pour tous les comptes.
      */
     @Column(name = "hide_phone_number", nullable = false)
@@ -144,7 +144,7 @@ public class UserEntity extends BaseEntity {
     @Column(name = "is_pro_account", nullable = false)
     private boolean isProAccount = false;
 
-    /** Override de taux de commission Dony (null = taux global {@code dony.commission.rate}). */
+    /** Override de taux de commission Yadony (null = taux global {@code dony.commission.rate}). */
     @Column(name = "commission_rate_override")
     private java.math.BigDecimal commissionRateOverride;
 

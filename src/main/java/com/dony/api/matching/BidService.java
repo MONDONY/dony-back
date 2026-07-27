@@ -445,13 +445,13 @@ public class BidService {
                         "Not Found", "Utilisateur introuvable"));
 
         // Réglage de confidentialité de la contrepartie : elle a choisi de n'être
-        // joignable que par la messagerie dony. Vérifié ici, et pas seulement via le
+        // joignable que par la messagerie Yadony. Vérifié ici, et pas seulement via le
         // booléen des DTO de liste, car cet endpoint est la seule autorité — un
         // client qui appellerait l'URL directement ne doit pas obtenir le numéro.
         if (counterparty.isHidePhoneNumber()) {
             throw new DonyBusinessException(HttpStatus.FORBIDDEN, "phone-hidden-by-user",
                     "Phone Hidden",
-                    "Ce membre préfère échanger par la messagerie dony");
+                    "Ce membre préfère échanger par la messagerie Yadony");
         }
 
         String phone = firebaseContact.getContact(counterparty.getFirebaseUid()).phoneNumber();
@@ -956,7 +956,7 @@ public class BidService {
      *
      * <p>Faux aussi lorsque l'utilisateur a masqué son numéro dans ses réglages de
      * confidentialité : le bouton d'appel disparaît alors chez la contrepartie, mais
-     * la messagerie dony reste ouverte. Le booléen et {@link #getCounterpartyPhone}
+     * la messagerie Yadony reste ouverte. Le booléen et {@link #getCounterpartyPhone}
      * appliquent la même règle — le second est l'autorité, celui-ci n'est qu'un
      * indice d'affichage.
      */

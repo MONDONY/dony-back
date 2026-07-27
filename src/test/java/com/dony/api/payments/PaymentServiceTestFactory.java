@@ -57,7 +57,7 @@ class PaymentServiceTestFactory {
     static StripeConnectProperties defaultConnectProperties() {
         return new StripeConnectProperties(
                 "4215",
-                "Transport de colis entre particuliers via la plateforme Dony",
+                "Transport de colis entre particuliers via la plateforme Yadony",
                 "https://dony.app",
                 "http://localhost:8080/api/v1/payments/onboarding/return",
                 "http://localhost:8080/api/v1/payments/onboarding/refresh",

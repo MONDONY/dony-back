@@ -87,6 +87,6 @@ public class SmsFallbackScheduler {
     }
 
     private String buildSmsText(NotificationEntity n) {
-        return "[dony] " + n.getTitle() + (n.getBody() != null ? " — " + n.getBody() : "");
+        return "[Yadony] " + n.getTitle() + (n.getBody() != null ? " — " + n.getBody() : "");
     }
 }

@@ -1,4 +1,4 @@
--- Canal de prélèvement de la commission Dony (WALLET ou CARD) pour les bids hors escrow.
+-- Canal de prélèvement de la commission Yadony (WALLET ou CARD) pour les bids hors escrow.
 -- Permet de router le remboursement vers le bon support en cas d'annulation.
 ALTER TABLE bids ADD COLUMN IF NOT EXISTS commission_charged_via VARCHAR(10)
     CHECK (commission_charged_via IN ('WALLET', 'CARD'));

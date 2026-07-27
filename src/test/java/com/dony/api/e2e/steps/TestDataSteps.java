@@ -14,7 +14,7 @@ import java.util.UUID;
  * feature-specific step classes.
  *
  * <p>The E2E run has no real Stripe / KYC provider, yet several flows hard-require
- * a VERIFIED KYC status or a PRO account (independent of the {@code dony.*.enforce}
+ * a VERIFIED KYC status or a PRO account (independent of the {@code Yadony.*.enforce}
  * flags). These steps are the SQL bridge that simulates those external states, the
  * same way {@code BidSteps} bridges a bid to PAYMENT_ESCROWED.
  */

@@ -632,7 +632,7 @@ public class PackageRequestService {
     /**
      * Le champ legacy {@code photoUrl} n'accepte qu'une clé S3 interne, jamais une
      * URL absolue : sans ce garde-fou un expéditeur pouvait injecter du contenu
-     * externe (pixel de tracking, image de phishing sous la marque dony) affiché à
+     * externe (pixel de tracking, image de phishing sous la marque Yadony) affiché à
      * tous les voyageurs parcourant le feed des demandes. Même protection que
      * {@code TrackingService}. Le chemin moderne validé est {@code photoKeys}.
      */

@@ -1,4 +1,4 @@
--- Pivot vie privée : le téléphone et l'email quittent la base dony.
+-- Pivot vie privée : le téléphone et l'email quittent la base Yadony.
 -- Firebase Auth en devient la seule source de vérité ; le backend les relit à la
 -- demande depuis l'UID Firebase (voir FirebaseContactService). Un vol de la base
 -- ne peut donc plus révéler les coordonnées des utilisateurs.

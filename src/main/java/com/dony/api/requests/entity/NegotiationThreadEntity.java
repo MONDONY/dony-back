@@ -80,7 +80,7 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "available_payment_methods")
     private Set<PaymentMethod> availablePaymentMethods;
 
-    // Dony commission charge tracking for CASH negotiated threads.
+    // Yadony commission charge tracking for CASH negotiated threads.
     // Stored as String (not the payments/cash enums) to avoid coupling the
     // requests/ entity to the payments/ package — values mirror
     // CommissionStatus ("CHARGED"/"FAILED") and CommissionChargedVia ("WALLET"/"CARD").
