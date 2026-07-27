@@ -174,7 +174,7 @@ class AuthServiceTest {
             RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
             UserResponse result = authService.register(FIREBASE_UID, mockPhoneToken(), req);
 
-            // Le numéro rendu vient de Firebase, pas d'une colonne dony
+            // Le numéro rendu vient de Firebase, pas d'une colonne Yadony
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
             verify(firebaseContact).getContact(FIREBASE_UID);
             // Aucune écriture de coordonnée : le compte Firebase porte déjà le numéro
@@ -753,7 +753,7 @@ class AuthServiceTest {
             UserResponse result = authService.register(FIREBASE_UID, token, req);
 
             assertThat(result).isNotNull();
-            // Le numéro rendu est celui de Firebase, aucune colonne dony ne le porte
+            // Le numéro rendu est celui de Firebase, aucune colonne Yadony ne le porte
             assertThat(result.phoneNumber()).isEqualTo(PHONE);
             verify(userRepository).save(any(UserEntity.class));
         }

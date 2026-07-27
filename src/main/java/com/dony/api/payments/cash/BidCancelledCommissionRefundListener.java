@@ -14,7 +14,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Rembourse la commission Dony lorsqu'un bid CASH est annulé individuellement
+ * Rembourse la commission Yadony lorsqu'un bid CASH est annulé individuellement
  * (avant remise) via {@code BidService.cancelBid} — qui publie {@link BidRejectedEvent}
  * (reason CANCELLED_BY_SENDER / CANCELLED_BY_TRAVELER).
  *

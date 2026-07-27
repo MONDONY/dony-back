@@ -13,9 +13,9 @@ public record BidQuoteResponse(
         BigDecimal gridNetEur,
         /** Part nette issue du poids (= weightKg × pricePerKg). 0 si mode GRID. */
         BigDecimal kgNetEur,
-        /** Taux de commission Dony effectif (promo/override/global). */
+        /** Taux de commission Yadony effectif (promo/override/global). */
         BigDecimal rate,
-        /** Commission Dony = netEur × rate. */
+        /** Commission Yadony = netEur × rate. */
         BigDecimal commissionEur,
         /** Total expéditeur = netEur + commissionEur. */
         BigDecimal totalEur,

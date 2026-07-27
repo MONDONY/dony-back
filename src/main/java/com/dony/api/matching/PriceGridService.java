@@ -153,7 +153,7 @@ public class PriceGridService {
     }
 
     /**
-     * Prix « affiché expéditeur » = net × (1 + commission Dony). Le taux est résolu par
+     * Prix « affiché expéditeur » = net × (1 + commission Yadony). Le taux est résolu par
      * {@link CommissionRateResolver} à partir du voyageur (override éventuel) et de la
      * config {@code dony.commission.rate} — SOURCE UNIQUE du pourcentage de commission.
      */

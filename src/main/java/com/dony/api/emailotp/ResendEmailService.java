@@ -48,7 +48,7 @@ public class ResendEmailService {
         Map<String, Object> payload = Map.of(
                 "from", fromAddress,
                 "to", List.of(to),
-                "subject", "Ton code dony",
+                "subject", "Ton code Yadony",
                 "text", String.format(otpTemplate, code)
         );
         try {

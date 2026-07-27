@@ -1,7 +1,7 @@
 package com.dony.api.payments.cash;
 
 /**
- * Indique comment prélever la commission Dony à l'acceptation d'un bid hors escrow.
+ * Indique comment prélever la commission Yadony à l'acceptation d'un bid hors escrow.
  * <ul>
  *   <li>{@link #WALLET_FIRST} (défaut) : débit du wallet si solde suffisant, sinon
  *       on retourne INSUFFICIENT_WALLET pour laisser le voyageur choisir (recharger / carte).</li>

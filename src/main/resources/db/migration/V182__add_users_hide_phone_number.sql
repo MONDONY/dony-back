@@ -1,6 +1,6 @@
 -- Préférence de confidentialité : l'utilisateur peut refuser que son numéro soit
 -- révélé à sa contrepartie, même une fois l'offre acceptée. Il reste joignable par
--- la messagerie dony, qui devient alors le seul canal de contact.
+-- la messagerie Yadony, qui devient alors le seul canal de contact.
 --
 -- DEFAULT FALSE : le comportement historique (numéro échangé au tap une fois le
 -- deal actif) reste celui de tous les comptes existants et des nouveaux comptes.

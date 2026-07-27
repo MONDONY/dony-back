@@ -57,7 +57,7 @@ public class AuthExtraSteps extends AbstractSteps {
     @Quand("je passe mon compte en PRO")
     public void whenUpgradePro() {
         Map<String, Object> body = new HashMap<>();
-        body.put("companyName", "Dony Transport SARL");
+        body.put("companyName", "Yadony Transport SARL");
         body.put("siret", "12345678901234");
         store(asCurrentUser().body(body).post("/auth/me/upgrade-to-pro"));
     }

@@ -62,7 +62,7 @@ class PaymentServiceOnBehalfOfTest {
     void setUp() {
         StripeConnectProperties props = new StripeConnectProperties(
                 "4215",
-                "Transport de colis entre particuliers via la plateforme Dony",
+                "Transport de colis entre particuliers via la plateforme Yadony",
                 "https://dony.app",
                 "http://localhost:8080/api/v1/payments/onboarding/return",
                 "http://localhost:8080/api/v1/payments/onboarding/refresh",
@@ -184,7 +184,7 @@ class PaymentServiceOnBehalfOfTest {
             assertThat(params.getOnBehalfOf()).isNull();
             assertThat(params.getPaymentMethodTypes()).containsExactly("card", "paypal");
             // statement descriptor suffix
-            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("DONY");
+            assertThat(params.getStatementDescriptorSuffix()).isEqualTo("YADONY");
             // capture_method = manual (escrow)
             assertThat(params.getCaptureMethod()).isEqualTo(PaymentIntentCreateParams.CaptureMethod.MANUAL);
             // CRITICAL: NO transfer_data, NO application_fee_amount — separate charges and transfers

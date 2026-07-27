@@ -121,7 +121,7 @@ class StripeConnectSpikeTest {
             return;
         }
 
-        // Exemple : 35€ de transport, commission dony 12%
+        // Exemple : 35€ de transport, commission Yadony 12%
         long amountCents       = 3500L;
         long commissionCents   = Math.round(amountCents * 0.12); // 420 cents = 4.20€
         long voyageurRecevra   = amountCents - commissionCents;  // 3080 cents = 30.80€
@@ -224,7 +224,7 @@ class StripeConnectSpikeTest {
         System.out.println("   ID              : " + refund.getId());
         System.out.println("   Montant remboursé: " + refund.getAmount() / 100.0 + "€");
         System.out.println("   Status          : " + refund.getStatus());
-        System.out.println("   → Commission dony NON prélevée sur remboursement ✓");
+        System.out.println("   → Commission Yadony NON prélevée sur remboursement ✓");
         System.out.println("   → Délai remboursement expéditeur : 3-5 jours ouvrés\n");
     }
 }

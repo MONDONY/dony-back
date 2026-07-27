@@ -110,7 +110,7 @@ public class UserService {
         log.info("Account deletion cancelled for user {}", user.getId());
     }
 
-    // Admin — override du taux de commission Dony d'un utilisateur (null = retour au taux global).
+    // Admin — override du taux de commission Yadony d'un utilisateur (null = retour au taux global).
     @Transactional
     public UserEntity setCommissionRateOverride(UUID userId, java.math.BigDecimal rate) {
         if (rate != null && (rate.signum() < 0 || rate.compareTo(java.math.BigDecimal.ONE) >= 0)) {

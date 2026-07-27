@@ -103,7 +103,7 @@ logging:
     org.springframework.security: WARN
     org.flywaydb: INFO
 
-# Dony business config
+# Yadony business config
 # Toutes les valeurs métier sont surchargeables par variable d'environnement
 # (${VAR:défaut}) — provisioning prod sans rebuild.
 dony:
@@ -132,7 +132,7 @@ dony:
   stripe:
     connect:
       mcc: "4215"
-      product-description: "Transport de colis entre particuliers via la plateforme Dony"
+      product-description: "Transport de colis entre particuliers via la plateforme Yadony"
       business-url: ${DONY_STRIPE_CONNECT_BUSINESS_URL:https://yadony.com}
       return-url: "dony://stripe/onboarding/complete"
       refresh-url: "dony://stripe/onboarding/refresh"
@@ -175,7 +175,7 @@ dony:
   email:
     resend-api-key: ${RESEND_API_KEY:}
     from-address: ${DONY_EMAIL_FROM_ADDRESS:noreply@dony.store}
-    otp-template: "Ton code dony est : %s. Valable 10 minutes."
+    otp-template: "Ton code Yadony est : %s. Valable 10 minutes."
 
 # Encryption (AES-256 for KYC sensitive data)
 app:

@@ -58,11 +58,11 @@ class UserServiceUpgradeToProTest {
             UserEntity user = buildUser();
             when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+            UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "12345678901234");
             UserEntity result = userService.upgradeToPro(user, request);
 
             assertThat(result.isProAccount()).isTrue();
-            assertThat(result.getProCompanyName()).isEqualTo("Dony SARL");
+            assertThat(result.getProCompanyName()).isEqualTo("Yadony SARL");
             assertThat(result.getProSiret()).isEqualTo("12345678901234");
             verify(userRepository).save(user);
             verify(auditService).log(eq("USER"), eq(USER_ID), eq("USER_UPGRADED_TO_PRO"), eq(USER_ID), any());
@@ -126,11 +126,11 @@ class UserServiceUpgradeToProTest {
             user.setStripeAccountId("acct_existing_123");
             when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "12345678901234");
+            UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "12345678901234");
             UserEntity result = userService.upgradeToPro(user, request);
 
             assertThat(result.isProAccount()).isTrue();
-            assertThat(result.getProCompanyName()).isEqualTo("Dony SARL");
+            assertThat(result.getProCompanyName()).isEqualTo("Yadony SARL");
             verify(userRepository).save(user);
         }
 
@@ -139,7 +139,7 @@ class UserServiceUpgradeToProTest {
         void upgradeToPro_siret13Digits_throws422() throws Exception {
             UserEntity user = buildUser();
 
-            UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "1234567890123"); // 13 digits
+            UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "1234567890123"); // 13 digits
 
             assertThatThrownBy(() -> userService.upgradeToPro(user, request))
                     .isInstanceOf(DonyBusinessException.class)
@@ -155,7 +155,7 @@ class UserServiceUpgradeToProTest {
         void upgradeToPro_siret15Digits_throws422() throws Exception {
             UserEntity user = buildUser();
 
-            UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "123456789012345"); // 15 digits
+            UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "123456789012345"); // 15 digits
 
             assertThatThrownBy(() -> userService.upgradeToPro(user, request))
                     .isInstanceOf(DonyBusinessException.class)
@@ -171,7 +171,7 @@ class UserServiceUpgradeToProTest {
         void upgradeToPro_siretWithLetters_throws422() throws Exception {
             UserEntity user = buildUser();
 
-            UpgradeToProRequest request = new UpgradeToProRequest("Dony SARL", "1234567890ABCD"); // letters
+            UpgradeToProRequest request = new UpgradeToProRequest("Yadony SARL", "1234567890ABCD"); // letters
 
             assertThatThrownBy(() -> userService.upgradeToPro(user, request))
                     .isInstanceOf(DonyBusinessException.class)

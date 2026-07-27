@@ -15,7 +15,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Rembourse la commission Dony sur SENDER_NO_SHOW.
+ * Rembourse la commission Yadony sur SENDER_NO_SHOW.
  * Route vers le bon canal selon commissionChargedVia :
  * - WALLET → credit wallet (clé idempotente "wallet-refund-noshow-{bidId}")
  * - CARD   → refund Stripe (clé idempotente "bid_refund_{bidId}")

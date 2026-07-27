@@ -407,7 +407,7 @@ public class CashCommissionService {
     }
 
     /**
-     * Prélève la commission Dony (net × taux) depuis le voyageur pour un thread de
+     * Prélève la commission Yadony (net × taux) depuis le voyageur pour un thread de
      * négociation CASH — wallet en priorité, carte en fallback off-session.
      *
      * <p>Appelée synchroniquement depuis {@code NegotiationService.finalizeAfterPayment}

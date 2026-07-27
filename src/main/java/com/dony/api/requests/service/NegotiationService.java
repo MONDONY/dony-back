@@ -810,7 +810,7 @@ public class NegotiationService {
                 "request/details-incomplete");
         }
 
-        // CASH threads : prélever la commission Dony au voyageur (wallet puis carte) AVANT
+        // CASH threads : prélever la commission Yadony au voyageur (wallet puis carte) AVANT
         // de finaliser. En échec → 422 et la tx @Transactional rollback : le thread reste
         // AWAITING_PAYMENT (non finalisé). STRIPE : pas de prélèvement ici (application_fee
         // déjà géré par PaymentService.createNegotiationEscrow).

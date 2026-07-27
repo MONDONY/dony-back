@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * Source de vérité des coordonnées de contact (téléphone, email) : Firebase Auth,
- * PAS la base dony. On ne stocke plus phone/email localement — un vol de la base
+ * PAS la base Yadony. On ne stocke plus phone/email localement — un vol de la base
  * ne peut donc plus les révéler. Ce service les récupère à la demande via l'Admin
  * SDK, à partir de l'UID Firebase (déjà stocké localement).
  *

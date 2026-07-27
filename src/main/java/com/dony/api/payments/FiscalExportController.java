@@ -70,7 +70,7 @@ public class FiscalExportController {
             extension = "csv";
         }
 
-        String filename = "dony-export-" + year + "-" + type + "." + extension;
+        String filename = "yadony-export-" + year + "-" + type + "." + extension;
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(mediaType);
         headers.setContentDisposition(

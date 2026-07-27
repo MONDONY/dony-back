@@ -32,7 +32,7 @@ class OpenApiIT {
     void apiDocs_isPublicAndReturnsMetadata() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.info.title").value("Dony API"))
+            .andExpect(jsonPath("$.info.title").value("Yadony API"))
             .andExpect(jsonPath("$.info.version").value("v1"))
             .andExpect(jsonPath("$.components.securitySchemes.bearerAuth").exists())
             .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))

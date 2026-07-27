@@ -168,7 +168,7 @@ class StripeConnectAccountCreationTest {
             assertThat(params.getBusinessProfile()).isNotNull();
             assertThat(params.getBusinessProfile().getMcc()).isEqualTo("4215");
             assertThat(params.getBusinessProfile().getProductDescription())
-                    .isEqualTo("Transport de colis entre particuliers via la plateforme Dony");
+                    .isEqualTo("Transport de colis entre particuliers via la plateforme Yadony");
             assertThat(params.getBusinessProfile().getUrl()).isEqualTo("https://dony.app");
         }
     }

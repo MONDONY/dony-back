@@ -263,7 +263,7 @@ public class AnnouncementService {
     }
 
     /**
-     * Prix « affiché expéditeur » (net + commission Dony) pour le mode KG, symétrique de
+     * Prix « affiché expéditeur » (net + commission Yadony) pour le mode KG, symétrique de
      * {@code unitPriceDisplay} du mode MIXED. Source unique du multiplicateur :
      * {@link PriceGridService#displayPrice}. {@code null} si aucun prix au kilo (MIXED pur).
      */
@@ -1101,7 +1101,7 @@ public class AnnouncementService {
         }
         // La vérification de la capacité de paiement de la commission (wallet ou carte)
         // est reportée à l'acceptation du bid (CashCommissionService.acceptCashBid).
-        // Un voyageur peut offrir le cash dès lors qu'il a un compte Dony,
+        // Un voyageur peut offrir le cash dès lors qu'il a un compte Yadony,
         // même sans carte de commission enregistrée (le wallet prend en charge).
         return EnumSet.copyOf(requested);
     }

@@ -75,7 +75,7 @@ class SmsFallbackSchedulerTest {
 
         scheduler.processPendingFallbacks();
 
-        verify(smsService).send(eq("+221701234567"), contains("[dony]"));
+        verify(smsService).send(eq("+221701234567"), contains("[Yadony]"));
         assertThat(notification.getSmsSentAt()).isNotNull();
     }
 

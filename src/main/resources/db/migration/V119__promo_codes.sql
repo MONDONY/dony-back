@@ -1,4 +1,4 @@
--- Phase 2 — Codes promo réduisant le taux de commission Dony.
+-- Phase 2 — Codes promo réduisant le taux de commission Yadony.
 -- Cf. docs/specs/commission-rate-overrides-and-promo.md §5
 
 CREATE TABLE IF NOT EXISTS promo_codes (

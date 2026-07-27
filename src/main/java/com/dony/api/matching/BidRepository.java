@@ -85,7 +85,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     /**
      * Revenu net des deals réglés en ESPÈCES sur la période. Le cash ne crée
-     * aucun PaymentEntity (argent de la main à la main, dony ne prélève que sa
+     * aucun PaymentEntity (argent de la main à la main, Yadony ne prélève que sa
      * commission à part) : le revenu carte, payment-based, l'ignore donc. On le
      * reconstitue depuis le bid livré = {@code negotiatedNetEur} (net voyageur
      * figé au trip-linking, Modèle B : l'expéditeur paie gross = net×(1+taux)).
@@ -125,7 +125,7 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
      * Revenu cash agrégé par annonce, pour la ventilation « transactions » du
      * cockpit pro. Miroir de {@code PaymentRepository.findReleasedRevenueByAnnouncement}
      * côté espèces : gross = net = {@code negotiatedNetEur} (le voyageur encaisse
-     * le net en cash), commission = 0 (la commission Dony du cash est prélevée à
+     * le net en cash), commission = 0 (la commission Yadony du cash est prélevée à
      * part et son montant n'est pas figé sur le bid). Ainsi la somme des colonnes
      * Net (carte + cash) se réconcilie exactement avec le KPI « Revenus ».
      */

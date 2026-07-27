@@ -22,7 +22,7 @@ import java.util.List;
  * jours, la variable ayant simplement perdu son {@code export} dans le fichier d'environnement.
  *
  * <p><b>Pourquoi ne pas refuser de démarrer.</b> C'était la première version de cette classe.
- * Mais l'authentification principale de dony est Firebase Phone : l'email n'est qu'un canal
+ * Mais l'authentification principale de Yadony est Firebase Phone : l'email n'est qu'un canal
  * parmi d'autres, et arrêter toute l'API parce qu'un canal secondaire est mal configuré
  * transforme une panne partielle en indisponibilité totale. Les secrets de production vivent
  * dans un {@code .env} sur l'hôte, invisible depuis le dépôt : impossible de garantir avant

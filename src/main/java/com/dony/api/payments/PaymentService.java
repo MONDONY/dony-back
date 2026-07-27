@@ -482,7 +482,7 @@ public class PaymentService {
                     // supporte pas, et il n'est pas requis en separate charges & transfers.
                     .addPaymentMethodType("card")
                     .addPaymentMethodType("paypal")
-                    .setStatementDescriptorSuffix("DONY")
+                    .setStatementDescriptorSuffix("YADONY")
                     // Separate charges and transfers: no transfer_data, no application_fee_amount.
                     // Funds stay on platform balance (on_behalf_of = statement/dashboard only).
                     // At delivery, DeliveryEventListener creates Transfer(amount - commission).
@@ -1443,9 +1443,9 @@ public class PaymentService {
                     // PAS d'application_fee_amount ni de transfer_data ici. Le gross reste sur
                     // le solde plateforme ; à la livraison, DeliveryEventListener crée un
                     // Transfer(net = gross - commission) vers le voyageur, la commission restant
-                    // acquise à dony. NB : Stripe rejette application_fee_amount sans
+                    // acquise à Yadony. NB : Stripe rejette application_fee_amount sans
                     // transfer_data[destination] (destination/direct charge requis).
-                    .setStatementDescriptorSuffix("DONY")
+                    .setStatementDescriptorSuffix("YADONY")
                     .putMetadata("negotiation_thread_id", threadId.toString())
                     .putMetadata("sender_id", sender.getId().toString())
                     .putMetadata("traveler_id", traveler.getId().toString())
