@@ -155,7 +155,6 @@ dony:
     date-tolerance-max-days: ${DONY_REQUESTS_DATE_TOLERANCE_MAX_DAYS:7}
     weight-kg-min: ${DONY_REQUESTS_WEIGHT_KG_MIN:0.5}
     weight-kg-max: ${DONY_REQUESTS_WEIGHT_KG_MAX:32}
-    declared-value-max-eur: ${DONY_REQUESTS_DECLARED_VALUE_MAX_EUR:500}
     body-max-chars: ${DONY_REQUESTS_BODY_MAX_CHARS:280}
     max-open-requests-per-sender: ${DONY_REQUESTS_MAX_OPEN_REQUESTS_PER_SENDER:10}
     max-open-threads-per-traveler: ${DONY_REQUESTS_MAX_OPEN_THREADS_PER_TRAVELER:5}
