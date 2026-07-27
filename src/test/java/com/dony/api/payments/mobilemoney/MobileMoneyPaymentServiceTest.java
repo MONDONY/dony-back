@@ -257,7 +257,6 @@ class MobileMoneyPaymentServiceTest {
         bid.setPaymentMethod(PaymentMethod.WAVE);
         bid.setMobileMoneyPhone("+2250700000001");
         bid.setMobileMoneyCountryCode("CI");
-        bid.setDeclaredValueEur(new BigDecimal("50.00"));
         bid.setAnnouncementId(annoId);
         bid.setSenderId(senderId);
         // Injecter l'ID via réflexion (BaseEntity champ privé)

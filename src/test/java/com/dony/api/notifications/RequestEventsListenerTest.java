@@ -53,7 +53,7 @@ class RequestEventsListenerTest {
             UUID.randomUUID(), UUID.randomUUID(),
             senderId, travelerId, new BigDecimal("30"), null,
             new BigDecimal("5"), "test colis", "vetements", "pi_test_123",
-            "Fatou Diop", "+221771234567", new BigDecimal("120"),
+            "Fatou Diop", "+221771234567",
             java.time.LocalDateTime.now(), "1.2.3.4",
             com.dony.api.payments.cash.PaymentMethod.STRIPE
         , java.util.List.of(), null);

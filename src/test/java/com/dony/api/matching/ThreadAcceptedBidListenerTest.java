@@ -65,7 +65,6 @@ class ThreadAcceptedBidListenerTest {
                 BigDecimal.valueOf(5),
                 "Vêtements", "CLOTHING", "pi_test",
                 "Fatou Diop", "+221771234567",
-                BigDecimal.valueOf(120),
                 DISCLAIMER_AT, "1.2.3.4",
                 paymentMethod, java.util.List.of(), commissionChargedVia);
     }
@@ -96,7 +95,6 @@ class ThreadAcceptedBidListenerTest {
             assertThat(saved.getLinkedNegotiationThreadId()).isEqualTo(THREAD_ID);
             assertThat(saved.getRecipientName()).isEqualTo("Fatou Diop");
             assertThat(saved.getRecipientPhone()).isEqualTo("+221771234567");
-            assertThat(saved.getDeclaredValueEur()).isEqualByComparingTo(BigDecimal.valueOf(120));
             assertThat(saved.getDisclaimerSignedAt()).isEqualTo(DISCLAIMER_AT);
             assertThat(saved.getDisclaimerSignedIp()).isEqualTo("1.2.3.4");
             // Net négocié figé depuis agreedPriceEur (= 50) de l'événement.
@@ -109,7 +107,7 @@ class ThreadAcceptedBidListenerTest {
                     THREAD_ID, PACKAGE_REQUEST_ID, SENDER_ID, TRAVELER_ID,
                     BigDecimal.valueOf(50), ANNOUNCEMENT_ID, BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "pi_test",
-                    "Fatou Diop", "+221771234567", BigDecimal.valueOf(120),
+                    "Fatou Diop", "+221771234567",
                     DISCLAIMER_AT, "1.2.3.4",
                     com.dony.api.payments.cash.PaymentMethod.STRIPE, keys, null);
         }
@@ -212,7 +210,6 @@ class ThreadAcceptedBidListenerTest {
                     BigDecimal.valueOf(5),
                     "desc", "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
-                    BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
                     com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
 
@@ -232,7 +229,6 @@ class ThreadAcceptedBidListenerTest {
                     BigDecimal.valueOf(5),
                     null, "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
-                    BigDecimal.valueOf(120),
                     DISCLAIMER_AT, "1.2.3.4",
                     com.dony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
 
@@ -390,13 +386,11 @@ class ThreadAcceptedBidListenerTest {
             PackageRequestDetailsCompletedEvent event = new PackageRequestDetailsCompletedEvent(
                     PACKAGE_REQUEST_ID, THREAD_ID, SENDER_ID,
                     "Aminata Diallo", "+221701234567",
-                    BigDecimal.valueOf(100),
                     LocalDateTime.now(), "127.0.0.1");
 
             listener.onPackageRequestDetailsCompleted(event);
 
             assertThat(bid.getRecipientName()).isEqualTo("Aminata Diallo");
-            assertThat(bid.getDeclaredValueEur()).isEqualTo(BigDecimal.valueOf(100));
             verify(bidRepository).save(bid);
         }
 
@@ -408,7 +402,7 @@ class ThreadAcceptedBidListenerTest {
 
             PackageRequestDetailsCompletedEvent event = new PackageRequestDetailsCompletedEvent(
                     PACKAGE_REQUEST_ID, THREAD_ID, SENDER_ID,
-                    "Doe", "+33600000000", BigDecimal.valueOf(50),
+                    "Doe", "+33600000000",
                     LocalDateTime.now(), "127.0.0.1");
 
             listener.onPackageRequestDetailsCompleted(event);

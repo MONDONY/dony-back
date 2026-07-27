@@ -53,7 +53,7 @@ class BidCheckoutControllerIntegrationTest {
         when(bidCheckoutService.checkout(anyString(), any(), any())).thenReturn(resp);
 
         BidCheckoutRequest req = new BidCheckoutRequest(
-                UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
+                UUID.randomUUID(), new BigDecimal("2"),
                 "x", "OTHER", "n", "+221", true, null, null);
 
         mockMvc.perform(post("/bids/checkout")
@@ -68,7 +68,7 @@ class BidCheckoutControllerIntegrationTest {
     @Test
     void post_checkout_with_invalid_body_returns_4xx() throws Exception {
         BidCheckoutRequest invalid = new BidCheckoutRequest(
-                UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
+                UUID.randomUUID(), new BigDecimal("2"),
                 "x", "OTHER", "n", "+221", false, null, null);
 
         mockMvc.perform(post("/bids/checkout")
@@ -81,7 +81,7 @@ class BidCheckoutControllerIntegrationTest {
     @Test
     void unauthenticated_request_is_rejected() throws Exception {
         BidCheckoutRequest req = new BidCheckoutRequest(
-                UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
+                UUID.randomUUID(), new BigDecimal("2"),
                 "x", "OTHER", "n", "+221", true, null, null);
 
         mockMvc.perform(post("/bids/checkout")
@@ -99,7 +99,7 @@ class BidCheckoutControllerIntegrationTest {
         when(bidCheckoutService.checkout(anyString(), any(), any())).thenReturn(resp);
 
         BidCheckoutRequest req = new BidCheckoutRequest(
-                UUID.randomUUID(), null, new BigDecimal("50"),
+                UUID.randomUUID(), null,
                 "Vêtements", "OTHER", "Fatou", "+221771234567", true,
                 null,
                 List.of(new BidGridItemRequest(UUID.randomUUID(), 2)));
@@ -110,18 +110,5 @@ class BidCheckoutControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.bidId").value(bidId.toString()));
-    }
-
-    @Test
-    void missing_declared_value_returns_4xx() throws Exception {
-        BidCheckoutRequest invalid = new BidCheckoutRequest(
-                UUID.randomUUID(), new BigDecimal("2"), null,
-                "x", "OTHER", "n", "+221", true, null, null);
-
-        mockMvc.perform(post("/bids/checkout")
-                        .with(authentication(authenticatedAs("uid-sender")))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(invalid)))
-                .andExpect(status().is4xxClientError());
     }
 }

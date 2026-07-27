@@ -113,10 +113,9 @@ class CashCommissionServiceTest {
         return u;
     }
 
-    private BidEntity bidWithDeclaredValue(BigDecimal value, UUID travelerId) {
+    private BidEntity bidForTraveler(UUID travelerId) {
         BidEntity b = new BidEntity();
         ReflectionTestUtils.setField(b, "id", UUID.randomUUID());
-        b.setDeclaredValueEur(value);
         b.setWeightKg(new BigDecimal("5"));
         b.setAnnouncementId(UUID.randomUUID());
         b.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
@@ -342,7 +341,7 @@ class CashCommissionServiceTest {
             travelerId = UUID.randomUUID();
             traveler = userWithCard("visa", "4242", 12, 2028);
             ReflectionTestUtils.setField(traveler, "id", travelerId);
-            bid = bidWithDeclaredValue(new BigDecimal("100"), travelerId);
+            bid = bidForTraveler(travelerId);
             lenient().when(userRepo.findById(travelerId)).thenReturn(Optional.of(traveler));
             AnnouncementEntity ann = announcementWithPrice(bid.getAnnouncementId(), new BigDecimal("20.00"));
             lenient().when(announcementRepo.findById(bid.getAnnouncementId())).thenReturn(Optional.of(ann));
@@ -640,7 +639,6 @@ class CashCommissionServiceTest {
             bid = new BidEntity();
             ReflectionTestUtils.setField(bid, "id", UUID.randomUUID());
             bid.setPaymentMethod(com.dony.api.payments.cash.PaymentMethod.CASH);
-            bid.setDeclaredValueEur(new java.math.BigDecimal("100"));
             bid.setWeightKg(new java.math.BigDecimal("5"));
             bid.setSenderId(UUID.randomUUID());
             bid.setAnnouncementId(announcementId);
@@ -999,7 +997,7 @@ class CashCommissionServiceTest {
         @BeforeEach
         void setup() {
             travelerId = UUID.randomUUID();
-            bid = bidWithDeclaredValue(new BigDecimal("100"), travelerId);
+            bid = bidForTraveler(travelerId);
         }
 
         @Test
@@ -1050,7 +1048,7 @@ class CashCommissionServiceTest {
             ReflectionTestUtils.setField(traveler, "id", travelerId);
             lenient().when(userRepo.findById(travelerId)).thenReturn(Optional.of(traveler));
 
-            bid = bidWithDeclaredValue(new BigDecimal("100"), travelerId);
+            bid = bidForTraveler(travelerId);
             AnnouncementEntity announcement = announcementWithPrice(bid.getAnnouncementId(), new BigDecimal("20.00"));
             when(announcementRepo.findById(bid.getAnnouncementId())).thenReturn(Optional.of(announcement));
             // commission = 5 kg × 20 €/kg × 12 % = 12.00 €

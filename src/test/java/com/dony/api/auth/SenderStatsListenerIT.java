@@ -44,7 +44,6 @@ class SenderStatsListenerIT {
         bid.setAnnouncementId(UUID.randomUUID());
         bid.setSenderId(senderId);
         bid.setWeightKg(new BigDecimal("2.50"));
-        bid.setDeclaredValueEur(new BigDecimal("100.00"));
         bid.setStatus(BidStatus.COMPLETED);
         return bidRepository.save(bid);
     }

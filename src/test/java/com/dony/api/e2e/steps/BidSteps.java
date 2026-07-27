@@ -36,7 +36,7 @@ public class BidSteps extends AbstractSteps {
     public void givenAcceptedBid(String announcementAlias, String bidAlias) {
         // Reuse whenCreateBid then acceptBid internally
         Response createResp = asCurrentUser()
-                .body(buildBidBody(5.0, 50.0))
+                .body(buildBidBody(5.0))
                 .post("/announcements/{id}/bids", ctx.getId(announcementAlias));
         createResp.then().statusCode(201);
         UUID bidId = UUID.fromString(createResp.jsonPath().getString("id"));
@@ -53,23 +53,19 @@ public class BidSteps extends AbstractSteps {
 
     // ── When ──────────────────────────────────────────────────────────────────
 
+    // Le second paramètre {decimal} (déclaré en €) était historiquement declaredValueEur,
+    // retiré du modèle (cf. suppression de la règle "valeur > 500€"). Conservé dans le
+    // wording Gherkin (partagé par ~30 scénarios) mais ignoré côté body désormais.
     @Quand("je dépose une offre de {decimal} kg à {decimal} € sur l'annonce {string}")
     public void whenCreateBid(Double kg, Double value, String announcementAlias) {
         store(asCurrentUser()
-                .body(buildBidBody(kg, value))
-                .post("/announcements/{id}/bids", ctx.getId(announcementAlias)));
-    }
-
-    @Quand("je dépose une offre avec une valeur déclarée de {decimal} € sur l'annonce {string}")
-    public void whenCreateBidWithValue(Double value, String announcementAlias) {
-        store(asCurrentUser()
-                .body(buildBidBody(5.0, value))
+                .body(buildBidBody(kg))
                 .post("/announcements/{id}/bids", ctx.getId(announcementAlias)));
     }
 
     @Quand("je dépose une offre sans accepter le disclaimer sur l'annonce {string}")
     public void whenCreateBidWithoutDisclaimer(String announcementAlias) {
-        Map<String, Object> body = buildBidBody(5.0, 50.0);
+        Map<String, Object> body = buildBidBody(5.0);
         body.put("disclaimerSigned", false);
         store(asCurrentUser().body(body)
                 .post("/announcements/{id}/bids", ctx.getId(announcementAlias)));
@@ -139,10 +135,9 @@ public class BidSteps extends AbstractSteps {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private Map<String, Object> buildBidBody(Double kg, Double value) {
+    private Map<String, Object> buildBidBody(Double kg) {
         Map<String, Object> body = new HashMap<>();
         body.put("weightKg", kg);
-        body.put("declaredValueEur", value);
         body.put("description", "Médicaments pour la famille");
         body.put("contentCategory", "Médicaments");
         body.put("recipientName", "Fatou Diallo");

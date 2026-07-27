@@ -134,7 +134,6 @@ class BidServiceTest {
         b.setAnnouncementId(ANNOUNCEMENT_ID);
         b.setSenderId(SENDER_ID);
         b.setWeightKg(BigDecimal.valueOf(5));
-        b.setDeclaredValueEur(BigDecimal.valueOf(100));
         b.setDescription("Vêtements");
         b.setContentCategory("CLOTHING");
         b.setRecipientName("Aminata Diallo");
@@ -144,8 +143,8 @@ class BidServiceTest {
         return b;
     }
 
-    private BidRequest buildRequest(BigDecimal weight, BigDecimal value) {
-        return new BidRequest(weight, value, "Vêtements", "CLOTHING",
+    private BidRequest buildRequest(BigDecimal weight) {
+        return new BidRequest(weight, "Vêtements", "CLOTHING",
                 "Aminata Diallo", "+221701234567", true, null, null, null, null, null, null);
     }
 
@@ -195,7 +194,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             BidResponse result = bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest);
 
             assertThat(result).isNotNull();
@@ -226,7 +225,7 @@ class BidServiceTest {
                 return b;
             });
 
-            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5),
                     "desc", "Hi-fi, Téléphone",
                     "Aminata Diallo", "+221701234567", true, null, null, null, null, null, null);
 
@@ -248,7 +247,7 @@ class BidServiceTest {
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(25), BigDecimal.valueOf(100)), // 25 > 20
+                    buildRequest(BigDecimal.valueOf(25)), // 25 > 20
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
@@ -279,31 +278,8 @@ class BidServiceTest {
             // 10 kg > availableKg=1, but KG_FREE — must not throw
             assertThatCode(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.TEN, BigDecimal.valueOf(100)),
+                    buildRequest(BigDecimal.TEN),
                     httpRequest)).doesNotThrowAnyException();
-        }
-
-        @Test
-        @DisplayName("valeur déclarée > 500€ → 422 UNPROCESSABLE_ENTITY")
-        void createBid_valueTooHigh_throwsUnprocessable() {
-            UserEntity sender = buildSender();
-            AnnouncementEntity announcement = buildAnnouncement();
-
-            when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
-            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
-            when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
-                    .thenReturn(false);
-
-            assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(501)), // 501 > 500
-                    httpRequest))
-                    .isInstanceOf(DonyBusinessException.class)
-                    .satisfies(e -> {
-                        DonyBusinessException ex = (DonyBusinessException) e;
-                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-                        assertThat(ex.getErrorCode()).isEqualTo("value-exceeds-limit");
-                    });
         }
 
         @Test
@@ -317,7 +293,7 @@ class BidServiceTest {
             when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
                     .thenReturn(false);
 
-            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5),
                     "Desc", "CAT", "Recip", "+221", false, null, null, null, null, null, null); // not signed
 
             assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, req, httpRequest))
@@ -338,7 +314,7 @@ class BidServiceTest {
                     .thenReturn(true);
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
@@ -356,7 +332,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
@@ -375,7 +351,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
@@ -407,7 +383,7 @@ class BidServiceTest {
             });
 
             BidResponse result = bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(8), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(8)),
                     httpRequest);
 
             assertThat(result).isNotNull();
@@ -430,7 +406,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(2), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(2)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
@@ -452,7 +428,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
@@ -470,7 +446,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)),
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)),
                     httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> {
@@ -500,7 +476,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest);
+                    buildRequest(BigDecimal.valueOf(5)), httpRequest);
 
             ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
             verify(bidRepository).save(captor.capture());
@@ -531,7 +507,7 @@ class BidServiceTest {
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
             bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest);
+                    buildRequest(BigDecimal.valueOf(5)), httpRequest);
 
             assertThat(sender.getRoles()).contains(Role.SENDER);
         }
@@ -558,7 +534,7 @@ class BidServiceTest {
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest))
+                    buildRequest(BigDecimal.valueOf(5)), httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getErrorCode())
                             .isEqualTo("contact-kyc-required"));
@@ -587,7 +563,7 @@ class BidServiceTest {
 
             BidResponse response = bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID,
-                    buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest);
+                    buildRequest(BigDecimal.valueOf(5)), httpRequest);
 
             assertThat(response).isNotNull();
             verify(bidRepository).save(any(BidEntity.class));
@@ -612,7 +588,7 @@ class BidServiceTest {
                 return b;
             });
 
-            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null, null);
 
             BidResponse result = bidService.createBid(
@@ -636,7 +612,7 @@ class BidServiceTest {
             when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
                     .thenReturn(false);
 
-            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest cashReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "CASH", null, null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
@@ -662,7 +638,7 @@ class BidServiceTest {
             when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
                     .thenReturn(false);
 
-            BidRequest stripeReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest stripeReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "STRIPE", null, null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
@@ -690,7 +666,7 @@ class BidServiceTest {
 
             // paymentMethod = null → défaut STRIPE (comportement existant) → doit être rejeté
             // sur une annonce cash-only, pas silencieusement accepté.
-            BidRequest noMethodReq = buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100));
+            BidRequest noMethodReq = buildRequest(BigDecimal.valueOf(5));
 
             assertThatThrownBy(() -> bidService.createBid(
                     ANNOUNCEMENT_ID, SENDER_UID, noMethodReq, httpRequest))
@@ -713,7 +689,7 @@ class BidServiceTest {
             when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(any(), any(), any()))
                     .thenReturn(false);
 
-            BidRequest badReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest badReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true, "BITCOIN", null, null, null, null, null);
 
             assertThatThrownBy(() -> bidService.createBid(
@@ -735,7 +711,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
-            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
                     true, "WAVE", "+221771234567", "SN", null, null, null);
 
@@ -757,7 +733,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
-            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest waveReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
                     true, "WAVE", "+221771234567", "SN", null, null, null);
 
@@ -781,7 +757,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
-            BidRequest omReq = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest omReq = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567",
                     true, "ORANGE_MONEY", null, "CI", null, null, null); // phoneNumber null
 
@@ -826,7 +802,6 @@ class BidServiceTest {
 
             BidRequest req = new BidRequest(
                 null,  // weightKg null → GRID mode
-                new BigDecimal("50.00"),
                 "Mes affaires", "VETEMENTS",
                 "Mamadou Diallo", "+221771234567",
                 true, "STRIPE",
@@ -859,7 +834,6 @@ class BidServiceTest {
 
             BidRequest req = new BidRequest(
                 null,                    // weightKg null
-                new BigDecimal("50.00"),
                 "Test", "CAT",
                 "Name", "+33600000000",
                 true, "STRIPE",
@@ -890,7 +864,7 @@ class BidServiceTest {
                 return b;
             });
 
-            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "CLOTHING", "Aminata Diallo", "+221701234567", true,
                     null, null, null, null,
                     java.util.List.of("bids/" + SENDER_ID + "/1.jpg"), null);
@@ -913,7 +887,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
-            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "Téléphone & électronique", "Aminata Diallo", "+221701234567", true,
                     null, null, null, null, null, null);
 
@@ -937,7 +911,7 @@ class BidServiceTest {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
             when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
 
-            BidRequest req = new BidRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100),
+            BidRequest req = new BidRequest(BigDecimal.valueOf(5),
                     "Vêtements", "Hi-fi", "Aminata Diallo", "+221701234567", true,
                     null, null, null, null, null, null);
 
@@ -2606,7 +2580,7 @@ class BidServiceTest {
         void createBid_userNotFound_throwsNotFound() {
             when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.empty());
             assertThatThrownBy(() -> bidService.createBid(
-                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5), BigDecimal.valueOf(100)), httpRequest))
+                    ANNOUNCEMENT_ID, SENDER_UID, buildRequest(BigDecimal.valueOf(5)), httpRequest))
                     .isInstanceOf(DonyBusinessException.class)
                     .satisfies(e -> assertThat(((DonyBusinessException) e).getStatus())
                             .isEqualTo(HttpStatus.NOT_FOUND));

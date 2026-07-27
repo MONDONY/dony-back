@@ -65,7 +65,6 @@ class BidCheckoutServiceTest {
         req = new BidCheckoutRequest(
             announcement.getId(),
             new BigDecimal("2.00"),
-            new BigDecimal("150.00"),
             "test", "OTHER",
             "Recipient", "+221771234567", true, null, null);
 
@@ -103,7 +102,7 @@ class BidCheckoutServiceTest {
     @Test
     void checkout_legacyContentCategory_isNormalizedOnWrite() {
         BidCheckoutRequest legacyReq = new BidCheckoutRequest(
-            announcement.getId(), new BigDecimal("2.00"), new BigDecimal("150.00"),
+            announcement.getId(), new BigDecimal("2.00"),
             "test", "Hi-fi, Téléphone",
             "Recipient", "+221771234567", true, null, null);
 
@@ -236,15 +235,6 @@ class BidCheckoutServiceTest {
     }
 
     @Test
-    void rejects_value_above_500_eur() {
-        BidCheckoutRequest tooHigh = new BidCheckoutRequest(
-            announcement.getId(), new BigDecimal("2"), new BigDecimal("501"),
-            null, null, null, null, true, null, null);
-        assertThatThrownBy(() -> service.checkout("uid-sender", tooHigh, httpRequest))
-            .isInstanceOf(DonyBusinessException.class);
-    }
-
-    @Test
     void rejects_existing_in_progress_bid() {
         when(bidRepository.existsBySenderIdAndAnnouncementIdAndStatusIn(
                 eq(sender.getId()), eq(announcement.getId()), any()))
@@ -279,7 +269,7 @@ class BidCheckoutServiceTest {
     @Test
     void throws_when_announcement_not_found() {
         BidCheckoutRequest unknownAnn = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("150"),
+            UUID.randomUUID(), new BigDecimal("2"),
             "test", "OTHER", "Recipient", "+221771234567", true, null, null);
         when(announcementRepository.findById(unknownAnn.announcementId())).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.checkout("uid-sender", unknownAnn, httpRequest))

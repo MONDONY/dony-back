@@ -72,7 +72,6 @@ class BidVisibilityTest {
         awaitingPaymentBid.setSenderId(sender.getId());
         awaitingPaymentBid.setStatus(BidStatus.AWAITING_PAYMENT);
         awaitingPaymentBid.setWeightKg(new BigDecimal("1"));
-        awaitingPaymentBid.setDeclaredValueEur(new BigDecimal("100"));
 
         pendingBid = new BidEntity();
         ReflectionTestUtils.setField(pendingBid, "id", UUID.randomUUID());
@@ -80,7 +79,6 @@ class BidVisibilityTest {
         pendingBid.setSenderId(sender.getId());
         pendingBid.setStatus(BidStatus.PENDING);
         pendingBid.setWeightKg(new BigDecimal("1"));
-        pendingBid.setDeclaredValueEur(new BigDecimal("100"));
 
         org.mockito.Mockito.lenient()
                 .when(cancellationRepository.findByBidId(org.mockito.ArgumentMatchers.any()))

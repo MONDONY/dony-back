@@ -16,7 +16,6 @@ class BidCheckoutRequestTest {
         BidCheckoutRequest req = new BidCheckoutRequest(
             UUID.randomUUID(),
             new BigDecimal("2.50"),
-            new BigDecimal("100.00"),
             "Médicaments", "OTHER",
             "Aïssatou", "+221771234567", true, null, null);
         assertThat(validator.validate(req)).isEmpty();
@@ -33,7 +32,7 @@ class BidCheckoutRequestTest {
         assertThat(joined).hasSizeGreaterThan(50);
 
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            UUID.randomUUID(), new BigDecimal("2.50"),
             "Colis multi-catégories", joined,
             "Aïssatou", "+221771234567", true, null, null);
 
@@ -45,7 +44,7 @@ class BidCheckoutRequestTest {
         String joined = "Documents & administratif, Téléphone & électronique, Vêtements & tissus";
 
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            UUID.randomUUID(), new BigDecimal("2.50"),
             "Colis multi-catégories", joined,
             "Aïssatou", "+221771234567", true, null, null);
 
@@ -56,7 +55,7 @@ class BidCheckoutRequestTest {
     void content_category_over_500_chars_is_rejected() {
         String tooLong = "x".repeat(501);
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("2.50"), new BigDecimal("100.00"),
+            UUID.randomUUID(), new BigDecimal("2.50"),
             "x", tooLong, "n", "+221", true, null, null);
 
         assertThat(validator.validate(req)).isNotEmpty();
@@ -65,7 +64,7 @@ class BidCheckoutRequestTest {
     @Test
     void weight_must_not_be_negative() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("-1"), new BigDecimal("100"),
+            UUID.randomUUID(), new BigDecimal("-1"),
             "x", "OTHER", "n", "+221", true, null, null);
         assertThat(validator.validate(req)).isNotEmpty();
     }
@@ -73,7 +72,7 @@ class BidCheckoutRequestTest {
     @Test
     void announcement_id_required() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            null, new BigDecimal("2"), new BigDecimal("100"),
+            null, new BigDecimal("2"),
             "x", "OTHER", "n", "+221", true, null, null);
         assertThat(validator.validate(req)).isNotEmpty();
     }
@@ -81,7 +80,7 @@ class BidCheckoutRequestTest {
     @Test
     void disclaimer_must_be_signed_true() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), new BigDecimal("2"), new BigDecimal("100"),
+            UUID.randomUUID(), new BigDecimal("2"),
             "x", "OTHER", "n", "+221", false, null, null);
         assertThat(validator.validate(req)).isNotEmpty();
     }
@@ -89,7 +88,7 @@ class BidCheckoutRequestTest {
     @Test
     void null_weight_is_valid_for_grid_mode() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), null, new BigDecimal("100"),
+            UUID.randomUUID(), null,
             "x", "OTHER", "n", "+221", true,
             null,
             List.of(new BidGridItemRequest(UUID.randomUUID(), 2)));
@@ -99,7 +98,7 @@ class BidCheckoutRequestTest {
     @Test
     void grid_item_with_zero_quantity_is_invalid() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), null, new BigDecimal("100"),
+            UUID.randomUUID(), null,
             "x", "OTHER", "n", "+221", true,
             null,
             List.of(new BidGridItemRequest(UUID.randomUUID(), 0)));
@@ -109,7 +108,7 @@ class BidCheckoutRequestTest {
     @Test
     void grid_item_with_null_announcement_item_id_is_invalid() {
         BidCheckoutRequest req = new BidCheckoutRequest(
-            UUID.randomUUID(), null, new BigDecimal("100"),
+            UUID.randomUUID(), null,
             "x", "OTHER", "n", "+221", true,
             null,
             List.of(new BidGridItemRequest(null, 1)));
