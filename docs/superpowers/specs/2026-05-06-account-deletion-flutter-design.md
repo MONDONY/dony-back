@@ -31,7 +31,7 @@ Ce design couvre l'implémentation Flutter côté client.
 ### Créer
 
 ```
-dony_app/lib/features/settings/
+yadony_app/lib/features/settings/
 ├── bloc/
 │   └── account_deletion_bloc.dart
 ├── data/
@@ -42,14 +42,14 @@ dony_app/lib/features/settings/
     └── widgets/
         └── escrow_block_dialog.dart
 
-dony_app/lib/features/profile/presentation/widgets/
+yadony_app/lib/features/profile/presentation/widgets/
 └── pending_deletion_banner.dart
 ```
 
 ### Modifier
 
-- `dony_app/lib/app/router.dart` — ajouter routes `/settings` et `/settings/delete-account`
-- `dony_app/lib/features/profile/presentation/profile_screen.dart` — bouton Settings + bannière PENDING_DELETION
+- `yadony_app/lib/app/router.dart` — ajouter routes `/settings` et `/settings/delete-account`
+- `yadony_app/lib/features/profile/presentation/profile_screen.dart` — bouton Settings + bannière PENDING_DELETION
 
 ---
 

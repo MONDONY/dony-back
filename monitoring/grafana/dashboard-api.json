@@ -1,15 +1,15 @@
 {
   "dashboard": {
-    "title": "Dony API — Métriques Applicatives",
+    "title": "Yadony API — Métriques Applicatives",
     "description": "Monitoring en temps réel des performances de l'API Spring Boot",
-    "tags": ["dony", "api", "spring-boot"],
+    "tags": ["yadony", "api", "spring-boot"],
     "timezone": "UTC",
     "panels": [
       {
         "title": "Requêtes HTTP / sec",
         "targets": [
           {
-            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\"}[1m])",
+            "expr": "rate(http_server_requests_seconds_count{job=\"yadony-api\"}[1m])",
             "legendFormat": "{{method}} {{uri}}"
           }
         ],
@@ -20,7 +20,7 @@
         "title": "Latence p99 (ms)",
         "targets": [
           {
-            "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) * 1000",
+            "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"yadony-api\"}[5m])) * 1000",
             "legendFormat": "{{method}} {{uri}}"
           }
         ],
@@ -31,7 +31,7 @@
         "title": "Erreurs HTTP (5xx) / sec",
         "targets": [
           {
-            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"5..\"}[1m])",
+            "expr": "rate(http_server_requests_seconds_count{job=\"yadony-api\", status=~\"5..\"}[1m])",
             "legendFormat": "{{status}} {{uri}}"
           }
         ],
@@ -42,7 +42,7 @@
         "title": "Taux de succès (%)",
         "targets": [
           {
-            "expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"2..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m]))",
+            "expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"yadony-api\", status=~\"2..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"yadony-api\"}[5m]))",
             "legendFormat": "Success Rate"
           }
         ],
@@ -53,7 +53,7 @@
         "title": "Connexions BD actives",
         "targets": [
           {
-            "expr": "hikaricp_connections_active{job=\"dony-api\"}",
+            "expr": "hikaricp_connections_active{job=\"yadony-api\"}",
             "legendFormat": "Actives"
           }
         ],
@@ -64,7 +64,7 @@
         "title": "Mémoire JVM (MB)",
         "targets": [
           {
-            "expr": "jvm_memory_used_bytes{job=\"dony-api\"} / 1024 / 1024",
+            "expr": "jvm_memory_used_bytes{job=\"yadony-api\"} / 1024 / 1024",
             "legendFormat": "{{area}}"
           }
         ],

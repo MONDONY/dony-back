@@ -9,13 +9,13 @@ Refonte de la feature « récurrence / re-booking » en un concept unique d'**ab
 ## Fichiers créés
 - `src/main/resources/db/migration/V104__traveler_subscriptions_push_and_new.sql` — ajoute `push_enabled` + `has_new`.
 - `src/main/resources/db/migration/V105__merge_favorites_into_subscriptions.sql` — migre les favoris en abonnements puis `DROP TABLE favorite_travelers`.
-- `src/main/java/com/dony/api/subscriptions/dto/SubscriptionStatusResponse.java` — état d'abonnement `(subscribed, pushEnabled)`.
-- `src/main/java/com/dony/api/subscriptions/dto/SubscriptionItemResponse.java` — item enrichi de la liste « Mes abonnements » (+ `LastAnnouncement` imbriqué).
-- `src/main/java/com/dony/api/matching/dto/TravelerAnnouncementResponse.java` — trajet public d'un voyageur.
+- `src/main/java/com/yadony/api/subscriptions/dto/SubscriptionStatusResponse.java` — état d'abonnement `(subscribed, pushEnabled)`.
+- `src/main/java/com/yadony/api/subscriptions/dto/SubscriptionItemResponse.java` — item enrichi de la liste « Mes abonnements » (+ `LastAnnouncement` imbriqué).
+- `src/main/java/com/yadony/api/matching/dto/TravelerAnnouncementResponse.java` — trajet public d'un voyageur.
 - Tests : `subscriptions/SubscriptionServiceTest`, `subscriptions/SubscriptionControllerTest`, `subscriptions/TravelerSubscriptionRepositoryTest`, `matching/TravelerAnnouncementsControllerTest`, `notifications/NotificationDispatcherTest` (2 cas ajoutés), `subscriptions/TravelerAvailabilityListenerTest` (réécrit).
 
 ## Fichiers modifiés
-- Package `com.dony.api.rebooking` **renommé** `com.dony.api.subscriptions`.
+- Package `com.yadony.api.rebooking` **renommé** `com.yadony.api.subscriptions`.
 - `subscriptions/TravelerSubscriptionEntity.java` — champs `pushEnabled`, `hasNew`.
 - `subscriptions/TravelerSubscriptionRepository.java` — `findBySenderIdAndTravelerId`, `findBySenderIdAndTravelerIdIncludingDeleted` (réactivation soft-delete), `findAllByTravelerId`, `findEnrichedBySenderId` (projection native).
 - `subscriptions/SubscriptionService.java` (ex-`RebookingService`) — subscribe/unsubscribe/setPush/markSeen/getStatus/getMySubscriptions ; purge de getPastBookings/rebook.
@@ -74,7 +74,7 @@ Refonte de la feature « récurrence / re-booking » en un concept unique d'**ab
 
 ## Tests
 - `./mvnw test` → **1173 tests, 0 échec, 0 erreur, 6 skipped** (BUILD SUCCESS).
-- Couverture JaCoCo : package `com.dony.api.subscriptions` **99 %** (98/99 lignes), DTO **100 %**. Couverture globale du projet 77,5 % (état préexistant du legacy, hors scope de cette story).
+- Couverture JaCoCo : package `com.yadony.api.subscriptions` **99 %** (98/99 lignes), DTO **100 %**. Couverture globale du projet 77,5 % (état préexistant du legacy, hors scope de cette story).
 - Classes de test ajoutées/réécrites : voir « Fichiers créés ».
 
 ## Décisions techniques

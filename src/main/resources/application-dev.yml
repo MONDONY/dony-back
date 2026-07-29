@@ -7,9 +7,9 @@ springdoc:
 
 spring:
   datasource:
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/dony_dev}
-    username: ${POSTGRES_USER:dony}
-    password: ${POSTGRES_PASSWORD:dony_dev_password}
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/yadony_dev}
+    username: ${POSTGRES_USER:yadony}
+    password: ${POSTGRES_PASSWORD:yadony_dev_password}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5
@@ -54,40 +54,40 @@ firebase:
   # Web API Key — requis pour GET /dev/token (Firebase Console > Paramètres du projet > Général > Clé d'API Web)
   web-api-key: ${FIREBASE_API_KEY:}
 
-dony:
+yadony:
   email:
     resend-api-key: ${RESEND_API_KEY:}
-    from-address: ${DONY_EMAIL_FROM_ADDRESS:noreply@dony.store}
+    from-address: ${YADONY_EMAIL_FROM_ADDRESS:noreply@yadony.com}
     otp-template: "Ton code Yadony est : %s. Valable 10 minutes."
   kyc:
     enforce: false
-    return-url: "https://dony.store/kyc/complete"
+    return-url: "https://yadony.com/kyc/complete"
   stripe:
     enforce: false
     connect:
       mcc: "4215"
       product-description: "Transport de colis entre particuliers via la plateforme Yadony"
-      business-url: "https://dony.store"
-      # Stripe n'accepte pas les deep links (dony://) — on passe par des endpoints HTTP intermédiaires
+      business-url: "https://yadony.com"
+      # Stripe n'accepte pas les deep links (yadony://) — on passe par des endpoints HTTP intermédiaires
       # Émulateur Android : 10.0.2.2 = localhost machine. Appareil physique : remplacer par l'IP locale
       return-url: "http://10.0.2.2:8080/api/v1/payments/onboarding/return"
       refresh-url: "http://10.0.2.2:8080/api/v1/payments/onboarding/refresh"
-      deep-link-return: "dony://stripe/onboarding/complete"
-      deep-link-refresh: "dony://stripe/onboarding/refresh"
+      deep-link-return: "yadony://stripe/onboarding/complete"
+      deep-link-refresh: "yadony://stripe/onboarding/refresh"
   internal:
     secret: ${INTERNAL_SHARED_SECRET:local-dev-secret-change-me}
   admin:
     bootstrap:
-      secret: ${ADMIN_BOOTSTRAP_SECRET:dony-admin-bootstrap-dev}
+      secret: ${ADMIN_BOOTSTRAP_SECRET:yadony-admin-bootstrap-dev}
   dev:
     auth-bypass: true
-    # Jeton du bypass dev — surchargeable via env DONY_DEV_BYPASS_TOKEN.
+    # Jeton du bypass dev — surchargeable via env YADONY_DEV_BYPASS_TOKEN.
     # Actif uniquement hors prod ET depuis la loopback (voir FirebaseTokenFilter).
-    bypass-token: ${DONY_DEV_BYPASS_TOKEN:dev-super-admin}
+    bypass-token: ${YADONY_DEV_BYPASS_TOKEN:dev-super-admin}
 
 logging:
   level:
-    com.dony.api: DEBUG
+    com.yadony.api: DEBUG
     org.springframework.security: DEBUG
 
 app:
@@ -101,4 +101,4 @@ app:
     block-when-quota-exceeded: false
 
 storage:
-  public-base-url: ${STORAGE_PUBLIC_BASE_URL:https://dony-storage.local}
+  public-base-url: ${STORAGE_PUBLIC_BASE_URL:https://yadony-storage.local}

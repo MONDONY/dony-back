@@ -17,7 +17,7 @@
 ### Nouveaux — `common/stripe/`
 - `StripeWebhookSource.java` — enum PAYMENTS | KYC
 - `StripeEventStatus.java` — enum RECEIVED | PROCESSED | FAILED | DEAD_LETTER | SKIPPED
-- `StripeWebhookProperties.java` — @ConfigurationProperties("dony.stripe.webhook")
+- `StripeWebhookProperties.java` — @ConfigurationProperties("yadony.stripe.webhook")
 - `StripeEventInbox.java` — entity table `stripe_event_inbox`
 - `StripeEventInboxRepository.java` — JPA + native claim query
 - `StripeWebhookHandler.java` — interface à implémenter par features
@@ -52,7 +52,7 @@
 - `kyc/KycService.java` — supprime processWebhook + processedStripeEventRepository
 - `common/ProcessedStripeEvent.java` — supprimé (V84 drop table)
 - `common/ProcessedStripeEventRepository.java` — supprimé
-- `src/main/resources/application.yml` — bloc dony.stripe.webhook
+- `src/main/resources/application.yml` — bloc yadony.stripe.webhook
 - `src/main/resources/application-dev.yml` — stripe.webhook.*-secret
 - `src/main/resources/application-prod.yml` — stripe live config
 - `src/test/resources/application-test.yml` — scheduler disabled
@@ -63,10 +63,10 @@
 ## Task 1 : Enums, Properties et AdminAlertService
 
 **Files:**
-- Create: `src/main/java/com/dony/api/common/stripe/StripeWebhookSource.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventStatus.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeWebhookProperties.java`
-- Create: `src/main/java/com/dony/api/common/stripe/AdminAlertService.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeWebhookSource.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventStatus.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeWebhookProperties.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/AdminAlertService.java`
 - Modify: `src/main/resources/application.yml`
 - Modify: `src/main/resources/application-test.yml`
 
@@ -74,25 +74,25 @@
 
 ```java
 // StripeWebhookSource.java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 public enum StripeWebhookSource { PAYMENTS, KYC }
 ```
 
 ```java
 // StripeEventStatus.java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 public enum StripeEventStatus { RECEIVED, PROCESSED, FAILED, DEAD_LETTER, SKIPPED }
 ```
 
 - [ ] **Créer StripeWebhookProperties**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
-@ConfigurationProperties(prefix = "dony.stripe.webhook")
+@ConfigurationProperties(prefix = "yadony.stripe.webhook")
 public record StripeWebhookProperties(
         Duration pollInterval,
         int batchSize,
@@ -112,7 +112,7 @@ public record StripeWebhookProperties(
 - [ ] **Créer AdminAlertService**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import io.sentry.Sentry;
 import org.slf4j.Logger;
@@ -132,10 +132,10 @@ public class AdminAlertService {
 }
 ```
 
-- [ ] **Ajouter le bloc config dans application.yml** (sous `dony.stripe.connect:`)
+- [ ] **Ajouter le bloc config dans application.yml** (sous `yadony.stripe.connect:`)
 
 ```yaml
-# dans dony.stripe:
+# dans yadony.stripe:
     webhook:
       poll-interval: 10s
       batch-size: 50
@@ -144,7 +144,7 @@ public class AdminAlertService {
       scheduler-enabled: true
 ```
 
-Et compléter `stripe:` root (en dehors de `dony:`):
+Et compléter `stripe:` root (en dehors de `yadony:`):
 
 ```yaml
 stripe:
@@ -162,7 +162,7 @@ stripe:
     payments-secret: whsec_test_payments
     kyc-secret: whsec_test_kyc
 
-dony:
+yadony:
   stripe:
     webhook:
       scheduler-enabled: false
@@ -175,7 +175,7 @@ dony:
 - [ ] **Écrire les tests**
 
 ```java
-// src/test/java/com/dony/api/common/stripe/StripeWebhookPropertiesTest.java
+// src/test/java/com/yadony/api/common/stripe/StripeWebhookPropertiesTest.java
 @ExtendWith(MockitoExtension.class)
 class StripeWebhookPropertiesTest {
     @Test
@@ -192,7 +192,7 @@ class StripeWebhookPropertiesTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/common/stripe/ \
+git add src/main/java/com/yadony/api/common/stripe/ \
         src/main/resources/application.yml \
         src/test/resources/application-test.yml
 git commit -m "feat: stripe inbox — enums, properties, admin alert service"
@@ -204,8 +204,8 @@ git commit -m "feat: stripe inbox — enums, properties, admin alert service"
 
 **Files:**
 - Create: `src/main/resources/db/migration/V84__stripe_event_inbox.sql`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventInbox.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventInboxRepository.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventInbox.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventInboxRepository.java`
 
 - [ ] **Créer V84__stripe_event_inbox.sql**
 
@@ -241,7 +241,7 @@ DROP TABLE processed_stripe_events;
 - [ ] **Créer StripeEventInbox (entity)**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import jakarta.persistence.*;
 import java.time.Instant;
@@ -317,7 +317,7 @@ public class StripeEventInbox {
 - [ ] **Créer StripeEventInboxRepository**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -340,7 +340,7 @@ public interface StripeEventInboxRepository extends JpaRepository<StripeEventInb
 - [ ] **Écrire test de persistance basique**
 
 ```java
-// src/test/java/com/dony/api/common/stripe/StripeEventInboxRepositoryTest.java
+// src/test/java/com/yadony/api/common/stripe/StripeEventInboxRepositoryTest.java
 @DataJpaTest
 @ActiveProfiles("test")
 class StripeEventInboxRepositoryTest {
@@ -384,9 +384,9 @@ class StripeEventInboxRepositoryTest {
 - [ ] **Commit**
 ```bash
 git add src/main/resources/db/migration/V84__stripe_event_inbox.sql \
-        src/main/java/com/dony/api/common/stripe/StripeEventInbox.java \
-        src/main/java/com/dony/api/common/stripe/StripeEventInboxRepository.java \
-        src/test/java/com/dony/api/common/stripe/
+        src/main/java/com/yadony/api/common/stripe/StripeEventInbox.java \
+        src/main/java/com/yadony/api/common/stripe/StripeEventInboxRepository.java \
+        src/test/java/com/yadony/api/common/stripe/
 git commit -m "feat: stripe inbox — entity V84 + repository"
 ```
 
@@ -395,14 +395,14 @@ git commit -m "feat: stripe inbox — entity V84 + repository"
 ## Task 3 : StripeConfig (deux secrets) + StripeWebhookIngestService
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/config/StripeConfig.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeWebhookIngestService.java`
-- Test: `src/test/java/com/dony/api/common/stripe/StripeWebhookIngestServiceTest.java`
+- Modify: `src/main/java/com/yadony/api/config/StripeConfig.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeWebhookIngestService.java`
+- Test: `src/test/java/com/yadony/api/common/stripe/StripeWebhookIngestServiceTest.java`
 
 - [ ] **Modifier StripeConfig — deux beans de signing secret**
 
 ```java
-package com.dony.api.config;
+package com.yadony.api.config;
 
 import com.stripe.Stripe;
 import jakarta.annotation.PostConstruct;
@@ -410,7 +410,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import com.dony.api.common.stripe.StripeWebhookProperties;
+import com.yadony.api.common.stripe.StripeWebhookProperties;
 
 @Configuration
 @EnableConfigurationProperties({StripeConnectProperties.class, StripeWebhookProperties.class})
@@ -445,9 +445,9 @@ public class StripeConfig {
 - [ ] **Créer StripeWebhookIngestService**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
-import com.dony.api.common.DonyBusinessException;
+import com.yadony.api.common.YadonyBusinessException;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
 import com.stripe.net.Webhook;
@@ -484,7 +484,7 @@ public class StripeWebhookIngestService {
             event = Webhook.constructEvent(payload, sigHeader, secret);
         } catch (SignatureVerificationException e) {
             log.warn("Invalid Stripe webhook signature for source={}: {}", source, e.getMessage());
-            throw new DonyBusinessException(HttpStatus.BAD_REQUEST,
+            throw new YadonyBusinessException(HttpStatus.BAD_REQUEST,
                     "invalid-webhook-signature", "Webhook Error", "Signature webhook invalide");
         }
 
@@ -503,7 +503,7 @@ public class StripeWebhookIngestService {
 - [ ] **Écrire test unitaire**
 
 ```java
-// src/test/java/com/dony/api/common/stripe/StripeWebhookIngestServiceTest.java
+// src/test/java/com/yadony/api/common/stripe/StripeWebhookIngestServiceTest.java
 @ExtendWith(MockitoExtension.class)
 class StripeWebhookIngestServiceTest {
 
@@ -545,9 +545,9 @@ class StripeWebhookIngestServiceTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/config/StripeConfig.java \
-        src/main/java/com/dony/api/common/stripe/StripeWebhookIngestService.java \
-        src/test/java/com/dony/api/common/stripe/StripeWebhookIngestServiceTest.java
+git add src/main/java/com/yadony/api/config/StripeConfig.java \
+        src/main/java/com/yadony/api/common/stripe/StripeWebhookIngestService.java \
+        src/test/java/com/yadony/api/common/stripe/StripeWebhookIngestServiceTest.java
 git commit -m "feat: stripe inbox — ingest service + deux secrets webhook"
 ```
 
@@ -556,14 +556,14 @@ git commit -m "feat: stripe inbox — ingest service + deux secrets webhook"
 ## Task 4 : StripeWebhookHandler interface + StripeEventDispatcher
 
 **Files:**
-- Create: `src/main/java/com/dony/api/common/stripe/StripeWebhookHandler.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventDispatcher.java`
-- Test: `src/test/java/com/dony/api/common/stripe/StripeEventDispatcherTest.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeWebhookHandler.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventDispatcher.java`
+- Test: `src/test/java/com/yadony/api/common/stripe/StripeEventDispatcherTest.java`
 
 - [ ] **Créer l'interface**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import com.stripe.model.Event;
 
@@ -576,7 +576,7 @@ public interface StripeWebhookHandler {
 - [ ] **Créer StripeEventDispatcher**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import com.stripe.model.Event;
 import com.stripe.net.ApiResource;
@@ -625,7 +625,7 @@ public class StripeEventDispatcher {
 - [ ] **Écrire tests**
 
 ```java
-// src/test/java/com/dony/api/common/stripe/StripeEventDispatcherTest.java
+// src/test/java/com/yadony/api/common/stripe/StripeEventDispatcherTest.java
 @ExtendWith(MockitoExtension.class)
 class StripeEventDispatcherTest {
 
@@ -671,9 +671,9 @@ class StripeEventDispatcherTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/common/stripe/StripeWebhookHandler.java \
-        src/main/java/com/dony/api/common/stripe/StripeEventDispatcher.java \
-        src/test/java/com/dony/api/common/stripe/StripeEventDispatcherTest.java
+git add src/main/java/com/yadony/api/common/stripe/StripeWebhookHandler.java \
+        src/main/java/com/yadony/api/common/stripe/StripeEventDispatcher.java \
+        src/test/java/com/yadony/api/common/stripe/StripeEventDispatcherTest.java
 git commit -m "feat: stripe inbox — handler interface + dispatcher"
 ```
 
@@ -682,14 +682,14 @@ git commit -m "feat: stripe inbox — handler interface + dispatcher"
 ## Task 5 : StripeEventProcessor + StripeEventScheduler
 
 **Files:**
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventProcessor.java`
-- Create: `src/main/java/com/dony/api/common/stripe/StripeEventScheduler.java`
-- Test: `src/test/java/com/dony/api/common/stripe/StripeEventProcessorTest.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventProcessor.java`
+- Create: `src/main/java/com/yadony/api/common/stripe/StripeEventScheduler.java`
+- Test: `src/test/java/com/yadony/api/common/stripe/StripeEventProcessorTest.java`
 
 - [ ] **Créer StripeEventProcessor**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -758,7 +758,7 @@ public class StripeEventProcessor {
 - [ ] **Créer StripeEventScheduler**
 
 ```java
-package com.dony.api.common.stripe;
+package com.yadony.api.common.stripe;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -767,7 +767,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "dony.stripe.webhook.scheduler-enabled",
+@ConditionalOnProperty(name = "yadony.stripe.webhook.scheduler-enabled",
         havingValue = "true", matchIfMissing = true)
 public class StripeEventScheduler {
 
@@ -805,7 +805,7 @@ public StripeWebhookProperties stripeWebhookProperties(StripeWebhookProperties p
 - [ ] **Écrire tests unitaires du processor**
 
 ```java
-// src/test/java/com/dony/api/common/stripe/StripeEventProcessorTest.java
+// src/test/java/com/yadony/api/common/stripe/StripeEventProcessorTest.java
 @ExtendWith(MockitoExtension.class)
 class StripeEventProcessorTest {
 
@@ -888,10 +888,10 @@ class StripeEventProcessorTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/common/stripe/StripeEventProcessor.java \
-        src/main/java/com/dony/api/common/stripe/StripeEventScheduler.java \
-        src/main/java/com/dony/api/config/StripeConfig.java \
-        src/test/java/com/dony/api/common/stripe/StripeEventProcessorTest.java
+git add src/main/java/com/yadony/api/common/stripe/StripeEventProcessor.java \
+        src/main/java/com/yadony/api/common/stripe/StripeEventScheduler.java \
+        src/main/java/com/yadony/api/config/StripeConfig.java \
+        src/test/java/com/yadony/api/common/stripe/StripeEventProcessorTest.java
 git commit -m "feat: stripe inbox — processor retry/backoff + scheduler"
 ```
 
@@ -900,19 +900,19 @@ git commit -m "feat: stripe inbox — processor retry/backoff + scheduler"
 ## Task 6 : KycStripeWebhookHandler + refactor KycController/KycService
 
 **Files:**
-- Create: `src/main/java/com/dony/api/kyc/KycStripeWebhookHandler.java`
-- Modify: `src/main/java/com/dony/api/kyc/KycController.java`
-- Modify: `src/main/java/com/dony/api/kyc/KycService.java`
-- Test: `src/test/java/com/dony/api/kyc/KycStripeWebhookHandlerTest.java`
+- Create: `src/main/java/com/yadony/api/kyc/KycStripeWebhookHandler.java`
+- Modify: `src/main/java/com/yadony/api/kyc/KycController.java`
+- Modify: `src/main/java/com/yadony/api/kyc/KycService.java`
+- Test: `src/test/java/com/yadony/api/kyc/KycStripeWebhookHandlerTest.java`
 
 - [ ] **Créer KycStripeWebhookHandler** — copiez la logique de `KycService.processWebhook` (lines 184-265) dans le handler ; le service ne conserve que la logique de session/statut.
 
 ```java
-package com.dony.api.kyc;
+package com.yadony.api.kyc;
 
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
-import com.dony.api.common.stripe.StripeWebhookHandler;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.stripe.StripeWebhookHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.model.Event;
@@ -1054,7 +1054,7 @@ public ResponseEntity<Void> handleWebhook(
 - [ ] **Écrire tests**
 
 ```java
-// src/test/java/com/dony/api/kyc/KycStripeWebhookHandlerTest.java
+// src/test/java/com/yadony/api/kyc/KycStripeWebhookHandlerTest.java
 @ExtendWith(MockitoExtension.class)
 class KycStripeWebhookHandlerTest {
 
@@ -1137,10 +1137,10 @@ class KycStripeWebhookHandlerTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/kyc/KycStripeWebhookHandler.java \
-        src/main/java/com/dony/api/kyc/KycController.java \
-        src/main/java/com/dony/api/kyc/KycService.java \
-        src/test/java/com/dony/api/kyc/KycStripeWebhookHandlerTest.java
+git add src/main/java/com/yadony/api/kyc/KycStripeWebhookHandler.java \
+        src/main/java/com/yadony/api/kyc/KycController.java \
+        src/main/java/com/yadony/api/kyc/KycService.java \
+        src/test/java/com/yadony/api/kyc/KycStripeWebhookHandlerTest.java
 git commit -m "feat: stripe inbox — KycStripeWebhookHandler, refactor KycController"
 ```
 
@@ -1149,17 +1149,17 @@ git commit -m "feat: stripe inbox — KycStripeWebhookHandler, refactor KycContr
 ## Task 7 : PaymentStripeWebhookHandler + refactor PaymentController/PaymentService
 
 **Files:**
-- Create: `src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java`
-- Modify: `src/main/java/com/dony/api/payments/PaymentController.java`
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java`
-- Test: `src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerTest.java`
+- Create: `src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentController.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java`
+- Test: `src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerTest.java`
 
 - [ ] **Créer PaymentStripeWebhookHandler** — reprend la logique de `dispatchWebhookEvent` et les handlers privés. Ces méthodes restent dans `PaymentService` (package-private) et sont appelées depuis le handler dans le même package.
 
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
-import com.dony.api.common.stripe.StripeWebhookHandler;
+import com.yadony.api.common.stripe.StripeWebhookHandler;
 import com.stripe.model.Event;
 import org.springframework.stereotype.Component;
 
@@ -1181,10 +1181,10 @@ public class PaymentStripeWebhookHandler implements StripeWebhookHandler {
     );
 
     private final PaymentService paymentService;
-    private final com.dony.api.payments.cash.CashCommissionWebhookHandler cashHandler;
+    private final com.yadony.api.payments.cash.CashCommissionWebhookHandler cashHandler;
 
     public PaymentStripeWebhookHandler(PaymentService paymentService,
-                                        com.dony.api.payments.cash.CashCommissionWebhookHandler cashHandler) {
+                                        com.yadony.api.payments.cash.CashCommissionWebhookHandler cashHandler) {
         this.paymentService = paymentService;
         this.cashHandler = cashHandler;
     }
@@ -1230,13 +1230,13 @@ public ResponseEntity<Void> handleWebhook(
 ```
 
 - [ ] **Supprimer ProcessedStripeEvent + ProcessedStripeEventRepository**
-  - Supprimer `src/main/java/com/dony/api/common/ProcessedStripeEvent.java`
-  - Supprimer `src/main/java/com/dony/api/common/ProcessedStripeEventRepository.java`
+  - Supprimer `src/main/java/com/yadony/api/common/ProcessedStripeEvent.java`
+  - Supprimer `src/main/java/com/yadony/api/common/ProcessedStripeEventRepository.java`
 
 - [ ] **Écrire tests — vérifier que le handler route correctement**
 
 ```java
-// src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerTest.java
+// src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerTest.java
 @ExtendWith(MockitoExtension.class)
 class PaymentStripeWebhookHandlerTest {
 
@@ -1282,11 +1282,11 @@ class PaymentStripeWebhookHandlerTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/ \
-        src/main/java/com/dony/api/kyc/KycController.java \
-        src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerTest.java
-git rm src/main/java/com/dony/api/common/ProcessedStripeEvent.java \
-       src/main/java/com/dony/api/common/ProcessedStripeEventRepository.java
+git add src/main/java/com/yadony/api/payments/ \
+        src/main/java/com/yadony/api/kyc/KycController.java \
+        src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerTest.java
+git rm src/main/java/com/yadony/api/common/ProcessedStripeEvent.java \
+       src/main/java/com/yadony/api/common/ProcessedStripeEventRepository.java
 git commit -m "feat: stripe inbox — PaymentStripeWebhookHandler, refactor PaymentController/Service"
 ```
 
@@ -1295,8 +1295,8 @@ git commit -m "feat: stripe inbox — PaymentStripeWebhookHandler, refactor Paym
 ## Task 8 : Test d'intégration controllers webhook (200 immédiat, 400 si sig invalide)
 
 **Files:**
-- Create: `src/test/java/com/dony/api/payments/PaymentWebhookControllerIntegrationTest.java`
-- Create: `src/test/java/com/dony/api/kyc/KycWebhookControllerIntegrationTest.java`
+- Create: `src/test/java/com/yadony/api/payments/PaymentWebhookControllerIntegrationTest.java`
+- Create: `src/test/java/com/yadony/api/kyc/KycWebhookControllerIntegrationTest.java`
 
 - [ ] **Créer PaymentWebhookControllerIntegrationTest**
 
@@ -1321,7 +1321,7 @@ class PaymentWebhookControllerIntegrationTest {
 
     @Test
     void webhook_returns400_onInvalidSignature() throws Exception {
-        doThrow(new DonyBusinessException(HttpStatus.BAD_REQUEST,
+        doThrow(new YadonyBusinessException(HttpStatus.BAD_REQUEST,
                 "invalid-webhook-signature", "Webhook Error", "Signature invalide"))
                 .when(ingestService).ingest(any(), any(), any());
 
@@ -1340,8 +1340,8 @@ class PaymentWebhookControllerIntegrationTest {
 
 - [ ] **Commit**
 ```bash
-git add src/test/java/com/dony/api/payments/PaymentWebhookControllerIntegrationTest.java \
-        src/test/java/com/dony/api/kyc/KycWebhookControllerIntegrationTest.java
+git add src/test/java/com/yadony/api/payments/PaymentWebhookControllerIntegrationTest.java \
+        src/test/java/com/yadony/api/kyc/KycWebhookControllerIntegrationTest.java
 git commit -m "test: stripe inbox — intégration controllers webhook"
 ```
 
@@ -1351,10 +1351,10 @@ git commit -m "test: stripe inbox — intégration controllers webhook"
 
 **Files:**
 - Create: `src/main/resources/db/migration/V85__chargebacks.sql`
-- Create: `src/main/java/com/dony/api/payments/chargeback/ChargebackStatus.java`
-- Create: `src/main/java/com/dony/api/payments/chargeback/ChargebackEntity.java`
-- Create: `src/main/java/com/dony/api/payments/chargeback/ChargebackRepository.java`
-- Modify: `src/main/java/com/dony/api/payments/PaymentEntity.java`
+- Create: `src/main/java/com/yadony/api/payments/chargeback/ChargebackStatus.java`
+- Create: `src/main/java/com/yadony/api/payments/chargeback/ChargebackEntity.java`
+- Create: `src/main/java/com/yadony/api/payments/chargeback/ChargebackRepository.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentEntity.java`
 
 - [ ] **Créer V85__chargebacks.sql**
 
@@ -1386,16 +1386,16 @@ ALTER TABLE payments ADD COLUMN disputed BOOLEAN NOT NULL DEFAULT FALSE;
 - [ ] **Créer ChargebackStatus**
 
 ```java
-package com.dony.api.payments.chargeback;
+package com.yadony.api.payments.chargeback;
 public enum ChargebackStatus { OPEN, WON, LOST }
 ```
 
 - [ ] **Créer ChargebackEntity**
 
 ```java
-package com.dony.api.payments.chargeback;
+package com.yadony.api.payments.chargeback;
 
-import com.dony.api.common.BaseEntity;
+import com.yadony.api.common.BaseEntity;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -1468,7 +1468,7 @@ public class ChargebackEntity extends BaseEntity {
 - [ ] **Créer ChargebackRepository**
 
 ```java
-package com.dony.api.payments.chargeback;
+package com.yadony.api.payments.chargeback;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -1498,8 +1498,8 @@ public void setDisputed(boolean disputed) { this.disputed = disputed; }
 - [ ] **Commit**
 ```bash
 git add src/main/resources/db/migration/V85__chargebacks.sql \
-        src/main/java/com/dony/api/payments/chargeback/ \
-        src/main/java/com/dony/api/payments/PaymentEntity.java
+        src/main/java/com/yadony/api/payments/chargeback/ \
+        src/main/java/com/yadony/api/payments/PaymentEntity.java
 git commit -m "feat: chargebacks — migration V85, entité, PaymentEntity.disputed"
 ```
 
@@ -1508,19 +1508,19 @@ git commit -m "feat: chargebacks — migration V85, entité, PaymentEntity.dispu
 ## Task 10 : ChargebackService + gel du bid dans DeliveryEventListener
 
 **Files:**
-- Create: `src/main/java/com/dony/api/payments/chargeback/ChargebackService.java`
-- Modify: `src/main/java/com/dony/api/payments/DeliveryEventListener.java`
-- Test: `src/test/java/com/dony/api/payments/chargeback/ChargebackServiceTest.java`
-- Test: `src/test/java/com/dony/api/payments/DeliveryEventListenerChargebackTest.java`
+- Create: `src/main/java/com/yadony/api/payments/chargeback/ChargebackService.java`
+- Modify: `src/main/java/com/yadony/api/payments/DeliveryEventListener.java`
+- Test: `src/test/java/com/yadony/api/payments/chargeback/ChargebackServiceTest.java`
+- Test: `src/test/java/com/yadony/api/payments/DeliveryEventListenerChargebackTest.java`
 
 - [ ] **Créer ChargebackService**
 
 ```java
-package com.dony.api.payments.chargeback;
+package com.yadony.api.payments.chargeback;
 
-import com.dony.api.common.AuditService;
-import com.dony.api.common.stripe.AdminAlertService;
-import com.dony.api.payments.PaymentRepository;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.stripe.AdminAlertService;
+import com.yadony.api.payments.PaymentRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.model.Event;
@@ -1688,7 +1688,7 @@ Ajouter `AdminAlertService adminAlert` au constructeur de `DeliveryEventListener
 - [ ] **Écrire tests ChargebackService**
 
 ```java
-// src/test/java/com/dony/api/payments/chargeback/ChargebackServiceTest.java
+// src/test/java/com/yadony/api/payments/chargeback/ChargebackServiceTest.java
 @ExtendWith(MockitoExtension.class)
 class ChargebackServiceTest {
 
@@ -1761,7 +1761,7 @@ class ChargebackServiceTest {
 - [ ] **Écrire test DeliveryEventListener — cas gelé**
 
 ```java
-// src/test/java/com/dony/api/payments/DeliveryEventListenerChargebackTest.java
+// src/test/java/com/yadony/api/payments/DeliveryEventListenerChargebackTest.java
 @ExtendWith(MockitoExtension.class)
 class DeliveryEventListenerChargebackTest {
 
@@ -1803,11 +1803,11 @@ class DeliveryEventListenerChargebackTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/chargeback/ChargebackService.java \
-        src/main/java/com/dony/api/payments/DeliveryEventListener.java \
-        src/main/java/com/dony/api/payments/PaymentRepository.java \
-        src/test/java/com/dony/api/payments/chargeback/ChargebackServiceTest.java \
-        src/test/java/com/dony/api/payments/DeliveryEventListenerChargebackTest.java
+git add src/main/java/com/yadony/api/payments/chargeback/ChargebackService.java \
+        src/main/java/com/yadony/api/payments/DeliveryEventListener.java \
+        src/main/java/com/yadony/api/payments/PaymentRepository.java \
+        src/test/java/com/yadony/api/payments/chargeback/ChargebackServiceTest.java \
+        src/test/java/com/yadony/api/payments/DeliveryEventListenerChargebackTest.java
 git commit -m "feat: chargebacks — service, gel bid, garde DeliveryEventListener"
 ```
 
@@ -1816,14 +1816,14 @@ git commit -m "feat: chargebacks — service, gel bid, garde DeliveryEventListen
 ## Task 11 : ChargebackController + wiring chargeback events dans PaymentStripeWebhookHandler
 
 **Files:**
-- Create: `src/main/java/com/dony/api/payments/chargeback/ChargebackController.java`
-- Modify: `src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java`
-- Test: `src/test/java/com/dony/api/payments/chargeback/ChargebackControllerIntegrationTest.java`
+- Create: `src/main/java/com/yadony/api/payments/chargeback/ChargebackController.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java`
+- Test: `src/test/java/com/yadony/api/payments/chargeback/ChargebackControllerIntegrationTest.java`
 
 - [ ] **Créer ChargebackController**
 
 ```java
-package com.dony.api.payments.chargeback;
+package com.yadony.api.payments.chargeback;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -1907,9 +1907,9 @@ class ChargebackControllerIntegrationTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/chargeback/ChargebackController.java \
-        src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java \
-        src/test/java/com/dony/api/payments/chargeback/ChargebackControllerIntegrationTest.java
+git add src/main/java/com/yadony/api/payments/chargeback/ChargebackController.java \
+        src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java \
+        src/test/java/com/yadony/api/payments/chargeback/ChargebackControllerIntegrationTest.java
 git commit -m "feat: chargebacks — controller admin + wiring dans PaymentStripeWebhookHandler"
 ```
 
@@ -1918,9 +1918,9 @@ git commit -m "feat: chargebacks — controller admin + wiring dans PaymentStrip
 ## Task 12 : Handlers — payment_intent.canceled + transfer.* + payout.*
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java` (+ méthodes handler)
-- Modify: `src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java`
-- Test: `src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java` (+ méthodes handler)
+- Modify: `src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java`
+- Test: `src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java`
 
 - [ ] **Ajouter les méthodes handler dans PaymentService**
 
@@ -2026,7 +2026,7 @@ case "payout.paid"             -> paymentService.handlePayoutPaid(event);
 - [ ] **Écrire tests**
 
 ```java
-// src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java
+// src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java
 @ExtendWith(MockitoExtension.class)
 class PaymentStripeWebhookHandlerNewEventsTest {
 
@@ -2079,9 +2079,9 @@ class PaymentStripeWebhookHandlerNewEventsTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/PaymentService.java \
-        src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java \
-        src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java
+git add src/main/java/com/yadony/api/payments/PaymentService.java \
+        src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java \
+        src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerNewEventsTest.java
 git commit -m "feat: webhooks — payment_intent.canceled, transfer.*, payout.*"
 ```
 
@@ -2090,9 +2090,9 @@ git commit -m "feat: webhooks — payment_intent.canceled, transfer.*, payout.*"
 ## Task 13 : Handlers — account.deauthorized + capability.updated + refund.updated + early_fraud_warning
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java`
-- Modify: `src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java`
-- Test: `src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java`
+- Test: `src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java`
 
 - [ ] **Ajouter les méthodes dans PaymentService**
 
@@ -2195,7 +2195,7 @@ case "radar.early_fraud_warning.created"-> paymentService.handleEarlyFraudWarnin
 - [ ] **Écrire tests**
 
 ```java
-// src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java
+// src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java
 @ExtendWith(MockitoExtension.class)
 class PaymentStripeWebhookHandlerConnectEventsTest {
 
@@ -2235,9 +2235,9 @@ class PaymentStripeWebhookHandlerConnectEventsTest {
 
 - [ ] **Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/PaymentService.java \
-        src/main/java/com/dony/api/payments/PaymentStripeWebhookHandler.java \
-        src/test/java/com/dony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java
+git add src/main/java/com/yadony/api/payments/PaymentService.java \
+        src/main/java/com/yadony/api/payments/PaymentStripeWebhookHandler.java \
+        src/test/java/com/yadony/api/payments/PaymentStripeWebhookHandlerConnectEventsTest.java
 git commit -m "feat: webhooks — account.deauthorized, capability, refund.updated, fraud warning"
 ```
 
@@ -2260,7 +2260,7 @@ stripe:
     payments-secret: ${STRIPE_WEBHOOK_PAYMENTS_SECRET}
     kyc-secret: ${STRIPE_WEBHOOK_KYC_SECRET}
 
-dony:
+yadony:
   kyc:
     enforce: true
   stripe:
@@ -2348,7 +2348,7 @@ STRIPE_WEBHOOK_KYC_SECRET=whsec_live_...
 ```
 
 ## 7. Vérifications post-déploiement
-- [ ] `dony.kyc.enforce=true` et `dony.stripe.enforce=true` dans application-prod.yml ✓
+- [ ] `yadony.kyc.enforce=true` et `yadony.stripe.enforce=true` dans application-prod.yml ✓
 - [ ] Tester un webhook depuis le dashboard Stripe → l'event apparaît dans `stripe_event_inbox`
   ```sql
   SELECT event_id, event_type, status FROM stripe_event_inbox ORDER BY received_at DESC LIMIT 5;

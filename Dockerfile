@@ -15,12 +15,12 @@ RUN ./mvnw package -DskipTests -q
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 
-RUN addgroup -S dony && adduser -S dony -G dony
+RUN addgroup -S yadony && adduser -S yadony -G yadony
 
-COPY --from=builder /build/target/dony-back-*.jar app.jar
+COPY --from=builder /build/target/yadony-back-*.jar app.jar
 
-RUN chown dony:dony app.jar
-USER dony
+RUN chown yadony:yadony app.jar
+USER yadony
 
 EXPOSE 8080
 

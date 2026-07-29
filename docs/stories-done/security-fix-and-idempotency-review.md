@@ -15,7 +15,7 @@ Cette branche corrige plusieurs failles de sécurité et problèmes d'idempotenc
 
 ## 1. Sécurité — `FirebaseTokenFilter`
 
-**Fichier :** `src/main/java/com/dony/api/auth/FirebaseTokenFilter.java`
+**Fichier :** `src/main/java/com/yadony/api/auth/FirebaseTokenFilter.java`
 
 **Problème :** En cas d'indisponibilité temporaire de la base de données, le filtre accordait quand même l'accès avec un token Firebase valide mais sans rôles (token "bare UID").
 
@@ -40,10 +40,10 @@ catch (Exception e) {
 ## 2. Idempotence webhooks Stripe (paiements + KYC)
 
 **Fichiers :**
-- `src/main/java/com/dony/api/common/ProcessedStripeEvent.java` *(nouveau)*
-- `src/main/java/com/dony/api/common/ProcessedStripeEventRepository.java` *(nouveau)*
-- `src/main/java/com/dony/api/payments/PaymentService.java`
-- `src/main/java/com/dony/api/kyc/KycService.java`
+- `src/main/java/com/yadony/api/common/ProcessedStripeEvent.java` *(nouveau)*
+- `src/main/java/com/yadony/api/common/ProcessedStripeEventRepository.java` *(nouveau)*
+- `src/main/java/com/yadony/api/payments/PaymentService.java`
+- `src/main/java/com/yadony/api/kyc/KycService.java`
 - `src/main/resources/db/migration/V48__idempotency_constraints.sql`
 
 **Problème :** Stripe rejoue les webhooks en cas de timeout. Un même event reçu deux fois pouvait déclencher deux captures de paiement ou deux validations KYC.
@@ -63,9 +63,9 @@ processedStripeEventRepository.save(new ProcessedStripeEvent(event.getId()));
 ## 3. Anti-double-capture atomique
 
 **Fichiers :**
-- `src/main/java/com/dony/api/payments/PaymentEntity.java`
-- `src/main/java/com/dony/api/payments/PaymentRepository.java`
-- `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java`
+- `src/main/java/com/yadony/api/payments/PaymentEntity.java`
+- `src/main/java/com/yadony/api/payments/PaymentRepository.java`
+- `src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java`
 
 **Problème :** Race condition possible entre deux threads tentant de capturer le même `PaymentIntent` Stripe simultanément.
 
@@ -89,9 +89,9 @@ pi.capture();
 ## 4. Event listeners : `@EventListener` → `@TransactionalEventListener`
 
 **Fichiers :**
-- `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java`
-- `src/main/java/com/dony/api/payments/DeliveryEventListener.java`
-- `src/main/java/com/dony/api/payments/TripCancelledEventListener.java`
+- `src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java`
+- `src/main/java/com/yadony/api/payments/DeliveryEventListener.java`
+- `src/main/java/com/yadony/api/payments/TripCancelledEventListener.java`
 
 **Problème :** Les listeners s'exécutaient **pendant** la transaction parente. Ils lisaient donc des données pas encore commitées en base (ex. : un bid accepté mais dont le statut n'était pas encore visible en DB).
 
@@ -102,8 +102,8 @@ pi.capture();
 ## 5. Race condition Stripe Connect (`createConnectAccount`)
 
 **Fichiers :**
-- `src/main/java/com/dony/api/auth/UserRepository.java`
-- `src/main/java/com/dony/api/payments/PaymentService.java`
+- `src/main/java/com/yadony/api/auth/UserRepository.java`
+- `src/main/java/com/yadony/api/payments/PaymentService.java`
 - `src/main/resources/db/migration/V48__idempotency_constraints.sql`
 
 **Problème :** Deux appels simultanés à `createConnectAccount` pouvaient créer deux comptes Stripe Connect pour le même utilisateur.
@@ -126,8 +126,8 @@ if (user.getStripeAccountId() != null) {
 ## 6. Ownership check sur `GET /payments/bid/{bidId}`
 
 **Fichiers :**
-- `src/main/java/com/dony/api/payments/PaymentController.java`
-- `src/main/java/com/dony/api/payments/PaymentService.java`
+- `src/main/java/com/yadony/api/payments/PaymentController.java`
+- `src/main/java/com/yadony/api/payments/PaymentService.java`
 
 **Problème :** N'importe quel utilisateur avec le rôle `SENDER` ou `TRAVELER` pouvait lire le paiement de n'importe quel bid, même s'il n'en faisait pas partie.
 
@@ -138,8 +138,8 @@ if (user.getStripeAccountId() != null) {
 ## 7. Fuite du numéro de téléphone dans `TravelerProfileDto`
 
 **Fichiers :**
-- `src/main/java/com/dony/api/matching/dto/TravelerProfileDto.java`
-- `src/main/java/com/dony/api/matching/AnnouncementService.java` (3 occurrences)
+- `src/main/java/com/yadony/api/matching/dto/TravelerProfileDto.java`
+- `src/main/java/com/yadony/api/matching/AnnouncementService.java` (3 occurrences)
 
 **Problème :** Le DTO `TravelerProfileDto` exposait le numéro de téléphone du voyageur dans les réponses de matching (accessible à n'importe quel expéditeur).
 
@@ -149,7 +149,7 @@ if (user.getStripeAccountId() != null) {
 
 ## 8. Spoofing d'IP via `X-Forwarded-For`
 
-**Fichier :** `src/main/java/com/dony/api/matching/BidService.java`
+**Fichier :** `src/main/java/com/yadony/api/matching/BidService.java`
 
 **Problème :** Le code prenait le **premier** élément du header `X-Forwarded-For`, que le client peut forger librement. Le vrai IP client est le **dernier** élément, ajouté par le proxy de confiance (Nginx).
 
@@ -168,9 +168,9 @@ return parts[parts.length - 1].trim(); // ajouté par le proxy de confiance
 ## 9. KYC — activation des vérifications + idempotence session
 
 **Fichiers :**
-- `src/main/java/com/dony/api/kyc/KycService.java`
-- `src/main/java/com/dony/api/matching/AnnouncementService.java`
-- `src/main/java/com/dony/api/matching/BidService.java`
+- `src/main/java/com/yadony/api/kyc/KycService.java`
+- `src/main/java/com/yadony/api/matching/AnnouncementService.java`
+- `src/main/java/com/yadony/api/matching/BidService.java`
 - `src/main/resources/application-dev.yml`
 - Migrations V46, V47
 
@@ -181,7 +181,7 @@ return parts[parts.length - 1].trim(); // ajouté par le proxy de confiance
 - Le statut `REQUIRES_INPUT` (Stripe) n'était pas aligné avec `REJECTED` (enum Java)
 
 **Fix :**
-- KYC enforce activé via flag `dony.kyc.enforce` — `false` en dev, `true` en prod
+- KYC enforce activé via flag `yadony.kyc.enforce` — `false` en dev, `true` en prod
 - Si l'utilisateur est déjà `PENDING` avec une session existante, on retourne cette session sans en créer une nouvelle
 - `NOT_STARTED` ajouté comme statut initial correct (migration V47)
 - `REQUIRES_INPUT` → `REJECTED` en DB (migration V46), colonnes mortes supprimées
@@ -191,7 +191,7 @@ return parts[parts.length - 1].trim(); // ajouté par le proxy de confiance
 ## 10. Optimistic locking sur `UserEntity`
 
 **Fichiers :**
-- `src/main/java/com/dony/api/auth/UserEntity.java`
+- `src/main/java/com/yadony/api/auth/UserEntity.java`
 - `src/main/resources/db/migration/V49__add_user_version.sql`
 
 **Fix :** Champ `@Version` ajouté sur `UserEntity`. Protège contre les updates concurrents silencieux sur la même ligne user (ex. : double mise à jour du statut KYC).
@@ -212,7 +212,7 @@ return parts[parts.length - 1].trim(); // ajouté par le proxy de confiance
 ## Tests
 
 ```bash
-cd dony-back/
+cd yadony-back/
 
 # Tous les tests doivent passer
 ./mvnw test
@@ -226,7 +226,7 @@ cd dony-back/
 
 | Scénario | Résultat attendu |
 |---|---|
-| Créer un bid sans KYC (profil dev) | Autorisé (`dony.kyc.enforce=false` en dev) |
+| Créer un bid sans KYC (profil dev) | Autorisé (`yadony.kyc.enforce=false` en dev) |
 | Créer un bid sans KYC (profil prod) | `403 Forbidden` avec `kyc-not-verified` |
 | Rejouer un webhook Stripe (même event ID) | Log `already processed — skipping`, aucun effet |
 | `GET /api/v1/payments/bid/{bidId}` avec un token non concerné | `403 Forbidden` |

@@ -1,4 +1,4 @@
-# Deployment Guide — dony-back Staging
+# Deployment Guide — yadony-back Staging
 
 Documentation du déploiement automatisé vers le VPS staging via GitHub Actions.
 
@@ -32,7 +32,7 @@ GitHub Repo (main, feature/*)
 
 **Problème :**
 ```
-FATAL: password authentication failed for user "dony"
+FATAL: password authentication failed for user "yadony"
 ```
 
 **Causes :**
@@ -81,7 +81,7 @@ docker-compose: "DB_PASSWORD" variable is not set. Defaulting to a blank string
 1. **Créer le fichier .env.staging.template** (commité dans le repo) :
    ```bash
    # Référence pour les variables requises
-   DB_USERNAME=dony
+   DB_USERNAME=yadony
    DB_PASSWORD=your_secure_password
    ENCRYPTION_KEY=base64_32_bytes_key
    ...
@@ -111,14 +111,14 @@ docker-compose: "DB_PASSWORD" variable is not set. Defaulting to a blank string
 
 **Problème :**
 ```
-curl -sSL https://raw.githubusercontent.com/MONDONY/dony-back/main/docker-compose.staging.yml
+curl -sSL https://raw.githubusercontent.com/YADONY/yadony-back/main/docker-compose.staging.yml
 → 404: Not Found (repo is private)
 ```
 
 **Solution :**
 Remplacer `curl` (qui ne peut pas accéder aux repos privés sans token) par **SCP direct** :
 ```bash
-scp -i ~/.ssh/id_ed25519 docker-compose.staging.yml debian@141.95.41.96:~/dony/
+scp -i ~/.ssh/id_ed25519 docker-compose.staging.yml debian@141.95.41.96:~/yadony/
 ```
 
 **Impact :** Fichiers config transférés sans dépendre du token GitHub.
@@ -150,7 +150,7 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml up -d
 
 **Problème :**
 ```
-Description: Binding to target com.dony.api.address.GooglePlacesProperties failed
+Description: Binding to target com.yadony.api.address.GooglePlacesProperties failed
 Reason: must not be blank (app.places.apiKey)
 ```
 
@@ -172,8 +172,8 @@ Reason: must not be blank (app.places.apiKey)
 ssh debian@141.95.41.96
 
 # Créer le répertoire de déploiement
-mkdir -p ~/dony
-cd ~/dony
+mkdir -p ~/yadony
+cd ~/yadony
 
 # Copier le fichier .env.staging.template en local et le remplir
 # (L'utilisateur doit fournir les vraies valeurs)
@@ -214,18 +214,18 @@ Push vers main ou feature/*
 ```bash
 ssh debian@141.95.41.96
 
-cd ~/dony
+cd ~/yadony
 
 # Vérifier les conteneurs
 docker ps -a
-# → dony_api, dony_db_staging doivent être UP
+# → yadony_api, yadony_db_staging doivent être UP
 
 # Vérifier les logs
-docker logs dony_api | tail -20
-# → Doit voir "Started DonyBackApplication"
+docker logs yadony_api | tail -20
+# → Doit voir "Started YadonyBackApplication"
 
 # Vérifier la BD
-docker exec dony_db_staging pg_isready -U dony
+docker exec yadony_db_staging pg_isready -U yadony
 # → accepting connections
 ```
 
@@ -244,7 +244,7 @@ wget -q -O - http://localhost:8080/api/v1/actuator/health
 
 ### API ne démarre pas
 ```bash
-docker logs dony_api | tail -50
+docker logs yadony_api | tail -50
 # → Chercher "ERROR" ou "FAILED TO START"
 ```
 
@@ -255,18 +255,18 @@ Causes courantes :
 
 ### BD ne démarre pas
 ```bash
-docker logs dony_db_staging
+docker logs yadony_db_staging
 ```
 
 Causes :
-1. Conflit de conteneur → `docker container rm dony_db_staging` puis relancer
-2. Conflit de volume → `docker volume rm dony_dony_db_staging_data` puis relancer
-3. Permissions → Vérifier `~/dony` permissions (700+ pour user debian)
+1. Conflit de conteneur → `docker container rm yadony_db_staging` puis relancer
+2. Conflit de volume → `docker volume rm yadony_yadony_db_staging_data` puis relancer
+3. Permissions → Vérifier `~/yadony` permissions (700+ pour user debian)
 
 ### Secrets non chargés
 ```bash
 # Vérifier le fichier
-cat ~/dony/.env.staging | grep DB_PASSWORD
+cat ~/yadony/.env.staging | grep DB_PASSWORD
 
 # Vérifier que docker compose le charge
 docker compose --env-file .env.staging config | grep POSTGRES_PASSWORD
@@ -279,7 +279,7 @@ docker compose --env-file .env.staging config | grep POSTGRES_PASSWORD
 1. **Secrets jamais commités** → `.env.staging` dans `.gitignore`
 2. **GitHub Secrets stockées chiffrées** → Jamais exposées dans les logs
 3. **SSH key protégée** → `~/.ssh/id_ed25519` (permissions 600)
-4. **Base données isolée** → Réseau Docker `dony_internal`, pas exposé
+4. **Base données isolée** → Réseau Docker `yadony_internal`, pas exposé
 
 ---
 

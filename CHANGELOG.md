@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Dony backend are documented here.
+All notable changes to the Yadony backend are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
@@ -18,12 +18,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Pre-capture traveler eligibility re-verification in `BidAcceptedEventListener`
 - `TravelerNotEligibleForPaymentException` (HTTP 422) when Connect onboarding incomplete
 - `GET /api/v1/config/commission-rate` public endpoint (value from application.yml)
-- Deep links: custom scheme `dony://` for local dev (Universal Links deferred to production)
+- Deep links: custom scheme `yadony://` for local dev (Universal Links deferred to production)
 - Flutter: Stripe Connect onboarding screens, upgrade PRO screen, PRO badge on trip detail
 - Flutter: dynamic commission rate from API (removes hardcoded 12%)
 
 ### Changed
-- `PaymentIntentCreateParams`: added `on_behalf_of` and `statementDescriptorSuffix("DONY")`
+- `PaymentIntentCreateParams`: added `on_behalf_of` and `statementDescriptorSuffix("YADONY")`
 - `handleAccountUpdated` webhook now requires BOTH `chargesEnabled` AND `payoutsEnabled` for `ONBOARDING_COMPLETE`
 - `refreshConnectAccount` now uses same status-derivation logic as webhook (includes REJECTED/DISABLED)
 

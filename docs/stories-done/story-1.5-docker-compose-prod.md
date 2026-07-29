@@ -8,7 +8,7 @@ Dockerfile multi-stage et docker-compose.prod.yml créés pour le déploiement p
 
 ## Fichiers créés
 
-- `Dockerfile` — multi-stage build: JDK 21 Alpine (Maven build) → JRE 21 Alpine (runtime), utilisateur non-root `dony`
+- `Dockerfile` — multi-stage build: JDK 21 Alpine (Maven build) → JRE 21 Alpine (runtime), utilisateur non-root `yadony`
 - `.dockerignore` — exclut target/, logs, secrets et fichiers inutiles du contexte Docker
 - `docker-compose.prod.yml` — 4 services : `api`, `db` (PostgreSQL 16, port non exposé), `db-backup` (pg_dump quotidien avec rotation 7 jours), `nginx` (port 80/443)
 - `nginx/nginx.conf` — reverse proxy + rate limiting (30 req/min général, 5 req/min auth/kyc), SSL TLS 1.2/1.3, headers sécurité HSTS
@@ -28,8 +28,8 @@ Aucun (`docker-compose.dev.yml` était déjà en place depuis Story 1.2).
 ## Décisions techniques
 
 - **Multi-stage Dockerfile** : séparation builder/runtime réduit l'image finale (JRE Alpine ~200MB vs JDK ~500MB). Aucun source ni Maven dans l'image finale.
-- **Utilisateur non-root** : `adduser dony` dans l'image runtime — bonne pratique sécurité conteneurs.
+- **Utilisateur non-root** : `adduser yadony` dans l'image runtime — bonne pratique sécurité conteneurs.
 - **`-XX:MaxRAMPercentage=75.0`** : JVM utilise 75% de la RAM allouée au container (adapté à Docker sur Hetzner CX31 avec 8GB RAM).
 - **`resolver 127.0.0.11`** dans nginx.conf + `set $backend` : différer la résolution DNS du container `api` pour éviter l'échec de démarrage nginx si l'API redémarre. Résoudre via le DNS interne Docker.
-- **db-backup sans port exposé** : la base de données prod n'est accessible que depuis le réseau interne Docker (`dony_internal`), pas depuis l'extérieur.
+- **db-backup sans port exposé** : la base de données prod n'est accessible que depuis le réseau interne Docker (`yadony_internal`), pas depuis l'extérieur.
 - **Rotation backups 7 jours** : `find /backups -mtime +7 -delete` dans le service `db-backup`.

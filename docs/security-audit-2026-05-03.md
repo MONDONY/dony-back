@@ -1,6 +1,6 @@
-# Audit de sécurité dony — 2026-05-03
+# Audit de sécurité yadony — 2026-05-03
 
-**Périmètre :** backend Spring Boot (`dony-back/`) + frontend Flutter (`dony_app/`).
+**Périmètre :** backend Spring Boot (`yadony-back/`) + frontend Flutter (`yadony_app/`).
 **Méthode :** 4 sous-agents en parallèle (back critique, back autres packages, Flutter, dates/fuseaux), puis correctifs et tests.
 **Branche :** `security-audit-2026-05-03` sur les deux repos. **`main` n'a pas été modifiée.**
 
@@ -20,11 +20,11 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 
 ### Top 5 actions à faire **manuellement** dès le matin
 
-1. **Révoquer la clé Firebase service-account dans GCP IAM** (`firebase-adminsdk-fbsvc@dony-36cb2.iam.gserviceaccount.com`) puis supprimer `src/main/resources/firebase-service-account.json` du disque et passer par `GOOGLE_APPLICATION_CREDENTIALS` monté en secret. La clé privée RSA est actuellement dans le working tree.
+1. **Révoquer la clé Firebase service-account dans GCP IAM** (`firebase-adminsdk-fbsvc@yadony-36cb2.iam.gserviceaccount.com`) puis supprimer `src/main/resources/firebase-service-account.json` du disque et passer par `GOOGLE_APPLICATION_CREDENTIALS` monté en secret. La clé privée RSA est actuellement dans le working tree.
 2. **Définir un `ENCRYPTION_KEY` de production** robuste (32 bytes base64) dans le secret manager. L'application refuse maintenant de démarrer sans cette variable — mais aucune donnée KYC chiffrée n'existe encore avec une clé "vraie", donc à faire avant tout chiffrement réel.
 3. **Activer la vérification KYC** dans `AnnouncementService.java:154` et `BidService.java:58` (blocs `// TODO Réactiver avant la prod`). Non auto-corrigé pour ne pas casser des tests qui ne créent pas d'utilisateurs `VERIFIED`. Voir section dédiée plus bas.
 4. **Configurer un keystore Android release** pour remplacer le debug-signing dans `android/app/build.gradle.kts:53-55` (sinon n'importe qui peut signer un APK avec la même empreinte).
-5. **Restreindre la clé Google Maps** dans GCP Console au SHA-1 `release` + package `com.dony.dony` (et bundle ID iOS).
+5. **Restreindre la clé Google Maps** dans GCP Console au SHA-1 `release` + package `com.yadony.yadony` (et bundle ID iOS).
 
 ---
 
@@ -44,7 +44,7 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 - **Statut :** ✅ CORRIGÉ — `${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}` (fail-fast au démarrage). Les profils `test` et `e2e` ont une valeur de test dédiée pour ne pas casser les tests.
 - **Suite à donner :** définir une vraie clé en production.
 
-#### [CRITICAL] DB password et `dony.internal.secret` hardcodés dans `application-dev.yml`
+#### [CRITICAL] DB password et `yadony.internal.secret` hardcodés dans `application-dev.yml`
 - **Fichier :** `src/main/resources/application-dev.yml:5,40`
 - **Statut :** ✅ PARTIELLEMENT CORRIGÉ — les valeurs sont maintenant des `${POSTGRES_PASSWORD:...}` et `${INTERNAL_SHARED_SECRET:...}` ; un dev local sans env var continue de fonctionner avec une valeur explicitement marquée `change-me`.
 - **Suite à donner :** rotation du secret existant (dev DB et internal secret) puisqu'ils ont été commités sur l'historique git.
@@ -67,7 +67,7 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 
 #### [CRITICAL] `/internal/messaging/notify` exposé `permitAll` avec comparaison `String.equals` du secret
 - **Fichiers :** `SecurityConfig.java:53`, `MessagingNotifyController.java`
-- **Statut :** ✅ CORRIGÉ partiellement — `MessageDigest.isEqual` (constant-time) + `DonyBusinessException` pour RFC 7807. **Le whitelist `permitAll` du chemin reste** — à supprimer en bindant `/internal/**` à localhost depuis Nginx (action infra, non couverte ici).
+- **Statut :** ✅ CORRIGÉ partiellement — `MessageDigest.isEqual` (constant-time) + `YadonyBusinessException` pour RFC 7807. **Le whitelist `permitAll` du chemin reste** — à supprimer en bindant `/internal/**` à localhost depuis Nginx (action infra, non couverte ici).
 
 ### HIGH
 
@@ -93,7 +93,7 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 - **Action :** avant `PaymentIntent.create`, ajouter
   ```java
   if (amount.compareTo(BigDecimal.valueOf(maxDeclaredValueEur)) > 0) {
-      throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+      throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
               "amount-exceeds-cap", "Amount Exceeds Cap",
               "Le montant total dépasse la limite de " + maxDeclaredValueEur + " €");
   }
@@ -142,7 +142,7 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 - **Fichiers :** `AnnouncementService.java:154-162`, `BidService.java:58-65`
 - **Statut :** ❌ NON CORRIGÉ AUTOMATIQUEMENT — toute la suite de tests existante crée des utilisateurs sans `kycStatus = VERIFIED`. Réactiver casserait la build, donc à faire en équipe avec une mise à jour des fixtures.
 - **Action :**
-  - Décommenter les blocs `if (user.getKycStatus() != KycStatus.VERIFIED) { throw new DonyBusinessException(HttpStatus.FORBIDDEN, "kyc-not-verified", ...); }`.
+  - Décommenter les blocs `if (user.getKycStatus() != KycStatus.VERIFIED) { throw new YadonyBusinessException(HttpStatus.FORBIDDEN, "kyc-not-verified", ...); }`.
   - Ou (si vous voulez garder le bypass dev) : exposer la règle via un property flag `app.security.require-kyc: ${REQUIRE_KYC:true}` ; mettre `false` dans `application-dev.yml`/`application-test.yml`, `true` ailleurs.
 
 ### HIGH
@@ -167,7 +167,7 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 | MM-1 | `V4__tracking_events.sql` | Pas de trigger d'immutabilité (cf. `audit_log` V7) | ❌ V37 trigger `prevent_tracking_events_modification` |
 | MM-2 | `AdminConversationController.java:38-44` | Renvoie `Page<ConversationEntity>` brute | ❌ DTO |
 | MM-3 | `AdminConversationController.deleteMessage` | Path params non validés UUID | ❌ |
-| MM-4 | `AdminConversationController` / `MessagingNotifyController` | `ResponseStatusException` au lieu de `DonyBusinessException` | ✅ CORRIGÉ dans MessagingNotifyController seulement |
+| MM-4 | `AdminConversationController` / `MessagingNotifyController` | `ResponseStatusException` au lieu de `YadonyBusinessException` | ✅ CORRIGÉ dans MessagingNotifyController seulement |
 | MM-5 | Tous les controllers matching/cancellation/notifications | `@PreAuthorize` manquant (ownership en service uniquement) | ❌ ajouter `hasRole('TRAVELER')`/`hasRole('SENDER')` partout |
 | MM-6 | `BidController.rejectBid:82-89` | `@Valid` manquant | ✅ CORRIGÉ |
 | MM-7 | `TrackingService.java:336-388` | `confirmation_code_expiry` jamais affecté à la création | ❌ 7 j d'expiration |
@@ -177,11 +177,11 @@ Couverture JaCoCo backend globale : 70 % (objectif projet 90 % — non atteint *
 
 ### LOW
 
-Voir `/tmp/dony-audit-findings/02-back-other.md` (rapport agent) pour le détail des 8 findings LOW non corrigés (`SmsService` log, message preview FCM, `confirmDelivery` sans GPS/photo, `BidService.resolveClientIp`, `NotificationController` class-level `@PreAuthorize`, `audit_log.actor_id` incohérent, RecipientController CSP, cache key collision).
+Voir `/tmp/yadony-audit-findings/02-back-other.md` (rapport agent) pour le détail des 8 findings LOW non corrigés (`SmsService` log, message preview FCM, `confirmDelivery` sans GPS/photo, `BidService.resolveClientIp`, `NotificationController` class-level `@PreAuthorize`, `audit_log.actor_id` incohérent, RecipientController CSP, cache key collision).
 
 ---
 
-## 3. Flutter — `dony_app/`
+## 3. Flutter — `yadony_app/`
 
 ### CRITICAL
 
@@ -285,7 +285,7 @@ Voir `/tmp/dony-audit-findings/02-back-other.md` (rapport agent) pour le détail
 
 ### LOW
 
-D-L1..D-L4 : voir `/tmp/dony-audit-findings/04-dates.md` (NotificationDispatcher locale, audit_log payload sans offset, schedulers convention-only).
+D-L1..D-L4 : voir `/tmp/yadony-audit-findings/04-dates.md` (NotificationDispatcher locale, audit_log payload sans offset, schedulers convention-only).
 
 ---
 
@@ -293,23 +293,23 @@ D-L1..D-L4 : voir `/tmp/dony-audit-findings/04-dates.md` (NotificationDispatcher
 
 ### Backend (commit `b89683d`)
 ```
-src/main/java/com/dony/api/cancellation/CancellationController.java
-src/main/java/com/dony/api/cancellation/CancellationService.java
-src/main/java/com/dony/api/common/StorageController.java
-src/main/java/com/dony/api/config/JacksonConfig.java       (nouveau)
-src/main/java/com/dony/api/kyc/KycVerificationEntity.java
-src/main/java/com/dony/api/matching/BidController.java
-src/main/java/com/dony/api/matching/MatchingScheduler.java (supprimé)
-src/main/java/com/dony/api/matching/NoShowScheduler.java
-src/main/java/com/dony/api/messaging/MessagingNotifyController.java
-src/main/java/com/dony/api/payments/EscrowScheduler.java
-src/main/java/com/dony/api/tracking/TrackingService.java
+src/main/java/com/yadony/api/cancellation/CancellationController.java
+src/main/java/com/yadony/api/cancellation/CancellationService.java
+src/main/java/com/yadony/api/common/StorageController.java
+src/main/java/com/yadony/api/config/JacksonConfig.java       (nouveau)
+src/main/java/com/yadony/api/kyc/KycVerificationEntity.java
+src/main/java/com/yadony/api/matching/BidController.java
+src/main/java/com/yadony/api/matching/MatchingScheduler.java (supprimé)
+src/main/java/com/yadony/api/matching/NoShowScheduler.java
+src/main/java/com/yadony/api/messaging/MessagingNotifyController.java
+src/main/java/com/yadony/api/payments/EscrowScheduler.java
+src/main/java/com/yadony/api/tracking/TrackingService.java
 src/main/resources/application-dev.yml
 src/main/resources/application.yml
 src/main/resources/db/migration/V36__align_timestamp_columns.sql (nouveau)
-src/test/java/com/dony/api/cancellation/CancellationServiceTest.java
-src/test/java/com/dony/api/config/JacksonConfigTest.java   (nouveau)
-src/test/java/com/dony/api/messaging/MessagingNotifyControllerTest.java
+src/test/java/com/yadony/api/cancellation/CancellationServiceTest.java
+src/test/java/com/yadony/api/config/JacksonConfigTest.java   (nouveau)
+src/test/java/com/yadony/api/messaging/MessagingNotifyControllerTest.java
 src/test/resources/application-e2e.yml
 src/test/resources/application-test.yml
 ```
@@ -332,12 +332,12 @@ lib/main.dart
 
 ```bash
 # Backend
-cd dony-back && ./mvnw test
+cd yadony-back && ./mvnw test
 # → Tests run: 339, Failures: 0, Errors: 0, Skipped: 5  ✅
 # Couverture JaCoCo : 70 % global (cible projet 90 % — non atteinte AVANT l'audit)
 
 # Frontend
-cd dony_app && flutter test
+cd yadony_app && flutter test
 # → 1 005 tests / 4 échecs PRÉ-EXISTANTS (refactor map en cours, fichier
 #   `search_announcement_screen_test.dart` lignes 747/797/814 — types Icon vs IconButton)
 ```
@@ -345,7 +345,7 @@ cd dony_app && flutter test
 Tests ajoutés cette nuit :
 - `JacksonConfigTest.localDateTime_isSerializedAsIsoWithUtcOffset` — vérifie le sérialiseur UTC.
 - `CancellationServiceTest.getRematchSuggestions_noSuggestions_returnsEmpty` — mis à jour pour signer le nouveau check d'ownership (caller participant requis).
-- `MessagingNotifyControllerTest.notify_returns401_whenSecret*` — adaptés à `DonyBusinessException`.
+- `MessagingNotifyControllerTest.notify_returns401_whenSecret*` — adaptés à `YadonyBusinessException`.
 
 ---
 

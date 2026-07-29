@@ -45,7 +45,7 @@ Un voyageur KYC-vérifié peut connecter son compte bancaire via Stripe Express.
         ↓
 4. Flutter ouvre la WebView avec cette URL
    → Le voyageur complète son KYC Stripe (pièce d'identité, RIB)
-   → Stripe redirige vers https://dony.app/payments/onboarding/return
+   → Stripe redirige vers https://yadony.app/payments/onboarding/return
         ↓
 5. Webhook account.updated reçu (charges_enabled = true)
    → UserEntity.stripeOnboarded = true
@@ -91,6 +91,6 @@ Un voyageur KYC-vérifié peut connecter son compte bancaire via Stripe Express.
 
 ## Décisions techniques
 
-**Stripe Express plutôt que Custom** : Stripe gère l'onboarding, le KYC et la conformité. En Custom, dony serait responsable légalement des vérifications d'identité des voyageurs — trop risqué pour le MVP. Voir spike 6.1 pour le détail.
+**Stripe Express plutôt que Custom** : Stripe gère l'onboarding, le KYC et la conformité. En Custom, yadony serait responsable légalement des vérifications d'identité des voyageurs — trop risqué pour le MVP. Voir spike 6.1 pour le détail.
 
 **`@Qualifier` pour le webhook secret** : plutôt qu'un `@Value` direct dans `PaymentService`, on passe par le bean `stripeWebhookSecret()` de `StripeConfig`. Cela facilite les tests (le bean peut être mocké) et centralise la config Stripe.

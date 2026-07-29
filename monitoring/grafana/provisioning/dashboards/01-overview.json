@@ -1,8 +1,8 @@
 {
-  "uid": "dony-overview",
-  "title": "Dony — Vue Globale",
+  "uid": "yadony-overview",
+  "title": "Yadony — Vue Globale",
   "description": "État global du système : API, DB, Infrastructure",
-  "tags": ["dony", "overview"],
+  "tags": ["yadony", "overview"],
   "timezone": "UTC",
   "schemaVersion": 39,
   "version": 1,
@@ -15,7 +15,7 @@
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "up{job=\"dony-api\"}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "up{job=\"yadony-api\"}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {
         "defaults": {
@@ -34,7 +34,7 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"dony-api\"}[1m]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(rate(http_server_requests_seconds_count{job=\"yadony-api\"}[1m]))", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "reqps"}},
       "gridPos": {"x": 6, "y": 0, "w": 12, "h": 8}
@@ -45,7 +45,7 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[5m])) by (le)) * 1000", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"yadony-api\"}[5m])) by (le)) * 1000", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "ms"}},
       "gridPos": {"x": 18, "y": 0, "w": 6, "h": 8}

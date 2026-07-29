@@ -8,7 +8,7 @@ Le pipeline CI/CD est maintenant **100% opérationnel**. Voici ce que vous devez
 
 ### 1.1 Créer l'Environment Staging
 
-1. Aller à https://github.com/MONDONY/dony-back/settings/environments
+1. Aller à https://github.com/YADONY/yadony-back/settings/environments
 2. Cliquer **New environment**
 3. Entrer `staging` et confirmer
 
@@ -24,7 +24,7 @@ OVH_SSH_KEY           = (contenu complet de ~/.ssh/id_ed25519)
 GHCR_USERNAME         = votre_login_github
 GHCR_PAT              = ghp_xxxxx (générer via GitHub Settings → Tokens)
 
-DB_USERNAME           = dony
+DB_USERNAME           = yadony
 DB_PASSWORD           = (mot de passe sécurisé min 16 chars)
 ENCRYPTION_KEY        = (générer: openssl rand -base64 32)
 
@@ -71,8 +71,8 @@ git push origin test/deployment
 ```bash
 # Sur le VPS
 ssh debian@141.95.41.96
-cd ~/dony
-docker ps  # Vérifier dony_api et dony_db_staging en UP
+cd ~/yadony
+docker ps  # Vérifier yadony_api et yadony_db_staging en UP
 
 # Vérifier l'endpoint
 curl http://localhost:8080/api/v1/actuator/health | jq .
@@ -97,7 +97,7 @@ git push origin main
    → Secrets valides ? Oui → Docker Compose up
    → Health checks OK ? Oui → API prête
 
-# 3. API disponible sur https://api-staging.dony.store
+# 3. API disponible sur https://api-staging.yadony.com
 ```
 
 ---
@@ -148,7 +148,7 @@ git push origin main
 ## Architecture Finale
 
 ```
-dony-back/
+yadony-back/
 ├── .github/workflows/
 │   ├── ci.yml               # Tests + Build + Push
 │   └── deploy-staging.yml   # 🆕 Amélioré avec validation + health checks
@@ -161,7 +161,7 @@ dony-back/
 └── ... (reste du code)
 
 VPS (141.95.41.96):
-└── ~/dony/
+└── ~/yadony/
     ├── docker-compose.staging.yml
     ├── .env.staging            # Créé par workflow
     ├── monitoring/alloy/
@@ -180,14 +180,14 @@ ssh debian@141.95.41.96
 
 # Vérifier les conteneurs
 docker ps -a
-docker logs dony_api | tail -50
+docker logs yadony_api | tail -50
 
 # Redémarrer manuellement (si besoin)
-cd ~/dony
+cd ~/yadony
 docker compose --env-file .env.staging -f docker-compose.staging.yml restart api
 
 # Vérifier la BD
-docker exec dony_db_staging psql -U dony -d dony_staging -c "SELECT COUNT(*) FROM users;"
+docker exec yadony_db_staging psql -U yadony -d yadony_staging -c "SELECT COUNT(*) FROM users;"
 
 # Nettoyage
 docker system prune -a  # Supprimer images/conteneurs inutiles
@@ -201,7 +201,7 @@ df -h  # Vérifier espace disque
 gh run watch $(gh run list -w deploy-staging --limit 1 -q .id)
 
 # Lister les secrets
-gh secret list --repo MONDONY/dony-back
+gh secret list --repo YADONY/yadony-back
 
 # Vérifier la syntaxe du workflow
 act -j deploy -s GHCR_PAT=test  # Simule localement (nécessite act)
@@ -230,7 +230,7 @@ Avant de passer à la production, vous devez :
 
 1. Lire la section **Troubleshooting** dans `DEPLOYMENT.md`
 2. Vérifier les logs workflow : GitHub Actions → Deploy Staging → dernière run
-3. Vérifier les secrets manquants : `gh secret list --repo MONDONY/dony-back`
+3. Vérifier les secrets manquants : `gh secret list --repo YADONY/yadony-back`
 4. Vérifier SSH access : `ssh debian@141.95.41.96 "echo OK"`
 
 ---

@@ -1,4 +1,4 @@
-# Checklist Passage en Production — dony Backend
+# Checklist Passage en Production — yadony Backend
 
 > Ce document couvre uniquement les **variables d'application et flags métier** à configurer/activer avant de passer en prod.
 > Pour l'infrastructure (VPS, Docker, Nginx, SSL, CI/CD), voir `DEPLOYMENT_GUIDE.md`.
@@ -11,14 +11,14 @@ Ces flags sont désactivés en dev et en test pour ne pas bloquer le développem
 
 | Flag | Fichier à éditer | Valeur dev | Valeur prod | Effet |
 |---|---|---|---|---|
-| `dony.kyc.enforce` | `application.yml` ou variable d'env | `false` | `true` | Bloque la création de bid et d'annonce sans KYC vérifié |
-| `dony.stripe.enforce` | `application.yml` ou variable d'env | `false` | `true` | Bloque la création d'annonce sans compte bancaire Stripe configuré |
+| `yadony.kyc.enforce` | `application.yml` ou variable d'env | `false` | `true` | Bloque la création de bid et d'annonce sans KYC vérifié |
+| `yadony.stripe.enforce` | `application.yml` ou variable d'env | `false` | `true` | Bloque la création d'annonce sans compte bancaire Stripe configuré |
 
 **Comment faire :**
 
 Option A — dans le fichier `application.yml` (profil prod) :
 ```yaml
-dony:
+yadony:
   kyc:
     enforce: true
   stripe:
@@ -27,8 +27,8 @@ dony:
 
 Option B — via variable d'environnement dans le `.env` du serveur (recommandé) :
 ```bash
-DONY_KYC_ENFORCE=true
-DONY_STRIPE_ENFORCE=true
+YADONY_KYC_ENFORCE=true
+YADONY_STRIPE_ENFORCE=true
 ```
 
 ---
@@ -128,8 +128,8 @@ Vérifier que le projet Firebase en prod a bien **Phone Authentication** activé
 
 ## 6. Vérifications sécurité avant mise en ligne
 
-- [ ] `dony.kyc.enforce=true` — aucun bid/annonce sans KYC
-- [ ] `dony.stripe.enforce=true` — aucune annonce sans compte bancaire configuré
+- [ ] `yadony.kyc.enforce=true` — aucun bid/annonce sans KYC
+- [ ] `yadony.stripe.enforce=true` — aucune annonce sans compte bancaire configuré
 - [ ] `INTERNAL_SHARED_SECRET` généré avec `openssl rand -hex 32` et configuré dans les Firebase Functions
 - [ ] Clés Stripe live (`sk_live_...`) en place — pas de clés test en prod
 - [ ] Webhooks Stripe (paiements + KYC) déclarés sur l'URL de prod avec les bons events

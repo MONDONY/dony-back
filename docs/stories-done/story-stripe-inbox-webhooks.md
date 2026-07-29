@@ -14,7 +14,7 @@ Remplacement du traitement synchrone des webhooks Stripe par une inbox asynchron
 ### common/stripe/
 - `StripeWebhookSource.java` — enum PAYMENTS | KYC
 - `StripeEventStatus.java` — enum RECEIVED | PROCESSED | FAILED | DEAD_LETTER | SKIPPED
-- `StripeWebhookProperties.java` — @ConfigurationProperties("dony.stripe.webhook")
+- `StripeWebhookProperties.java` — @ConfigurationProperties("yadony.stripe.webhook")
 - `StripeEventInbox.java` — entité JPA table stripe_event_inbox
 - `StripeEventInboxRepository.java` — claimNext() avec FOR UPDATE SKIP LOCKED
 - `StripeWebhookIngestService.java` — vérification signature + persistance + dédup
@@ -90,7 +90,7 @@ Levé automatiquement si `charge.dispute.closed` avec outcome=won ou outcome=los
 
 ### Pièges et points d'attention
 - **processed_stripe_events** : droppée en V86 après migration des event_ids en PROCESSED dans V84. Ne pas recréer.
-- **StripeEventScheduler** conditionnel : `@ConditionalOnProperty("dony.stripe.webhook.processing-enabled")` — mettre à `false` pour les tests qui ne veulent pas lancer le scheduler.
+- **StripeEventScheduler** conditionnel : `@ConditionalOnProperty("yadony.stripe.webhook.processing-enabled")` — mettre à `false` pour les tests qui ne veulent pas lancer le scheduler.
 - **Double webhook secret** : `paymentsSecret` et `kycSecret` dans `StripeConfig`. Vérifier que les deux sont configurés en prod.
 - **DEAD_LETTER** : les events DEAD_LETTER ne sont pas retentés automatiquement. Requête manuelle nécessaire pour les remettre en RECEIVED.
 

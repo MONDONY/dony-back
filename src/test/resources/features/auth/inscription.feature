@@ -2,7 +2,7 @@
 @smoke @auth
 Fonctionnalité: Inscription des utilisateurs
   En tant que nouvel utilisateur
-  Je veux m'inscrire sur la plateforme Dony
+  Je veux m'inscrire sur la plateforme Yadony
   Afin de pouvoir envoyer ou transporter des colis
 
   @happy-path @critical
@@ -53,7 +53,7 @@ Fonctionnalité: Inscription des utilisateurs
 
   Scénario: Un même numéro ne donne qu'un seul compte — l'unicité est garantie par Firebase
     # Le numéro n'est plus stocké en base : un numéro correspond à un unique compte
-    # Firebase, donc au même uid, donc au même compte dony. Une seconde inscription
+    # Firebase, donc au même uid, donc au même compte yadony. Une seconde inscription
     # avec ce numéro retombe sur le compte existant au lieu d'en créer un second.
     Etant donné un token Firebase pour l'uid "user-phone-a"
     Et je m'inscris avec le téléphone "+33611000006" et le rôle "SENDER"

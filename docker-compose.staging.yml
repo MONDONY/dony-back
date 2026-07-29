@@ -1,7 +1,7 @@
 services:
   api:
-    image: ghcr.io/mondony/dony-back:staging
-    container_name: dony_api
+    image: ghcr.io/yadony/yadony-back:staging
+    container_name: yadony_api
     restart: unless-stopped
     # Secrets provisionnés via .env.staging (déposé par le workflow de déploiement) :
     # une variable ajoutée là-bas atteint le conteneur sans toucher au compose.
@@ -10,8 +10,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: staging
       GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
-      APP_BASE_URL: https://api-staging.dony.store
-      SPRING_DATASOURCE_URL: jdbc:postgresql://dony_db_staging:5432/dony_staging
+      APP_BASE_URL: https://api-staging.yadony.com
+      SPRING_DATASOURCE_URL: jdbc:postgresql://yadony_db_staging:5432/yadony_staging
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
@@ -23,7 +23,7 @@ services:
       db:
         condition: service_healthy
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/actuator/health || exit 1"]
       interval: 30s
@@ -33,7 +33,7 @@ services:
 
   alloy:
     image: grafana/alloy:v1.8.3
-    container_name: dony_alloy
+    container_name: yadony_alloy
     restart: unless-stopped
     command:
       - run
@@ -42,49 +42,49 @@ services:
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dony_alloy_data:/var/lib/alloy/data
+      - yadony_alloy_data:/var/lib/alloy/data
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
-      - dony_internal
+      - yadony_internal
     depends_on:
       - api
 
   db:
     image: postgres:16-alpine
-    container_name: dony_db_staging
+    container_name: yadony_db_staging
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dony_staging
+      POSTGRES_DB: yadony_staging
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - dony_db_staging_data:/var/lib/postgresql/data
+      - yadony_db_staging_data:/var/lib/postgresql/data
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d dony_staging"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d yadony_staging"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   db-backup:
     image: postgres:16-alpine
-    container_name: dony_db_backup_staging
+    container_name: yadony_db_backup_staging
     restart: unless-stopped
     environment:
       PGPASSWORD: ${DB_PASSWORD}
     volumes:
       - ./backups:/backups
     networks:
-      - dony_internal
+      - yadony_internal
     # Backup immédiat au démarrage, puis toutes les 24h. Keep last 7 days.
     entrypoint: >
       sh -c "
         backup() {
           FILE=/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz;
-          pg_dump -h db -U ${DB_USERNAME} dony_staging | gzip > $$FILE;
+          pg_dump -h db -U ${DB_USERNAME} yadony_staging | gzip > $$FILE;
           echo \"Backup created: $$FILE\";
           find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
         };
@@ -97,15 +97,15 @@ services:
 
   certbot:
     image: certbot/certbot:latest
-    container_name: dony_certbot
+    container_name: yadony_certbot
     restart: unless-stopped
     volumes:
       - ./nginx/certs:/etc/letsencrypt
       - ./nginx/www:/var/www/certbot
     entrypoint: >
       sh -c "
-        certbot certonly --webroot -w /var/www/certbot -d api-staging.dony.store
-        --non-interactive --agree-tos --email ops@dony.store
+        certbot certonly --webroot -w /var/www/certbot -d api-staging.yadony.com
+        --non-interactive --agree-tos --email ops@yadony.com
         --keep-until-expiring --quiet;
         while true; do
           sleep 86400 &
@@ -118,7 +118,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: dony_nginx
+    container_name: yadony_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -130,11 +130,11 @@ services:
     depends_on:
       - api
     networks:
-      - dony_internal
+      - yadony_internal
 
   stripe-cli-payments:
     image: stripe/stripe-cli:latest
-    container_name: dony_stripe_cli_payments
+    container_name: yadony_stripe_cli_payments
     restart: unless-stopped
     environment:
       STRIPE_API_KEY: ${STRIPE_SECRET_KEY}
@@ -148,11 +148,11 @@ services:
       api:
         condition: service_healthy
     networks:
-      - dony_internal
+      - yadony_internal
 
   stripe-cli-kyc:
     image: stripe/stripe-cli:latest
-    container_name: dony_stripe_cli_kyc
+    container_name: yadony_stripe_cli_kyc
     restart: unless-stopped
     environment:
       STRIPE_API_KEY: ${STRIPE_SECRET_KEY}
@@ -166,11 +166,11 @@ services:
       api:
         condition: service_healthy
     networks:
-      - dony_internal
+      - yadony_internal
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: dony_prometheus
+    container_name: yadony_prometheus
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -179,9 +179,9 @@ services:
       - '--web.enable-remote-write-receiver'
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - dony_prometheus_data:/prometheus
+      - yadony_prometheus_data:/prometheus
     networks:
-      - dony_internal
+      - yadony_internal
     ports:
       - "9090:9090"
     depends_on:
@@ -189,7 +189,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: dony_grafana
+    container_name: yadony_grafana
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
@@ -197,21 +197,21 @@ services:
       GF_SERVER_ROOT_URL: http://141.95.41.96:3000
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
-      - dony_grafana_data:/var/lib/grafana
+      - yadony_grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
-      - dony_internal
+      - yadony_internal
     ports:
       - "3000:3000"
     depends_on:
       - prometheus
 
 volumes:
-  dony_db_staging_data:
-  dony_alloy_data:
-  dony_prometheus_data:
-  dony_grafana_data:
+  yadony_db_staging_data:
+  yadony_alloy_data:
+  yadony_prometheus_data:
+  yadony_grafana_data:
 
 networks:
-  dony_internal:
+  yadony_internal:
     driver: bridge

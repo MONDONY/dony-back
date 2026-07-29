@@ -33,11 +33,11 @@
 
 **Création :**
 - `src/main/resources/db/migration/V37__bids_add_payment_intent.sql` — colonnes `payment_intent_id`, `awaiting_payment_expires_at` + index
-- `src/main/java/com/dony/api/matching/BidCheckoutService.java` — orchestration validations + bid `AWAITING_PAYMENT` + délégation `PaymentService.createEscrow`
-- `src/main/java/com/dony/api/matching/dto/BidCheckoutRequest.java` — DTO entrée
-- `src/main/java/com/dony/api/matching/dto/BidCheckoutResponse.java` — DTO sortie (bidId, clientSecret, publishableKey, expiresAt)
-- `src/main/java/com/dony/api/matching/AwaitingPaymentCleanupScheduler.java` — supprime bids non payés à T+15min
-- `src/main/java/com/dony/api/matching/BidTimeoutScheduler.java` — annule bids `PENDING` non répondus dans le délai
+- `src/main/java/com/yadony/api/matching/BidCheckoutService.java` — orchestration validations + bid `AWAITING_PAYMENT` + délégation `PaymentService.createEscrow`
+- `src/main/java/com/yadony/api/matching/dto/BidCheckoutRequest.java` — DTO entrée
+- `src/main/java/com/yadony/api/matching/dto/BidCheckoutResponse.java` — DTO sortie (bidId, clientSecret, publishableKey, expiresAt)
+- `src/main/java/com/yadony/api/matching/AwaitingPaymentCleanupScheduler.java` — supprime bids non payés à T+15min
+- `src/main/java/com/yadony/api/matching/BidTimeoutScheduler.java` — annule bids `PENDING` non répondus dans le délai
 - Tests unitaires/integration correspondants
 
 **Modification :**
@@ -54,13 +54,13 @@
 
 **Files:**
 - Create: `src/main/resources/db/migration/V37__bids_add_payment_intent.sql`
-- Modify: `src/main/java/com/dony/api/matching/BidEntity.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidEntity.java`
 
 - [ ] **Step 1: Écrire le test d'intégration migration**
 
-Create: `src/test/java/com/dony/api/matching/BidEntityMigrationTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidEntityMigrationTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -122,7 +122,7 @@ COMMENT ON COLUMN bids.awaiting_payment_expires_at IS 'Expiration de la fenêtre
 
 - [ ] **Step 4: Ajouter les champs sur BidEntity.java**
 
-Modify `src/main/java/com/dony/api/matching/BidEntity.java` — ajouter avant le bloc des getters/setters :
+Modify `src/main/java/com/yadony/api/matching/BidEntity.java` — ajouter avant le bloc des getters/setters :
 ```java
 @Column(name = "payment_intent_id", length = 255)
 private String paymentIntentId;
@@ -140,8 +140,8 @@ Expected : PASS.
 - [ ] **Step 6: Commit**
 ```bash
 git add src/main/resources/db/migration/V37__bids_add_payment_intent.sql \
-        src/main/java/com/dony/api/matching/BidEntity.java \
-        src/test/java/com/dony/api/matching/BidEntityMigrationTest.java
+        src/main/java/com/yadony/api/matching/BidEntity.java \
+        src/test/java/com/yadony/api/matching/BidEntityMigrationTest.java
 git commit -m "feat(bid): add payment_intent_id and expiry columns (V37)"
 ```
 
@@ -150,13 +150,13 @@ git commit -m "feat(bid): add payment_intent_id and expiry columns (V37)"
 ## Task 2 : Ajouter `AWAITING_PAYMENT` à `BidStatus`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/BidStatus.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidStatus.java`
 
 - [ ] **Step 1: Écrire le test**
 
-Create: `src/test/java/com/dony/api/matching/BidStatusTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidStatusTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -176,7 +176,7 @@ Expected : FAIL — `AWAITING_PAYMENT` n'existe pas.
 
 - [ ] **Step 3: Ajouter la valeur**
 
-Modify `src/main/java/com/dony/api/matching/BidStatus.java` — ajouter en première position :
+Modify `src/main/java/com/yadony/api/matching/BidStatus.java` — ajouter en première position :
 ```java
 public enum BidStatus {
     AWAITING_PAYMENT,  // bid créé, paiement Stripe en cours, voyageur non encore notifié
@@ -197,8 +197,8 @@ Expected : PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidStatus.java \
-        src/test/java/com/dony/api/matching/BidStatusTest.java
+git add src/main/java/com/yadony/api/matching/BidStatus.java \
+        src/test/java/com/yadony/api/matching/BidStatusTest.java
 git commit -m "feat(bid): add AWAITING_PAYMENT status"
 ```
 
@@ -207,14 +207,14 @@ git commit -m "feat(bid): add AWAITING_PAYMENT status"
 ## Task 3 : Exposer `cancelPaymentIntent` et `capturePaymentIntent` dans `PaymentService`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java`
-- Test: `src/test/java/com/dony/api/payments/PaymentServiceCancelCaptureTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java`
+- Test: `src/test/java/com/yadony/api/payments/PaymentServiceCancelCaptureTest.java`
 
 - [ ] **Step 1: Écrire les tests**
 
-Create: `src/test/java/com/dony/api/payments/PaymentServiceCancelCaptureTest.java`
+Create: `src/test/java/com/yadony/api/payments/PaymentServiceCancelCaptureTest.java`
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -264,14 +264,14 @@ class PaymentServiceCancelCaptureTest {
 }
 ```
 
-Create helper: `src/test/java/com/dony/api/payments/PaymentServiceTestFactory.java`
+Create helper: `src/test/java/com/yadony/api/payments/PaymentServiceTestFactory.java`
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
-import com.dony.api.matching.AnnouncementRepository;
-import com.dony.api.matching.BidRepository;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.BidRepository;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
@@ -301,7 +301,7 @@ Expected : FAIL (méthodes inexistantes).
 
 - [ ] **Step 3: Implémenter les méthodes**
 
-Modify `src/main/java/com/dony/api/payments/PaymentService.java` — ajouter avant la fin de la classe :
+Modify `src/main/java/com/yadony/api/payments/PaymentService.java` — ajouter avant la fin de la classe :
 ```java
 /**
  * Annule un PaymentIntent en mode pré-autorisation.
@@ -338,9 +338,9 @@ Expected : PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/PaymentService.java \
-        src/test/java/com/dony/api/payments/PaymentServiceCancelCaptureTest.java \
-        src/test/java/com/dony/api/payments/PaymentServiceTestFactory.java
+git add src/main/java/com/yadony/api/payments/PaymentService.java \
+        src/test/java/com/yadony/api/payments/PaymentServiceCancelCaptureTest.java \
+        src/test/java/com/yadony/api/payments/PaymentServiceTestFactory.java
 git commit -m "feat(payments): expose capturePaymentIntent and cancelPaymentIntent"
 ```
 
@@ -349,14 +349,14 @@ git commit -m "feat(payments): expose capturePaymentIntent and cancelPaymentInte
 ## Task 4 : DTOs `BidCheckoutRequest` et `BidCheckoutResponse`
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/dto/BidCheckoutRequest.java`
-- Create: `src/main/java/com/dony/api/matching/dto/BidCheckoutResponse.java`
+- Create: `src/main/java/com/yadony/api/matching/dto/BidCheckoutRequest.java`
+- Create: `src/main/java/com/yadony/api/matching/dto/BidCheckoutResponse.java`
 
 - [ ] **Step 1: Test de validation Bean Validation**
 
-Create: `src/test/java/com/dony/api/matching/dto/BidCheckoutRequestTest.java`
+Create: `src/test/java/com/yadony/api/matching/dto/BidCheckoutRequestTest.java`
 ```java
-package com.dony.api.matching.dto;
+package com.yadony.api.matching.dto;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -408,9 +408,9 @@ Expected : compilation fails.
 
 - [ ] **Step 3: Créer les DTOs**
 
-Create: `src/main/java/com/dony/api/matching/dto/BidCheckoutRequest.java`
+Create: `src/main/java/com/yadony/api/matching/dto/BidCheckoutRequest.java`
 ```java
-package com.dony.api.matching.dto;
+package com.yadony.api.matching.dto;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
@@ -432,9 +432,9 @@ public record BidCheckoutRequest(
 ) {}
 ```
 
-Create: `src/main/java/com/dony/api/matching/dto/BidCheckoutResponse.java`
+Create: `src/main/java/com/yadony/api/matching/dto/BidCheckoutResponse.java`
 ```java
-package com.dony.api.matching.dto;
+package com.yadony.api.matching.dto;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -454,9 +454,9 @@ Expected : PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/dto/BidCheckoutRequest.java \
-        src/main/java/com/dony/api/matching/dto/BidCheckoutResponse.java \
-        src/test/java/com/dony/api/matching/dto/BidCheckoutRequestTest.java
+git add src/main/java/com/yadony/api/matching/dto/BidCheckoutRequest.java \
+        src/main/java/com/yadony/api/matching/dto/BidCheckoutResponse.java \
+        src/test/java/com/yadony/api/matching/dto/BidCheckoutRequestTest.java
 git commit -m "feat(bid): add BidCheckoutRequest and BidCheckoutResponse DTOs"
 ```
 
@@ -465,25 +465,25 @@ git commit -m "feat(bid): add BidCheckoutRequest and BidCheckoutResponse DTOs"
 ## Task 5 : `BidCheckoutService` (validation + bid AWAITING_PAYMENT + délégation paiement)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/BidCheckoutService.java`
-- Test: `src/test/java/com/dony/api/matching/BidCheckoutServiceTest.java`
+- Create: `src/main/java/com/yadony/api/matching/BidCheckoutService.java`
+- Test: `src/test/java/com/yadony/api/matching/BidCheckoutServiceTest.java`
 
 - [ ] **Step 1: Écrire les tests unitaires**
 
-Create: `src/test/java/com/dony/api/matching/BidCheckoutServiceTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidCheckoutServiceTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.auth.Role;
-import com.dony.api.common.AuditService;
-import com.dony.api.common.DonyBusinessException;
-import com.dony.api.matching.dto.BidCheckoutRequest;
-import com.dony.api.matching.dto.BidCheckoutResponse;
-import com.dony.api.payments.PaymentService;
-import com.dony.api.payments.dto.CreatePaymentRequest;
-import com.dony.api.payments.dto.PaymentResponse;
+import com.yadony.api.auth.UserEntity;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.auth.Role;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.YadonyBusinessException;
+import com.yadony.api.matching.dto.BidCheckoutRequest;
+import com.yadony.api.matching.dto.BidCheckoutResponse;
+import com.yadony.api.payments.PaymentService;
+import com.yadony.api.payments.dto.CreatePaymentRequest;
+import com.yadony.api.payments.dto.PaymentResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -570,7 +570,7 @@ class BidCheckoutServiceTest {
     void rejects_inactive_announcement() {
         announcement.setStatus(AnnouncementStatus.CLOSED);
         assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
-            .isInstanceOf(DonyBusinessException.class)
+            .isInstanceOf(YadonyBusinessException.class)
             .hasMessageContaining("plus disponible");
     }
 
@@ -578,14 +578,14 @@ class BidCheckoutServiceTest {
     void rejects_bidding_on_own_announcement() {
         announcement.setTravelerId(sender.getId());
         assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
-            .isInstanceOf(DonyBusinessException.class);
+            .isInstanceOf(YadonyBusinessException.class);
     }
 
     @Test
     void rejects_weight_exceeding_capacity() {
         announcement.setAvailableKg(new BigDecimal("1.00"));
         assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
-            .isInstanceOf(DonyBusinessException.class)
+            .isInstanceOf(YadonyBusinessException.class)
             .hasMessageContaining("capacité");
     }
 
@@ -595,7 +595,7 @@ class BidCheckoutServiceTest {
             announcement.getId(), new BigDecimal("2"), new BigDecimal("501"),
             null, null, null, null, true);
         assertThatThrownBy(() -> service.checkout("uid-sender", tooHigh, httpRequest))
-            .isInstanceOf(DonyBusinessException.class)
+            .isInstanceOf(YadonyBusinessException.class)
             .hasMessageContaining("500");
     }
 
@@ -605,7 +605,7 @@ class BidCheckoutServiceTest {
                 eq(sender.getId()), eq(announcement.getId()), any()))
             .thenReturn(true);
         assertThatThrownBy(() -> service.checkout("uid-sender", req, httpRequest))
-            .isInstanceOf(DonyBusinessException.class)
+            .isInstanceOf(YadonyBusinessException.class)
             .hasMessageContaining("déjà");
     }
 
@@ -633,20 +633,20 @@ Expected : compile fails (`BidCheckoutService` n'existe pas).
 
 - [ ] **Step 3: Créer le service**
 
-Create: `src/main/java/com/dony/api/matching/BidCheckoutService.java`
+Create: `src/main/java/com/yadony/api/matching/BidCheckoutService.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.auth.Role;
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
-import com.dony.api.common.DonyBusinessException;
-import com.dony.api.matching.dto.BidCheckoutRequest;
-import com.dony.api.matching.dto.BidCheckoutResponse;
-import com.dony.api.payments.PaymentService;
-import com.dony.api.payments.dto.CreatePaymentRequest;
-import com.dony.api.payments.dto.PaymentResponse;
+import com.yadony.api.auth.Role;
+import com.yadony.api.auth.UserEntity;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.YadonyBusinessException;
+import com.yadony.api.matching.dto.BidCheckoutRequest;
+import com.yadony.api.matching.dto.BidCheckoutResponse;
+import com.yadony.api.payments.PaymentService;
+import com.yadony.api.payments.dto.CreatePaymentRequest;
+import com.yadony.api.payments.dto.PaymentResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
@@ -689,7 +689,7 @@ public class BidCheckoutService {
                                        HttpServletRequest httpRequest) {
 
         UserEntity sender = userRepository.findByFirebaseUid(firebaseUid)
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                 "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
         if (!sender.getRoles().contains(Role.SENDER)) {
@@ -698,17 +698,17 @@ public class BidCheckoutService {
         }
 
         AnnouncementEntity announcement = announcementRepository.findById(req.announcementId())
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                 "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
         if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT,
+            throw new YadonyBusinessException(HttpStatus.CONFLICT,
                 "announcement-not-active", "Announcement Not Active",
                 "Cette annonce n'est plus disponible");
         }
 
         if (announcement.getTravelerId().equals(sender.getId())) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT,
+            throw new YadonyBusinessException(HttpStatus.CONFLICT,
                 "cannot-bid-own-announcement", "Cannot Bid Own Announcement",
                 "Vous ne pouvez pas faire une demande sur votre propre annonce");
         }
@@ -717,19 +717,19 @@ public class BidCheckoutService {
             sender.getId(), announcement.getId(),
             List.of(BidStatus.AWAITING_PAYMENT, BidStatus.PENDING, BidStatus.ACCEPTED));
         if (alreadyHasBid) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT,
+            throw new YadonyBusinessException(HttpStatus.CONFLICT,
                 "already-bid", "Demande existante",
                 "Vous avez déjà une demande en cours pour ce trajet");
         }
 
         if (req.weightKg().compareTo(announcement.getAvailableKg()) > 0) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+            throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "weight-exceeds-capacity", "Weight Exceeds Capacity",
                 "Poids demandé supérieur à la capacité disponible");
         }
 
         if (req.declaredValueEur().compareTo(BigDecimal.valueOf(500)) > 0) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+            throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "value-exceeds-limit", "Value Exceeds Limit",
                 "Valeur maximum : 500 €");
         }
@@ -787,7 +787,7 @@ public class BidCheckoutService {
 
 > ⚠️ **Avant d'écrire ce fichier**, vérifier que `PaymentResponse` expose bien `getStripePaymentIntentId()` et `getPublishableKey()`. Si non, ajouter ces getters dans `PaymentResponse.java` et adapter. Lecture rapide :
 > ```bash
-> cat src/main/java/com/dony/api/payments/dto/PaymentResponse.java
+> cat src/main/java/com/yadony/api/payments/dto/PaymentResponse.java
 > ```
 
 - [ ] **Step 4: Vérifier `PaymentResponse` — ajouter getters manquants si besoin**
@@ -801,9 +801,9 @@ Expected : PASS (7 tests).
 
 - [ ] **Step 6: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidCheckoutService.java \
-        src/test/java/com/dony/api/matching/BidCheckoutServiceTest.java \
-        src/main/java/com/dony/api/payments/dto/PaymentResponse.java
+git add src/main/java/com/yadony/api/matching/BidCheckoutService.java \
+        src/test/java/com/yadony/api/matching/BidCheckoutServiceTest.java \
+        src/main/java/com/yadony/api/payments/dto/PaymentResponse.java
 git commit -m "feat(bid): add BidCheckoutService that creates AWAITING_PAYMENT bid + delegates payment"
 ```
 
@@ -812,17 +812,17 @@ git commit -m "feat(bid): add BidCheckoutService that creates AWAITING_PAYMENT b
 ## Task 6 : Endpoint REST `POST /bids/checkout`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/BidController.java`
-- Test: `src/test/java/com/dony/api/matching/BidCheckoutControllerIntegrationTest.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidController.java`
+- Test: `src/test/java/com/yadony/api/matching/BidCheckoutControllerIntegrationTest.java`
 
 - [ ] **Step 1: Écrire test integration**
 
-Create: `src/test/java/com/dony/api/matching/BidCheckoutControllerIntegrationTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidCheckoutControllerIntegrationTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.matching.dto.BidCheckoutRequest;
-import com.dony.api.matching.dto.BidCheckoutResponse;
+import com.yadony.api.matching.dto.BidCheckoutRequest;
+import com.yadony.api.matching.dto.BidCheckoutResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
@@ -925,12 +925,12 @@ Expected : 404 ou compilation fail.
 
 - [ ] **Step 3: Ajouter l'endpoint**
 
-Modify `src/main/java/com/dony/api/matching/BidController.java` :
+Modify `src/main/java/com/yadony/api/matching/BidController.java` :
 
 a. Importer le service et les DTOs :
 ```java
-import com.dony.api.matching.dto.BidCheckoutRequest;
-import com.dony.api.matching.dto.BidCheckoutResponse;
+import com.yadony.api.matching.dto.BidCheckoutRequest;
+import com.yadony.api.matching.dto.BidCheckoutResponse;
 import jakarta.validation.Valid;
 ```
 
@@ -967,8 +967,8 @@ Expected : PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidController.java \
-        src/test/java/com/dony/api/matching/BidCheckoutControllerIntegrationTest.java
+git add src/main/java/com/yadony/api/matching/BidController.java \
+        src/test/java/com/yadony/api/matching/BidCheckoutControllerIntegrationTest.java
 git commit -m "feat(bid): expose POST /api/v1/bids/checkout endpoint"
 ```
 
@@ -977,24 +977,24 @@ git commit -m "feat(bid): expose POST /api/v1/bids/checkout endpoint"
 ## Task 7 : Webhook Stripe → promotion `AWAITING_PAYMENT` → `PENDING` + publication `BidCreatedEvent`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java` (méthode `handlePaymentEscrowActive`)
-- Test: `src/test/java/com/dony/api/payments/PaymentWebhookBidPromotionTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java` (méthode `handlePaymentEscrowActive`)
+- Test: `src/test/java/com/yadony/api/payments/PaymentWebhookBidPromotionTest.java`
 
 - [ ] **Step 1: Écrire le test**
 
-Create: `src/test/java/com/dony/api/payments/PaymentWebhookBidPromotionTest.java`
+Create: `src/test/java/com/yadony/api/payments/PaymentWebhookBidPromotionTest.java`
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.common.AuditService;
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.matching.BidStatus;
-import com.dony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.auth.UserEntity;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.matching.AnnouncementEntity;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.BidEntity;
+import com.yadony.api.matching.BidRepository;
+import com.yadony.api.matching.BidStatus;
+import com.yadony.api.matching.events.BidCreatedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -1097,14 +1097,14 @@ Expected : compile fail (`promoteBidOnPaymentAuthorized` n'existe pas, `findByPa
 
 - [ ] **Step 3: Ajouter `findByPaymentIntentId` à `BidRepository`**
 
-Modify `src/main/java/com/dony/api/matching/BidRepository.java` :
+Modify `src/main/java/com/yadony/api/matching/BidRepository.java` :
 ```java
 java.util.Optional<BidEntity> findByPaymentIntentId(String paymentIntentId);
 ```
 
 - [ ] **Step 4: Ajouter la méthode `promoteBidOnPaymentAuthorized` dans `PaymentService`**
 
-Modify `src/main/java/com/dony/api/payments/PaymentService.java` — ajouter (après `handlePaymentEscrowActive`) :
+Modify `src/main/java/com/yadony/api/payments/PaymentService.java` — ajouter (après `handlePaymentEscrowActive`) :
 ```java
 /**
  * Promotes a bid from AWAITING_PAYMENT → PENDING when the Stripe PaymentIntent
@@ -1133,7 +1133,7 @@ public void promoteBidOnPaymentAuthorized(String paymentIntentId) {
                              "weightKg", bid.getWeightKg().toString(),
                              "paymentIntentId", paymentIntentId));
 
-        eventPublisher.publishEvent(new com.dony.api.matching.events.BidCreatedEvent(
+        eventPublisher.publishEvent(new com.yadony.api.matching.events.BidCreatedEvent(
             bid.getId(), announcement.getId(), announcement.getTravelerId(), bid.getSenderId(),
             senderName, bid.getWeightKg(), corridor));
 
@@ -1170,9 +1170,9 @@ Expected : PASS (3 tests).
 
 - [ ] **Step 6: Commit**
 ```bash
-git add src/main/java/com/dony/api/payments/PaymentService.java \
-        src/main/java/com/dony/api/matching/BidRepository.java \
-        src/test/java/com/dony/api/payments/PaymentWebhookBidPromotionTest.java
+git add src/main/java/com/yadony/api/payments/PaymentService.java \
+        src/main/java/com/yadony/api/matching/BidRepository.java \
+        src/test/java/com/yadony/api/payments/PaymentWebhookBidPromotionTest.java
 git commit -m "feat(payments): promote bid AWAITING_PAYMENT->PENDING on webhook + publish BidCreatedEvent"
 ```
 
@@ -1181,13 +1181,13 @@ git commit -m "feat(payments): promote bid AWAITING_PAYMENT->PENDING on webhook 
 ## Task 8 : Suppression de la publication `BidCreatedEvent` dans `BidService.createBid`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/BidService.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidService.java`
 
 > Le but : si l'ancien endpoint `createBid` existe encore (utilisé en interne ou en tests) il doit cesser de notifier le voyageur. La méthode peut rester comme outil interne mais ne publie plus l'event.
 
 - [ ] **Step 1: Modifier le test existant `BidServiceTest`**
 
-Modify `src/test/java/com/dony/api/matching/BidServiceTest.java` — ajouter ce test (ou modifier l'existant qui vérifie la publication) :
+Modify `src/test/java/com/yadony/api/matching/BidServiceTest.java` — ajouter ce test (ou modifier l'existant qui vérifie la publication) :
 ```java
 @Test
 void createBid_does_not_publish_BidCreatedEvent_anymore() {
@@ -1204,7 +1204,7 @@ Expected : FAIL sur le test ci-dessus.
 
 - [ ] **Step 3: Retirer la publication de `BidCreatedEvent` dans `createBid`**
 
-Modify `src/main/java/com/dony/api/matching/BidService.java` lignes ~141-143 — supprimer le bloc :
+Modify `src/main/java/com/yadony/api/matching/BidService.java` lignes ~141-143 — supprimer le bloc :
 ```java
 eventPublisher.publishEvent(new BidCreatedEvent(
     saved.getId(), announcement.getId(), announcement.getTravelerId(), sender.getId(),
@@ -1220,8 +1220,8 @@ Expected : PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidService.java \
-        src/test/java/com/dony/api/matching/BidServiceTest.java
+git add src/main/java/com/yadony/api/matching/BidService.java \
+        src/test/java/com/yadony/api/matching/BidServiceTest.java
 git commit -m "refactor(bid): stop publishing BidCreatedEvent on bid creation (now done by webhook)"
 ```
 
@@ -1230,12 +1230,12 @@ git commit -m "refactor(bid): stop publishing BidCreatedEvent on bid creation (n
 ## Task 9 : `acceptBid` capture le PaymentIntent ; `rejectBid` et `cancelBid` annulent
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/BidService.java`
-- Modify: `src/test/java/com/dony/api/matching/BidServiceTest.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidService.java`
+- Modify: `src/test/java/com/yadony/api/matching/BidServiceTest.java`
 
 - [ ] **Step 1: Écrire / étendre les tests**
 
-Modify `src/test/java/com/dony/api/matching/BidServiceTest.java` — ajouter :
+Modify `src/test/java/com/yadony/api/matching/BidServiceTest.java` — ajouter :
 ```java
 @Test
 void acceptBid_captures_payment_intent() throws Exception {
@@ -1290,14 +1290,14 @@ Réécrire les tests en fonction.
 
 - [ ] **Step 1bis: Réécrire les tests pour les listeners côté payments**
 
-Create: `src/test/java/com/dony/api/payments/BidLifecycleListenersTest.java`
+Create: `src/test/java/com/yadony/api/payments/BidLifecycleListenersTest.java`
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidRejectedEvent;
+import com.yadony.api.matching.BidEntity;
+import com.yadony.api.matching.BidRepository;
+import com.yadony.api.matching.events.BidAcceptedEvent;
+import com.yadony.api.matching.events.BidRejectedEvent;
 import com.stripe.exception.StripeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -1352,12 +1352,12 @@ Expected : FAIL (listeners absent ou ne capture pas).
 
 - [ ] **Step 3: Créer / étendre les listeners**
 
-Create: `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java`
+Create: `src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java`
 ```java
-package com.dony.api.payments;
+package com.yadony.api.payments;
 
-import com.dony.api.matching.BidRepository;
-import com.dony.api.matching.events.BidAcceptedEvent;
+import com.yadony.api.matching.BidRepository;
+import com.yadony.api.matching.events.BidAcceptedEvent;
 import com.stripe.exception.StripeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1390,7 +1390,7 @@ public class BidAcceptedEventListener {
 }
 ```
 
-Modify `src/main/java/com/dony/api/payments/BidRejectedEventListener.java` — ajouter l'appel `cancelPaymentIntent` :
+Modify `src/main/java/com/yadony/api/payments/BidRejectedEventListener.java` — ajouter l'appel `cancelPaymentIntent` :
 ```java
 @EventListener
 public void onBidRejected(BidRejectedEvent event) {
@@ -1412,9 +1412,9 @@ Pour `cancelBid` (annulation par sender) : le `BidService.cancelBid` actuel ne p
 // dans cancelBid, juste avant le return
 eventPublisher.publishEvent(new BidCancelledByOwnerEvent(bid.getId(), bid.getPaymentIntentId()));
 ```
-Create event class `src/main/java/com/dony/api/matching/events/BidCancelledByOwnerEvent.java` (UUID bidId, String paymentIntentId).
+Create event class `src/main/java/com/yadony/api/matching/events/BidCancelledByOwnerEvent.java` (UUID bidId, String paymentIntentId).
 
-Create listener `src/main/java/com/dony/api/payments/BidCancelledByOwnerEventListener.java` similar to BidAcceptedEventListener but calls `cancelPaymentIntent`.
+Create listener `src/main/java/com/yadony/api/payments/BidCancelledByOwnerEventListener.java` similar to BidAcceptedEventListener but calls `cancelPaymentIntent`.
 
 - [ ] **Step 4: Tests passent**
 
@@ -1426,13 +1426,13 @@ Expected : PASS (suite complète).
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidService.java \
-        src/main/java/com/dony/api/matching/events/BidCancelledByOwnerEvent.java \
-        src/main/java/com/dony/api/payments/BidAcceptedEventListener.java \
-        src/main/java/com/dony/api/payments/BidRejectedEventListener.java \
-        src/main/java/com/dony/api/payments/BidCancelledByOwnerEventListener.java \
-        src/test/java/com/dony/api/payments/BidLifecycleListenersTest.java \
-        src/test/java/com/dony/api/matching/BidServiceTest.java
+git add src/main/java/com/yadony/api/matching/BidService.java \
+        src/main/java/com/yadony/api/matching/events/BidCancelledByOwnerEvent.java \
+        src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java \
+        src/main/java/com/yadony/api/payments/BidRejectedEventListener.java \
+        src/main/java/com/yadony/api/payments/BidCancelledByOwnerEventListener.java \
+        src/test/java/com/yadony/api/payments/BidLifecycleListenersTest.java \
+        src/test/java/com/yadony/api/matching/BidServiceTest.java
 git commit -m "feat(payments): capture PI on accept, cancel PI on reject/cancel via event listeners"
 ```
 
@@ -1441,15 +1441,15 @@ git commit -m "feat(payments): capture PI on accept, cancel PI on reject/cancel 
 ## Task 10 : Filtres de visibilité (voyageur ne voit pas `AWAITING_PAYMENT`)
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/BidRepository.java`
-- Modify: `src/main/java/com/dony/api/matching/BidService.java`
-- Test: `src/test/java/com/dony/api/matching/BidVisibilityTest.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidRepository.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidService.java`
+- Test: `src/test/java/com/yadony/api/matching/BidVisibilityTest.java`
 
 - [ ] **Step 1: Écrire le test**
 
-Create: `src/test/java/com/dony/api/matching/BidVisibilityTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidVisibilityTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
 // ... test that getBidsForAnnouncement (called by traveler) excludes AWAITING_PAYMENT
 // ... test that getMyBids (called by sender) includes AWAITING_PAYMENT
@@ -1473,8 +1473,8 @@ Expected : PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidService.java \
-        src/test/java/com/dony/api/matching/BidVisibilityTest.java
+git add src/main/java/com/yadony/api/matching/BidService.java \
+        src/test/java/com/yadony/api/matching/BidVisibilityTest.java
 git commit -m "feat(bid): hide AWAITING_PAYMENT bids from traveler views"
 ```
 
@@ -1483,19 +1483,19 @@ git commit -m "feat(bid): hide AWAITING_PAYMENT bids from traveler views"
 ## Task 11 : `AwaitingPaymentCleanupScheduler` (suppression physique à T+15min)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/AwaitingPaymentCleanupScheduler.java`
-- Modify: `src/main/java/com/dony/api/matching/BidRepository.java` (nouvelle requête)
-- Test: `src/test/java/com/dony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
+- Create: `src/main/java/com/yadony/api/matching/AwaitingPaymentCleanupScheduler.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidRepository.java` (nouvelle requête)
+- Test: `src/test/java/com/yadony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
 
 - [ ] **Step 1: Écrire les tests**
 
-Create: `src/test/java/com/dony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
+Create: `src/test/java/com/yadony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.common.AuditService;
-import com.dony.api.matching.events.BidCreatedEvent;
-import com.dony.api.payments.PaymentService;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.payments.PaymentService;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -1589,7 +1589,7 @@ Expected : compile fail.
 
 - [ ] **Step 3: Ajouter la requête repository**
 
-Modify `src/main/java/com/dony/api/matching/BidRepository.java` :
+Modify `src/main/java/com/yadony/api/matching/BidRepository.java` :
 ```java
 java.util.List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
     BidStatus status, java.time.LocalDateTime threshold);
@@ -1597,12 +1597,12 @@ java.util.List<BidEntity> findByStatusAndAwaitingPaymentExpiresAtBefore(
 
 - [ ] **Step 4: Créer le scheduler**
 
-Create: `src/main/java/com/dony/api/matching/AwaitingPaymentCleanupScheduler.java`
+Create: `src/main/java/com/yadony/api/matching/AwaitingPaymentCleanupScheduler.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.common.AuditService;
-import com.dony.api.payments.PaymentService;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.payments.PaymentService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import org.slf4j.Logger;
@@ -1685,9 +1685,9 @@ Expected : PASS.
 
 - [ ] **Step 6: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/AwaitingPaymentCleanupScheduler.java \
-        src/main/java/com/dony/api/matching/BidRepository.java \
-        src/test/java/com/dony/api/matching/AwaitingPaymentCleanupSchedulerTest.java
+git add src/main/java/com/yadony/api/matching/AwaitingPaymentCleanupScheduler.java \
+        src/main/java/com/yadony/api/matching/BidRepository.java \
+        src/test/java/com/yadony/api/matching/AwaitingPaymentCleanupSchedulerTest.java
 git commit -m "feat(bid): add cleanup scheduler for unpaid AWAITING_PAYMENT bids (T+15min)"
 ```
 
@@ -1696,15 +1696,15 @@ git commit -m "feat(bid): add cleanup scheduler for unpaid AWAITING_PAYMENT bids
 ## Task 12 : `BidTimeoutScheduler` (auto-annulation des bids `PENDING` non répondus)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/BidTimeoutScheduler.java`
-- Modify: `src/main/java/com/dony/api/matching/BidRepository.java`
-- Test: `src/test/java/com/dony/api/matching/BidTimeoutSchedulerTest.java`
+- Create: `src/main/java/com/yadony/api/matching/BidTimeoutScheduler.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidRepository.java`
+- Test: `src/test/java/com/yadony/api/matching/BidTimeoutSchedulerTest.java`
 
 - [ ] **Step 1: Écrire les tests**
 
-Create: `src/test/java/com/dony/api/matching/BidTimeoutSchedulerTest.java`
+Create: `src/test/java/com/yadony/api/matching/BidTimeoutSchedulerTest.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
 // Tests :
 // 1. bid PENDING créé il y a 25h, départ dans 100h → annulé (24h dépassées)
@@ -1721,7 +1721,7 @@ Modify `BidRepository.java` :
 @org.springframework.data.jpa.repository.Query("""
     SELECT b FROM BidEntity b, AnnouncementEntity a
     WHERE b.announcementId = a.id
-      AND b.status = com.dony.api.matching.BidStatus.PENDING
+      AND b.status = com.yadony.api.matching.BidStatus.PENDING
       AND (
             b.createdAt < :twentyFourHoursAgo
          OR a.departureDate < :twelveHoursFromNow
@@ -1735,14 +1735,14 @@ List<BidEntity> findPendingTimedOut(
 
 - [ ] **Step 3: Implémenter le scheduler**
 
-Create: `src/main/java/com/dony/api/matching/BidTimeoutScheduler.java`
+Create: `src/main/java/com/yadony/api/matching/BidTimeoutScheduler.java`
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.common.AuditService;
-import com.dony.api.matching.events.BidRejectedEvent;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.matching.events.BidRejectedEvent;
 import com.stripe.exception.StripeException;
-import com.dony.api.payments.PaymentService;
+import com.yadony.api.payments.PaymentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -1809,9 +1809,9 @@ Expected : PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add src/main/java/com/dony/api/matching/BidTimeoutScheduler.java \
-        src/main/java/com/dony/api/matching/BidRepository.java \
-        src/test/java/com/dony/api/matching/BidTimeoutSchedulerTest.java
+git add src/main/java/com/yadony/api/matching/BidTimeoutScheduler.java \
+        src/main/java/com/yadony/api/matching/BidRepository.java \
+        src/test/java/com/yadony/api/matching/BidTimeoutSchedulerTest.java
 git commit -m "feat(bid): add timeout scheduler that auto-cancels unanswered PENDING bids"
 ```
 
@@ -1820,8 +1820,8 @@ git commit -m "feat(bid): add timeout scheduler that auto-cancels unanswered PEN
 ## Task 13 : Migration des tests existants cassés + couverture finale
 
 **Files:**
-- Modify: `src/test/java/com/dony/api/matching/BidServiceTest.java` et `BidControllerIntegrationTest.java` selon nécessité.
-- Modify: `src/test/java/com/dony/api/matching/AnnouncementBidsControllerTest.java` (ou équivalent)
+- Modify: `src/test/java/com/yadony/api/matching/BidServiceTest.java` et `BidControllerIntegrationTest.java` selon nécessité.
+- Modify: `src/test/java/com/yadony/api/matching/AnnouncementBidsControllerTest.java` (ou équivalent)
 
 - [ ] **Step 1: Lancer toute la suite et lister les tests rouges**
 
@@ -1858,7 +1858,7 @@ git commit -m "test(bid): align existing tests with payment-first flow and reach
 **Files:**
 - Create: `docs/stories-done/story-X.Y-bid-checkout-payment-first.md`
 
-- [ ] **Step 1: Rédiger le doc story selon le template du `dony-back/CLAUDE.md`**
+- [ ] **Step 1: Rédiger le doc story selon le template du `yadony-back/CLAUDE.md`**
 
 Sections obligatoires :
 - Date, Status, Résumé
@@ -1932,8 +1932,8 @@ git commit -m "docs: add story doc for bid checkout payment-first flow"
 
 **Files:**
 - Create: `src/main/resources/db/migration/V38__payments_add_legacy_flag_and_charge_id.sql`
-- Modify: `src/main/java/com/dony/api/payments/PaymentEntity.java`
-- Test: `src/test/java/com/dony/api/payments/PaymentEntityV38MigrationTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentEntity.java`
+- Test: `src/test/java/com/yadony/api/payments/PaymentEntityV38MigrationTest.java`
 
 - [ ] **Step 1 : Test migration**
 
@@ -1997,8 +1997,8 @@ git commit -m "feat(payments): V38 add legacy_destination_charge + stripe_charge
 ## Task 9b : Webhook populer `stripeChargeId`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java` (méthode `handlePaymentEscrowActive`)
-- Test: `src/test/java/com/dony/api/payments/PaymentWebhookChargeIdTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java` (méthode `handlePaymentEscrowActive`)
+- Test: `src/test/java/com/yadony/api/payments/PaymentWebhookChargeIdTest.java`
 
 - [ ] **Step 1 : Test**
 
@@ -2028,8 +2028,8 @@ git commit -m "feat(payments): persist stripe_charge_id at webhook amount_captur
 ## Task 9c : `BidAcceptedEventListener` capture le PI (mode v2 seulement)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java`
-- Test: `src/test/java/com/dony/api/payments/BidAcceptedEventListenerTest.java`
+- Create: `src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java`
+- Test: `src/test/java/com/yadony/api/payments/BidAcceptedEventListenerTest.java`
 
 - [ ] **Step 1 : Test**
 
@@ -2104,8 +2104,8 @@ git commit -m "feat(payments): capture PI on bid accept for non-legacy payments"
 ## Task 9d : Refactor `DeliveryEventListener` (capture vs Transfer)
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/DeliveryEventListener.java`
-- Modify: `src/test/java/com/dony/api/payments/DeliveryEventListenerTest.java` (si existe, sinon créer)
+- Modify: `src/main/java/com/yadony/api/payments/DeliveryEventListener.java`
+- Modify: `src/test/java/com/yadony/api/payments/DeliveryEventListenerTest.java` (si existe, sinon créer)
 
 - [ ] **Step 1 : Test**
 
@@ -2188,7 +2188,7 @@ git commit -m "refactor(payments): branch DeliveryEventListener on legacy_destin
 ## Task 9e : `BidRejectedEventListener` cancel vs Refund
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/BidRejectedEventListener.java` (existe déjà)
+- Modify: `src/main/java/com/yadony/api/payments/BidRejectedEventListener.java` (existe déjà)
 - Modify ses tests
 
 Le code actuel gère déjà `cancel` (PI PENDING, hold actif) et `Refund` (PI ESCROW historique = capturé). Avec le mode v2, **`PaymentStatus.ESCROW`** signifie "captured on platform" pour les non-legacy → l'argent est sur la plateforme, donc `Refund` est correct (pas de besoin de Transfer Reversal car pas encore transféré). **Vérifier** que ce comportement est cohérent.
@@ -2206,8 +2206,8 @@ Cas particulier : si la rejection arrive **après** la livraison + Transfer (sta
 ## Task 9f : Refactor `PaymentService.createEscrow` — modèle separate charges and transfers
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/payments/PaymentService.java`
-- Modify: `src/test/java/com/dony/api/payments/PaymentServiceTest.java`
+- Modify: `src/main/java/com/yadony/api/payments/PaymentService.java`
+- Modify: `src/test/java/com/yadony/api/payments/PaymentServiceTest.java`
 
 - [ ] **Step 1 : Mettre à jour les tests existants**
 
@@ -2244,9 +2244,9 @@ git commit -m "refactor(payments): drop transfer_data and application_fee_amount
 ## Task 9g : `BidCancelledByOwnerEvent` + listener
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/events/BidCancelledByOwnerEvent.java`
-- Create: `src/main/java/com/dony/api/payments/BidCancelledByOwnerEventListener.java`
-- Modify: `src/main/java/com/dony/api/matching/BidService.java` (publier l'event dans `cancelBid`)
+- Create: `src/main/java/com/yadony/api/matching/events/BidCancelledByOwnerEvent.java`
+- Create: `src/main/java/com/yadony/api/payments/BidCancelledByOwnerEventListener.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidService.java` (publier l'event dans `cancelBid`)
 - Tests
 
 Quand l'expéditeur annule son propre bid `PENDING` (déjà payé, hold actif) → libérer le hold via `pi.cancel()`. Pour les bids `ACCEPTED` (capturés), même logique que rejection après capture : `Refund` (à implémenter ou laisser au `BidRejectedEventListener` en publiant `BidRejectedEvent` ?).

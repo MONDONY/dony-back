@@ -14,28 +14,28 @@ couple trajet/demande), qui est déprécié mais conservé.
 - `docs/stories-done/story-matching-my-trips-filter.md` — ce document.
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/matching/MatchingService.java` — ajout du record public
+- `src/main/java/com/yadony/api/matching/MatchingService.java` — ajout du record public
   `MatchInfo(UUID requestId, UUID tripId, LocalDate tripDepartureDate, int matchScore)`
   et de `findBestMatchByRequestId(UUID travelerId)`, variante dédupliquée de
   `findMatchingRequests` qui ne garde qu'une entrée par demande (le meilleur score) et
   retourne une `LinkedHashMap` triée par score décroissant.
-- `src/main/java/com/dony/api/requests/specification/PackageRequestSpecifications.java` —
+- `src/main/java/com/yadony/api/requests/specification/PackageRequestSpecifications.java` —
   ajout de `idIn(Collection<UUID>)`, qui restreint aux demandes dont l'id figure dans la
   collection ; une collection vide ou nulle produit `cb.disjunction()` (aucun résultat),
   jamais `cb.conjunction()` (tout).
-- `src/main/java/com/dony/api/requests/dto/PackageRequestSearchResponse.java` — trois
+- `src/main/java/com/yadony/api/requests/dto/PackageRequestSearchResponse.java` — trois
   champs nullables ajoutés en fin de record (`matchScore`, `matchedTripId`,
   `matchedTripDepartureDate`) et méthode `withMatch(MatchingService.MatchInfo)` qui produit
   une copie enrichie. Champs `null` en dehors du filtre `matchingMyTrips`.
-- `src/main/java/com/dony/api/requests/service/PackageRequestService.java` — ajout de
+- `src/main/java/com/yadony/api/requests/service/PackageRequestService.java` — ajout de
   `searchMatchingMyTrips(Specification<PackageRequestEntity>, Pageable, UUID callerId)` :
   interroge `MatchingService.findBestMatchByRequestId`, court-circuite si la map est vide
   (aucune requête SQL), sinon restreint la spec avec `idIn(matches.keySet())`, charge les
   entités, les enrichit via `withMatch`, trie par score décroissant et pagine en mémoire.
-- `src/main/java/com/dony/api/requests/controller/PackageRequestController.java` —
+- `src/main/java/com/yadony/api/requests/controller/PackageRequestController.java` —
   paramètre `matchingMyTrips` sur `GET /package-requests`, aiguillé avant la branche
   géographique (`lat`/`lng`) et avant la recherche par défaut.
-- `src/main/java/com/dony/api/matching/TravelerStatsController.java` — `@Deprecated` et
+- `src/main/java/com/yadony/api/matching/TravelerStatsController.java` — `@Deprecated` et
   Javadoc sur `getMatchingRequests()` (`GET /travelers/me/matching-requests`), pointant
   vers le nouveau paramètre. L'endpoint n'est pas supprimé : `MatchingService` reste
   utilisé par `findTravelersMatchingPackage` (notification temps réel à la création d'une

@@ -7,9 +7,9 @@
 Amazon S3 est configuré pour stocker les photos QR de livraison et les photos de profil utilisateur. Stripe Identity gère les documents KYC — rien de KYC ne passe par notre S3.
 
 ## Fichiers créés
-- `src/main/java/com/dony/api/config/StorageConfig.java` — beans `S3Client` et `S3Presigner` AWS SDK v2
-- `src/main/java/com/dony/api/common/StorageService.java` — `uploadFile()`, `generatePresignedUrl()`, `deleteFile()`
-- `src/main/java/com/dony/api/common/StorageController.java` — endpoints upload
+- `src/main/java/com/yadony/api/config/StorageConfig.java` — beans `S3Client` et `S3Presigner` AWS SDK v2
+- `src/main/java/com/yadony/api/common/StorageService.java` — `uploadFile()`, `generatePresignedUrl()`, `deleteFile()`
+- `src/main/java/com/yadony/api/common/StorageController.java` — endpoints upload
 
 ## Fichiers modifiés
 - `src/main/resources/application-dev.yml` — config `aws.s3` (remplace hetzner.s3)
@@ -37,7 +37,7 @@ Amazon S3 est configuré pour stocker les photos QR de livraison et les photos d
 ## Variables d'environnement à configurer
 ```bash
 AWS_S3_REGION=eu-west-3        # Paris
-AWS_S3_BUCKET=dony-prod
+AWS_S3_BUCKET=yadony-prod
 AWS_S3_ACCESS_KEY=AKIA...
 AWS_S3_SECRET_KEY=...
 ```

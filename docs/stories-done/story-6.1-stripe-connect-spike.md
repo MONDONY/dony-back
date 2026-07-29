@@ -13,7 +13,7 @@ Validation de l'intégration Stripe Connect Marketplace en mode test avant toute
 
 ## Fichiers créés
 
-- `src/test/java/com/dony/api/spike/StripeConnectSpikeTest.java` — prototype isolé, 5 tests couvrant le flux complet
+- `src/test/java/com/yadony/api/spike/StripeConnectSpikeTest.java` — prototype isolé, 5 tests couvrant le flux complet
 
 ---
 
@@ -26,14 +26,14 @@ Expéditeur paie 35€
       ↓
 PaymentIntent créé (capture_method: manual)
       ↓
-Argent bloqué chez dony (escrow)
+Argent bloqué chez yadony (escrow)
       ↓
 Livraison confirmée → DeliveryConfirmedEvent
       ↓
 paymentIntent.capture() déclenché
       ↓
 Stripe transfère automatiquement vers compte connecté voyageur
-Commission dony (12%) retenue via application_fee_amount
+Commission yadony (12%) retenue via application_fee_amount
       ↓
 Voyageur reçoit 30.80€ (sur 35€) — délai J+2 EU / J+5-J+7 Afrique
 ```
@@ -46,7 +46,7 @@ Voyageur annule → CancellationService
 refund.create({ payment_intent: id })
       ↓
 Expéditeur remboursé intégralement (35€)
-Commission dony NON prélevée ✓
+Commission yadony NON prélevée ✓
 Délai : 3-5 jours ouvrés
 ```
 
@@ -61,7 +61,7 @@ Délai : 3-5 jours ouvrés
 | Critère | Express | Custom |
 |---------|---------|--------|
 | Onboarding | Stripe gère (formulaire Stripe) | On doit tout construire |
-| KYC/conformité | Stripe en est responsable | dony en est responsable |
+| KYC/conformité | Stripe en est responsable | yadony en est responsable |
 | Complexité intégration | Faible | Très élevée |
 | Dashboard voyageur | Fourni par Stripe | À construire |
 | Délai MVP | Semaines | Mois |
@@ -77,9 +77,9 @@ Stripe Express est le bon choix pour le MVP. On génère une `AccountLink` vers 
 - La capture est déclenchée uniquement par `DeliveryConfirmedEvent` (Stories 6.4)
 - Exception : force-release admin à J+48 si le destinataire ne confirme pas (Story 6.5)
 
-### 3. Commission dony : `application_fee_amount`
+### 3. Commission yadony : `application_fee_amount`
 
-- Taux : **12%** (configurable via `dony.commission-rate` dans `application.yml`)
+- Taux : **12%** (configurable via `yadony.commission-rate` dans `application.yml`)
 - Calculé en centimes : `Math.round(amountCents * 0.12)`
 - Prélevé automatiquement par Stripe au moment du transfer vers le compte connecté
 - En cas de remboursement : la commission N'EST PAS prélevée (Stripe ne transfère pas si le PI est remboursé avant capture)
@@ -181,6 +181,6 @@ Refund refund = Refund.create(params);
 
 - [x] PaymentIntent créé avec `capture_method: manual` et `transfer_data` → `StripeConnectSpikeTest#spike_03`
 - [x] Capture déclenchée et transfer vers compte connecté → `StripeConnectSpikeTest#spike_04`
-- [x] Commission dony (`application_fee_amount` 12%) prélevée automatiquement → `spike_03` assertion
+- [x] Commission yadony (`application_fee_amount` 12%) prélevée automatiquement → `spike_03` assertion
 - [x] Remboursement intégral sans prélèvement commission → `StripeConnectSpikeTest#spike_05`
 - [x] Compte Express créé et lien onboarding généré → `spike_01` + `spike_02`

@@ -19,13 +19,13 @@ Branche le compteur `users.total_trips` (déjà persisté en base depuis V29 mai
 Le passage en `COMPLETED` est déclenché par le scan QR du destinataire ou la saisie du code de remise — c'est la seule preuve technique que le voyageur est physiquement arrivé à destination. Une livraison réussie suffit à prouver l'arrivée du voyage entier ; zéro livraison = zéro preuve = zéro incrément.
 
 ## Fichiers créés
-- `src/main/java/com/dony/api/auth/TravelerStatsListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` qui incrémente `users.total_trips` et marque l'annonce comme comptabilisée.
+- `src/main/java/com/yadony/api/auth/TravelerStatsListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` qui incrémente `users.total_trips` et marque l'annonce comme comptabilisée.
 - `src/main/resources/db/migration/V39__add_total_trips_counted_flag_to_announcements.sql` — ajoute le flag d'idempotence `announcements.total_trips_counted`.
-- `src/test/java/com/dony/api/auth/TravelerStatsListenerTest.java` — 7 tests unitaires Mockito.
-- `src/test/java/com/dony/api/auth/TravelerStatsListenerIT.java` — 5 tests d'intégration `@SpringBootTest`.
+- `src/test/java/com/yadony/api/auth/TravelerStatsListenerTest.java` — 7 tests unitaires Mockito.
+- `src/test/java/com/yadony/api/auth/TravelerStatsListenerIT.java` — 5 tests d'intégration `@SpringBootTest`.
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/matching/AnnouncementEntity.java` — nouveau champ `boolean totalTripsCounted` mappé sur la colonne `total_trips_counted` (default false), avec getter/setter.
+- `src/main/java/com/yadony/api/matching/AnnouncementEntity.java` — nouveau champ `boolean totalTripsCounted` mappé sur la colonne `total_trips_counted` (default false), avec getter/setter.
 
 ## Comment ça fonctionne (pour la maintenance)
 
@@ -52,7 +52,7 @@ Aucun nouvel endpoint. Feature purement événementielle, déclenchée par les e
 - **Annonce introuvable** : log warn + return sans rien marquer — cas qui ne devrait jamais se produire, le bid ayant une FK implicite vers son announcement.
 
 ### Events Spring publiés / écoutés
-- **Écouté** : `com.dony.api.tracking.events.DeliveryConfirmedEvent` (publié par `TrackingService.confirmDelivery`, `TrackingService.java:419`).
+- **Écouté** : `com.yadony.api.tracking.events.DeliveryConfirmedEvent` (publié par `TrackingService.confirmDelivery`, `TrackingService.java:419`).
 - **Publié** : aucun.
 - **Audit** : `audit_log` reçoit une entrée `entityType=USER`, `action=TOTAL_TRIPS_INCREMENTED`, payload `{bidId, announcementId, newTotal}`.
 
@@ -76,8 +76,8 @@ Aucun nouvel endpoint. Feature purement événementielle, déclenchée par les e
 ## Tests
 - `./mvnw test` → **411 tests, 0 failure, 0 erreur, BUILD SUCCESS**.
 - Tests ajoutés :
-  - `com.dony.api.auth.TravelerStatsListenerTest` (7 tests unitaires Mockito).
-  - `com.dony.api.auth.TravelerStatsListenerIT` (5 tests d'intégration `@SpringBootTest`).
+  - `com.yadony.api.auth.TravelerStatsListenerTest` (7 tests unitaires Mockito).
+  - `com.yadony.api.auth.TravelerStatsListenerIT` (5 tests d'intégration `@SpringBootTest`).
 
 ## Décisions techniques
 - **Listener placé dans `auth/`** (et non `matching/` ou `tracking/`) : cohérent avec le fait que `total_trips` est un attribut de `UserEntity`.

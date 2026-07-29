@@ -8,15 +8,15 @@ Un voyageur crée la règle d'automatisation « SI type de contenu = Poissons �
 
 | # | Emplacement | Contenu |
 |---|---|---|
-| A | `dony_app/.../create_bid_bottom_sheet.dart:34` | Vêtements, Médicaments, Alim. sèche, Documents, Hi-fi, Téléphone, Autre |
-| B | `dony_app/.../create_bid_screen.dart:25` | identique à A (copie littérale) |
-| C | `dony_app/.../create_announcement/_create_announcement_constants.dart:8` | …, **Cosmétiques**, sans « Autre » |
-| D | `dony_app/.../search_form_bottom_sheet.dart:18` | identique à C, redéfinie |
-| E | `dony_app/.../trip_template_edit_screen.dart:21` | identique à C, redéfinie |
-| F | `dony_app/.../corridor_alert_form_sheet.dart:17` | Documents, Vêtements, **Électronique**, **Nourriture**, Cosmétiques, Médicaments |
-| G | `dony_app/.../package_request/data/models/content_category.dart:10` | enum typé, 9 valeurs, dont **Cadeaux** |
-| H | `dony-pro/app/features/trajets/data/tripTemplates.ts:25` | Vêtements, Documents, Cosmétiques |
-| I | `dony-back/src/main/resources/application.yml:122` | …, **Téléphones & hi-fi**, **Matériel informatique**, **Autres** |
+| A | `yadony_app/.../create_bid_bottom_sheet.dart:34` | Vêtements, Médicaments, Alim. sèche, Documents, Hi-fi, Téléphone, Autre |
+| B | `yadony_app/.../create_bid_screen.dart:25` | identique à A (copie littérale) |
+| C | `yadony_app/.../create_announcement/_create_announcement_constants.dart:8` | …, **Cosmétiques**, sans « Autre » |
+| D | `yadony_app/.../search_form_bottom_sheet.dart:18` | identique à C, redéfinie |
+| E | `yadony_app/.../trip_template_edit_screen.dart:21` | identique à C, redéfinie |
+| F | `yadony_app/.../corridor_alert_form_sheet.dart:17` | Documents, Vêtements, **Électronique**, **Nourriture**, Cosmétiques, Médicaments |
+| G | `yadony_app/.../package_request/data/models/content_category.dart:10` | enum typé, 9 valeurs, dont **Cadeaux** |
+| H | `yadony-pro/app/features/trajets/data/tripTemplates.ts:25` | Vêtements, Documents, Cosmétiques |
+| I | `yadony-back/src/main/resources/application.yml:122` | …, **Téléphones & hi-fi**, **Matériel informatique**, **Autres** |
 
 Aucune n'est identique à une autre. Quatre d'entre elles (D, E, F, H) ne sont couvertes par aucun test : elles peuvent diverger davantage en silence.
 
@@ -30,7 +30,7 @@ Aucune n'est identique à une autre. Quatre d'entre elles (D, E, F, H) ne sont c
 
 ### L'endpoint de référence existe déjà, à moitié câblé
 
-`GET /config/content-categories` (`ConfigController.java:26`) renvoie `List<String>` depuis `application.yml` (liste I). **Consommateur unique : dony-pro**, pour les chips « Ce que j'accepte » du formulaire d'annonce. `dony_app` ne l'appelle jamais — il duplique ses listes en dur.
+`GET /config/content-categories` (`ConfigController.java:26`) renvoie `List<String>` depuis `application.yml` (liste I). **Consommateur unique : yadony-pro**, pour les chips « Ce que j'accepte » du formulaire d'annonce. `yadony_app` ne l'appelle jamais — il duplique ses listes en dur.
 
 ## Objectif
 
@@ -68,10 +68,10 @@ Décisions dérivées des données :
 
 ### Source de vérité : le backend
 
-Le catalogue vit dans `application.yml` sous `dony.content-categories`, désormais structuré :
+Le catalogue vit dans `application.yml` sous `yadony.content-categories`, désormais structuré :
 
 ```yaml
-dony:
+yadony:
   content-categories:
     - code: DOCUMENTS
       label: "Documents & administratif"
@@ -84,7 +84,7 @@ dony:
 
 `GET /config/content-categories` renvoie désormais `List<ContentCategoryResponse>` (`{code, label, emoji}`) au lieu de `List<String>`.
 
-**C'est un changement de contrat cassant.** Le consommateur unique actuel (dony-pro, `configService.fetchContentCategories()`) est mis à jour dans le même chantier. L'endpoint reste public (pas d'authentification requise) — il ne sert que des données de référence.
+**C'est un changement de contrat cassant.** Le consommateur unique actuel (yadony-pro, `configService.fetchContentCategories()`) est mis à jour dans le même chantier. L'endpoint reste public (pas d'authentification requise) — il ne sert que des données de référence.
 
 ### Valeur stockée : le libellé, pas le code
 
@@ -133,11 +133,11 @@ V171 ne normalise l'existant **qu'une fois**, au moment où elle s'exécute. Les
 Partout où l'on choisit un ou plusieurs types de contenu, l'UI présente **le catalogue complet** et **permet la saisie libre**. Deux familles d'écrans :
 
 - **Sélection multiple** (ce que le voyageur accepte / refuse, contenu d'un colis, filtres) : liste déroulante à cocher + champ « Ajouter un autre type… ». C'est le remplacement demandé des chips actuelles.
-- **Sélection unique** (valeur d'une condition de règle d'automatisation dans dony-pro) : liste déroulante simple + option « Autre valeur… » ouvrant un champ texte.
+- **Sélection unique** (valeur d'une condition de règle d'automatisation dans yadony-pro) : liste déroulante simple + option « Autre valeur… » ouvrant un champ texte.
 
 ### Écrans à câbler
 
-**dony_app (Flutter)** — les listes en dur A–G disparaissent, remplacées par un `ContentCategoryRepository` (appel `/config/content-categories`, cache mémoire + fallback embarqué si le réseau échoue, pour ne jamais bloquer un formulaire) :
+**yadony_app (Flutter)** — les listes en dur A–G disparaissent, remplacées par un `ContentCategoryRepository` (appel `/config/content-categories`, cache mémoire + fallback embarqué si le réseau échoue, pour ne jamais bloquer un formulaire) :
 
 | Écran | Liste supprimée | Remplacement |
 |---|---|---|
@@ -149,7 +149,7 @@ Partout où l'on choisit un ou plusieurs types de contenu, l'UI présente **le c
 | Alerte corridor | F | sélection multiple |
 | Wizard demande de colis | G (enum) | sélection multiple ; l'enum est supprimé, les icônes passent par un `iconForCode(code)` local avec repli générique |
 
-**dony-pro (Nuxt)** :
+**yadony-pro (Nuxt)** :
 
 | Écran | Changement |
 |---|---|
@@ -157,20 +157,20 @@ Partout où l'on choisit un ou plusieurs types de contenu, l'UI présente **le c
 | `tripTemplates.ts` (liste H) | `DEFAULT_CATEGORIES` alignée sur les libellés canoniques |
 | `AutomationRuleModal.vue` | le champ `value` devient une **liste déroulante** quand `field = content_type` (aujourd'hui : `<input type="text">` pour tous les champs) — c'est ce qui rend impossible la création d'une règle qui ne matchera jamais |
 
-**dony-back** : catalogue structuré, endpoint, migration (six emplacements), normalisation à l'écriture (`ContentCategoryNormalizer`). `BidContentRules` et `CustomRuleConditionEvaluator` restent inchangés.
+**yadony-back** : catalogue structuré, endpoint, migration (six emplacements), normalisation à l'écriture (`ContentCategoryNormalizer`). `BidContentRules` et `CustomRuleConditionEvaluator` restent inchangés.
 
 ## Ce que ça corrige
 
 Le bug d'origine est réglé de deux façons, indépendantes :
 
 1. « Poissons » relève désormais de **Produits frais / périssables**, une catégorie que l'expéditeur peut cocher et que le voyageur peut refuser.
-2. Le voyageur qui tape malgré tout « Poissons » dans dony-pro se voit proposer une liste déroulante : une règle portant sur une valeur inexistante devient **impossible à créer**.
+2. Le voyageur qui tape malgré tout « Poissons » dans yadony-pro se voit proposer une liste déroulante : une règle portant sur une valeur inexistante devient **impossible à créer**.
 
 ## Tests
 
 - **Backend** : le catalogue servi contient 11 entrées ; aucun libellé ne contient de virgule (invariant du `split`) ; codes uniques ; l'endpoint renvoie bien `{code,label,emoji}`. Migration : test d'intégration Flyway (PostgreSQL embarqué zonky) vérifiant le mapping sur les **six emplacements** (bids, package_requests, announcement_accepted/refused_types, corridor_alert_content_categories, trip_recurrences/trip_templates.accepted_categories, automation_rules.conditions JSONB), le traitement item par item des chaînes jointes par virgule, la préservation des valeurs libres avec leur casse, la résolution des collisions accepted/refused, et l'idempotence. `ContentCategoryNormalizer` : tests unitaires des 23 mappings legacy + un test de cohérence qui parse le `CASE` SQL de V171 et vérifie qu'il reste identique à la table Java. Chaque point d'écriture (`BidService`, `BidCheckoutService`, `PackageRequestService`, `AnnouncementService`, `AlertService`, `TripRecurrenceService`, `TripTemplateService`) a un test dédié vérifiant qu'une valeur legacy soumise est persistée sous sa forme canonique. `@Size` des DTOs (`BidCheckoutRequest`, `BidRequest`, `PackageRequestCreateRequest`) porté à 500 pour absorber une multi-sélection canonique jointe (le catalogue complet joint fait 216 caractères ; deux libellés canoniques joints dépassaient déjà l'ancienne limite de 50 sur `BidCheckoutRequest`).
 - **Flutter** : le repository met en cache, retombe sur le catalogue embarqué en cas d'échec réseau, et n'empêche jamais l'affichage d'un formulaire. Chaque écran câblé affiche le catalogue et accepte une saisie libre. Le test `create_bid_screen_test.dart:216` (qui recopie la liste A en dur) est réécrit pour itérer sur la source.
-- **dony-pro** : `AutomationRuleModal` affiche une liste déroulante pour `content_type` et un champ texte pour les autres champs ; `ContentTagChips` consomme la nouvelle forme.
+- **yadony-pro** : `AutomationRuleModal` affiche une liste déroulante pour `content_type` et un champ texte pour les autres champs ; `ContentTagChips` consomme la nouvelle forme.
 
 ## Hors scope (chantier séparé)
 

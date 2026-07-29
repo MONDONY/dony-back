@@ -37,7 +37,7 @@
 
     <!-- 2026-07-14 — Artefacts OpenTelemetry -alpha/-incubator tirés transitivement par
          firebase-admin -> google-cloud-storage/firestore (export de métriques GCP), jamais
-         activés côté dony (pas de javaagent OpenTelemetry, pas d'auto-instrumentation JDBC).
+         activés côté yadony (pas de javaagent OpenTelemetry, pas d'auto-instrumentation JDBC).
          La seule CVE OpenTelemetry Java récente identifiée à cette date (CVE-2026-54704,
          CVSS 6.5 — fuite de mot de passe via l'auto-instrumentation JDBC du javaagent,
          corrigée en 2.28.0) ne s'applique pas : nous n'utilisons ni le javaagent, ni son

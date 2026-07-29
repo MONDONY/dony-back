@@ -7,8 +7,8 @@
 Ajoute un listener qui bascule automatiquement une annonce à `COMPLETED` quand son dernier bid `ACCEPTED` est livré (scan QR de fin), même si la date de départ n'est pas atteinte. Côté Flutter "Mes trajets", l'annonce passe alors directement de l'onglet "À venir" vers "Historique".
 
 ## Fichiers créés
-- `src/main/java/com/dony/api/matching/AnnouncementCompletionListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` sur `DeliveryConfirmedEvent`.
-- `src/test/java/com/dony/api/matching/AnnouncementCompletionListenerTest.java` — 6 tests unitaires.
+- `src/main/java/com/yadony/api/matching/AnnouncementCompletionListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` sur `DeliveryConfirmedEvent`.
+- `src/test/java/com/yadony/api/matching/AnnouncementCompletionListenerTest.java` — 6 tests unitaires.
 
 ## Comment ça fonctionne (pour la maintenance)
 

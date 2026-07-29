@@ -1,11 +1,11 @@
-# CI/CD & Monitoring du backend dony — Design
+# CI/CD & Monitoring du backend yadony — Design
 
 **Date:** 2026-05-17
 **Statut:** Validé (design approuvé, prêt pour le plan d'implémentation)
 
 ## Contexte
 
-Le backend `dony-back` (Spring Boot 3.5, Java 21) doit disposer d'une chaîne
+Le backend `yadony-back` (Spring Boot 3.5, Java 21) doit disposer d'une chaîne
 CI/CD complète et d'une observabilité de production. Une CI/CD existe déjà
 (`quality.yml`, `deploy.yml`, `owasp-weekly.yml`) mais est reconstruite de zéro
 pour intégrer deux environnements et une stratégie de promotion explicite.
@@ -95,7 +95,7 @@ remplacent les trois actuels.
   approbation manuelle avant exécution.
 - **Jobs :**
   1. Vérification que le tag `image_tag` existe bien sur `ghcr.io`.
-  2. Déploiement SSH sur le VPS prod : écriture de `DONY_IMAGE_TAG` dans le
+  2. Déploiement SSH sur le VPS prod : écriture de `YADONY_IMAGE_TAG` dans le
      `.env` du serveur, puis `docker compose -f docker-compose.prod.yml pull api && up -d --no-deps api`.
   3. Health check post-déploiement.
   4. Création d'une release Sentry.
@@ -128,15 +128,15 @@ Différences staging vs prod :
 
 | Aspect | Staging | Prod |
 |---|---|---|
-| Sous-domaine | `api-staging.dony.app` | `api.dony.app` |
+| Sous-domaine | `api-staging.yadony.app` | `api.yadony.app` |
 | Profil Spring | `staging` | `prod` |
-| Base de données | `dony_staging` (isolée) | `dony_prod` |
+| Base de données | `yadony_staging` (isolée) | `yadony_prod` |
 | Clés Stripe | mode test | mode live |
-| Tag image | `staging` | `DONY_IMAGE_TAG` (sha promu) |
+| Tag image | `staging` | `YADONY_IMAGE_TAG` (sha promu) |
 
 Nouveau profil **`application-staging.yml`** : identique à `prod` pour le
 durcissement (Swagger off, `forward-headers-strategy`), mais conserve des logs
-plus verbeux (`com.dony.api: DEBUG`) pour faciliter le diagnostic.
+plus verbeux (`com.yadony.api: DEBUG`) pour faciliter le diagnostic.
 
 ## Composant 3 — Instrumentation du backend
 
@@ -153,8 +153,8 @@ Ajout dans `pom.xml` : `io.micrometer:micrometer-registry-prometheus`.
 - **Isolation publique assurée par nginx :** nginx est le seul point d'entrée
   public et ne route jamais `/api/v1/actuator/prometheus` vers l'extérieur
   (route bloquée explicitement). L'endpoint n'est donc accessible que depuis le
-  réseau Docker interne `dony_internal`.
-- Alloy, raccordé à `dony_internal`, scrape directement
+  réseau Docker interne `yadony_internal`.
+- Alloy, raccordé à `yadony_internal`, scrape directement
   `api:8080/api/v1/actuator/prometheus` sans passer par nginx.
 
 ### Métriques techniques (out-of-the-box)
@@ -181,7 +181,7 @@ Instrumentation par package :
 | `disputes` | Litiges ouverts / résolus |
 | `notifications` | Notifications FCM et SMS envoyées / échouées |
 
-Toutes les métriques métier sont nommées avec le préfixe `dony.` et portent
+Toutes les métriques métier sont nommées avec le préfixe `yadony.` et portent
 des tags cohérents (ex. `corridor`, `result`).
 
 ## Composant 4 — Agent Alloy & Grafana Cloud
@@ -189,7 +189,7 @@ des tags cohérents (ex. `corridor`, `result`).
 ### Grafana Alloy (un conteneur par VPS)
 
 Service `alloy` ajouté à chaque fichier Compose, raccordé au réseau
-`dony_internal`. Il collecte et pousse vers Grafana Cloud :
+`yadony_internal`. Il collecte et pousse vers Grafana Cloud :
 
 - **Métriques :** scrape de `api:8080/api/v1/actuator/prometheus` (réseau
   Docker interne) + métriques hôte (CPU, RAM, disque) via l'intégration
@@ -207,8 +207,8 @@ Les identifiants Grafana Cloud (URLs de push, tokens) sont fournis via le
 ### Grafana Cloud
 
 - **Dashboards** (JSON versionnés dans `monitoring/dashboards/`) :
-  - `dony-technique.json` — JVM, HTTP, HikariCP, cache, hôte.
-  - `dony-metier.json` — paiements, bids, KYC, livraisons, litiges, notifications.
+  - `yadony-technique.json` — JVM, HTTP, HikariCP, cache, hôte.
+  - `yadony-metier.json` — paiements, bids, KYC, livraisons, litiges, notifications.
 - **Règles d'alerte** (versionnées dans `monitoring/alerts/`) :
   - API indisponible (health KO ou absence de métriques).
   - Taux d'erreurs HTTP 5xx élevé.
@@ -219,7 +219,7 @@ Les identifiants Grafana Cloud (URLs de push, tokens) sont fournis via le
   - Taux d'échec de paiement anormal.
 - **Contact point Discord :** webhook vers un salon `#alertes-prod` dédié.
 - **Synthetic Monitoring :** sonde externe HTTP sur
-  `https://api.dony.app/api/v1/actuator/health` — uptime indépendant de l'état
+  `https://api.yadony.app/api/v1/actuator/health` — uptime indépendant de l'état
   des VPS.
 
 ## Sécurité
@@ -256,7 +256,7 @@ guide pas-à-pas :
 
 1. Créer le compte Grafana Cloud (free tier) et générer les tokens de push.
 2. Provisionner le second VPS OVH (staging) et configurer son DNS
-   (`api-staging.dony.app`).
+   (`api-staging.yadony.app`).
 3. Créer le salon Discord `#alertes-prod` et son webhook.
 4. Renseigner les secrets dans les GitHub Environments `staging` et `production`.
 5. Activer la règle de protection (approbation requise) sur l'environnement

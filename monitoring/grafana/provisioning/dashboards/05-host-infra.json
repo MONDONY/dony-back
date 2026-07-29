@@ -1,8 +1,8 @@
 {
-  "uid": "dony-host-infra",
-  "title": "Dony — Hôte & Infrastructure",
+  "uid": "yadony-host-infra",
+  "title": "Yadony — Hôte & Infrastructure",
   "description": "Métriques système du VPS : CPU, mémoire, disque, réseau, I/O (via Alloy node exporter)",
-  "tags": ["dony", "host", "infra"],
+  "tags": ["yadony", "host", "infra"],
   "timezone": "UTC",
   "schemaVersion": 39,
   "version": 1,

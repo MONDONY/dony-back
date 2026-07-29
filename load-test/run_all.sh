@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# run_all.sh — test de charge de TOUS les endpoints du backend dony.
+# run_all.sh — test de charge de TOUS les endpoints du backend yadony.
 #
 # Pipeline : mint token admin (via /dev/token) → génère l'inventaire → k6 → rapport.
 #
-# SÉCURITÉ : cible localhost/staging seulement. Refuse api.dony.app et BASE_URL vide.
+# SÉCURITÉ : cible localhost/staging seulement. Refuse api.yadony.app et BASE_URL vide.
 #
 # Usage :
 #   bash load-test/run_all.sh
@@ -18,7 +18,7 @@ TOKEN_ROLE="${TOKEN_ROLE:-ADMIN}"
 
 # --- garde anti-prod ---
 case "$BASE_URL" in
-  ""|*api.dony.app*)
+  ""|*api.yadony.app*)
     echo "REFUS: BASE_URL vide ou pointe la production ($BASE_URL). Abandon."; exit 1;;
 esac
 

@@ -9,24 +9,24 @@ Intégration de la base de données GeoNames pour fournir un service d'autocompl
 
 ## Fichiers créés
 
-- `src/main/java/com/dony/api/city/CityEntity.java` — entité JPA pour la table `cities`
-- `src/main/java/com/dony/api/city/CorridorEntity.java` — entité JPA pour la table `corridors`
-- `src/main/java/com/dony/api/city/CityRepository.java` — Spring Data JPA repository avec requête full-text
-- `src/main/java/com/dony/api/city/CityService.java` — logique de recherche et cache Caffeine
-- `src/main/java/com/dony/api/city/CityController.java` — endpoints REST publics
-- `src/main/java/com/dony/api/city/GeoNamesDataLoader.java` — chargement du fichier GeoNames au démarrage
-- `src/main/java/com/dony/api/city/dto/CityDto.java` — DTO de réponse
-- `src/main/java/com/dony/api/city/dto/PopularCorridorDto.java` — DTO corridors populaires
-- `src/main/java/com/dony/api/city/AnnouncementCreatedEventListener.java` — incrémente les compteurs de corridors à chaque nouvelle annonce
+- `src/main/java/com/yadony/api/city/CityEntity.java` — entité JPA pour la table `cities`
+- `src/main/java/com/yadony/api/city/CorridorEntity.java` — entité JPA pour la table `corridors`
+- `src/main/java/com/yadony/api/city/CityRepository.java` — Spring Data JPA repository avec requête full-text
+- `src/main/java/com/yadony/api/city/CityService.java` — logique de recherche et cache Caffeine
+- `src/main/java/com/yadony/api/city/CityController.java` — endpoints REST publics
+- `src/main/java/com/yadony/api/city/GeoNamesDataLoader.java` — chargement du fichier GeoNames au démarrage
+- `src/main/java/com/yadony/api/city/dto/CityDto.java` — DTO de réponse
+- `src/main/java/com/yadony/api/city/dto/PopularCorridorDto.java` — DTO corridors populaires
+- `src/main/java/com/yadony/api/city/AnnouncementCreatedEventListener.java` — incrémente les compteurs de corridors à chaque nouvelle annonce
 - `src/main/resources/db/migration/V51__create_cities.sql` — table `cities` (index B-tree prefix + GIN trigram)
 - `src/main/resources/db/migration/V52__create_corridors.sql` — table `corridors` avec compteur d'usage
 - `src/main/resources/db/migration/V53__cities_corridors_indexes.sql` — normalisation de l'index unique corridors
 - `src/main/resources/db/migration/V54__cities_country_code_varchar.sql` — correction VARCHAR de country_code
 - `src/main/resources/geonames/` — fichiers CSV GeoNames (AF, CI, CM, FR, GH, SN, US)
-- `src/test/java/com/dony/api/city/CityServiceTest.java` — tests unitaires du service
-- `src/test/java/com/dony/api/city/CorridorServiceTest.java` — tests unitaires des corridors
-- `src/test/java/com/dony/api/city/CityControllerIntegrationTest.java` — tests d'intégration MockMvc
-- `src/test/java/com/dony/api/city/GeoNamesDataLoaderTest.java` — tests du data loader
+- `src/test/java/com/yadony/api/city/CityServiceTest.java` — tests unitaires du service
+- `src/test/java/com/yadony/api/city/CorridorServiceTest.java` — tests unitaires des corridors
+- `src/test/java/com/yadony/api/city/CityControllerIntegrationTest.java` — tests d'intégration MockMvc
+- `src/test/java/com/yadony/api/city/GeoNamesDataLoaderTest.java` — tests du data loader
 
 ## Comment ça fonctionne (pour la maintenance)
 

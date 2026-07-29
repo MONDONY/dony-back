@@ -9,10 +9,10 @@ Génération d'un QR code unique par transaction dès que le paiement passe en E
 ## Fichiers créés
 
 **Backend:**
-- `src/main/java/com/dony/api/tracking/TrackingService.java` — logique de génération QR (ZXing) + validation accès
-- `src/main/java/com/dony/api/tracking/TrackingController.java` — endpoint `GET /tracking/{bidId}/qr-code`
-- `src/main/java/com/dony/api/tracking/dto/QrCodeResponse.java` — record de réponse (bidId, scanUrl, qrCodeBase64)
-- `src/main/java/com/dony/api/payments/events/PaymentEscrowReadyEvent.java` — event publié quand un paiement passe en ESCROW
+- `src/main/java/com/yadony/api/tracking/TrackingService.java` — logique de génération QR (ZXing) + validation accès
+- `src/main/java/com/yadony/api/tracking/TrackingController.java` — endpoint `GET /tracking/{bidId}/qr-code`
+- `src/main/java/com/yadony/api/tracking/dto/QrCodeResponse.java` — record de réponse (bidId, scanUrl, qrCodeBase64)
+- `src/main/java/com/yadony/api/payments/events/PaymentEscrowReadyEvent.java` — event publié quand un paiement passe en ESCROW
 
 **Flutter:**
 - `lib/features/tracking/data/models/qr_code_model.dart` — modèle de données QR
@@ -27,8 +27,8 @@ Génération d'un QR code unique par transaction dès que le paiement passe en E
 **Backend:**
 - `pom.xml` — ajout ZXing `core` + `javase` 3.5.3
 - `src/main/resources/application.yml` — ajout `app.base-url`
-- `src/main/java/com/dony/api/matching/BidService.java` — set `bid.qrToken = UUID` dans `acceptBid()`
-- `src/main/java/com/dony/api/payments/PaymentService.java` — injection `ApplicationEventPublisher` + publication `PaymentEscrowReadyEvent` dans `handlePaymentEscrowActive()`
+- `src/main/java/com/yadony/api/matching/BidService.java` — set `bid.qrToken = UUID` dans `acceptBid()`
+- `src/main/java/com/yadony/api/payments/PaymentService.java` — injection `ApplicationEventPublisher` + publication `PaymentEscrowReadyEvent` dans `handlePaymentEscrowActive()`
 
 **Flutter:**
 - `pubspec.yaml` — ajout `share_plus: ^10.0.0` et `path_provider: ^2.1.0`

@@ -7,7 +7,7 @@
 Sentry est configuré sur le backend Spring Boot pour capturer les erreurs de production avec le contexte utilisateur Firebase et sans données PII.
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/common/GlobalExceptionHandler.java` — ajout de `Sentry.captureException(ex)` dans le handler générique (Exception.class) pour garantir la remontée dans Sentry des erreurs inattendues
+- `src/main/java/com/yadony/api/common/GlobalExceptionHandler.java` — ajout de `Sentry.captureException(ex)` dans le handler générique (Exception.class) pour garantir la remontée dans Sentry des erreurs inattendues
 
 ## Fichiers déjà présents (non modifiés)
 - `pom.xml` — dépendance `sentry-spring-boot-starter-jakarta` déjà présente
@@ -20,5 +20,5 @@ Sentry est configuré sur le backend Spring Boot pour capturer les erreurs de pr
 - [x] Données PII masquées : `send-default-pii=false` — email et téléphone ne sont pas envoyés
 
 ## Décisions techniques
-- Seul le handler `Exception.class` appelle `Sentry.captureException` explicitement. Les exceptions métier (`DonyBusinessException`, `DonyNotFoundException`) et de validation ne polluent pas Sentry car elles sont attendues.
+- Seul le handler `Exception.class` appelle `Sentry.captureException` explicitement. Les exceptions métier (`YadonyBusinessException`, `YadonyNotFoundException`) et de validation ne polluent pas Sentry car elles sont attendues.
 - Le `sentry-spring-boot-starter` auto-configure `SentrySpringFilter` qui attache le user context depuis `SecurityContextHolder` (Firebase UID = `user.id` dans Sentry).

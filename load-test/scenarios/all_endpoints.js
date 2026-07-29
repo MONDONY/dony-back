@@ -1,4 +1,4 @@
-// all_endpoints.js — test de charge couvrant TOUS les endpoints du backend dony.
+// all_endpoints.js — test de charge couvrant TOUS les endpoints du backend yadony.
 //
 // Source : load-test/endpoints.json (généré par gen_inventory.py).
 //
@@ -14,7 +14,7 @@
 // Échec réel = 5xx uniquement. Les 4xx (IDs random → 404, body garbage → 400/422,
 // rôle manquant → 403) sont ATTENDUS sur un balayage exhaustif et ne comptent pas.
 //
-// SÉCURITÉ : cible localhost/staging seulement. JAMAIS api.dony.app.
+// SÉCURITÉ : cible localhost/staging seulement. JAMAIS api.yadony.app.
 //
 // Lancement (via run_all.sh, ou directement) :
 //   K6_ID_TOKEN="<admin-jwt>" BASE_URL="http://localhost:8080/api/v1" \
@@ -40,8 +40,8 @@ const READ_VUS = parseInt(__ENV.READ_VUS || '20', 10);
 const READ_DURATION = __ENV.READ_DURATION || '1m';
 
 // Garde anti-prod (défense en profondeur, run_all.sh garde aussi).
-if (BASE_URL.includes('api.dony.app')) {
-  throw new Error('REFUS: ne jamais charger la prod (api.dony.app).');
+if (BASE_URL.includes('api.yadony.app')) {
+  throw new Error('REFUS: ne jamais charger la prod (api.yadony.app).');
 }
 
 // Inventaire généré. Chemins déjà préfixés /api/v1 → on retire le contexte car
@@ -67,7 +67,7 @@ const QUERY = {
   '/cities': 'query=Paris',
   '/cities/search': 'q=Paris&limit=10',
   '/addresses/autocomplete': 'query=Paris',
-  '/tracking/search': 'number=DONY-TEST-0001',
+  '/tracking/search': 'number=YADONY-TEST-0001',
   '/package-requests/estimate': 'from=Paris&to=Dakar&weight=5',
   '/announcements/market-price': 'corridor=Paris-Dakar',
   '/travelers/me/fiscal-export': 'year=2024&format=csv&type=transactions',

@@ -1,0 +1,106 @@
+package com.yadony.api.notifications;
+
+import com.yadony.api.common.YadonyBusinessException;
+import com.yadony.api.common.PageResponse;
+import com.yadony.api.notifications.dto.NotificationDTO;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/notifications")
+public class NotificationController {
+
+    private final NotificationService notificationService;
+    private final NotificationPrefsService notificationPrefsService;
+
+    public NotificationController(NotificationService notificationService,
+                                  NotificationPrefsService notificationPrefsService) {
+        this.notificationService = notificationService;
+        this.notificationPrefsService = notificationPrefsService;
+    }
+
+    @GetMapping
+    public ResponseEntity<PageResponse<NotificationDTO>> list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "30") int size) {
+        return ResponseEntity.ok(notificationService.list(requireUid(), page, size));
+    }
+
+    @GetMapping("/unread-count")
+    public ResponseEntity<Map<String, Long>> unreadCount() {
+        return ResponseEntity.ok(Map.of("count", notificationService.countUnread(requireUid())));
+    }
+
+    @PatchMapping("/{id}/read")
+    public ResponseEntity<Void> markRead(@PathVariable UUID id) {
+        notificationService.markRead(requireUid(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/read-all")
+    public ResponseEntity<Void> markAllRead() {
+        notificationService.markAllRead(requireUid());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        notificationService.softDelete(requireUid(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Story 8.3 — Flutter sends ACK on notification receipt to cancel SMS fallback
+    @PostMapping("/{id}/ack")
+    public ResponseEntity<Void> ack(@PathVariable UUID id) {
+        notificationService.ack(requireUid(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/preferences")
+    public ResponseEntity<NotificationPrefsDto> getPreferences() {
+        return ResponseEntity.ok(notificationPrefsService.getPrefs(requireUid()));
+    }
+
+    @PutMapping("/preferences")
+    public ResponseEntity<Void> updatePreferences(@RequestBody NotificationPrefsDto dto) {
+        notificationPrefsService.upsert(requireUid(), dto);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Cloche « Colis sur mes trajets » : toggle de la notif temps réel match colis.
+    @GetMapping("/package-match-alert")
+    public ResponseEntity<PackageMatchAlertDto> getPackageMatchAlert() {
+        return ResponseEntity.ok(
+                new PackageMatchAlertDto(notificationPrefsService.getPackageMatchAlert(requireUid())));
+    }
+
+    @PutMapping("/package-match-alert")
+    public ResponseEntity<Void> updatePackageMatchAlert(@RequestBody PackageMatchAlertDto dto) {
+        notificationPrefsService.setPackageMatchAlert(requireUid(), dto.enabled());
+        return ResponseEntity.noContent().build();
+    }
+
+    private String requireUid() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            throw new YadonyBusinessException(
+                    HttpStatus.UNAUTHORIZED, "unauthorized", "Unauthorized", "Un token Firebase valide est requis");
+        }
+        return (String) auth.getPrincipal();
+    }
+}

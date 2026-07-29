@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 gen_inventory.py — extrait l'inventaire complet des endpoints REST du backend
-dony en parsant les contrôleurs Spring (@RestController / @RequestMapping /
+yadony en parsant les contrôleurs Spring (@RestController / @RequestMapping /
 @GetMapping / @PostMapping / ...).
 
 Produit load-test/endpoints.json :

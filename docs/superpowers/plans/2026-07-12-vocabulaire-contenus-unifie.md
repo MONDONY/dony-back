@@ -4,14 +4,14 @@
 
 **Goal:** Remplacer les 9 listes de types de contenu divergentes des 3 projets par un catalogue unique servi par le backend, avec liste déroulante + saisie libre partout.
 
-**Architecture:** Le backend porte le catalogue canonique (11 catégories, constante Java — pas de config YAML) et le sert via `GET /config/content-categories` sous forme `{code, label, emoji}`. La **valeur persistée reste le libellé** (jamais le code), ce qui laisse `BidContentRules` et le moteur d'automatisation inchangés. Une migration Flyway V171 normalise les données existantes (codes → libellés pour les demandes de colis, anciens libellés → nouveaux partout ailleurs). Flutter et dony-pro consomment l'endpoint et suppriment leurs listes en dur.
+**Architecture:** Le backend porte le catalogue canonique (11 catégories, constante Java — pas de config YAML) et le sert via `GET /config/content-categories` sous forme `{code, label, emoji}`. La **valeur persistée reste le libellé** (jamais le code), ce qui laisse `BidContentRules` et le moteur d'automatisation inchangés. Une migration Flyway V171 normalise les données existantes (codes → libellés pour les demandes de colis, anciens libellés → nouveaux partout ailleurs). Flutter et yadony-pro consomment l'endpoint et suppriment leurs listes en dur.
 
 **Tech Stack:** Spring Boot 3.4 / Java 21 / Flyway / PostgreSQL ; Flutter (BLoC, Dio) ; Nuxt 4 / Vue 3.5 / TypeScript.
 
-**Spec:** `dony-back/docs/superpowers/specs/2026-07-12-vocabulaire-contenus-unifie-design.md` — la spec fait foi.
+**Spec:** `yadony-back/docs/superpowers/specs/2026-07-12-vocabulaire-contenus-unifie-design.md` — la spec fait foi.
 
-**Branche dony-back:** `feature/vocabulaire-contenus-unifie` (déjà créée, basée sur `main`, spec commitée en `0bedce6`).
-**Branches à créer :** `feature/vocabulaire-contenus-unifie` dans `dony-pro` et dans `dony_app`.
+**Branche yadony-back:** `feature/vocabulaire-contenus-unifie` (déjà créée, basée sur `main`, spec commitée en `0bedce6`).
+**Branches à créer :** `feature/vocabulaire-contenus-unifie` dans `yadony-pro` et dans `yadony_app`.
 
 ## Global Constraints
 
@@ -37,27 +37,27 @@ Le catalogue canonique — **valeurs exactes, à recopier verbatim, jamais à r�
 - **La saisie libre reste possible partout** : un type absent du catalogue (« Poissons », « Liquides ») doit pouvoir être ajouté par l'utilisateur et est stocké tel quel, aux côtés des libellés canoniques.
 - Ne jamais modifier une migration existante — créer V(n+1). Dernière migration actuelle : **V170**.
 - Pas de `Co-Authored-By: Claude` dans les commits. Messages en français.
-- Le profil de test backend (`test`) tourne sur **H2 avec Flyway désactivé** — les migrations ne s'y exécutent pas. Le test de la migration V171 utilise PostgreSQL embarqué (zonky `EmbeddedPostgres`), sur le modèle de `src/test/java/com/dony/api/e2e/config/CucumberSpringContext.java:30-47`.
+- Le profil de test backend (`test`) tourne sur **H2 avec Flyway désactivé** — les migrations ne s'y exécutent pas. Le test de la migration V171 utilise PostgreSQL embarqué (zonky `EmbeddedPostgres`), sur le modèle de `src/test/java/com/yadony/api/e2e/config/CucumberSpringContext.java:30-47`.
 
 ---
 
 ## Structure des fichiers
 
-**dony-back**
-- Créer `src/main/java/com/dony/api/config/ContentCatalog.java` — le catalogue canonique (constante).
-- Créer `src/main/java/com/dony/api/config/dto/ContentCategoryResponse.java` — DTO `{code, label, emoji}`.
-- Modifier `src/main/java/com/dony/api/config/ConfigController.java:26-30` — nouvelle forme de réponse.
-- Modifier `src/main/java/com/dony/api/config/DonyConfigProperties.java:17` — retirer `contentCategories`.
+**yadony-back**
+- Créer `src/main/java/com/yadony/api/config/ContentCatalog.java` — le catalogue canonique (constante).
+- Créer `src/main/java/com/yadony/api/config/dto/ContentCategoryResponse.java` — DTO `{code, label, emoji}`.
+- Modifier `src/main/java/com/yadony/api/config/ConfigController.java:26-30` — nouvelle forme de réponse.
+- Modifier `src/main/java/com/yadony/api/config/YadonyConfigProperties.java:17` — retirer `contentCategories`.
 - Modifier `src/main/resources/application.yml:122-131` — retirer le bloc `content-categories`.
 - Créer `src/main/resources/db/migration/V171__unify_content_categories.sql`.
-- Créer `src/test/java/com/dony/api/config/ContentCatalogTest.java`, `src/test/java/com/dony/api/migrations/V171ContentCategoriesMigrationTest.java`.
-- Modifier `src/test/java/com/dony/api/config/ConfigControllerIT.java`.
+- Créer `src/test/java/com/yadony/api/config/ContentCatalogTest.java`, `src/test/java/com/yadony/api/migrations/V171ContentCategoriesMigrationTest.java`.
+- Modifier `src/test/java/com/yadony/api/config/ConfigControllerIT.java`.
 
-**dony-pro**
+**yadony-pro**
 - Modifier `app/features/trajets/services/configService.ts`, `app/features/trajets/components/ContentTagChips.vue` (ou son appelant), `app/features/trajets/components/NewAnnouncementForm.vue`, `app/features/trajets/data/tripTemplates.ts:25`.
 - Modifier `app/features/automations/components/AutomationRuleModal.vue:220-226` — liste déroulante pour `content_type`.
 
-**dony_app**
+**yadony_app**
 - Créer `lib/features/content_categories/` — `data/content_category_model.dart`, `data/content_category_datasource.dart`, `data/content_category_repository.dart` (cache + fallback embarqué), `presentation/content_category_selector.dart` (widget de sélection multiple réutilisable).
 - Supprimer les listes en dur : `create_bid_bottom_sheet.dart:34`, `create_bid_screen.dart:25`, `create_announcement/_create_announcement_constants.dart:8`, `search_form_bottom_sheet.dart:18`, `trip_template_edit_screen.dart:21`, `corridor_alert_form_sheet.dart:17`, et l'enum `package_request/data/models/content_category.dart`.
 
@@ -66,12 +66,12 @@ Le catalogue canonique — **valeurs exactes, à recopier verbatim, jamais à r�
 ### Task 1: Catalogue canonique backend + endpoint
 
 **Files:**
-- Create: `dony-back/src/main/java/com/dony/api/config/ContentCatalog.java`
-- Create: `dony-back/src/main/java/com/dony/api/config/dto/ContentCategoryResponse.java`
-- Modify: `dony-back/src/main/java/com/dony/api/config/ConfigController.java:26-30`
-- Modify: `dony-back/src/main/java/com/dony/api/config/DonyConfigProperties.java:17`
-- Modify: `dony-back/src/main/resources/application.yml:122-131`
-- Test: `dony-back/src/test/java/com/dony/api/config/ContentCatalogTest.java` (créer), `dony-back/src/test/java/com/dony/api/config/ConfigControllerIT.java` (modifier)
+- Create: `yadony-back/src/main/java/com/yadony/api/config/ContentCatalog.java`
+- Create: `yadony-back/src/main/java/com/yadony/api/config/dto/ContentCategoryResponse.java`
+- Modify: `yadony-back/src/main/java/com/yadony/api/config/ConfigController.java:26-30`
+- Modify: `yadony-back/src/main/java/com/yadony/api/config/YadonyConfigProperties.java:17`
+- Modify: `yadony-back/src/main/resources/application.yml:122-131`
+- Test: `yadony-back/src/test/java/com/yadony/api/config/ContentCatalogTest.java` (créer), `yadony-back/src/test/java/com/yadony/api/config/ConfigControllerIT.java` (modifier)
 
 **Interfaces:**
 - Produit (consommé par Task 2 et par les fronts) :
@@ -82,12 +82,12 @@ Le catalogue canonique — **valeurs exactes, à recopier verbatim, jamais à r�
 
 - [ ] **Step 1: Écrire les tests qui échouent**
 
-Créer `dony-back/src/test/java/com/dony/api/config/ContentCatalogTest.java` :
+Créer `yadony-back/src/test/java/com/yadony/api/config/ContentCatalogTest.java` :
 
 ```java
-package com.dony.api.config;
+package com.yadony.api.config;
 
-import com.dony.api.config.dto.ContentCategoryResponse;
+import com.yadony.api.config.dto.ContentCategoryResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -167,7 +167,7 @@ class ContentCatalogTest {
 }
 ```
 
-Ajouter dans `dony-back/src/test/java/com/dony/api/config/ConfigControllerIT.java` (garder les tests existants sur `/config/commission-rate`, suivre leur style — MockMvc ou WebTestClient selon ce que le fichier utilise déjà, **le fichier réel fait foi**) :
+Ajouter dans `yadony-back/src/test/java/com/yadony/api/config/ConfigControllerIT.java` (garder les tests existants sur `/config/commission-rate`, suivre leur style — MockMvc ou WebTestClient selon ce que le fichier utilise déjà, **le fichier réel fait foi**) :
 
 ```java
     @Test
@@ -184,15 +184,15 @@ Ajouter dans `dony-back/src/test/java/com/dony/api/config/ConfigControllerIT.jav
 
 - [ ] **Step 2: Lancer les tests, vérifier l'échec**
 
-Run: `cd dony-back && ./mvnw test -Dtest='ContentCatalogTest+ConfigControllerIT'`
+Run: `cd yadony-back && ./mvnw test -Dtest='ContentCatalogTest+ConfigControllerIT'`
 Expected: FAIL — erreur de compilation, `ContentCatalog` et `ContentCategoryResponse` n'existent pas.
 
 - [ ] **Step 3: Implémenter**
 
-Créer `dony-back/src/main/java/com/dony/api/config/dto/ContentCategoryResponse.java` :
+Créer `yadony-back/src/main/java/com/yadony/api/config/dto/ContentCategoryResponse.java` :
 
 ```java
-package com.dony.api.config.dto;
+package com.yadony.api.config.dto;
 
 /**
  * Une catégorie du catalogue canonique des types de contenu.
@@ -206,12 +206,12 @@ package com.dony.api.config.dto;
 public record ContentCategoryResponse(String code, String label, String emoji) {}
 ```
 
-Créer `dony-back/src/main/java/com/dony/api/config/ContentCatalog.java` :
+Créer `yadony-back/src/main/java/com/yadony/api/config/ContentCatalog.java` :
 
 ```java
-package com.dony.api.config;
+package com.yadony.api.config;
 
-import com.dony.api.config.dto.ContentCategoryResponse;
+import com.yadony.api.config.dto.ContentCategoryResponse;
 
 import java.util.List;
 
@@ -260,26 +260,26 @@ Modifier `ConfigController.java` — remplacer la méthode `getContentCategories
     }
 ```
 
-Ajouter l'import `com.dony.api.config.dto.ContentCategoryResponse` ; le champ `config` reste utilisé par `getCommissionRate`, ne pas le retirer.
+Ajouter l'import `com.yadony.api.config.dto.ContentCategoryResponse` ; le champ `config` reste utilisé par `getCommissionRate`, ne pas le retirer.
 
-Modifier `DonyConfigProperties.java` — retirer `List<String> contentCategories` du record (et l'import `java.util.List` s'il devient inutilisé).
+Modifier `YadonyConfigProperties.java` — retirer `List<String> contentCategories` du record (et l'import `java.util.List` s'il devient inutilisé).
 
 Modifier `application.yml` — supprimer le bloc `content-categories:` (lignes 122-131) en entier.
 
 - [ ] **Step 4: Vérifier que les tests passent**
 
-Run: `cd dony-back && ./mvnw test -Dtest='ContentCatalogTest+ConfigControllerIT'`
+Run: `cd yadony-back && ./mvnw test -Dtest='ContentCatalogTest+ConfigControllerIT'`
 Expected: PASS.
 
 - [ ] **Step 5: Suite complète (attention aux consommateurs de `contentCategories()`)**
 
-Run: `cd dony-back && ./mvnw test`
+Run: `cd yadony-back && ./mvnw test`
 Expected: BUILD SUCCESS. Si un test référence `config.contentCategories()`, le corriger (le seul appelant connu était `ConfigController`).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/config/ src/main/resources/application.yml src/test/java/com/dony/api/config/
+git add src/main/java/com/yadony/api/config/ src/main/resources/application.yml src/test/java/com/yadony/api/config/
 git commit -m "feat(contenus): catalogue canonique des types de contenu + endpoint {code,label,emoji}"
 ```
 
@@ -288,8 +288,8 @@ git commit -m "feat(contenus): catalogue canonique des types de contenu + endpoi
 ### Task 2: Migration V171 — normalisation des données existantes
 
 **Files:**
-- Create: `dony-back/src/main/resources/db/migration/V171__unify_content_categories.sql`
-- Test: `dony-back/src/test/java/com/dony/api/migrations/V171ContentCategoriesMigrationTest.java`
+- Create: `yadony-back/src/main/resources/db/migration/V171__unify_content_categories.sql`
+- Test: `yadony-back/src/test/java/com/yadony/api/migrations/V171ContentCategoriesMigrationTest.java`
 
 **Interfaces:**
 - Consomme (Task 1) : les 11 libellés canoniques (valeurs verbatim des Global Constraints).
@@ -342,12 +342,12 @@ Sans migration, un voyageur ayant accepté `Hi-fi` ne matcherait plus un colis `
 
 - [ ] **Step 1: Écrire le test qui échoue**
 
-Créer `dony-back/src/test/java/com/dony/api/migrations/V171ContentCategoriesMigrationTest.java`.
+Créer `yadony-back/src/test/java/com/yadony/api/migrations/V171ContentCategoriesMigrationTest.java`.
 
 Ce test n'utilise **pas** le profil `test` (H2, Flyway désactivé) : il démarre un PostgreSQL embarqué, migre jusqu'à V170, insère des données legacy, applique V171, puis vérifie. Il ne dépend d'aucun contexte Spring.
 
 ```java
-package com.dony.api.migrations;
+package com.yadony.api.migrations;
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.flywaydb.core.Flyway;
@@ -494,12 +494,12 @@ class V171ContentCategoriesMigrationTest {
 
 - [ ] **Step 2: Lancer le test, vérifier l'échec**
 
-Run: `cd dony-back && ./mvnw test -Dtest=V171ContentCategoriesMigrationTest`
+Run: `cd yadony-back && ./mvnw test -Dtest=V171ContentCategoriesMigrationTest`
 Expected: FAIL — `V171__unify_content_categories.sql` n'existe pas (Flyway `target("171")` ne trouve rien à appliquer, les assertions tombent sur les valeurs legacy).
 
 - [ ] **Step 3: Écrire la migration**
 
-Créer `dony-back/src/main/resources/db/migration/V171__unify_content_categories.sql` :
+Créer `yadony-back/src/main/resources/db/migration/V171__unify_content_categories.sql` :
 
 ```sql
 -- V171 — Vocabulaire unifié des types de contenu.
@@ -642,26 +642,26 @@ WHERE content_category IS NOT NULL AND content_category <> '';
 
 - [ ] **Step 4: Vérifier que le test passe**
 
-Run: `cd dony-back && ./mvnw test -Dtest=V171ContentCategoriesMigrationTest`
+Run: `cd yadony-back && ./mvnw test -Dtest=V171ContentCategoriesMigrationTest`
 Expected: PASS, y compris l'assertion d'idempotence.
 
 - [ ] **Step 5: Suite complète**
 
-Run: `cd dony-back && ./mvnw test`
+Run: `cd yadony-back && ./mvnw test`
 Expected: BUILD SUCCESS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/resources/db/migration/V171__unify_content_categories.sql src/test/java/com/dony/api/migrations/V171ContentCategoriesMigrationTest.java
+git add src/main/resources/db/migration/V171__unify_content_categories.sql src/test/java/com/yadony/api/migrations/V171ContentCategoriesMigrationTest.java
 git commit -m "feat(contenus): migration V171 — normalisation du vocabulaire des types de contenu"
 ```
 
 ---
 
-### Task 3: dony-pro — endpoint consommé sous sa nouvelle forme
+### Task 3: yadony-pro — endpoint consommé sous sa nouvelle forme
 
-**Files (dony-pro):**
+**Files (yadony-pro):**
 - Modify: `app/features/trajets/services/configService.ts`
 - Modify: `app/features/trajets/components/NewAnnouncementForm.vue` (~lignes 34, 71-80, 440-451)
 - Modify: `app/features/trajets/components/ContentTagChips.vue`
@@ -681,7 +681,7 @@ git commit -m "feat(contenus): migration V171 — normalisation du vocabulaire d
 - [ ] **Step 1: Créer la branche**
 
 ```bash
-cd dony-pro && git checkout main && git pull && git checkout -b feature/vocabulaire-contenus-unifie
+cd yadony-pro && git checkout main && git pull && git checkout -b feature/vocabulaire-contenus-unifie
 ```
 
 - [ ] **Step 2: Écrire les tests qui échouent**
@@ -699,7 +699,7 @@ Valeurs à utiliser dans les mocks (verbatim du catalogue) :
 
 - [ ] **Step 3: Lancer les tests, vérifier l'échec**
 
-Run: `cd dony-pro && pnpm vitest run tests/unit/features/trajets`
+Run: `cd yadony-pro && pnpm vitest run tests/unit/features/trajets`
 Expected: FAIL — le service renvoie encore `string[]`.
 
 - [ ] **Step 4: Implémenter**
@@ -711,21 +711,21 @@ Expected: FAIL — le service renvoie encore `string[]`.
 
 - [ ] **Step 5: Vérifier**
 
-Run: `cd dony-pro && pnpm vitest run && pnpm typecheck`
+Run: `cd yadony-pro && pnpm vitest run && pnpm typecheck`
 Expected: tous verts, aucune régression.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add app/features/trajets tests/
-git commit -m "feat(contenus): dony-pro consomme le catalogue {code,label,emoji}"
+git commit -m "feat(contenus): yadony-pro consomme le catalogue {code,label,emoji}"
 ```
 
 ---
 
-### Task 4: dony-pro — liste déroulante des types de contenu dans les règles d'automatisation
+### Task 4: yadony-pro — liste déroulante des types de contenu dans les règles d'automatisation
 
-**Files (dony-pro):**
+**Files (yadony-pro):**
 - Modify: `app/features/automations/components/AutomationRuleModal.vue` (champ `value`, ~lignes 220-226)
 - Test: `tests/unit/features/automations/AutomationRuleModal.spec.ts` (créer si absent)
 
@@ -754,7 +754,7 @@ Tests attendus (style vitest + @vue/test-utils, **le fichier réel des tests d'a
 
 - [ ] **Step 2: Lancer les tests, vérifier l'échec**
 
-Run: `cd dony-pro && pnpm vitest run tests/unit/features/automations`
+Run: `cd yadony-pro && pnpm vitest run tests/unit/features/automations`
 Expected: FAIL — aucun `<select>` n'est rendu, le champ est un input générique.
 
 - [ ] **Step 3: Implémenter**
@@ -763,7 +763,7 @@ Dans `AutomationRuleModal.vue` : charger le catalogue au montage (`onMounted`), 
 
 - [ ] **Step 4: Vérifier**
 
-Run: `cd dony-pro && pnpm vitest run && pnpm typecheck && pnpm lint`
+Run: `cd yadony-pro && pnpm vitest run && pnpm typecheck && pnpm lint`
 Expected: verts.
 
 - [ ] **Step 5: Commit**
@@ -775,9 +775,9 @@ git commit -m "feat(contenus): liste déroulante des types de contenu dans les r
 
 ---
 
-### Task 5: dony_app — repository du catalogue (source unique côté Flutter)
+### Task 5: yadony_app — repository du catalogue (source unique côté Flutter)
 
-**Files (dony_app):**
+**Files (yadony_app):**
 - Create: `lib/features/content_categories/data/content_category_model.dart`
 - Create: `lib/features/content_categories/data/content_category_datasource.dart`
 - Create: `lib/features/content_categories/data/content_category_repository.dart`
@@ -818,7 +818,7 @@ git commit -m "feat(contenus): liste déroulante des types de contenu dans les r
 - [ ] **Step 1: Créer la branche**
 
 ```bash
-cd dony_app && git checkout main && git pull && git checkout -b feature/vocabulaire-contenus-unifie
+cd yadony_app && git checkout main && git pull && git checkout -b feature/vocabulaire-contenus-unifie
 ```
 
 **⚠️ Baseline de tests.** Le projet a des tests pré-existants en échec sur `main` (note du ledger : ~108, dans `test/features/matching/presentation/` et `envoyer_hub_screen_test.dart`). **Avant toute modification, lancer `flutter test` et noter le nombre d'échecs.** Tout échec supplémentaire est imputable à ce chantier ; les échecs pré-existants ne le sont pas.
@@ -839,7 +839,7 @@ cd dony_app && git checkout main && git pull && git checkout -b feature/vocabula
 
 - [ ] **Step 3: Lancer, vérifier l'échec**
 
-Run: `cd dony_app && flutter test test/features/content_categories/`
+Run: `cd yadony_app && flutter test test/features/content_categories/`
 Expected: FAIL — les fichiers n'existent pas.
 
 - [ ] **Step 4: Implémenter**
@@ -848,7 +848,7 @@ Suivre les conventions du projet (feature-first, `data/` + `presentation/`, Dio,
 
 - [ ] **Step 5: Vérifier**
 
-Run: `cd dony_app && flutter test test/features/content_categories/ && flutter analyze`
+Run: `cd yadony_app && flutter test test/features/content_categories/ && flutter analyze`
 Expected: verts.
 
 - [ ] **Step 6: Commit**
@@ -860,9 +860,9 @@ git commit -m "feat(contenus): repository du catalogue de types de contenu + sé
 
 ---
 
-### Task 6: dony_app — écrans colis (bid + demande de colis)
+### Task 6: yadony_app — écrans colis (bid + demande de colis)
 
-**Files (dony_app):**
+**Files (yadony_app):**
 - Modify: `lib/features/matching/presentation/widgets/create_bid_bottom_sheet.dart` (supprimer `_contentCategories` ligne ~34, brancher le sélecteur)
 - Modify: `lib/features/matching/presentation/screens/create_bid_screen.dart` (supprimer `_contentCategories` ligne ~25, brancher le sélecteur)
 - Modify: `lib/features/package_request/presentation/screens/sender/create_wizard/steps/step_2_details.dart` (~lignes 43-76)
@@ -885,7 +885,7 @@ git commit -m "feat(contenus): repository du catalogue de types de contenu + sé
 
 - [ ] **Step 2: Lancer, vérifier l'échec**
 
-Run: `cd dony_app && flutter test test/features/matching/presentation/create_bid_screen_test.dart test/features/package_request/`
+Run: `cd yadony_app && flutter test test/features/matching/presentation/create_bid_screen_test.dart test/features/package_request/`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -894,7 +894,7 @@ Supprimer les deux constantes `_contentCategories`, supprimer l'enum, brancher `
 
 - [ ] **Step 4: Vérifier**
 
-Run: `cd dony_app && flutter test && flutter analyze`
+Run: `cd yadony_app && flutter test && flutter analyze`
 Expected: aucun échec **au-delà de la baseline notée au Step 1 de la Task 5**.
 
 - [ ] **Step 5: Commit**
@@ -906,9 +906,9 @@ git commit -m "feat(contenus): écrans colis branchés sur le catalogue unifié"
 
 ---
 
-### Task 7: dony_app — écrans trajet, recherche, modèle, alerte corridor
+### Task 7: yadony_app — écrans trajet, recherche, modèle, alerte corridor
 
-**Files (dony_app):**
+**Files (yadony_app):**
 - Modify: `lib/features/matching/presentation/widgets/create_announcement/_create_announcement_constants.dart:8` (supprimer `kContentTypes`)
 - Modify: `lib/features/matching/presentation/widgets/create_announcement/prix_conditions_step.dart` (~lignes 588-730 : « Ce que j'accepte » **et** « Ce que je refuse »)
 - Modify: `lib/features/matching/presentation/widgets/search_form_bottom_sheet.dart:18` (supprimer `_contentTypes`)
@@ -929,7 +929,7 @@ Pour chacun des 4 écrans : le catalogue (fourni par un repository mocké) est a
 
 - [ ] **Step 2: Lancer, vérifier l'échec**
 
-Run: `cd dony_app && flutter test test/features/matching/presentation/widgets/create_announcement/ test/features/trip_templates/ test/features/corridor_alerts/`
+Run: `cd yadony_app && flutter test test/features/matching/presentation/widgets/create_announcement/ test/features/trip_templates/ test/features/corridor_alerts/`
 Expected: FAIL.
 
 - [ ] **Step 3: Implémenter**
@@ -938,7 +938,7 @@ Supprimer les 4 constantes, brancher `ContentCategorySelector` dans les 5 emplac
 
 - [ ] **Step 4: Vérifier**
 
-Run: `cd dony_app && flutter test && flutter analyze`
+Run: `cd yadony_app && flutter test && flutter analyze`
 Expected: aucun échec au-delà de la baseline.
 
 - [ ] **Step 5: Commit**
@@ -952,10 +952,10 @@ git commit -m "feat(contenus): écrans trajet, recherche, modèle et alerte bran
 
 ## Vérification finale (avant les PRs)
 
-- [ ] `grep -rn "_contentCategories\|kContentTypes\|_contentTypes\|_kAlertContentTypes\|ContentCategory\." dony_app/lib/` ne retourne rien hors de `lib/features/content_categories/`.
-- [ ] `grep -rn "content-categories" dony-back/src/main/resources/application.yml` ne retourne rien.
+- [ ] `grep -rn "_contentCategories\|kContentTypes\|_contentTypes\|_kAlertContentTypes\|ContentCategory\." yadony_app/lib/` ne retourne rien hors de `lib/features/content_categories/`.
+- [ ] `grep -rn "content-categories" yadony-back/src/main/resources/application.yml` ne retourne rien.
 - [ ] `BidContentRules.java` et `CustomRuleConditionEvaluator.java` sont **inchangés** (`git diff main -- <ces deux fichiers>` est vide).
-- [ ] dony-back : `./mvnw test` → BUILD SUCCESS.
-- [ ] dony-pro : `pnpm vitest run && pnpm typecheck && pnpm lint` → verts.
-- [ ] dony_app : `flutter test && flutter analyze` → aucun échec au-delà de la baseline `main`.
-- [ ] Trois PRs : dony-back, dony-pro, dony_app. **Ordre de merge imposé : dony-back en premier** (les fronts consomment sa nouvelle forme de réponse, qui est un changement cassant).
+- [ ] yadony-back : `./mvnw test` → BUILD SUCCESS.
+- [ ] yadony-pro : `pnpm vitest run && pnpm typecheck && pnpm lint` → verts.
+- [ ] yadony_app : `flutter test && flutter analyze` → aucun échec au-delà de la baseline `main`.
+- [ ] Trois PRs : yadony-back, yadony-pro, yadony_app. **Ordre de merge imposé : yadony-back en premier** (les fronts consomment sa nouvelle forme de réponse, qui est un changement cassant).

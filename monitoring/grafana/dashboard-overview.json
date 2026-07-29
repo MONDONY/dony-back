@@ -1,15 +1,15 @@
 {
   "dashboard": {
-    "title": "Dony — Vue Globale",
+    "title": "Yadony — Vue Globale",
     "description": "État global du système : API, DB, Infrastructure",
-    "tags": ["dony", "overview"],
+    "tags": ["yadony", "overview"],
     "timezone": "UTC",
     "panels": [
       {
         "title": "Santé API",
         "targets": [
           {
-            "expr": "up{job=\"dony-api\"}",
+            "expr": "up{job=\"yadony-api\"}",
             "legendFormat": "API UP"
           }
         ],
@@ -40,7 +40,7 @@
         "title": "Requêtes / sec (24h)",
         "targets": [
           {
-            "expr": "rate(http_server_requests_seconds_count{job=\"dony-api\"}[24h])",
+            "expr": "rate(http_server_requests_seconds_count{job=\"yadony-api\"}[24h])",
             "legendFormat": "RPS"
           }
         ],
@@ -51,7 +51,7 @@
         "title": "Erreurs (24h)",
         "targets": [
           {
-            "expr": "sum(increase(http_server_requests_seconds_count{job=\"dony-api\", status=~\"5..\"}[24h]))",
+            "expr": "sum(increase(http_server_requests_seconds_count{job=\"yadony-api\", status=~\"5..\"}[24h]))",
             "legendFormat": "5xx"
           }
         ],
@@ -62,7 +62,7 @@
         "title": "Taux succès (24h)",
         "targets": [
           {
-            "expr": "100 * sum(increase(http_server_requests_seconds_count{job=\"dony-api\", status=~\"2..\"}[24h])) / sum(increase(http_server_requests_seconds_count{job=\"dony-api\"}[24h]))",
+            "expr": "100 * sum(increase(http_server_requests_seconds_count{job=\"yadony-api\", status=~\"2..\"}[24h])) / sum(increase(http_server_requests_seconds_count{job=\"yadony-api\"}[24h]))",
             "legendFormat": "Success %"
           }
         ],
@@ -73,7 +73,7 @@
         "title": "Latence p95 (24h)",
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"dony-api\"}[24h])) * 1000",
+            "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"yadony-api\"}[24h])) * 1000",
             "legendFormat": "p95 (ms)"
           }
         ],
@@ -106,7 +106,7 @@
         "title": "Requêtes par endpoint (top 10)",
         "targets": [
           {
-            "expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_count{job=\"dony-api\"}[5m])))",
+            "expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_count{job=\"yadony-api\"}[5m])))",
             "legendFormat": "{{uri}}"
           }
         ],
@@ -117,7 +117,7 @@
         "title": "Erreurs par endpoint (top 5)",
         "targets": [
           {
-            "expr": "topk(5, sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"dony-api\", status=~\"[45]..\"}[5m])))",
+            "expr": "topk(5, sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"yadony-api\", status=~\"[45]..\"}[5m])))",
             "legendFormat": "{{uri}} {{status}}"
           }
         ],

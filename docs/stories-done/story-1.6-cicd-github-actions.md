@@ -22,7 +22,7 @@ push main / PR
     └── Gate 4: Hadolint Dockerfile   ─┘
                     │
               build-push (main uniquement)
-              Docker image → ghcr.io/mondony/dony-back
+              Docker image → ghcr.io/yadony/yadony-back
                     │
               deploy → SSH OVH → health check 60s → Sentry
 
@@ -45,7 +45,7 @@ Lundi 03:00 UTC (cron séparé)
 
 ## Secrets GitHub à configurer
 
-Dans **Settings → Secrets and variables → Actions** du repo `dony-back` :
+Dans **Settings → Secrets and variables → Actions** du repo `yadony-back` :
 
 | Secret | Valeur |
 |--------|--------|

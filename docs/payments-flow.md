@@ -1,4 +1,4 @@
-# Flux de paiement — Plateforme Dony
+# Flux de paiement — Plateforme Yadony
 
 **Dernière mise à jour :** 2026-05-05 (PR 5 — migration Stripe Connect `on_behalf_of`)
 
@@ -6,7 +6,7 @@
 
 ## 1. Vue d'ensemble
 
-Dony utilise le modèle **Charges séparées et Virements** de Stripe Connect.
+Yadony utilise le modèle **Charges séparées et Virements** de Stripe Connect.
 
 - Le **compte plateforme** crée tous les objets `PaymentIntent` et conserve les fonds après capture.
 - Le **compte Connect du voyageur** est le **marchand de règlement** (`on_behalf_of`) : Stripe attribue légalement la transaction au voyageur, et le nom de son entreprise apparaît sur le relevé bancaire de l'expéditeur.
@@ -25,13 +25,13 @@ sequenceDiagram
     autonumber
     actor Expéditeur
     participant Flutter
-    participant API as API Dony
+    participant API as API Yadony
     participant Stripe
     actor Voyageur
 
     Expéditeur->>Flutter: Confirme la réservation (offre acceptée)
     Flutter->>API: POST /payments/intent (bidId)
-    API->>Stripe: PaymentIntent.create(\n  amount, currency="eur",\n  capture_method="manual",\n  on_behalf_of=compteConnectVoyageur,\n  statement_descriptor_suffix="DONY"\n)
+    API->>Stripe: PaymentIntent.create(\n  amount, currency="eur",\n  capture_method="manual",\n  on_behalf_of=compteConnectVoyageur,\n  statement_descriptor_suffix="YADONY"\n)
     Stripe-->>API: PaymentIntent (status=requires_payment_method)
     API-->>Flutter: { clientSecret }
 
@@ -99,8 +99,8 @@ L'expéditeur paie
 | `capture_method=manual` toujours | Les fonds ne sont capturés qu'après acceptation de l'offre et re-vérification de l'éligibilité du voyageur |
 | Capture uniquement après `DeliveryConfirmedEvent` (ou admin J+48) | `PaymentService` écoute via `@EventListener` ; pas d'appel direct depuis `tracking/` |
 | `on_behalf_of` doit correspondre au voyageur sur l'offre | Vérifié à la création du PaymentIntent ; toute incohérence est une erreur bloquante |
-| `statement_descriptor_suffix="DONY"` | Permet à l'expéditeur d'identifier le prélèvement |
-| Commission = 12 % | Configurée via `dony.commission.rate=0.12` ; exposée par `GET /api/v1/config/commission-rate` |
+| `statement_descriptor_suffix="YADONY"` | Permet à l'expéditeur d'identifier le prélèvement |
+| Commission = 12 % | Configurée via `yadony.commission.rate=0.12` ; exposée par `GET /api/v1/config/commission-rate` |
 | Soft-delete uniquement sur `PaymentEntity` | Jamais de DELETE ; les paiements annulés passent à `status=CANCELLED` |
 
 ---

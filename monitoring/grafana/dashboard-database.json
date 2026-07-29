@@ -1,23 +1,23 @@
 {
   "dashboard": {
-    "title": "Dony Database — PostgreSQL",
+    "title": "Yadony Database — PostgreSQL",
     "description": "Performance et santé de la base de données",
-    "tags": ["dony", "database", "postgresql"],
+    "tags": ["yadony", "database", "postgresql"],
     "timezone": "UTC",
     "panels": [
       {
         "title": "Connexions BD",
         "targets": [
           {
-            "expr": "hikaricp_connections_active{job=\"dony-api\"}",
+            "expr": "hikaricp_connections_active{job=\"yadony-api\"}",
             "legendFormat": "Actives"
           },
           {
-            "expr": "hikaricp_connections_idle{job=\"dony-api\"}",
+            "expr": "hikaricp_connections_idle{job=\"yadony-api\"}",
             "legendFormat": "Idle"
           },
           {
-            "expr": "hikaricp_connections_max{job=\"dony-api\"}",
+            "expr": "hikaricp_connections_max{job=\"yadony-api\"}",
             "legendFormat": "Max"
           }
         ],
@@ -28,7 +28,7 @@
         "title": "Temps attente pool BD (ms)",
         "targets": [
           {
-            "expr": "hikaricp_connection_timeout_total{job=\"dony-api\"}",
+            "expr": "hikaricp_connection_timeout_total{job=\"yadony-api\"}",
             "legendFormat": "Timeouts"
           }
         ],
@@ -72,7 +72,7 @@
         "title": "Taille DB (MB)",
         "targets": [
           {
-            "expr": "pg_database_size_bytes{job=\"dony-api\"} / 1024 / 1024",
+            "expr": "pg_database_size_bytes{job=\"yadony-api\"} / 1024 / 1024",
             "legendFormat": "Size"
           }
         ],
@@ -83,7 +83,7 @@
         "title": "Rows par table",
         "targets": [
           {
-            "expr": "pg_table_row_count{job=\"dony-api\"}",
+            "expr": "pg_table_row_count{job=\"yadony-api\"}",
             "legendFormat": "{{table}}"
           }
         ],

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-## Project: dony Backend (Spring Boot)
+## Project: yadony Backend (Spring Boot)
 
-**dony-back** est le backend REST API de la marketplace P2P dony, permettant de connecter des voyageurs avec des expéditeurs de la diaspora africaine pour le transport de colis vers l'Afrique.
+**yadony-back** est le backend REST API de la marketplace P2P yadony, permettant de connecter des voyageurs avec des expéditeurs de la diaspora africaine pour le transport de colis vers l'Afrique.
 
 **Stack:**
 - Framework: Spring Boot 3.4.x
@@ -62,10 +62,10 @@ docker compose -f docker-compose.dev.yml down
 docker compose -f docker-compose.dev.yml logs -f
 
 # Access PostgreSQL shell
-docker exec -it dony_db psql -U dony -d dony_dev
+docker exec -it yadony_db psql -U yadony -d yadony_dev
 
 # Check Flyway migration history
-docker exec -it dony_db psql -U dony -d dony_dev -c "SELECT * FROM flyway_schema_history ORDER BY installed_rank;"
+docker exec -it yadony_db psql -U yadony -d yadony_dev -c "SELECT * FROM flyway_schema_history ORDER BY installed_rank;"
 
 # Reset database (CAUTION: deletes all data)
 docker compose -f docker-compose.dev.yml down -v
@@ -95,7 +95,7 @@ docker compose -f docker-compose.dev.yml up -d
 ### Package Structure (Package-per-Feature)
 
 ```
-com.dony.api/
+com.yadony.api/
 ├── config/
 │   ├── SecurityConfig.java          # Spring Security configuration
 │   ├── FirebaseConfig.java          # Firebase Admin SDK initialization
@@ -274,7 +274,7 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND,
                 ex.getMessage()
         );
-        problem.setType(URI.create("https://dony.app/errors/not-found"));
+        problem.setType(URI.create("https://yadony.app/errors/not-found"));
         problem.setTitle("Resource Not Found");
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
@@ -285,7 +285,7 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 ex.getMessage()
         );
-        problem.setType(URI.create("https://dony.app/errors/validation"));
+        problem.setType(URI.create("https://yadony.app/errors/validation"));
         problem.setTitle("Validation Error");
         problem.setProperty("violations", ex.getViolations());
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(problem);
@@ -520,7 +520,7 @@ public class StripeService {
 
 **Règles Stripe:**
 - `capture_method: manual` obligatoire (mode escrow)
-- Commission dony dans `application_fee_amount` (12% configurable)
+- Commission yadony dans `application_fee_amount` (12% configurable)
 - Valider la signature des webhooks Stripe avant tout traitement
 - **Montant net TOUJOURS recalculé côté serveur** (grid items snapshotés + poids × prix/kg) dans `PaymentService.createEscrow`. Un `totalNetEur` reçu du client est purement indicatif et recoupé (422 `amount-mismatch` sinon) — ne jamais le prendre comme source de vérité du montant.
 
@@ -700,8 +700,8 @@ public class AnnouncementService {
 17. ❌ Créer un compte Stripe Connect sans verrou pessimiste (`findByIdForUpdate`) — race condition possible si deux requêtes simultanées
 18. ❌ Utiliser `@EventListener` seul sur les listeners de paiement — toujours utiliser `@TransactionalEventListener(phase = AFTER_COMMIT)` + `@Transactional(propagation = REQUIRES_NEW)` pour éviter de lire des données non encore commitées
 19. ❌ Capturer un `PaymentIntent` sans passer par `markCapturedIfEscrow()` en premier — protection atomique contre la double capture
-20. ❌ Laisser `dony.kyc.enforce` ou `dony.stripe.enforce` à `false` en prod — ces flags doivent être `true` en production
-21. ❌ Commenter ou désactiver les vérifications KYC/Stripe avec un TODO — utiliser les flags `dony.kyc.enforce` et `dony.stripe.enforce` à la place
+20. ❌ Laisser `yadony.kyc.enforce` ou `yadony.stripe.enforce` à `false` en prod — ces flags doivent être `true` en production
+21. ❌ Commenter ou désactiver les vérifications KYC/Stripe avec un TODO — utiliser les flags `yadony.kyc.enforce` et `yadony.stripe.enforce` à la place
 
 ### ALWAYS:
 
@@ -718,7 +718,7 @@ public class AnnouncementService {
 11. ✅ Vérifier l'ownership avant tout accès à une ressource — ex. `GET /payments/bid/{bidId}` doit confirmer que le caller est l'expéditeur ou le voyageur du bid
 12. ✅ Enregistrer les events Stripe dans `processed_stripe_events` **avant** de les traiter (insert-first, then process) pour garantir l'idempotence
 13. ✅ Demander les capacités `card_payments` ET `transfers` à la création d'un compte Stripe Connect Express — obligatoire pour le pattern `on_behalf_of`
-14. ✅ Vérifier que `dony.kyc.enforce` et `dony.stripe.enforce` sont bien désactivés dans `application-test.yml` pour ne pas bloquer les tests d'intégration
+14. ✅ Vérifier que `yadony.kyc.enforce` et `yadony.stripe.enforce` sont bien désactivés dans `application-test.yml` pour ne pas bloquer les tests d'intégration
 
 ---
 
@@ -767,7 +767,7 @@ public class AnnouncementService {
 ### Structure des tests
 
 ```
-src/test/java/com/dony/api/
+src/test/java/com/yadony/api/
 ├── matching/
 │   ├── AnnouncementServiceTest.java    # unit — mock AnnouncementRepository
 │   ├── BidServiceTest.java             # unit — mock BidRepository, UserRepository
@@ -841,8 +841,8 @@ Before deploying:
 - [ ] Offline timestamps validated (reject future timestamps)
 - [ ] CORS configured properly for production frontend domain
 - [ ] Sentry configured for error monitoring
-- [ ] `dony.kyc.enforce=true` en prod — bloque bid/annonce sans KYC vérifié
-- [ ] `dony.stripe.enforce=true` en prod — bloque annonce sans compte bancaire Stripe configuré
+- [ ] `yadony.kyc.enforce=true` en prod — bloque bid/annonce sans KYC vérifié
+- [ ] `yadony.stripe.enforce=true` en prod — bloque annonce sans compte bancaire Stripe configuré
 - [ ] `INTERNAL_SHARED_SECRET` généré avec `openssl rand -hex 32` (jamais la valeur par défaut `local-dev-secret-change-me`)
 - [ ] Webhook listeners utilisent `@TransactionalEventListener(phase = AFTER_COMMIT)` + `@Transactional(propagation = REQUIRES_NEW)`
 - [ ] Table `processed_stripe_events` créée (migration V48) — idempotence webhooks

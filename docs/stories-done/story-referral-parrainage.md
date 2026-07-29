@@ -16,14 +16,14 @@ Système de parrainage complet : génération automatique de codes uniques à l'
 **Événement**
 - `auth/events/UserRegisteredEvent.java` — record `(UUID userId, String firebaseUid)` publié dans `AuthService.createUser()`
 
-**Package `com.dony.api.referral`**
+**Package `com.yadony.api.referral`**
 - `ReferralCodeEntity.java` — table `referral_codes`, pas de BaseEntity (pas de soft delete sur les codes)
 - `ReferralCodeRepository.java` — `findByUserId`, `findByCode`, `existsByCode`
 - `ReferralInvitationEntity.java` — étend `BaseEntity`, `@Where deleted_at IS NULL`, cycle `PENDING → SIGNED_UP → REWARDED`
 - `ReferralInvitationRepository.java` — `findByRefereeUserIdAndStatus`, `countByReferrerUserId`, `countByReferrerUserIdAndStatus`
 - `UserCreditEntity.java` — ledger immuable, pas de BaseEntity
 - `UserCreditRepository.java`
-- `ReferralConfig.java` — `@ConfigurationProperties(prefix="dony.referral")` : `rewardAmountCents`, `maxInvitationsPerUser`, `codeRegenerationCooldownDays`
+- `ReferralConfig.java` — `@ConfigurationProperties(prefix="yadony.referral")` : `rewardAmountCents`, `maxInvitationsPerUser`, `codeRegenerationCooldownDays`
 - `ReferralService.java` — génération code, lazy creation, redeem avec vérifications, regenerate avec cooldown
 - `UserRegisteredReferralListener.java` — `@EventListener` simple, erreur non bloquante
 - `DeliveryConfirmedReferralListener.java` — `@TransactionalEventListener(AFTER_COMMIT)` + `@Transactional(REQUIRES_NEW)`
@@ -39,8 +39,8 @@ Système de parrainage complet : génération automatique de codes uniques à l'
 
 - `auth/AuthService.java` — injection `ApplicationEventPublisher`, publication `UserRegisteredEvent` après save
 - `matching/BidRepository.java` — ajout `countByStatusAndSenderId` via `@Query`
-- `resources/application.yml` — bloc `dony.referral`
-- `test/resources/application-test.yml` — bloc `dony.referral`
+- `resources/application.yml` — bloc `yadony.referral`
+- `test/resources/application-test.yml` — bloc `yadony.referral`
 - `auth/AuthServiceTest.java` — mock `ApplicationEventPublisher` ajouté
 
 ## Comment ça fonctionne
@@ -92,7 +92,7 @@ DeliveryConfirmedEvent (AFTER_COMMIT, senderId=X)
 ### Configuration externalisée
 
 ```yaml
-dony:
+yadony:
   referral:
     reward-amount-cents: 500        # 5€
     max-invitations-per-user: 50

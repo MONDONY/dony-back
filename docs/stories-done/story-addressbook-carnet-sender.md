@@ -70,7 +70,7 @@ public void setDefault(UUID userId, UUID addressId) {
 
 ### Validation phone (destinataires)
 
-`@Pattern(regexp = "^\\+[1-9]\\d{1,14}$")` — format E.164 strict. Le pays est une enum restreinte à `SN`, `CI`, `ML`, `CM` pour forcer le périmètre géographique dony.
+`@Pattern(regexp = "^\\+[1-9]\\d{1,14}$")` — format E.164 strict. Le pays est une enum restreinte à `SN`, `CI`, `ML`, `CM` pour forcer le périmètre géographique yadony.
 
 ### Conflit de beans `RecipientController`
 

@@ -1,6 +1,6 @@
 # Load test STAGING (VPS) — runbook
 
-Objectif : mesurer la **vraie capacité** du backend dony sur staging (pas le laptop),
+Objectif : mesurer la **vraie capacité** du backend yadony sur staging (pas le laptop),
 et estimer s'il tient une forte concurrence (vers 10 000 users).
 
 > **Rappel honnête** : 1 instance backend + 1 Postgres (pool 10) **ne tiendra pas
@@ -35,13 +35,13 @@ et estimer s'il tient une forte concurrence (vers 10 000 users).
 
 nginx staging limite **30 req/min/IP** (`api_general`, burst 10) et **5 req/min/IP**
 (`api_sensitive` = `/auth`, `/kyc`). Un test depuis une seule IP via
-`https://api-staging.dony.store` est donc **429** en quelques secondes — on
+`https://api-staging.yadony.com` est donc **429** en quelques secondes — on
 mesurerait le rate-limiter, pas le backend.
 
 Trois façons de tester la capacité réelle :
 
 **A. Backend direct (recommandé pour mesurer l'instance)**
-Le conteneur `dony_api` écoute `:8080` (interne au réseau docker, non publié).
+Le conteneur `yadony_api` écoute `:8080` (interne au réseau docker, non publié).
 Sur le VPS :
 ```bash
 # publier temporairement 8080 sur localhost (ne PAS laisser en prod)
@@ -52,7 +52,7 @@ ou lancer k6 dans le réseau docker staging avec `BASE_URL=http://api:8080/api/v
 
 **B. Lever le rate-limit le temps du test (mesure le chemin réel nginx→backend)**
 Dans `nginx/nginx.staging.conf`, commenter les `limit_req zone=...` (lignes ~62 et
-~73), recharger nginx (`docker exec dony_nginx nginx -s reload`), tester, puis
+~73), recharger nginx (`docker exec yadony_nginx nginx -s reload`), tester, puis
 **remettre** les limites. C'est le test le plus représentatif (édge inclus).
 
 **C. Charge distribuée multi-IP** (k6 cloud) — chaque IP a son quota 30 r/m. Pour
@@ -105,7 +105,7 @@ k6 monte par paliers ; on regarde à quel palier p95 explose / les 5xx apparaiss
 | p95 / p99 latence | rapport k6 | où la dégradation décolle |
 | Connexions Postgres | `SELECT count(*) FROM pg_stat_activity` | pool saturé (max 10) → file d'attente |
 | `hikaricp.connections.pending` | `/actuator/metrics` | requêtes en attente d'une connexion DB |
-| CPU/mém conteneur `dony_api` | `docker stats` | le backend est-il CPU/mém-bound |
+| CPU/mém conteneur `yadony_api` | `docker stats` | le backend est-il CPU/mém-bound |
 | Threads Tomcat actifs | `/actuator/metrics/tomcat.threads.busy` | plafond à 200 par défaut |
 | 429 | rapport k6 | rate-limit nginx pas bypassé |
 

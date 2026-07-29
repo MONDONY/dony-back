@@ -14,22 +14,22 @@ Ajout d'un champ `transportMode` sur les annonces de trajet (`PLANE` | `CAR` | `
 ## Fichiers créés
 
 - `src/main/resources/db/migration/V35__announcements_add_transport_mode.sql` — ajoute la colonne `transport_mode VARCHAR(20) NOT NULL` avec `CHECK` constraint sur les 6 valeurs autorisées et backfill des annonces existantes à `OTHER`.
-- `src/main/java/com/dony/api/matching/TransportMode.java` — enum Java avec les 6 modalités, mappé en `EnumType.STRING` côté JPA.
+- `src/main/java/com/yadony/api/matching/TransportMode.java` — enum Java avec les 6 modalités, mappé en `EnumType.STRING` côté JPA.
 
 ## Fichiers modifiés
 
-- `src/main/java/com/dony/api/matching/AnnouncementEntity.java` — ajout du champ `transportMode` (`@Enumerated(EnumType.STRING)`, `@Column(nullable = false)`).
-- `src/main/java/com/dony/api/matching/dto/AnnouncementRequest.java` — ajout du champ `transportMode` avec `@NotNull` (Bean Validation → 422 si manquant).
-- `src/main/java/com/dony/api/matching/dto/AnnouncementResponse.java` — ajout du champ `transportMode` exposé en sortie.
-- `src/main/java/com/dony/api/matching/dto/AnnouncementSearchResponse.java` — ajout du champ pour la liste paginée.
-- `src/main/java/com/dony/api/matching/dto/AnnouncementDetailResponse.java` — ajout du champ pour l'écran détail.
-- `src/main/java/com/dony/api/matching/dto/BidResponse.java` — ajout du champ embarqué pour que l'expéditeur voie le mode de transport directement depuis ses bids.
-- `src/main/java/com/dony/api/matching/AnnouncementService.java` — `create()` persiste `transportMode` + audit ; `update()` détecte le changement et logue `transportMode_old`/`transportMode_new` ; les 4 mappers (`toResponse`, `toSearchResponse`, `toDetailResponse`, `toMyAnnouncementResponse`) propagent le champ.
-- `src/main/java/com/dony/api/matching/BidService.java` — le mapper `toBidResponse` lit `bid.getAnnouncement().getTransportMode()` et le pousse dans `BidResponse`.
-- `src/main/java/com/dony/api/common/GlobalExceptionHandler.java` — nouveau handler `HttpMessageNotReadableException` → HTTP 400 (cas notamment d'une valeur d'enum invalide dans le JSON, ex: `"transportMode": "BIKE"`).
+- `src/main/java/com/yadony/api/matching/AnnouncementEntity.java` — ajout du champ `transportMode` (`@Enumerated(EnumType.STRING)`, `@Column(nullable = false)`).
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementRequest.java` — ajout du champ `transportMode` avec `@NotNull` (Bean Validation → 422 si manquant).
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementResponse.java` — ajout du champ `transportMode` exposé en sortie.
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementSearchResponse.java` — ajout du champ pour la liste paginée.
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementDetailResponse.java` — ajout du champ pour l'écran détail.
+- `src/main/java/com/yadony/api/matching/dto/BidResponse.java` — ajout du champ embarqué pour que l'expéditeur voie le mode de transport directement depuis ses bids.
+- `src/main/java/com/yadony/api/matching/AnnouncementService.java` — `create()` persiste `transportMode` + audit ; `update()` détecte le changement et logue `transportMode_old`/`transportMode_new` ; les 4 mappers (`toResponse`, `toSearchResponse`, `toDetailResponse`, `toMyAnnouncementResponse`) propagent le champ.
+- `src/main/java/com/yadony/api/matching/BidService.java` — le mapper `toBidResponse` lit `bid.getAnnouncement().getTransportMode()` et le pousse dans `BidResponse`.
+- `src/main/java/com/yadony/api/common/GlobalExceptionHandler.java` — nouveau handler `HttpMessageNotReadableException` → HTTP 400 (cas notamment d'une valeur d'enum invalide dans le JSON, ex: `"transportMode": "BIKE"`).
 - `pom.xml` — fix de l'`argLine` JaCoCo : avant le fix, l'agent JaCoCo n'était pas attaché à la JVM de test (couverture rapportée à 0% sur tout le projet).
-- `src/test/java/com/dony/api/matching/AnnouncementControllerIntegrationTest.java` — 4 tests ajoutés (création avec mode valide, refus si manquant, refus si invalide, update qui change le mode).
-- `src/test/java/com/dony/api/matching/AnnouncementServiceTest.java` — 1 test ajouté pour vérifier l'audit `transportMode_old`/`transportMode_new` lors d'un update.
+- `src/test/java/com/yadony/api/matching/AnnouncementControllerIntegrationTest.java` — 4 tests ajoutés (création avec mode valide, refus si manquant, refus si invalide, update qui change le mode).
+- `src/test/java/com/yadony/api/matching/AnnouncementServiceTest.java` — 1 test ajouté pour vérifier l'audit `transportMode_old`/`transportMode_new` lors d'un update.
 
 ---
 
