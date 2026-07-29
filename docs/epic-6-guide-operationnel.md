@@ -320,14 +320,14 @@ curl -X POST http://localhost:8080/api/v1/admin/payments/$PAYMENT_ID/force-relea
 # 1. Créer un paiement escrow normalement (Story 6.3)
 # 2. Attendre ou simuler 48h (modifier created_at en base pour test)
 
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "UPDATE payments SET created_at = NOW() - INTERVAL '49 hours' WHERE status = 'ESCROW';"
 
 # 3. Déclencher le scheduler manuellement OU attendre l'heure ronde
 # En dev on peut appeler directement le scheduler via un test ou vérifier la base
 
 # 4. Vérifier l'alerte créée
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "SELECT * FROM admin_alerts WHERE type = 'ESCROW_J48_TIMEOUT';"
 
 # 5. Force-release via API admin
@@ -335,12 +335,12 @@ curl -X POST http://localhost:8080/api/v1/admin/payments/<PAYMENT_ID>/force-rele
   -H "Authorization: Bearer $TOKEN_ADMIN"
 
 # 6. Vérifier que l'alerte est résolue
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "SELECT resolved FROM admin_alerts WHERE type = 'ESCROW_J48_TIMEOUT';"
 # → resolved = true
 
 # 7. Vérifier le payment
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "SELECT status, escrow_released_at FROM payments WHERE id = '<PAYMENT_ID>';"
 # → status = RELEASED, escrow_released_at = <timestamp>
 ```
@@ -417,7 +417,7 @@ Voyageur → POST /cancellations { announcementId, reason }
 
 ```bash
 # 1. S'assurer qu'un paiement est en status ESCROW pour un bid ACCEPTED
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "SELECT p.id, p.status, b.id as bid_id, b.announcement_id
    FROM payments p JOIN bids b ON p.bid_id = b.id
    WHERE p.status = 'ESCROW';"
@@ -432,7 +432,7 @@ curl -X POST http://localhost:8080/api/v1/cancellations \
   -d '{"announcementId": "'$ANNOUNCEMENT_ID'", "reason": "Empêchement personnel"}'
 
 # 3. Vérifier le statut du paiement (dans les secondes qui suivent)
-docker exec dony_db psql -U dony -d dony_dev -c \
+docker exec yadony_db psql -U yadony -d yadony_dev -c \
   "SELECT status FROM payments WHERE bid_id = '<BID_ID>';"
 # → REFUNDED
 
@@ -481,7 +481,7 @@ Si l'expéditeur a initié le paiement mais n'a pas encore validé sa carte (Pay
 ### Connexion à la base
 
 ```bash
-docker exec -it dony_db psql -U dony -d dony_dev
+docker exec -it yadony_db psql -U yadony -d yadony_dev
 ```
 
 ### Requêtes utiles

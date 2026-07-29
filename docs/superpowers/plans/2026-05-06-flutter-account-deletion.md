@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement account deletion with 30-day grace period in the Flutter app (dony_app), mirroring the backend endpoints `DELETE /auth/me` and `POST /auth/me/reactivate`.
+**Goal:** Implement account deletion with 30-day grace period in the Flutter app (yadony_app), mirroring the backend endpoints `DELETE /auth/me` and `POST /auth/me/reactivate`.
 
 **Architecture:** New `features/settings/` feature (bloc/ + data/ + presentation/) following the project's feature-first pattern. Profile screen gains a non-blocking `PendingDeletionBanner` when `status == 'PENDING_DELETION'`. All navigation uses GoRouter (`context.push`/`context.pop`), all business state uses BLoC — no `setState`.
 
@@ -13,26 +13,26 @@
 ## File Map
 
 ### Create
-- `dony_app/lib/features/settings/bloc/account_deletion_bloc.dart`
-- `dony_app/lib/features/settings/bloc/account_deletion_event.dart`
-- `dony_app/lib/features/settings/bloc/account_deletion_state.dart`
-- `dony_app/lib/features/settings/data/account_deletion_repository.dart`
-- `dony_app/lib/features/settings/presentation/settings_screen.dart`
-- `dony_app/lib/features/settings/presentation/delete_account_screen.dart`
-- `dony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`
-- `dony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`
-- `dony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`
-- `dony_app/test/features/settings/data/account_deletion_repository_test.dart`
-- `dony_app/test/features/settings/presentation/delete_account_screen_test.dart`
-- `dony_app/test/features/settings/presentation/settings_screen_test.dart`
-- `dony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`
+- `yadony_app/lib/features/settings/bloc/account_deletion_bloc.dart`
+- `yadony_app/lib/features/settings/bloc/account_deletion_event.dart`
+- `yadony_app/lib/features/settings/bloc/account_deletion_state.dart`
+- `yadony_app/lib/features/settings/data/account_deletion_repository.dart`
+- `yadony_app/lib/features/settings/presentation/settings_screen.dart`
+- `yadony_app/lib/features/settings/presentation/delete_account_screen.dart`
+- `yadony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`
+- `yadony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`
+- `yadony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`
+- `yadony_app/test/features/settings/data/account_deletion_repository_test.dart`
+- `yadony_app/test/features/settings/presentation/delete_account_screen_test.dart`
+- `yadony_app/test/features/settings/presentation/settings_screen_test.dart`
+- `yadony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`
 
 ### Modify
-- `dony_app/lib/features/auth/data/models/user_model.dart` — add `deletionRequestedAt`, `isPendingDeletion`
-- `dony_app/lib/core/di/injection.dart` — register `AccountDeletionRepository` + `AccountDeletionBloc`
-- `dony_app/lib/app/router.dart` — add `/settings` and `/settings/delete-account` routes; wrap `/profile` with `AccountDeletionBloc`
-- `dony_app/lib/features/profile/presentation/profile_screen.dart` — add Settings tile + `PendingDeletionBanner`
-- `dony_app/test/features/auth/data/models/user_model_test.dart` — add `deletionRequestedAt` test
+- `yadony_app/lib/features/auth/data/models/user_model.dart` — add `deletionRequestedAt`, `isPendingDeletion`
+- `yadony_app/lib/core/di/injection.dart` — register `AccountDeletionRepository` + `AccountDeletionBloc`
+- `yadony_app/lib/app/router.dart` — add `/settings` and `/settings/delete-account` routes; wrap `/profile` with `AccountDeletionBloc`
+- `yadony_app/lib/features/profile/presentation/profile_screen.dart` — add Settings tile + `PendingDeletionBanner`
+- `yadony_app/test/features/auth/data/models/user_model_test.dart` — add `deletionRequestedAt` test
 
 ---
 
@@ -40,8 +40,8 @@
 
 **Files:**
 - Create branch: `feat/flutter-account-deletion`
-- Modify: `dony_app/lib/features/auth/data/models/user_model.dart`
-- Modify: `dony_app/test/features/auth/data/models/user_model_test.dart`
+- Modify: `yadony_app/lib/features/auth/data/models/user_model.dart`
+- Modify: `yadony_app/test/features/auth/data/models/user_model_test.dart`
 
 - [ ] **Step 1: Create the branch**
 
@@ -54,7 +54,7 @@ Expected: `Switched to a new branch 'feat/flutter-account-deletion'`
 
 - [ ] **Step 2: Write the failing test**
 
-Open `dony_app/test/features/auth/data/models/user_model_test.dart` and add this test group (file already exists — add inside `main()`):
+Open `yadony_app/test/features/auth/data/models/user_model_test.dart` and add this test group (file already exists — add inside `main()`):
 
 ```dart
 group('deletionRequestedAt', () {
@@ -89,7 +89,7 @@ group('deletionRequestedAt', () {
 - [ ] **Step 3: Run to verify it fails**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test test/features/auth/data/models/user_model_test.dart
 ```
 
@@ -97,7 +97,7 @@ Expected: FAIL — `deletionRequestedAt` not found on `UserModel`.
 
 - [ ] **Step 4: Implement the changes in UserModel**
 
-In `dony_app/lib/features/auth/data/models/user_model.dart`, make these changes:
+In `yadony_app/lib/features/auth/data/models/user_model.dart`, make these changes:
 
 Add field after `stripeAccountStatus`:
 ```dart
@@ -137,7 +137,7 @@ Expected: All tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 git add lib/features/auth/data/models/user_model.dart \
         test/features/auth/data/models/user_model_test.dart
 git commit -m "feat(flutter): add deletionRequestedAt + isPendingDeletion to UserModel"
@@ -148,16 +148,16 @@ git commit -m "feat(flutter): add deletionRequestedAt + isPendingDeletion to Use
 ## Task 2: AccountDeletionRepository
 
 **Files:**
-- Create: `dony_app/lib/features/settings/data/account_deletion_repository.dart`
-- Create: `dony_app/test/features/settings/data/account_deletion_repository_test.dart`
+- Create: `yadony_app/lib/features/settings/data/account_deletion_repository.dart`
+- Create: `yadony_app/test/features/settings/data/account_deletion_repository_test.dart`
 
 - [ ] **Step 1: Create the test file**
 
 ```dart
-// dony_app/test/features/settings/data/account_deletion_repository_test.dart
-import 'package:dony/core/error/app_exception.dart';
-import 'package:dony/core/network/api_client.dart';
-import 'package:dony/features/settings/data/account_deletion_repository.dart';
+// yadony_app/test/features/settings/data/account_deletion_repository_test.dart
+import 'package:yadony/core/error/app_exception.dart';
+import 'package:yadony/core/network/api_client.dart';
+import 'package:yadony/features/settings/data/account_deletion_repository.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -244,7 +244,7 @@ void main() {
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test test/features/settings/data/account_deletion_repository_test.dart
 ```
 
@@ -252,12 +252,12 @@ Expected: FAIL — `AccountDeletionRepository` does not exist.
 
 - [ ] **Step 3: Implement the repository**
 
-Create `dony_app/lib/features/settings/data/account_deletion_repository.dart`:
+Create `yadony_app/lib/features/settings/data/account_deletion_repository.dart`:
 
 ```dart
-import 'package:dony/core/error/app_exception.dart';
-import 'package:dony/core/network/api_client.dart';
-import 'package:dony/features/auth/data/models/user_model.dart';
+import 'package:yadony/core/error/app_exception.dart';
+import 'package:yadony/core/network/api_client.dart';
+import 'package:yadony/features/auth/data/models/user_model.dart';
 
 class AccountDeletionRepository {
   final ApiClient _client;
@@ -294,8 +294,8 @@ Expected: All tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dony_app/lib/features/settings/data/account_deletion_repository.dart \
-        dony_app/test/features/settings/data/account_deletion_repository_test.dart
+git add yadony_app/lib/features/settings/data/account_deletion_repository.dart \
+        yadony_app/test/features/settings/data/account_deletion_repository_test.dart
 git commit -m "feat(flutter): add AccountDeletionRepository"
 ```
 
@@ -304,21 +304,21 @@ git commit -m "feat(flutter): add AccountDeletionRepository"
 ## Task 3: AccountDeletionBloc
 
 **Files:**
-- Create: `dony_app/lib/features/settings/bloc/account_deletion_event.dart`
-- Create: `dony_app/lib/features/settings/bloc/account_deletion_state.dart`
-- Create: `dony_app/lib/features/settings/bloc/account_deletion_bloc.dart`
-- Create: `dony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`
+- Create: `yadony_app/lib/features/settings/bloc/account_deletion_event.dart`
+- Create: `yadony_app/lib/features/settings/bloc/account_deletion_state.dart`
+- Create: `yadony_app/lib/features/settings/bloc/account_deletion_bloc.dart`
+- Create: `yadony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `dony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`:
+Create `yadony_app/test/features/settings/bloc/account_deletion_bloc_test.dart`:
 
 ```dart
 import 'package:bloc_test/bloc_test.dart';
-import 'package:dony/core/error/app_exception.dart';
-import 'package:dony/features/auth/data/models/user_model.dart';
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/settings/data/account_deletion_repository.dart';
+import 'package:yadony/core/error/app_exception.dart';
+import 'package:yadony/features/auth/data/models/user_model.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/settings/data/account_deletion_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -452,7 +452,7 @@ void main() {
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test test/features/settings/bloc/account_deletion_bloc_test.dart
 ```
 
@@ -460,7 +460,7 @@ Expected: FAIL — `AccountDeletionBloc` does not exist.
 
 - [ ] **Step 3: Create the event file**
 
-Create `dony_app/lib/features/settings/bloc/account_deletion_event.dart`:
+Create `yadony_app/lib/features/settings/bloc/account_deletion_event.dart`:
 
 ```dart
 part of 'account_deletion_bloc.dart';
@@ -483,7 +483,7 @@ class ReactivateAccount extends AccountDeletionEvent {
 
 - [ ] **Step 4: Create the state file**
 
-Create `dony_app/lib/features/settings/bloc/account_deletion_state.dart`:
+Create `yadony_app/lib/features/settings/bloc/account_deletion_state.dart`:
 
 ```dart
 part of 'account_deletion_bloc.dart';
@@ -531,12 +531,12 @@ class AccountDeletionError extends AccountDeletionState {
 
 - [ ] **Step 5: Create the BLoC file**
 
-Create `dony_app/lib/features/settings/bloc/account_deletion_bloc.dart`:
+Create `yadony_app/lib/features/settings/bloc/account_deletion_bloc.dart`:
 
 ```dart
-import 'package:dony/core/error/app_exception.dart';
-import 'package:dony/features/auth/data/models/user_model.dart';
-import 'package:dony/features/settings/data/account_deletion_repository.dart';
+import 'package:yadony/core/error/app_exception.dart';
+import 'package:yadony/features/auth/data/models/user_model.dart';
+import 'package:yadony/features/settings/data/account_deletion_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -603,8 +603,8 @@ Expected: All 7 tests PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add dony_app/lib/features/settings/bloc/ \
-        dony_app/test/features/settings/bloc/account_deletion_bloc_test.dart
+git add yadony_app/lib/features/settings/bloc/ \
+        yadony_app/test/features/settings/bloc/account_deletion_bloc_test.dart
 git commit -m "feat(flutter): add AccountDeletionBloc with RequestDeletion + ReactivateAccount events"
 ```
 
@@ -613,15 +613,15 @@ git commit -m "feat(flutter): add AccountDeletionBloc with RequestDeletion + Rea
 ## Task 4: Dependency Injection registration
 
 **Files:**
-- Modify: `dony_app/lib/core/di/injection.dart`
+- Modify: `yadony_app/lib/core/di/injection.dart`
 
 - [ ] **Step 1: Add imports at top of injection.dart**
 
 Add these imports alongside the existing ones:
 
 ```dart
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/settings/data/account_deletion_repository.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/settings/data/account_deletion_repository.dart';
 ```
 
 - [ ] **Step 2: Register the dependencies**
@@ -641,7 +641,7 @@ getIt.registerFactory<AccountDeletionBloc>(
 - [ ] **Step 3: Run all tests to verify nothing is broken**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test
 ```
 
@@ -650,7 +650,7 @@ Expected: All tests PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add dony_app/lib/core/di/injection.dart
+git add yadony_app/lib/core/di/injection.dart
 git commit -m "feat(flutter): register AccountDeletionRepository and AccountDeletionBloc in DI"
 ```
 
@@ -659,15 +659,15 @@ git commit -m "feat(flutter): register AccountDeletionRepository and AccountDele
 ## Task 5: PendingDeletionBanner widget
 
 **Files:**
-- Create: `dony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`
-- Create: `dony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`
+- Create: `yadony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`
+- Create: `yadony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `dony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`:
+Create `yadony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart`:
 
 ```dart
-import 'package:dony/features/profile/presentation/widgets/pending_deletion_banner.dart';
+import 'package:yadony/features/profile/presentation/widgets/pending_deletion_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -726,10 +726,10 @@ Expected: FAIL — file not found.
 
 - [ ] **Step 3: Create the widget**
 
-Create `dony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`:
+Create `yadony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart`:
 
 ```dart
-import 'package:dony/core/design/design_system.dart';
+import 'package:yadony/core/design/design_system.dart';
 import 'package:flutter/material.dart';
 
 class PendingDeletionBanner extends StatelessWidget {
@@ -752,27 +752,27 @@ class PendingDeletionBanner extends StatelessWidget {
     final y = deletionDate.year;
 
     return Container(
-      padding: const EdgeInsets.all(DonySpacing.base),
+      padding: const EdgeInsets.all(YadonySpacing.base),
       decoration: BoxDecoration(
-        color: DonyColors.errorLight,
-        borderRadius: BorderRadius.circular(DonyRadius.card),
-        border: Border.all(color: DonyColors.error.withValues(alpha: 0.25)),
+        color: YadonyColors.errorLight,
+        borderRadius: BorderRadius.circular(YadonyRadius.card),
+        border: Border.all(color: YadonyColors.error.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(DonySpacing.sm),
+            padding: const EdgeInsets.all(YadonySpacing.sm),
             decoration: BoxDecoration(
-              color: DonyColors.error.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(DonyRadius.md),
+              color: YadonyColors.error.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(YadonyRadius.md),
             ),
             child: const Icon(
               Icons.warning_amber_rounded,
-              color: DonyColors.error,
+              color: YadonyColors.error,
               size: 18,
             ),
           ),
-          const SizedBox(width: DonySpacing.md),
+          const SizedBox(width: YadonySpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -794,7 +794,7 @@ class PendingDeletionBanner extends StatelessWidget {
                   child: Text(
                     'Annuler la suppression',
                     style: tt.bodySmall?.copyWith(
-                      color: DonyColors.error,
+                      color: YadonyColors.error,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -820,8 +820,8 @@ Expected: All 3 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart \
-        dony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart
+git add yadony_app/lib/features/profile/presentation/widgets/pending_deletion_banner.dart \
+        yadony_app/test/features/profile/presentation/widgets/pending_deletion_banner_test.dart
 git commit -m "feat(flutter): add PendingDeletionBanner widget"
 ```
 
@@ -830,15 +830,15 @@ git commit -m "feat(flutter): add PendingDeletionBanner widget"
 ## Task 6: EscrowBlockDialog widget
 
 **Files:**
-- Create: `dony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`
-- Create: `dony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart`
+- Create: `yadony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`
+- Create: `yadony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `dony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart`:
+Create `yadony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart`:
 
 ```dart
-import 'package:dony/features/settings/presentation/widgets/escrow_block_dialog.dart';
+import 'package:yadony/features/settings/presentation/widgets/escrow_block_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -912,7 +912,7 @@ Expected: FAIL — `EscrowBlockDialog` does not exist.
 
 - [ ] **Step 3: Create the widget**
 
-Create `dony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`:
+Create `yadony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
@@ -965,8 +965,8 @@ Expected: All 3 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart \
-        dony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart
+git add yadony_app/lib/features/settings/presentation/widgets/escrow_block_dialog.dart \
+        yadony_app/test/features/settings/presentation/widgets/escrow_block_dialog_test.dart
 git commit -m "feat(flutter): add EscrowBlockDialog widget"
 ```
 
@@ -975,25 +975,25 @@ git commit -m "feat(flutter): add EscrowBlockDialog widget"
 ## Task 7: DeleteAccountScreen
 
 **Files:**
-- Create: `dony_app/lib/features/settings/presentation/delete_account_screen.dart`
-- Create: `dony_app/test/features/settings/presentation/delete_account_screen_test.dart`
+- Create: `yadony_app/lib/features/settings/presentation/delete_account_screen.dart`
+- Create: `yadony_app/test/features/settings/presentation/delete_account_screen_test.dart`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `dony_app/test/features/settings/presentation/delete_account_screen_test.dart`:
+Create `yadony_app/test/features/settings/presentation/delete_account_screen_test.dart`:
 
 ```dart
 import 'package:bloc_test/bloc_test.dart';
-import 'package:dony/core/di/injection.dart';
-import 'package:dony/features/auth/bloc/auth_bloc.dart';
-import 'package:dony/features/auth/bloc/auth_event.dart';
-import 'package:dony/features/auth/bloc/auth_state.dart';
-import 'package:dony/features/auth/data/models/user_model.dart';
-import 'package:dony/features/auth/data/repositories/auth_repository.dart';
-import 'package:dony/features/auth/data/services/local_auth_service.dart';
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/settings/data/account_deletion_repository.dart';
-import 'package:dony/features/settings/presentation/delete_account_screen.dart';
+import 'package:yadony/core/di/injection.dart';
+import 'package:yadony/features/auth/bloc/auth_bloc.dart';
+import 'package:yadony/features/auth/bloc/auth_event.dart';
+import 'package:yadony/features/auth/bloc/auth_state.dart';
+import 'package:yadony/features/auth/data/models/user_model.dart';
+import 'package:yadony/features/auth/data/repositories/auth_repository.dart';
+import 'package:yadony/features/auth/data/services/local_auth_service.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/settings/data/account_deletion_repository.dart';
+import 'package:yadony/features/settings/presentation/delete_account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1150,14 +1150,14 @@ Expected: FAIL — `DeleteAccountScreen` does not exist.
 
 - [ ] **Step 3: Create the screen**
 
-Create `dony_app/lib/features/settings/presentation/delete_account_screen.dart`:
+Create `yadony_app/lib/features/settings/presentation/delete_account_screen.dart`:
 
 ```dart
-import 'package:dony/core/design/design_system.dart';
-import 'package:dony/features/auth/bloc/auth_bloc.dart';
-import 'package:dony/features/auth/bloc/auth_event.dart';
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/settings/presentation/widgets/escrow_block_dialog.dart';
+import 'package:yadony/core/design/design_system.dart';
+import 'package:yadony/features/auth/bloc/auth_bloc.dart';
+import 'package:yadony/features/auth/bloc/auth_event.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/settings/presentation/widgets/escrow_block_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -1190,76 +1190,76 @@ class DeleteAccountScreen extends StatelessWidget {
         }
       },
       child: Scaffold(
-        appBar: DonyAppBar(title: 'Supprimer mon compte'),
+        appBar: YadonyAppBar(title: 'Supprimer mon compte'),
         body: SingleChildScrollView(
-          padding: const EdgeInsets.all(DonySpacing.lg),
+          padding: const EdgeInsets.all(YadonySpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(DonySpacing.base),
+                padding: const EdgeInsets.all(YadonySpacing.base),
                 decoration: BoxDecoration(
-                  color: DonyColors.errorLight,
-                  borderRadius: BorderRadius.circular(DonyRadius.card),
+                  color: YadonyColors.errorLight,
+                  borderRadius: BorderRadius.circular(YadonyRadius.card),
                   border: Border.all(
-                      color: DonyColors.error.withValues(alpha: 0.25)),
+                      color: YadonyColors.error.withValues(alpha: 0.25)),
                 ),
                 child: Row(
                   children: [
                     const Icon(Icons.warning_amber_rounded,
-                        color: DonyColors.error, size: 20),
-                    const SizedBox(width: DonySpacing.md),
+                        color: YadonyColors.error, size: 20),
+                    const SizedBox(width: YadonySpacing.md),
                     Expanded(
                       child: Text(
                         'Cette action entraîne la suppression de votre compte.',
                         style: tt.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: DonyColors.error,
+                          color: YadonyColors.error,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: DonySpacing.xl),
+              const SizedBox(height: YadonySpacing.xl),
               Text('Ce qui se passe',
                   style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: DonySpacing.md),
+              const SizedBox(height: YadonySpacing.md),
               _InfoRow(
                 icon: Icons.hourglass_empty_rounded,
                 text:
                     'Période de grâce de 30 jours — vous pouvez revenir sur votre décision.',
               ),
-              const SizedBox(height: DonySpacing.md),
+              const SizedBox(height: YadonySpacing.md),
               _InfoRow(
                 icon: Icons.archive_outlined,
                 text:
                     'Vos annonces et bids actifs sont archivés immédiatement.',
               ),
-              const SizedBox(height: DonySpacing.md),
+              const SizedBox(height: YadonySpacing.md),
               _InfoRow(
                 icon: Icons.delete_forever_outlined,
                 text:
-                    'Après 30 jours, vos données personnelles sont pseudonymisées (RGPD).',
+                    'Après 30 jours, vos données personnelles sont pseuyadonymisées (RGPD).',
               ),
-              const SizedBox(height: DonySpacing.xxl),
+              const SizedBox(height: YadonySpacing.xxl),
               BlocBuilder<AccountDeletionBloc, AccountDeletionState>(
                 builder: (context, state) {
                   final isLoading = state is AccountDeletionLoading;
-                  return DonyButton(
+                  return YadonyButton(
                     label: 'Confirmer la suppression',
                     onPressed: isLoading
                         ? null
                         : () => context
                             .read<AccountDeletionBloc>()
                             .add(const RequestDeletion()),
-                    variant: DonyButtonVariant.danger,
+                    variant: YadonyButtonVariant.danger,
                   );
                 },
               ),
               if (BlocProvider.of<AccountDeletionBloc>(context).state
                   is AccountDeletionError) ...[
-                const SizedBox(height: DonySpacing.md),
+                const SizedBox(height: YadonySpacing.md),
                 BlocBuilder<AccountDeletionBloc, AccountDeletionState>(
                   builder: (context, state) {
                     if (state is AccountDeletionError &&
@@ -1267,7 +1267,7 @@ class DeleteAccountScreen extends StatelessWidget {
                       return Text(
                         state.message,
                         style: tt.bodySmall
-                            ?.copyWith(color: DonyColors.error),
+                            ?.copyWith(color: YadonyColors.error),
                         textAlign: TextAlign.center,
                       );
                     }
@@ -1296,7 +1296,7 @@ class _InfoRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 18, color: cs.onSurfaceVariant),
-        const SizedBox(width: DonySpacing.md),
+        const SizedBox(width: YadonySpacing.md),
         Expanded(
           child: Text(text,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
@@ -1307,7 +1307,7 @@ class _InfoRow extends StatelessWidget {
 }
 ```
 
-> **Note:** If `DonyButton` does not have a `danger` variant, use `variant: DonyButtonVariant.ghost` with a red `foregroundColor` override, or check `dony_button.dart` for the available variants and use the closest one.
+> **Note:** If `YadonyButton` does not have a `danger` variant, use `variant: YadonyButtonVariant.ghost` with a red `foregroundColor` override, or check `yadony_button.dart` for the available variants and use the closest one.
 
 - [ ] **Step 4: Run to verify tests pass**
 
@@ -1320,8 +1320,8 @@ Expected: All 4 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dony_app/lib/features/settings/presentation/delete_account_screen.dart \
-        dony_app/test/features/settings/presentation/delete_account_screen_test.dart
+git add yadony_app/lib/features/settings/presentation/delete_account_screen.dart \
+        yadony_app/test/features/settings/presentation/delete_account_screen_test.dart
 git commit -m "feat(flutter): add DeleteAccountScreen"
 ```
 
@@ -1330,15 +1330,15 @@ git commit -m "feat(flutter): add DeleteAccountScreen"
 ## Task 8: SettingsScreen
 
 **Files:**
-- Create: `dony_app/lib/features/settings/presentation/settings_screen.dart`
-- Create: `dony_app/test/features/settings/presentation/settings_screen_test.dart`
+- Create: `yadony_app/lib/features/settings/presentation/settings_screen.dart`
+- Create: `yadony_app/test/features/settings/presentation/settings_screen_test.dart`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `dony_app/test/features/settings/presentation/settings_screen_test.dart`:
+Create `yadony_app/test/features/settings/presentation/settings_screen_test.dart`:
 
 ```dart
-import 'package:dony/features/settings/presentation/settings_screen.dart';
+import 'package:yadony/features/settings/presentation/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -1397,10 +1397,10 @@ Expected: FAIL — `SettingsScreen` does not exist.
 
 - [ ] **Step 3: Create the screen**
 
-Create `dony_app/lib/features/settings/presentation/settings_screen.dart`:
+Create `yadony_app/lib/features/settings/presentation/settings_screen.dart`:
 
 ```dart
-import 'package:dony/core/design/design_system.dart';
+import 'package:yadony/core/design/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -1413,33 +1413,33 @@ class SettingsScreen extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: DonyAppBar(title: 'Paramètres'),
+      appBar: YadonyAppBar(title: 'Paramètres'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(
-          horizontal: DonySpacing.lg,
-          vertical: DonySpacing.xl,
+          horizontal: YadonySpacing.lg,
+          vertical: YadonySpacing.xl,
         ),
         child: Column(
           children: [
-            DonyListSection(
+            YadonyListSection(
               tiles: [
-                DonyListTile(
+                YadonyListTile(
                   icon: Icons.notifications_outlined,
-                  iconColor: DonyColors.warning,
-                  iconBgColor: DonyColors.warningLight,
+                  iconColor: YadonyColors.warning,
+                  iconBgColor: YadonyColors.warningLight,
                   label: 'Notifications',
                   showDivider: false,
                   onTap: () {},
                 ),
               ],
             ),
-            const SizedBox(height: DonySpacing.base),
-            DonyListSection(
+            const SizedBox(height: YadonySpacing.base),
+            YadonyListSection(
               tiles: [
-                DonyListTile(
+                YadonyListTile(
                   icon: Icons.delete_outline_rounded,
-                  iconColor: DonyColors.error,
-                  iconBgColor: DonyColors.errorLight,
+                  iconColor: YadonyColors.error,
+                  iconBgColor: YadonyColors.errorLight,
                   label: 'Supprimer mon compte',
                   showDivider: false,
                   onTap: () => context.push('/settings/delete-account'),
@@ -1465,8 +1465,8 @@ Expected: All 3 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dony_app/lib/features/settings/presentation/settings_screen.dart \
-        dony_app/test/features/settings/presentation/settings_screen_test.dart
+git add yadony_app/lib/features/settings/presentation/settings_screen.dart \
+        yadony_app/test/features/settings/presentation/settings_screen_test.dart
 git commit -m "feat(flutter): add SettingsScreen with delete account entry"
 ```
 
@@ -1475,17 +1475,17 @@ git commit -m "feat(flutter): add SettingsScreen with delete account entry"
 ## Task 9: Wire routes + update ProfileScreen
 
 **Files:**
-- Modify: `dony_app/lib/app/router.dart`
-- Modify: `dony_app/lib/features/profile/presentation/profile_screen.dart`
+- Modify: `yadony_app/lib/app/router.dart`
+- Modify: `yadony_app/lib/features/profile/presentation/profile_screen.dart`
 
 - [ ] **Step 1: Add imports to router.dart**
 
 Add at the top of `router.dart` alongside existing imports:
 
 ```dart
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/settings/presentation/delete_account_screen.dart';
-import 'package:dony/features/settings/presentation/settings_screen.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/settings/presentation/delete_account_screen.dart';
+import 'package:yadony/features/settings/presentation/settings_screen.dart';
 ```
 
 - [ ] **Step 2: Add /settings routes to router.dart**
@@ -1541,9 +1541,9 @@ GoRoute(
 Add at the top alongside existing imports:
 
 ```dart
-import 'package:dony/features/auth/bloc/auth_event.dart';
-import 'package:dony/features/settings/bloc/account_deletion_bloc.dart';
-import 'package:dony/features/profile/presentation/widgets/pending_deletion_banner.dart';
+import 'package:yadony/features/auth/bloc/auth_event.dart';
+import 'package:yadony/features/settings/bloc/account_deletion_bloc.dart';
+import 'package:yadony/features/profile/presentation/widgets/pending_deletion_banner.dart';
 ```
 
 - [ ] **Step 5: Add BlocListener for AccountDeletionBloc in profile_screen.dart**
@@ -1598,16 +1598,16 @@ if (user != null && user.isPendingDeletion && user.deletionRequestedAt != null) 
         .read<AccountDeletionBloc>()
         .add(const ReactivateAccount()),
   ).animate().fadeIn(delay: 160.ms),
-  const SizedBox(height: DonySpacing.lg),
+  const SizedBox(height: YadonySpacing.lg),
 ],
 ```
 
 - [ ] **Step 7: Add Settings tile to profile menu**
 
-In the second `DonyListSection` (the settings menu, the one with Notifications, Langue, etc.), add a Settings tile at the top:
+In the second `YadonyListSection` (the settings menu, the one with Notifications, Langue, etc.), add a Settings tile at the top:
 
 ```dart
-DonyListTile(
+YadonyListTile(
   icon: Icons.settings_outlined,
   iconColor: cs.onSurfaceVariant,
   iconBgColor: cs.outline.withValues(alpha: 0.3),
@@ -1619,7 +1619,7 @@ DonyListTile(
 - [ ] **Step 8: Run all Flutter tests**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test
 ```
 
@@ -1637,8 +1637,8 @@ Expected: No issues found (or only pre-existing warnings, 0 new errors).
 
 ```bash
 cd /home/a-diakite/Desktop/MyProject/my_app
-git add dony_app/lib/app/router.dart \
-        dony_app/lib/features/profile/presentation/profile_screen.dart
+git add yadony_app/lib/app/router.dart \
+        yadony_app/lib/features/profile/presentation/profile_screen.dart
 git commit -m "feat(flutter): wire settings routes and pending deletion banner in profile"
 ```
 
@@ -1649,7 +1649,7 @@ git commit -m "feat(flutter): wire settings routes and pending deletion banner i
 - [ ] **Run full test suite**
 
 ```bash
-cd /home/a-diakite/Desktop/MyProject/my_app/dony_app
+cd /home/a-diakite/Desktop/MyProject/my_app/yadony_app
 flutter test --coverage
 ```
 

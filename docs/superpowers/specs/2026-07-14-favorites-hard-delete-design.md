@@ -70,7 +70,7 @@ toujours vraie).
 
 ## Hors scope
 
-- **Frontend (dony_app)** : aucun changement — contrat API identique (mêmes endpoints,
+- **Frontend (yadony_app)** : aucun changement — contrat API identique (mêmes endpoints,
   toggle idempotent).
 - Structure des index / colonne `deleted_at` : conservées.
 

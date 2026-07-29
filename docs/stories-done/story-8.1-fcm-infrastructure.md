@@ -7,16 +7,16 @@
 Infrastructure FCM complète : `FcmService` envoie des push via Firebase Admin SDK, `NotificationDispatcher` est le point central unique d'envoi, et l'endpoint `PUT /auth/me/fcm-token` stocke les tokens FCM des appareils Flutter.
 
 ## Fichiers créés
-- `src/main/java/com/dony/api/notifications/NotificationDispatcher.java` — point d'entrée unique pour toutes les notifications sortantes
-- `src/main/java/com/dony/api/auth/dto/FcmTokenRequest.java` — DTO pour l'enregistrement du token
+- `src/main/java/com/yadony/api/notifications/NotificationDispatcher.java` — point d'entrée unique pour toutes les notifications sortantes
+- `src/main/java/com/yadony/api/auth/dto/FcmTokenRequest.java` — DTO pour l'enregistrement du token
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/notifications/FcmService.java` — remplacé le stub dev par l'implémentation Firebase Admin SDK complète
-- `src/main/java/com/dony/api/auth/AuthController.java` — ajout `PUT /auth/me/fcm-token`
-- `src/main/java/com/dony/api/auth/AuthService.java` — ajout `updateFcmToken()`
-- `src/main/java/com/dony/api/tracking/TrackingService.java` — migré de `FcmService` direct vers `NotificationDispatcher`
-- `src/test/java/com/dony/api/tracking/TrackingServiceTest.java` — mis à jour pour `NotificationDispatcher`
-- `src/test/java/com/dony/api/payments/PaymentServiceTest.java` — corrigé l'erreur code (`bid-not-payable`)
+- `src/main/java/com/yadony/api/notifications/FcmService.java` — remplacé le stub dev par l'implémentation Firebase Admin SDK complète
+- `src/main/java/com/yadony/api/auth/AuthController.java` — ajout `PUT /auth/me/fcm-token`
+- `src/main/java/com/yadony/api/auth/AuthService.java` — ajout `updateFcmToken()`
+- `src/main/java/com/yadony/api/tracking/TrackingService.java` — migré de `FcmService` direct vers `NotificationDispatcher`
+- `src/test/java/com/yadony/api/tracking/TrackingServiceTest.java` — mis à jour pour `NotificationDispatcher`
+- `src/test/java/com/yadony/api/payments/PaymentServiceTest.java` — corrigé l'erreur code (`bid-not-payable`)
 
 ## Comment ça fonctionne
 
@@ -41,8 +41,8 @@ Infrastructure FCM complète : `FcmService` envoie des push via Firebase Admin S
 
 ### Configuration Android
 Deux canaux définis (côté Flutter) :
-- `dony_general` — notifications générales
-- `dony_transactional` — haute priorité (paiements, livraisons)
+- `yadony_general` — notifications générales
+- `yadony_transactional` — haute priorité (paiements, livraisons)
 
 ## Critères d'acceptation couverts
 - [x] Token FCM stocké dans `UserEntity.fcmToken` à chaque connexion Flutter

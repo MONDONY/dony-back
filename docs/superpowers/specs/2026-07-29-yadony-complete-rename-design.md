@@ -1,24 +1,24 @@
-# Renommage complet de Dony vers Yadony
+# Renommage complet de Yadony vers Yadony
 
 ## Objectif
 
 Faire de **Yadony** l'unique nom actif du backend et remplacer le domaine
-`dony.store` par `yadony.com`, sans altérer l'historique des migrations Flyway.
+`yadony.com` par `yadony.com`, sans altérer l'historique des migrations Flyway.
 
 ## Périmètre
 
-- Remplacer les variantes de marque `Dony`, `dony` et `DONY` par
+- Remplacer les variantes de marque `Yadony`, `yadony` et `YADONY` par
   `Yadony`, `yadony` et `YADONY`.
-- Déplacer les packages Java et les tests de `com.dony.api` vers
+- Déplacer les packages Java et les tests de `com.yadony.api` vers
   `com.yadony.api`.
-- Renommer les classes techniques portant le préfixe `Dony`, notamment
+- Renommer les classes techniques portant le préfixe `Yadony`, notamment
   l'application Spring Boot, les propriétés de configuration et les exceptions.
 - Renommer les préfixes de propriétés, variables d'environnement, artefacts
   Maven, services et ressources Docker, bases PostgreSQL, buckets et exemples de
   commandes.
-- Remplacer `dony.store` et tous ses sous-domaines par `yadony.com` et les
+- Remplacer `yadony.com` et tous ses sous-domaines par `yadony.com` et les
   sous-domaines correspondants.
-- Remplacer le schéma de deep link `dony://` par `yadony://`.
+- Remplacer le schéma de deep link `yadony://` par `yadony://`.
 - Mettre à jour les tests, scripts, fichiers d'environnement et la
   documentation suivis par Git.
 - Préserver la modification locale existante de `application-dev.yml`.

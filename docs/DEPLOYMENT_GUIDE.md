@@ -1,6 +1,6 @@
 # 📚 Guide Complet de Déploiement en Production
 
-**Application:** dony Backend (Spring Boot 3.4.x)  
+**Application:** Yadony Backend (Spring Boot 3.4.x)
 **Date:** 2026-05-02  
 **Status:** Documentation officielle
 
@@ -25,7 +25,7 @@
 
 ## 🖥️ Sélection du VPS OVH
 
-### Analyse des Besoins de dony
+### Analyse des Besoins de yadony
 
 ```
 Application:
@@ -106,7 +106,7 @@ Ressources estimées:
 │  └──────────────────────────────────────────────────┘   │
 │                                                         │
 │  Volumes:                                              │
-│  ├── dony_db_prod_data/ (PostgreSQL persistent)       │
+│  ├── yadony_db_prod_data/ (PostgreSQL persistent)       │
 │  ├── backups/ (7 jours d'historique)                  │
 │  ├── nginx/certs/ (SSL certificates)                  │
 │  └── .env (secrets via env vars)                      │
@@ -141,7 +141,7 @@ Ressources estimées:
 
 ```bash
 # Générer une clé SSH si vous n'en avez pas
-ssh-keygen -t ed25519 -f ~/.ssh/ovh_deploy -C "dony-deploy"
+ssh-keygen -t ed25519 -f ~/.ssh/ovh_deploy -C "yadony-deploy"
 
 # Copier la clé publique sur le serveur
 ssh-copy-id -i ~/.ssh/ovh_deploy.pub root@<IP_OVH>
@@ -177,11 +177,11 @@ sudo usermod -aG docker $USER
 newgrp docker
 
 echo "📁 Création de la structure de dossiers..."
-mkdir -p ~/dony
-mkdir -p ~/dony/nginx/{certs,www}
-mkdir -p ~/dony/backups
+mkdir -p ~/yadony
+mkdir -p ~/yadony/nginx/{certs,www}
+mkdir -p ~/yadony/backups
 
-chmod 755 ~/dony/backups
+chmod 755 ~/yadony/backups
 
 echo "✅ Installation terminée!"
 docker --version
@@ -192,8 +192,8 @@ docker-compose --version
 
 ```bash
 cd ~
-git clone https://github.com/votre-org/dony-back.git dony
-cd dony
+git clone https://github.com/votre-org/yadony-back.git yadony
+cd yadony
 
 # Copier le docker-compose.prod.yml depuis votre repo
 # (Vous devez avoir ces fichiers en git)
@@ -202,12 +202,12 @@ cd dony
 ### Étape 5: Créer le Fichier .env
 
 ```bash
-cd ~/dony
+cd ~/yadony
 
 # Créer le fichier .env avec les secrets
 cat > .env << 'EOF'
 # ========== DATABASE ==========
-DB_USERNAME=dony_prod
+DB_USERNAME=yadony_prod
 DB_PASSWORD=$(openssl rand -base64 32)
 
 # ========== STRIPE ==========
@@ -227,7 +227,7 @@ SENTRY_DSN=https://xxxxx@sentry.io/xxxxx
 # Obtenir de: Hetzner Console → Storage
 HETZNER_S3_ENDPOINT=https://storage.fr-fsn1.example.com
 HETZNER_S3_REGION=fr-fsn1
-HETZNER_S3_BUCKET=dony-prod
+HETZNER_S3_BUCKET=yadony-prod
 HETZNER_S3_ACCESS_KEY=YOUR_ACCESS_KEY
 HETZNER_S3_SECRET_KEY=YOUR_SECRET_KEY
 
@@ -257,17 +257,17 @@ echo "✅ Fichier .env créé (à compléter avec les clés réelles)"
 
 ```bash
 # Depuis votre machine locale
-scp -i ~/.ssh/ovh_deploy firebase-service-account.json root@<IP_OVH>:~/dony/
+scp -i ~/.ssh/ovh_deploy firebase-service-account.json root@<IP_OVH>:~/yadony/
 
 # Vérifier
-ssh -i ~/.ssh/ovh_deploy root@<IP_OVH> "ls -la ~/dony/firebase-service-account.json"
+ssh -i ~/.ssh/ovh_deploy root@<IP_OVH> "ls -la ~/yadony/firebase-service-account.json"
 ```
 
 ### Étape 7: Générer le Certificat SSL (Let's Encrypt)
 
 ```bash
 # Sur le serveur
-cd ~/dony
+cd ~/yadony
 
 # Créer le fichier www si pas présent
 mkdir -p nginx/www
@@ -316,7 +316,7 @@ SENTRY_ORG
   Valeur: votre-org (slug de l'organisation Sentry)
 
 SENTRY_PROJECT
-  Valeur: dony-back (slug du projet)
+  Valeur: yadony-back (slug du projet)
 ```
 
 **Comment obtenir la clé SSH privée pour GitHub:**
@@ -332,7 +332,7 @@ cat ~/.ssh/ovh_deploy
 
 ```bash
 # Sur le serveur, éditer le .env
-nano ~/dony/.env
+nano ~/yadony/.env
 
 # Remplir avec les vraies valeurs:
 # - STRIPE_SECRET_KEY (de Stripe Dashboard)
@@ -343,7 +343,7 @@ nano ~/dony/.env
 # Sauvegarder (Ctrl+O, Enter, Ctrl+X)
 
 # Vérifier
-cat ~/dony/.env
+cat ~/yadony/.env
 ```
 
 ---
@@ -353,7 +353,7 @@ cat ~/dony/.env
 ### Étape 1: Tester la Configuration
 
 ```bash
-cd ~/dony
+cd ~/yadony
 
 # Valider docker-compose.prod.yml
 docker compose -f docker-compose.prod.yml config --quiet
@@ -402,10 +402,10 @@ docker compose -f docker-compose.prod.yml ps
 
 # Exemple de sortie:
 # NAME              STATUS      PORTS
-# dony_api          Up 5 minutes (healthy)
-# dony_db_prod      Up 5 minutes (healthy)
-# dony_db_backup    Up 5 minutes
-# dony_nginx        Up 5 minutes 0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+# yadony_api          Up 5 minutes (healthy)
+# yadony_db_prod      Up 5 minutes (healthy)
+# yadony_db_backup    Up 5 minutes
+# yadony_nginx        Up 5 minutes 0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
 ```
 
 ---
@@ -428,7 +428,7 @@ docker compose -f docker-compose.prod.yml ps
    │   ├── Push sur ghcr.io
    │   │
    │   ├── SSH au serveur OVH
-   │   ├── docker pull ghcr.io/mondony/dony-back:latest
+   │   ├── docker pull ghcr.io/yadony/yadony-back:latest
    │   ├── docker compose up -d --no-deps api
    │   │
    │   ├── Health check (retry 12× pendant 60s)
@@ -461,7 +461,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 docker compose -f docker-compose.prod.yml logs --tail 100 api
 
 # Voir les logs Nginx
-docker exec dony_nginx tail -f /var/log/nginx/access.log
+docker exec yadony_nginx tail -f /var/log/nginx/access.log
 ```
 
 ---
@@ -593,8 +593,8 @@ docker compose -f docker-compose.prod.yml logs --timestamps api
 docker compose -f docker-compose.prod.yml logs --since 10m api
 
 # Logs Nginx
-docker exec dony_nginx tail -f /var/log/nginx/access.log
-docker exec dony_nginx tail -f /var/log/nginx/error.log
+docker exec yadony_nginx tail -f /var/log/nginx/access.log
+docker exec yadony_nginx tail -f /var/log/nginx/error.log
 ```
 
 ### Monitoring Système
@@ -607,16 +607,16 @@ docker stats
 df -h /
 
 # Vérifier les backups
-ls -lah ~/dony/backups/
+ls -lah ~/yadony/backups/
 
 # Derniers backups (5 plus récents)
-ls -lah ~/dony/backups/ | tail -6
+ls -lah ~/yadony/backups/ | tail -6
 ```
 
 ### Sentry (Erreurs en Production)
 
 1. **Accès:** https://sentry.io
-2. **Projet:** dony-back
+2. **Projet:** yadony-back
 3. **Issues:** liste de tous les errors/exceptions
 4. **Releases:** historique des déploiements
 
@@ -655,16 +655,16 @@ docker compose -f docker-compose.prod.yml logs api | tail -100
 
 # 3. Récupérer l'image précédente
 # Docker garde les dernières images — voir l'historique
-docker images | grep dony-back | head -5
+docker images | grep yadony-back | head -5
 
 # 4. Redémarrer avec l'image précédente (si nécessaire)
 # Éditer docker-compose.prod.yml et changer l'image tag
 nano docker-compose.prod.yml
 
 # Changer:
-# image: ghcr.io/mondony/dony-back:latest
+# image: ghcr.io/yadony/yadony-back:latest
 # En:
-# image: ghcr.io/mondony/dony-back:sha-xxxxxxx  # ancien commit
+# image: ghcr.io/yadony/yadony-back:sha-xxxxxxx  # ancien commit
 
 # 5. Redémarrer
 docker compose -f docker-compose.prod.yml pull api
@@ -678,17 +678,17 @@ curl -s https://api.votredomaine.com/api/v1/actuator/health
 
 ```bash
 # 1. Lister les backups disponibles
-ls -la ~/dony/backups/
+ls -la ~/yadony/backups/
 
 # 2. Arrêter les services qui utilisent la DB
 docker compose -f docker-compose.prod.yml down api db-backup
 
 # 3. Vider la base actuelle
-docker exec dony_db_prod dropdb -U dony_prod dony_prod
+docker exec yadony_db_prod dropdb -U yadony_prod yadony_prod
 
 # 4. Restaurer depuis le backup
-gunzip -c ~/dony/backups/backup_YYYYMMDD_HHMMSS.sql.gz | \
-  docker exec -i dony_db_prod psql -U dony_prod dony_prod
+gunzip -c ~/yadony/backups/backup_YYYYMMDD_HHMMSS.sql.gz | \
+  docker exec -i yadony_db_prod psql -U yadony_prod yadony_prod
 
 # 5. Redémarrer
 docker compose -f docker-compose.prod.yml up -d
@@ -702,7 +702,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 ```bash
 # Voir la date d'expiration
-openssl x509 -enddate -noout -in ~/dony/nginx/certs/fullchain.pem
+openssl x509 -enddate -noout -in ~/yadony/nginx/certs/fullchain.pem
 
 # Résultat:
 # notAfter=May  4 10:00:00 2027 GMT
@@ -716,11 +716,11 @@ openssl x509 -enddate -noout -in ~/dony/nginx/certs/fullchain.pem
 sudo certbot renew --force-renewal
 
 # Copier les nouveaux certs dans nginx
-sudo cp /etc/letsencrypt/live/api.votredomaine.com/* ~/dony/nginx/certs/
-sudo chown -R $USER:$USER ~/dony/nginx/certs
+sudo cp /etc/letsencrypt/live/api.votredomaine.com/* ~/yadony/nginx/certs/
+sudo chown -R $USER:$USER ~/yadony/nginx/certs
 
 # Recharger Nginx (sans downtime)
-docker exec dony_nginx nginx -s reload
+docker exec yadony_nginx nginx -s reload
 
 # Vérifier
 echo "SSL renouvellé" && date
@@ -733,7 +733,7 @@ echo "SSL renouvellé" && date
 crontab -e
 
 # Ajouter cette ligne:
-0 3 1 * * sudo certbot renew --quiet && sudo cp /etc/letsencrypt/live/api.votredomaine.com/* ~/dony/nginx/certs/ && docker exec dony_nginx nginx -s reload
+0 3 1 * * sudo certbot renew --quiet && sudo cp /etc/letsencrypt/live/api.votredomaine.com/* ~/yadony/nginx/certs/ && docker exec yadony_nginx nginx -s reload
 
 # Sauvegarder (Ctrl+O, Enter, Ctrl+X)
 ```
@@ -759,8 +759,8 @@ curl -s https://api.votredomaine.com/api/v1/actuator/health | jq .status
 df -h /
 
 # Vérifier les backups
-ls -lah ~/dony/backups/ | wc -l
-echo "Backups: $(ls ~/dony/backups/ | wc -l) fichiers"
+ls -lah ~/yadony/backups/ | wc -l
+echo "Backups: $(ls ~/yadony/backups/ | wc -l) fichiers"
 
 # Nettoyer les images Docker inutilisées
 docker image prune -f
@@ -773,7 +773,7 @@ docker image prune -f
 sudo apt-get update && sudo apt-get upgrade -y
 
 # Vérifier l'expiration SSL
-openssl x509 -enddate -noout -in ~/dony/nginx/certs/fullchain.pem
+openssl x509 -enddate -noout -in ~/yadony/nginx/certs/fullchain.pem
 
 # Revoir les logs Sentry pour tendances
 # https://sentry.io → Releases
@@ -800,7 +800,7 @@ docker compose -f docker-compose.prod.yml logs db
 # 2. Erreur Firebase
 # "Failed to verify ID token"
 # → Vérifier: firebase-service-account.json existe et est valide
-ls -la ~/dony/firebase-service-account.json
+ls -la ~/yadony/firebase-service-account.json
 
 # 3. Erreur mémoire (OutOfMemory)
 # "java.lang.OutOfMemoryError"
@@ -816,7 +816,7 @@ docker compose -f docker-compose.prod.yml logs db
 
 # Réinitialiser la base (⚠️ DESTRUCTEUR)
 docker compose -f docker-compose.prod.yml down -v
-docker volume rm dony_db_prod_data
+docker volume rm yadony_db_prod_data
 
 # Redémarrer
 docker compose -f docker-compose.prod.yml up -d db
@@ -826,18 +826,18 @@ docker compose -f docker-compose.prod.yml up -d db
 
 ```bash
 # Vérifier les fichiers existent
-ls -la ~/dony/nginx/certs/
+ls -la ~/yadony/nginx/certs/
 
 # Vérifier les permissions
-chmod 644 ~/dony/nginx/certs/fullchain.pem
-chmod 644 ~/dony/nginx/certs/privkey.pem
-chmod 755 ~/dony/nginx/certs/
+chmod 644 ~/yadony/nginx/certs/fullchain.pem
+chmod 644 ~/yadony/nginx/certs/privkey.pem
+chmod 755 ~/yadony/nginx/certs/
 
 # Recharger Nginx
-docker exec dony_nginx nginx -s reload
+docker exec yadony_nginx nginx -s reload
 
 # Vérifier syntaxe
-docker exec dony_nginx nginx -t
+docker exec yadony_nginx nginx -t
 ```
 
 ### Backups ne se créent pas
@@ -847,11 +847,11 @@ docker exec dony_nginx nginx -t
 docker compose -f docker-compose.prod.yml logs db-backup
 
 # Tester manuellement la commande pg_dump
-docker exec dony_db_backup pg_dump -h db -U dony_prod dony_prod | gzip > /tmp/test.sql.gz
+docker exec yadony_db_backup pg_dump -h db -U yadony_prod yadony_prod | gzip > /tmp/test.sql.gz
 
 # Vérifier les permissions
-ls -la ~/dony/backups/
-chmod 755 ~/dony/backups/
+ls -la ~/yadony/backups/
+chmod 755 ~/yadony/backups/
 ```
 
 ### Problèmes de Rate Limiting
@@ -861,7 +861,7 @@ chmod 755 ~/dony/backups/
 for i in {1..50}; do curl https://api.votredomaine.com/api/v1/auth/login; done
 
 # Voir les 429 (Too Many Requests)
-docker exec dony_nginx tail -f /var/log/nginx/access.log | grep 429
+docker exec yadony_nginx tail -f /var/log/nginx/access.log | grep 429
 
 # Augmenter les limites si besoin (dans nginx.conf):
 # rate=30r/m  →  rate=60r/m  (pour API générale)
@@ -930,4 +930,4 @@ docker exec dony_nginx tail -f /var/log/nginx/access.log | grep 429
 
 **Date: 2026-05-02**  
 **Version: 1.0**  
-**Mainteneur: Équipe dony**
+**Mainteneur: Équipe yadony**

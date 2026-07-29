@@ -78,7 +78,7 @@ Un expéditeur ayant un bid accepté peut initier le paiement via Stripe Flutter
 
 **Guard `charges_enabled` du voyageur** : si `traveler.stripeOnboarded = false`, l'API retourne `422` — le voyageur doit d'abord compléter l'onboarding (Story 6.2).
 
-**Commission configurée** : `dony.commission.rate` (défaut 0.12) — changeable sans recompiler.
+**Commission configurée** : `yadony.commission.rate` (défaut 0.12) — changeable sans recompiler.
 
 ### Pièges et points d'attention
 
@@ -94,7 +94,7 @@ Un expéditeur ayant un bid accepté peut initier le paiement via Stripe Flutter
 - [x] **And** `payment.status = ESCROW` est enregistré en base → webhook `payment_intent.amount_capturable_updated` → `handlePaymentEscrowActive()`
 - [x] **And** aucun virement n'est déclenché vers le voyageur à ce stade → `capture_method: manual` garantit l'absence de transfer immédiat
 - [x] **Given** un paiement Stripe échoué **When** le webhook `payment_intent.payment_failed` arrive **Then** `payment.status = FAILED` → `handlePaymentFailed()`
-- [x] **Given** une commission dony de 12% sur 50€ **Then** `application_fee_amount = 600` centimes → `commission = amount × commissionRate (0.12)`
+- [x] **Given** une commission yadony de 12% sur 50€ **Then** `application_fee_amount = 600` centimes → `commission = amount × commissionRate (0.12)`
 
 ## Décisions techniques
 

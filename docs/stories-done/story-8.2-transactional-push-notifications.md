@@ -8,18 +8,18 @@ Implémentation des notifications push automatiques pour tous les événements m
 
 ## Fichiers créés
 
-- `src/main/java/com/dony/api/matching/events/BidCreatedEvent.java` — event publié par `BidService` après création d'une offre, enrichi avec le nom de l'expéditeur et le corridor
-- `src/main/java/com/dony/api/payments/events/PaymentReleasedEvent.java` — event publié par `DeliveryEventListener` après capture Stripe réussie
-- `src/main/java/com/dony/api/disputes/events/DisputeOpenedEvent.java` — event déclaré pour Epic 10, structure prête pour quand `DisputeService` le publiera
-- `src/test/java/com/dony/api/notifications/NotificationDispatcherTest.java` — 11 tests unitaires couvrant tous les event listeners
+- `src/main/java/com/yadony/api/matching/events/BidCreatedEvent.java` — event publié par `BidService` après création d'une offre, enrichi avec le nom de l'expéditeur et le corridor
+- `src/main/java/com/yadony/api/payments/events/PaymentReleasedEvent.java` — event publié par `DeliveryEventListener` après capture Stripe réussie
+- `src/main/java/com/yadony/api/disputes/events/DisputeOpenedEvent.java` — event déclaré pour Epic 10, structure prête pour quand `DisputeService` le publiera
+- `src/test/java/com/yadony/api/notifications/NotificationDispatcherTest.java` — 11 tests unitaires couvrant tous les event listeners
 
 ## Fichiers modifiés
 
-- `src/main/java/com/dony/api/notifications/NotificationDispatcher.java` — ajout de tous les `@EventListener` pour les 8 types d'événements ; ajout injection `UserRepository` pour lookup du prénom du voyageur sur `BidAcceptedEvent`
-- `src/main/java/com/dony/api/matching/BidService.java` — publication de `BidCreatedEvent` après sauvegarde du bid, avec prénom de l'expéditeur et corridor formaté
-- `src/main/java/com/dony/api/payments/DeliveryEventListener.java` — ajout `ApplicationEventPublisher` et publication de `PaymentReleasedEvent` après capture Stripe réussie
-- `src/main/java/com/dony/api/tracking/events/DeliveryConfirmedEvent.java` — enrichissement avec `travelerId` (était absent, nécessaire pour `PaymentReleasedEvent`)
-- `src/main/java/com/dony/api/tracking/TrackingService.java` — mise à jour de la publication de `DeliveryConfirmedEvent` pour passer `senderId` et `travelerId`
+- `src/main/java/com/yadony/api/notifications/NotificationDispatcher.java` — ajout de tous les `@EventListener` pour les 8 types d'événements ; ajout injection `UserRepository` pour lookup du prénom du voyageur sur `BidAcceptedEvent`
+- `src/main/java/com/yadony/api/matching/BidService.java` — publication de `BidCreatedEvent` après sauvegarde du bid, avec prénom de l'expéditeur et corridor formaté
+- `src/main/java/com/yadony/api/payments/DeliveryEventListener.java` — ajout `ApplicationEventPublisher` et publication de `PaymentReleasedEvent` après capture Stripe réussie
+- `src/main/java/com/yadony/api/tracking/events/DeliveryConfirmedEvent.java` — enrichissement avec `travelerId` (était absent, nécessaire pour `PaymentReleasedEvent`)
+- `src/main/java/com/yadony/api/tracking/TrackingService.java` — mise à jour de la publication de `DeliveryConfirmedEvent` pour passer `senderId` et `travelerId`
 
 ## Comment ça fonctionne
 

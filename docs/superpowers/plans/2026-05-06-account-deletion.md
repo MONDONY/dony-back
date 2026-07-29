@@ -4,7 +4,7 @@
 
 **Goal:** Implémenter la suppression de compte avec période de grâce de 30 jours (PENDING_DELETION → BANNED à J+30), archivage immédiat des annonces/bids, et endpoint de réactivation — en corrigeant les violations d'architecture et bugs existants.
 
-**Architecture:** `DELETE /auth/me` passe le compte en `PENDING_DELETION` et publie `AccountDeletionRequestedEvent` ; `matching/` écoute et annule les annonces/bids ouverts. Un scheduler nightly finalise la pseudonymisation RGPD à J+30. `POST /auth/me/reactivate` annule la demande si appelé dans les 30 jours.
+**Architecture:** `DELETE /auth/me` passe le compte en `PENDING_DELETION` et publie `AccountDeletionRequestedEvent` ; `matching/` écoute et annule les annonces/bids ouverts. Un scheduler nightly finalise la pseuyadonymisation RGPD à J+30. `POST /auth/me/reactivate` annule la demande si appelé dans les 30 jours.
 
 **Tech Stack:** Spring Boot 3.4.x, Java 21, JPA/Hibernate, Spring Application Events, Mockito + JUnit 5 (AssertJ), H2 (tests), PostgreSQL 16 (prod)
 
@@ -15,20 +15,20 @@
 | Action | Fichier |
 |--------|---------|
 | Créer | `src/main/resources/db/migration/V50__users_add_deletion_requested_at.sql` |
-| Modifier | `src/main/java/com/dony/api/auth/UserStatus.java` |
-| Modifier | `src/main/java/com/dony/api/auth/UserEntity.java` |
-| Modifier | `src/main/java/com/dony/api/auth/UserRepository.java` |
-| Créer | `src/main/java/com/dony/api/auth/events/AccountDeletionRequestedEvent.java` |
-| Modifier | `src/main/java/com/dony/api/auth/UserService.java` |
-| Modifier | `src/main/java/com/dony/api/auth/AuthService.java` |
-| Modifier | `src/main/java/com/dony/api/auth/AuthController.java` |
-| Créer | `src/main/java/com/dony/api/auth/AccountDeletionScheduler.java` |
-| Modifier | `src/main/java/com/dony/api/matching/AnnouncementRepository.java` |
-| Modifier | `src/main/java/com/dony/api/matching/BidRepository.java` |
-| Créer | `src/main/java/com/dony/api/matching/AccountDeletionListener.java` |
-| Créer | `src/test/java/com/dony/api/auth/UserServiceDeleteAccountTest.java` |
-| Créer | `src/test/java/com/dony/api/auth/AccountDeletionSchedulerTest.java` |
-| Créer | `src/test/java/com/dony/api/matching/AccountDeletionListenerTest.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/UserStatus.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/UserEntity.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/UserRepository.java` |
+| Créer | `src/main/java/com/yadony/api/auth/events/AccountDeletionRequestedEvent.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/UserService.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/AuthService.java` |
+| Modifier | `src/main/java/com/yadony/api/auth/AuthController.java` |
+| Créer | `src/main/java/com/yadony/api/auth/AccountDeletionScheduler.java` |
+| Modifier | `src/main/java/com/yadony/api/matching/AnnouncementRepository.java` |
+| Modifier | `src/main/java/com/yadony/api/matching/BidRepository.java` |
+| Créer | `src/main/java/com/yadony/api/matching/AccountDeletionListener.java` |
+| Créer | `src/test/java/com/yadony/api/auth/UserServiceDeleteAccountTest.java` |
+| Créer | `src/test/java/com/yadony/api/auth/AccountDeletionSchedulerTest.java` |
+| Créer | `src/test/java/com/yadony/api/matching/AccountDeletionListenerTest.java` |
 
 ---
 
@@ -49,7 +49,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ;
 - [ ] **Step 2: Vérifier que la migration est valide**
 
 ```bash
-cd dony-back
+cd yadony-back
 ./mvnw flyway:validate -Dspring.profiles.active=dev
 ```
 
@@ -67,15 +67,15 @@ git commit -m "feat: add deletion_requested_at column to users (V50)"
 ## Task 2 : UserStatus + UserEntity — modèle de données
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/auth/UserStatus.java`
-- Modify: `src/main/java/com/dony/api/auth/UserEntity.java`
+- Modify: `src/main/java/com/yadony/api/auth/UserStatus.java`
+- Modify: `src/main/java/com/yadony/api/auth/UserEntity.java`
 
 - [ ] **Step 1: Ajouter PENDING_DELETION à UserStatus**
 
 Remplacer le contenu de `UserStatus.java` :
 
 ```java
-package com.dony.api.auth;
+package com.yadony.api.auth;
 
 public enum UserStatus {
     ACTIVE, SUSPENDED, BANNED, PENDING_DELETION
@@ -109,8 +109,8 @@ Expected : BUILD SUCCESS
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/UserStatus.java \
-        src/main/java/com/dony/api/auth/UserEntity.java
+git add src/main/java/com/yadony/api/auth/UserStatus.java \
+        src/main/java/com/yadony/api/auth/UserEntity.java
 git commit -m "feat: add PENDING_DELETION status and deletionRequestedAt to UserEntity"
 ```
 
@@ -119,7 +119,7 @@ git commit -m "feat: add PENDING_DELETION status and deletionRequestedAt to User
 ## Task 3 : UserRepository — nouvelle query
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/auth/UserRepository.java`
+- Modify: `src/main/java/com/yadony/api/auth/UserRepository.java`
 
 - [ ] **Step 1: Ajouter findByStatusAndDeletionRequestedAtBefore**
 
@@ -147,7 +147,7 @@ Expected : BUILD SUCCESS
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/UserRepository.java
+git add src/main/java/com/yadony/api/auth/UserRepository.java
 git commit -m "feat: add findByStatusAndDeletionRequestedAtBefore to UserRepository"
 ```
 
@@ -156,12 +156,12 @@ git commit -m "feat: add findByStatusAndDeletionRequestedAtBefore to UserReposit
 ## Task 4 : AccountDeletionRequestedEvent
 
 **Files:**
-- Create: `src/main/java/com/dony/api/auth/events/AccountDeletionRequestedEvent.java`
+- Create: `src/main/java/com/yadony/api/auth/events/AccountDeletionRequestedEvent.java`
 
 - [ ] **Step 1: Créer l'event**
 
 ```java
-package com.dony.api.auth.events;
+package com.yadony.api.auth.events;
 
 import java.util.UUID;
 
@@ -188,7 +188,7 @@ Expected : BUILD SUCCESS
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/events/AccountDeletionRequestedEvent.java
+git add src/main/java/com/yadony/api/auth/events/AccountDeletionRequestedEvent.java
 git commit -m "feat: add AccountDeletionRequestedEvent"
 ```
 
@@ -197,8 +197,8 @@ git commit -m "feat: add AccountDeletionRequestedEvent"
 ## Task 5 : Repository queries dans matching/
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/AnnouncementRepository.java`
-- Modify: `src/main/java/com/dony/api/matching/BidRepository.java`
+- Modify: `src/main/java/com/yadony/api/matching/AnnouncementRepository.java`
+- Modify: `src/main/java/com/yadony/api/matching/BidRepository.java`
 
 - [ ] **Step 1: Ajouter cancelOpenAnnouncementsByUserId à AnnouncementRepository**
 
@@ -212,9 +212,9 @@ Ajouter la méthode dans `AnnouncementRepository` :
 
 ```java
 @Modifying
-@Query("UPDATE AnnouncementEntity a SET a.status = com.dony.api.matching.AnnouncementStatus.CANCELLED " +
+@Query("UPDATE AnnouncementEntity a SET a.status = com.yadony.api.matching.AnnouncementStatus.CANCELLED " +
        "WHERE a.travelerId = :userId AND a.status IN " +
-       "(com.dony.api.matching.AnnouncementStatus.ACTIVE, com.dony.api.matching.AnnouncementStatus.FULL)")
+       "(com.yadony.api.matching.AnnouncementStatus.ACTIVE, com.yadony.api.matching.AnnouncementStatus.FULL)")
 int cancelOpenAnnouncementsByUserId(@Param("userId") UUID userId);
 ```
 
@@ -234,20 +234,20 @@ Ajouter les méthodes dans `BidRepository` :
 
 ```java
 @Modifying
-@Query("UPDATE BidEntity b SET b.status = com.dony.api.matching.BidStatus.CANCELLED " +
+@Query("UPDATE BidEntity b SET b.status = com.yadony.api.matching.BidStatus.CANCELLED " +
        "WHERE b.senderId = :userId " +
-       "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
-       "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
-       "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
+       "AND b.status IN (com.yadony.api.matching.BidStatus.PENDING, " +
+       "                 com.yadony.api.matching.BidStatus.ACCEPTED, " +
+       "                 com.yadony.api.matching.BidStatus.AWAITING_PAYMENT)")
 int cancelOpenSenderBidsByUserId(@Param("userId") UUID userId);
 
 @Modifying
-@Query("UPDATE BidEntity b SET b.status = com.dony.api.matching.BidStatus.CANCELLED " +
+@Query("UPDATE BidEntity b SET b.status = com.yadony.api.matching.BidStatus.CANCELLED " +
        "WHERE b.announcementId IN " +
        "  (SELECT a.id FROM AnnouncementEntity a WHERE a.travelerId = :userId) " +
-       "AND b.status IN (com.dony.api.matching.BidStatus.PENDING, " +
-       "                 com.dony.api.matching.BidStatus.ACCEPTED, " +
-       "                 com.dony.api.matching.BidStatus.AWAITING_PAYMENT)")
+       "AND b.status IN (com.yadony.api.matching.BidStatus.PENDING, " +
+       "                 com.yadony.api.matching.BidStatus.ACCEPTED, " +
+       "                 com.yadony.api.matching.BidStatus.AWAITING_PAYMENT)")
 int cancelOpenTravelerBidsByUserId(@Param("userId") UUID userId);
 ```
 
@@ -262,8 +262,8 @@ Expected : BUILD SUCCESS
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/AnnouncementRepository.java \
-        src/main/java/com/dony/api/matching/BidRepository.java
+git add src/main/java/com/yadony/api/matching/AnnouncementRepository.java \
+        src/main/java/com/yadony/api/matching/BidRepository.java
 git commit -m "feat: add bulk-cancel queries for account deletion in AnnouncementRepository and BidRepository"
 ```
 
@@ -272,15 +272,15 @@ git commit -m "feat: add bulk-cancel queries for account deletion in Announcemen
 ## Task 6 : AccountDeletionListener (TDD)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/matching/AccountDeletionListener.java`
-- Create: `src/test/java/com/dony/api/matching/AccountDeletionListenerTest.java`
+- Create: `src/main/java/com/yadony/api/matching/AccountDeletionListener.java`
+- Create: `src/test/java/com/yadony/api/matching/AccountDeletionListenerTest.java`
 
 - [ ] **Step 1: Écrire le test en premier**
 
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.auth.events.AccountDeletionRequestedEvent;
+import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -338,9 +338,9 @@ Expected : FAIL — `AccountDeletionListener` n'existe pas encore
 - [ ] **Step 3: Créer AccountDeletionListener**
 
 ```java
-package com.dony.api.matching;
+package com.yadony.api.matching;
 
-import com.dony.api.auth.events.AccountDeletionRequestedEvent;
+import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -378,8 +378,8 @@ Expected : `Tests run: 3, Failures: 0, Errors: 0`
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/AccountDeletionListener.java \
-        src/test/java/com/dony/api/matching/AccountDeletionListenerTest.java
+git add src/main/java/com/yadony/api/matching/AccountDeletionListener.java \
+        src/test/java/com/yadony/api/matching/AccountDeletionListenerTest.java
 git commit -m "feat: AccountDeletionListener archives announcements and bids on account deletion"
 ```
 
@@ -388,21 +388,21 @@ git commit -m "feat: AccountDeletionListener archives announcements and bids on 
 ## Task 7 : UserService — refactorisation complète (TDD)
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/auth/UserService.java`
-- Create: `src/test/java/com/dony/api/auth/UserServiceDeleteAccountTest.java`
+- Modify: `src/main/java/com/yadony/api/auth/UserService.java`
+- Create: `src/test/java/com/yadony/api/auth/UserServiceDeleteAccountTest.java`
 
 - [ ] **Step 1: Écrire tous les tests**
 
 ```java
-package com.dony.api.auth;
+package com.yadony.api.auth;
 
-import com.dony.api.auth.events.AccountDeletionRequestedEvent;
-import com.dony.api.common.AuditService;
-import com.dony.api.common.DonyBusinessException;
-import com.dony.api.kyc.KycRepository;
-import com.dony.api.kyc.KycVerificationEntity;
-import com.dony.api.payments.PaymentRepository;
-import com.dony.api.payments.PaymentStatus;
+import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.YadonyBusinessException;
+import com.yadony.api.kyc.KycRepository;
+import com.yadony.api.kyc.KycVerificationEntity;
+import com.yadony.api.payments.PaymentRepository;
+import com.yadony.api.payments.PaymentStatus;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -484,7 +484,7 @@ class UserServiceDeleteAccountTest {
             when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(true);
 
             assertThatThrownBy(() -> userService.requestDeletion(FIREBASE_UID))
-                .isInstanceOf(DonyBusinessException.class)
+                .isInstanceOf(YadonyBusinessException.class)
                 .extracting("status")
                 .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
         }
@@ -547,7 +547,7 @@ class UserServiceDeleteAccountTest {
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
 
             assertThatThrownBy(() -> userService.reactivateAccount(FIREBASE_UID))
-                .isInstanceOf(DonyBusinessException.class)
+                .isInstanceOf(YadonyBusinessException.class)
                 .extracting("status")
                 .isEqualTo(HttpStatus.CONFLICT);
         }
@@ -558,8 +558,8 @@ class UserServiceDeleteAccountTest {
     class FinalizeGdpr {
 
         @Test
-        @DisplayName("pseudonymise + softDelete + KYC supprimé + audit log")
-        void finalizes_pseudonymizesAndSoftDeletes() throws Exception {
+        @DisplayName("pseuyadonymise + softDelete + KYC supprimé + audit log")
+        void finalizes_pseuyadonymizesAndSoftDeletes() throws Exception {
             UserEntity user = makeUser(UserStatus.PENDING_DELETION);
             KycVerificationEntity kyc = new KycVerificationEntity();
             when(kycRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kyc));
@@ -601,12 +601,12 @@ Dans `PaymentRepository.java`, ajouter :
 ```java
 @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM PaymentEntity p " +
        "WHERE p.bidId IN " +
-       "  (SELECT b.id FROM com.dony.api.matching.BidEntity b WHERE b.senderId = :userId " +
+       "  (SELECT b.id FROM com.yadony.api.matching.BidEntity b WHERE b.senderId = :userId " +
        "   UNION " +
-       "   SELECT b2.id FROM com.dony.api.matching.BidEntity b2 " +
-       "   JOIN com.dony.api.matching.AnnouncementEntity a ON b2.announcementId = a.id " +
+       "   SELECT b2.id FROM com.yadony.api.matching.BidEntity b2 " +
+       "   JOIN com.yadony.api.matching.AnnouncementEntity a ON b2.announcementId = a.id " +
        "   WHERE a.travelerId = :userId) " +
-       "AND p.status = com.dony.api.payments.PaymentStatus.ESCROW")
+       "AND p.status = com.yadony.api.payments.PaymentStatus.ESCROW")
 boolean hasActiveEscrowForUser(@Param("userId") UUID userId);
 ```
 
@@ -617,16 +617,16 @@ Remplacer la méthode `deleteAccount` et ajouter `requestDeletion`, `reactivateA
 Contenu complet de `UserService.java` :
 
 ```java
-package com.dony.api.auth;
+package com.yadony.api.auth;
 
-import com.dony.api.auth.dto.UpgradeToProRequest;
-import com.dony.api.auth.events.AccountDeletionRequestedEvent;
-import com.dony.api.auth.events.UserSuspendedEvent;
-import com.dony.api.common.AuditService;
-import com.dony.api.common.DonyBusinessException;
-import com.dony.api.kyc.KycRepository;
-import com.dony.api.kyc.KycVerificationEntity;
-import com.dony.api.payments.PaymentRepository;
+import com.yadony.api.auth.dto.UpgradeToProRequest;
+import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
+import com.yadony.api.auth.events.UserSuspendedEvent;
+import com.yadony.api.common.AuditService;
+import com.yadony.api.common.YadonyBusinessException;
+import com.yadony.api.kyc.KycRepository;
+import com.yadony.api.kyc.KycVerificationEntity;
+import com.yadony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import org.slf4j.Logger;
@@ -696,7 +696,7 @@ public class UserService {
     @Transactional
     public void requestDeletion(String firebaseUid) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyBusinessException(
+                .orElseThrow(() -> new YadonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         if (user.getStatus() == UserStatus.PENDING_DELETION) {
@@ -704,7 +704,7 @@ public class UserService {
         }
 
         if (paymentRepository.hasActiveEscrowForUser(user.getId())) {
-            throw new DonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
+            throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }
 
@@ -720,11 +720,11 @@ public class UserService {
     @Transactional
     public void reactivateAccount(String firebaseUid) {
         UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new DonyBusinessException(
+                .orElseThrow(() -> new YadonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         if (user.getStatus() != UserStatus.PENDING_DELETION) {
-            throw new DonyBusinessException(HttpStatus.CONFLICT, "not-pending-deletion",
+            throw new YadonyBusinessException(HttpStatus.CONFLICT, "not-pending-deletion",
                     "Conflict", "Ce compte n'est pas en cours de suppression");
         }
 
@@ -741,7 +741,7 @@ public class UserService {
     public void finalizeGdprDeletion(UserEntity user) {
         String uid = user.getId().toString();
 
-        user.setEmail("deleted_" + uid + "@dony.app");
+        user.setEmail("deleted_" + uid + "@yadony.app");
         user.setPhoneNumber("+00000000000");
         user.setFirstName("Utilisateur");
         user.setLastName("supprimé");
@@ -765,7 +765,7 @@ public class UserService {
         }
 
         auditService.log("USER", user.getId(), "USER_GDPR_DELETION", user.getId(),
-                Map.of("pseudonymized", true));
+                Map.of("pseuyadonymized", true));
         log.info("GDPR deletion finalized for user {}", uid);
     }
 
@@ -781,7 +781,7 @@ public class UserService {
         UUID userId = user.getId();
 
         if (user.getStripeAccountId() != null && !user.getStripeAccountId().isBlank()) {
-            throw new DonyBusinessException(
+            throw new YadonyBusinessException(
                     HttpStatus.CONFLICT,
                     "stripe-account-exists",
                     "Stripe account already exists",
@@ -791,7 +791,7 @@ public class UserService {
 
         if (request.siret() != null && !request.siret().isBlank()) {
             if (!request.siret().matches("\\d{14}")) {
-                throw new DonyBusinessException(
+                throw new YadonyBusinessException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
                         "invalid-siret",
                         "Invalid SIRET",
@@ -824,7 +824,7 @@ public class UserService {
     @Transactional
     public void unsuspendUser(UUID userId) {
         UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new DonyBusinessException(
+                .orElseThrow(() -> new YadonyBusinessException(
                         HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
 
         user.setStatus(UserStatus.ACTIVE);
@@ -855,9 +855,9 @@ Expected : tous verts (0 failures)
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/UserService.java \
-        src/main/java/com/dony/api/payments/PaymentRepository.java \
-        src/test/java/com/dony/api/auth/UserServiceDeleteAccountTest.java
+git add src/main/java/com/yadony/api/auth/UserService.java \
+        src/main/java/com/yadony/api/payments/PaymentRepository.java \
+        src/test/java/com/yadony/api/auth/UserServiceDeleteAccountTest.java
 git commit -m "feat: refactor UserService with requestDeletion/reactivateAccount/finalizeGdprDeletion (RGPD)"
 ```
 
@@ -866,8 +866,8 @@ git commit -m "feat: refactor UserService with requestDeletion/reactivateAccount
 ## Task 8 : AuthService + AuthController — endpoint reactivate
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/auth/AuthService.java`
-- Modify: `src/main/java/com/dony/api/auth/AuthController.java`
+- Modify: `src/main/java/com/yadony/api/auth/AuthService.java`
+- Modify: `src/main/java/com/yadony/api/auth/AuthController.java`
 
 - [ ] **Step 1: Ajouter reactivateAccount dans AuthService**
 
@@ -912,8 +912,8 @@ Expected : 0 failures
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/AuthService.java \
-        src/main/java/com/dony/api/auth/AuthController.java
+git add src/main/java/com/yadony/api/auth/AuthService.java \
+        src/main/java/com/yadony/api/auth/AuthController.java
 git commit -m "feat: add POST /auth/me/reactivate endpoint"
 ```
 
@@ -922,13 +922,13 @@ git commit -m "feat: add POST /auth/me/reactivate endpoint"
 ## Task 9 : AccountDeletionScheduler (TDD)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/auth/AccountDeletionScheduler.java`
-- Create: `src/test/java/com/dony/api/auth/AccountDeletionSchedulerTest.java`
+- Create: `src/main/java/com/yadony/api/auth/AccountDeletionScheduler.java`
+- Create: `src/test/java/com/yadony/api/auth/AccountDeletionSchedulerTest.java`
 
 - [ ] **Step 1: Écrire le test en premier**
 
 ```java
-package com.dony.api.auth;
+package com.yadony.api.auth;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1045,7 +1045,7 @@ Expected : FAIL — `AccountDeletionScheduler` n'existe pas
 - [ ] **Step 3: Créer AccountDeletionScheduler**
 
 ```java
-package com.dony.api.auth;
+package com.yadony.api.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1100,8 +1100,8 @@ Expected : 0 failures
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/auth/AccountDeletionScheduler.java \
-        src/test/java/com/dony/api/auth/AccountDeletionSchedulerTest.java
+git add src/main/java/com/yadony/api/auth/AccountDeletionScheduler.java \
+        src/test/java/com/yadony/api/auth/AccountDeletionSchedulerTest.java
 git commit -m "feat: AccountDeletionScheduler finalizes GDPR deletion after 30-day grace period"
 ```
 
@@ -1112,7 +1112,7 @@ git commit -m "feat: AccountDeletionScheduler finalizes GDPR deletion after 30-d
 - [ ] **Step 1: Lancer la suite complète**
 
 ```bash
-cd dony-back
+cd yadony-back
 ./mvnw test 2>&1 | tail -20
 ```
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Spring Boot 3.4, Java 21, JPA Specifications, JUnit 5, Mockito, MockMvc.
 
-**Spec :** `../../../dony_app/docs/superpowers/specs/2026-07-22-recherche-modes-colis-trajets-design.md` (§ 3)
+**Spec :** `../../../yadony_app/docs/superpowers/specs/2026-07-22-recherche-modes-colis-trajets-design.md` (§ 3)
 
 ## Global Constraints
 
@@ -27,8 +27,8 @@
 `MatchingService.findMatchingRequests` produit un DTO par couple (trajet, demande). Une demande compatible avec deux trajets du même voyageur apparaît deux fois. C'est sans conséquence sur l'écran actuel qui liste des couples, mais ça produirait des doublons dans une page de résultats. On expose une méthode dédiée qui déduplique par demande en gardant le meilleur score.
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/MatchingService.java:35-59`
-- Test: `src/test/java/com/dony/api/matching/MatchingServiceTest.java`
+- Modify: `src/main/java/com/yadony/api/matching/MatchingService.java:35-59`
+- Test: `src/test/java/com/yadony/api/matching/MatchingServiceTest.java`
 
 **Interfaces:**
 - Consumes: `MatchingService.findMatchingRequests(UUID)` existant, inchangé.
@@ -36,7 +36,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Ajouter à `src/test/java/com/dony/api/matching/MatchingServiceTest.java`. Reprendre les helpers de construction d'entités déjà présents dans ce fichier (`announcement(...)`, `packageRequest(...)` ou équivalents) ; s'ils portent d'autres noms, adapter les appels sans changer les assertions.
+Ajouter à `src/test/java/com/yadony/api/matching/MatchingServiceTest.java`. Reprendre les helpers de construction d'entités déjà présents dans ce fichier (`announcement(...)`, `packageRequest(...)` ou équivalents) ; s'ils portent d'autres noms, adapter les appels sans changer les assertions.
 
 ```java
     @Test
@@ -173,7 +173,7 @@ Expected: FAIL à la compilation — `cannot find symbol: method findBestMatchBy
 
 - [ ] **Step 3: Write minimal implementation**
 
-Dans `src/main/java/com/dony/api/matching/MatchingService.java`, ajouter le record et la méthode juste après `findMatchingRequests` (ligne 59) :
+Dans `src/main/java/com/yadony/api/matching/MatchingService.java`, ajouter le record et la méthode juste après `findMatchingRequests` (ligne 59) :
 
 ```java
     /**
@@ -236,7 +236,7 @@ Expected: PASS, y compris les tests préexistants de la classe.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/MatchingService.java src/test/java/com/dony/api/matching/MatchingServiceTest.java
+git add src/main/java/com/yadony/api/matching/MatchingService.java src/test/java/com/yadony/api/matching/MatchingServiceTest.java
 git commit -m "feat(matching): exposer le meilleur match par demande, dédupliqué et trié
 
 findMatchingRequests produit un DTO par couple (trajet, demande) : une
@@ -250,20 +250,20 @@ meilleur score, ordonnée par score décroissant."
 ### Task 2: Specification `idIn`
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/requests/specification/PackageRequestSpecifications.java`
-- Test: `src/test/java/com/dony/api/requests/specification/PackageRequestSpecificationsTest.java` (créer si absent)
+- Modify: `src/main/java/com/yadony/api/requests/specification/PackageRequestSpecifications.java`
+- Test: `src/test/java/com/yadony/api/requests/specification/PackageRequestSpecificationsTest.java` (créer si absent)
 
 **Interfaces:**
 - Produces: `PackageRequestSpecifications.idIn(Collection<UUID> ids)` — une collection vide produit une `Specification` qui ne matche rien (`cb.disjunction()`), jamais « tout ».
 
 - [ ] **Step 1: Write the failing test**
 
-Créer ou compléter `src/test/java/com/dony/api/requests/specification/PackageRequestSpecificationsTest.java` :
+Créer ou compléter `src/test/java/com/yadony/api/requests/specification/PackageRequestSpecificationsTest.java` :
 
 ```java
-package com.dony.api.requests.specification;
+package com.yadony.api.requests.specification;
 
-import com.dony.api.requests.entity.PackageRequestEntity;
+import com.yadony.api.requests.entity.PackageRequestEntity;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Path;
@@ -352,7 +352,7 @@ Expected: PASS, 2 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/requests/specification/PackageRequestSpecifications.java src/test/java/com/dony/api/requests/specification/PackageRequestSpecificationsTest.java
+git add src/main/java/com/yadony/api/requests/specification/PackageRequestSpecifications.java src/test/java/com/yadony/api/requests/specification/PackageRequestSpecificationsTest.java
 git commit -m "feat(requests): ajouter la specification idIn
 
 Collection vide = ne matche rien, jamais tout : un voyageur sans trajet
@@ -366,9 +366,9 @@ actif ne doit pas voir toutes les demandes de la plateforme."
 Trois champs nullables, renseignés uniquement quand le filtre est actif.
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/requests/dto/PackageRequestSearchResponse.java`
-- Modify: le mapper `packageRequestSearchMapper` (chercher `toSearchResponse` sous `src/main/java/com/dony/api/requests/`)
-- Test: `src/test/java/com/dony/api/requests/dto/` — compléter le test du mapper s'il existe, sinon la vérification passe par la Task 4.
+- Modify: `src/main/java/com/yadony/api/requests/dto/PackageRequestSearchResponse.java`
+- Modify: le mapper `packageRequestSearchMapper` (chercher `toSearchResponse` sous `src/main/java/com/yadony/api/requests/`)
+- Test: `src/test/java/com/yadony/api/requests/dto/` — compléter le test du mapper s'il existe, sinon la vérification passe par la Task 4.
 
 **Interfaces:**
 - Consumes: `MatchingService.MatchInfo` de la Task 1.
@@ -376,12 +376,12 @@ Trois champs nullables, renseignés uniquement quand le filtre est actif.
 
 - [ ] **Step 1: Write the failing test**
 
-Créer `src/test/java/com/dony/api/requests/dto/PackageRequestSearchResponseMatchTest.java` :
+Créer `src/test/java/com/yadony/api/requests/dto/PackageRequestSearchResponseMatchTest.java` :
 
 ```java
-package com.dony.api.requests.dto;
+package com.yadony.api.requests.dto;
 
-import com.dony.api.matching.MatchingService;
+import com.yadony.api.matching.MatchingService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -456,7 +456,7 @@ Dans `PackageRequestSearchResponse.java`, ajouter les trois composants en **fin*
     public record SenderPublicProfile(UUID id, String displayName, double averageRating, int totalRatings, boolean kycVerified, String avatarUrl) {}
 
     /** Copie enrichie des informations de match. Utilisé uniquement quand matchingMyTrips est actif. */
-    public PackageRequestSearchResponse withMatch(com.dony.api.matching.MatchingService.MatchInfo info) {
+    public PackageRequestSearchResponse withMatch(com.yadony.api.matching.MatchingService.MatchInfo info) {
         return new PackageRequestSearchResponse(
                 id, departureCity, arrivalCity,
                 departureLat, departureLng, arrivalLat, arrivalLng,
@@ -491,7 +491,7 @@ Expected: 0 échec.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/requests/dto/PackageRequestSearchResponse.java src/test/java/com/dony/api/requests/dto/PackageRequestSearchResponseMatchTest.java
+git add src/main/java/com/yadony/api/requests/dto/PackageRequestSearchResponse.java src/test/java/com/yadony/api/requests/dto/PackageRequestSearchResponseMatchTest.java
 git add -u
 git commit -m "feat(requests): exposer matchScore, matchedTripId et matchedTripDepartureDate
 
@@ -505,8 +505,8 @@ enrichie."
 ### Task 4: Recherche filtrée par les trajets du voyageur
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/requests/service/PackageRequestService.java:408-416`
-- Test: `src/test/java/com/dony/api/requests/service/PackageRequestServiceMatchingTest.java` (créer)
+- Modify: `src/main/java/com/yadony/api/requests/service/PackageRequestService.java:408-416`
+- Test: `src/test/java/com/yadony/api/requests/service/PackageRequestServiceMatchingTest.java` (créer)
 
 **Interfaces:**
 - Consumes: `MatchingService.findBestMatchByRequestId` (Task 1), `PackageRequestSpecifications.idIn` (Task 2), `PackageRequestSearchResponse.withMatch` (Task 3).
@@ -516,14 +516,14 @@ enrichie."
 
 - [ ] **Step 1: Write the failing test**
 
-Créer `src/test/java/com/dony/api/requests/service/PackageRequestServiceMatchingTest.java` :
+Créer `src/test/java/com/yadony/api/requests/service/PackageRequestServiceMatchingTest.java` :
 
 ```java
-package com.dony.api.requests.service;
+package com.yadony.api.requests.service;
 
-import com.dony.api.matching.MatchingService;
-import com.dony.api.requests.dto.PackageRequestSearchResponse;
-import com.dony.api.requests.entity.PackageRequestEntity;
+import com.yadony.api.matching.MatchingService;
+import com.yadony.api.requests.dto.PackageRequestSearchResponse;
+import com.yadony.api.requests.entity.PackageRequestEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -628,7 +628,7 @@ Injecter `MatchingService` dans `PackageRequestService` (ajouter le paramètre a
     }
 ```
 
-Ajouter l'import `com.dony.api.matching.MatchingService` et `com.dony.api.requests.specification.PackageRequestSpecifications` si absents.
+Ajouter l'import `com.yadony.api.matching.MatchingService` et `com.yadony.api.requests.specification.PackageRequestSpecifications` si absents.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -641,7 +641,7 @@ Expected: PASS — le constructeur a changé, les tests existants doivent être 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/requests/service/PackageRequestService.java src/test/java/com/dony/api/requests/service/
+git add src/main/java/com/yadony/api/requests/service/PackageRequestService.java src/test/java/com/yadony/api/requests/service/
 git commit -m "feat(requests): recherche restreinte aux trajets actifs du voyageur
 
 searchMatchingMyTrips réutilise MatchingService comme source de vérité de
@@ -654,8 +654,8 @@ pagine en mémoire. Map de matchs vide = page vide sans requête SQL."
 ### Task 5: Paramètre `matchingMyTrips` sur l'endpoint
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/requests/controller/PackageRequestController.java:108-140`
-- Test: `src/test/java/com/dony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java` (créer)
+- Modify: `src/main/java/com/yadony/api/requests/controller/PackageRequestController.java:108-140`
+- Test: `src/test/java/com/yadony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java` (créer)
 
 **Interfaces:**
 - Consumes: `PackageRequestService.searchMatchingMyTrips` (Task 4).
@@ -663,7 +663,7 @@ pagine en mémoire. Map de matchs vide = page vide sans requête SQL."
 
 - [ ] **Step 1: Write the failing test**
 
-Créer `src/test/java/com/dony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java`. Reprendre exactement le harnais de `MatchingRequestsEndpointTest` (annotations, mock de `FirebaseAuth`, création d'un utilisateur voyageur, header `Authorization`), qui teste déjà un endpoint voyageur.
+Créer `src/test/java/com/yadony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java`. Reprendre exactement le harnais de `MatchingRequestsEndpointTest` (annotations, mock de `FirebaseAuth`, création d'un utilisateur voyageur, header `Authorization`), qui teste déjà un endpoint voyageur.
 
 ```java
     @Test
@@ -767,7 +767,7 @@ Expected: PASS, 4 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/requests/controller/PackageRequestController.java src/test/java/com/dony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java
+git add src/main/java/com/yadony/api/requests/controller/PackageRequestController.java src/test/java/com/yadony/api/requests/controller/PackageRequestSearchMatchingIntegrationTest.java
 git commit -m "feat(requests): paramètre matchingMyTrips sur GET /package-requests
 
 Restreint aux demandes compatibles avec les trajets actifs du voyageur,
@@ -783,7 +783,7 @@ comportement strictement inchangé."
 `GET /travelers/me/matching-requests` n'a plus de consommateur applicatif une fois le front migré. On ne le supprime pas ici : `MatchingService.findTravelersMatchingPackage` et `AlertService` dépendent du même service, et retirer un endpoint public mérite sa propre PR.
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/matching/TravelerStatsController.java:128-140`
+- Modify: `src/main/java/com/yadony/api/matching/TravelerStatsController.java:128-140`
 - Modify: `docs/stories-done/` — créer le document de story
 
 - [ ] **Step 1: Marquer l'endpoint déprécié**
@@ -819,7 +819,7 @@ Les pièges à y consigner : la déduplication par demande, le court-circuit sur
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/TravelerStatsController.java docs/stories-done/story-matching-my-trips-filter.md
+git add src/main/java/com/yadony/api/matching/TravelerStatsController.java docs/stories-done/story-matching-my-trips-filter.md
 git commit -m "docs(matching): déprécier /travelers/me/matching-requests et documenter la story
 
 Remplacé par GET /package-requests?matchingMyTrips=true. Conservé le temps

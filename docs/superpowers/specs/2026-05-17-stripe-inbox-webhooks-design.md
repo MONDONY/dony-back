@@ -2,7 +2,7 @@
 
 **Date :** 2026-05-17
 **Statut :** Design validé — prêt pour plan d'implémentation
-**Périmètre :** `dony-back/` uniquement (aucun changement Flutter)
+**Périmètre :** `yadony-back/` uniquement (aucun changement Flutter)
 
 ---
 
@@ -97,7 +97,7 @@ Le dispatcher vit dans `common/stripe/` mais les handlers métier sont dans
 | `StripeEventStatus` (enum) | `RECEIVED`, `PROCESSED`, `FAILED`, `DEAD_LETTER`, `SKIPPED` | — |
 | `StripeEventInbox` (entity) | Table `stripe_event_inbox` ; PK = `event_id` (id naturel Stripe) | — |
 | `StripeEventInboxRepository` | CRUD + `existsById` + claim natif `FOR UPDATE SKIP LOCKED` | entity |
-| `StripeWebhookProperties` | `@ConfigurationProperties("dony.stripe.webhook")` — intervalle, maxRetries, backoff, batchSize | — |
+| `StripeWebhookProperties` | `@ConfigurationProperties("yadony.stripe.webhook")` — intervalle, maxRetries, backoff, batchSize | — |
 | `StripeWebhookHandler` (interface) | `boolean supports(String eventType)` + `void handle(Event event)` | — |
 | `StripeWebhookIngestService` | Vérif signature + persistance RECEIVED (idempotent). Appelé par les controllers | repo, `StripeConfig` |
 | `StripeEventDispatcher` | Désérialise le payload, route vers le handler `supports()` | `List<StripeWebhookHandler>` |
@@ -274,7 +274,7 @@ plutôt que de dépendre de la désérialisation typée du SDK.
 ### 6.1 `application.yml` (commun)
 
 ```yaml
-dony:
+yadony:
   stripe:
     webhook:
       poll-interval: 10s        # intervalle du worker
@@ -293,9 +293,9 @@ limites — conforme à la règle « pas de valeur de seuil hardcodée ».
 ### 6.2 `application-dev.yml` / `application-test.yml`
 
 - Dev : `STRIPE_WEBHOOK_SECRET` partagé (Stripe CLI).
-- Test : `dony.stripe.webhook.poll-interval` court ; le scheduler est désactivable
+- Test : `yadony.stripe.webhook.poll-interval` court ; le scheduler est désactivable
   (`@Scheduled` piloté par propriété) pour que les tests appellent `processOne()`
-  directement. `dony.kyc.enforce` / `dony.stripe.enforce` restent `false`.
+  directement. `yadony.kyc.enforce` / `yadony.stripe.enforce` restent `false`.
 
 ### 6.3 `application-prod.yml`
 
@@ -341,7 +341,7 @@ Document `docs/stripe-production-checklist.md` couvrant :
 4. Bascule des **clés API live** (`STRIPE_SECRET_KEY`).
 5. Vérifs **Connect** : MCC `4215`, branding, capacités `card_payments` + `transfers`.
 6. Vérifs **Identity** : pays autorisés.
-7. `dony.kyc.enforce=true` et `dony.stripe.enforce=true` en prod.
+7. `yadony.kyc.enforce=true` et `yadony.stripe.enforce=true` en prod.
 
 ---
 

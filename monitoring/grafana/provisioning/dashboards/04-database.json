@@ -1,8 +1,8 @@
 {
-  "uid": "dony-database",
-  "title": "Dony — Base de données (HikariCP)",
+  "uid": "yadony-database",
+  "title": "Yadony — Base de données (HikariCP)",
   "description": "Pool de connexions JDBC HikariCP : connexions, attente, temps d'acquisition",
-  "tags": ["dony", "database", "hikaricp"],
+  "tags": ["yadony", "database", "hikaricp"],
   "timezone": "UTC",
   "schemaVersion": 39,
   "version": 1,
@@ -15,7 +15,7 @@
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(hikaricp_connections_active{job=\"dony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(hikaricp_connections_active{job=\"yadony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "short"}},
       "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
@@ -26,7 +26,7 @@
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(hikaricp_connections_idle{job=\"dony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(hikaricp_connections_idle{job=\"yadony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "short"}},
       "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
@@ -37,7 +37,7 @@
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(hikaricp_connections_pending{job=\"dony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(hikaricp_connections_pending{job=\"yadony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}},
       "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
@@ -48,7 +48,7 @@
       "type": "stat",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(hikaricp_connections_timeout_total{job=\"dony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(hikaricp_connections_timeout_total{job=\"yadony-api\"})", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
       "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
@@ -59,10 +59,10 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "sum(hikaricp_connections_active{job=\"dony-api\"})", "legendFormat": "actives", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
-        {"expr": "sum(hikaricp_connections_idle{job=\"dony-api\"})", "legendFormat": "inactives", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}},
-        {"expr": "sum(hikaricp_connections_pending{job=\"dony-api\"})", "legendFormat": "en attente", "refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus"}},
-        {"expr": "max(hikaricp_connections_max{job=\"dony-api\"})", "legendFormat": "max", "refId": "D", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "sum(hikaricp_connections_active{job=\"yadony-api\"})", "legendFormat": "actives", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "sum(hikaricp_connections_idle{job=\"yadony-api\"})", "legendFormat": "inactives", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "sum(hikaricp_connections_pending{job=\"yadony-api\"})", "legendFormat": "en attente", "refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "max(hikaricp_connections_max{job=\"yadony-api\"})", "legendFormat": "max", "refId": "D", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "short"}},
       "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
@@ -73,8 +73,8 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_acquire_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
-        {"expr": "1000 * histogram_quantile(0.95, sum(rate(hikaricp_connections_acquire_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_acquire_seconds_bucket{job=\"yadony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}},
+        {"expr": "1000 * histogram_quantile(0.95, sum(rate(hikaricp_connections_acquire_seconds_bucket{job=\"yadony-api\"}[5m])) by (le))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "ms"}},
       "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8}
@@ -85,7 +85,7 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_usage_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_usage_seconds_bucket{job=\"yadony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "ms"}},
       "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8}
@@ -96,7 +96,7 @@
       "type": "timeseries",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_creation_seconds_bucket{job=\"dony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
+        {"expr": "1000 * histogram_quantile(0.99, sum(rate(hikaricp_connections_creation_seconds_bucket{job=\"yadony-api\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}
       ],
       "fieldConfig": {"defaults": {"unit": "ms"}},
       "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8}

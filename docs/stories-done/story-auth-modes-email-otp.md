@@ -16,34 +16,34 @@ Ajout d'un nouveau mode d'authentification par email OTP et correction du flux d
 | Fichier | Rôle |
 |---------|------|
 | `src/main/resources/db/migration/V88__email_otp_tokens.sql` | Table `email_otp_tokens` + index `idx_email_otp_email` |
-| `src/main/java/com/dony/api/emailotp/EmailOtpEntity.java` | Entité JPA non-BaseEntity (pas de soft-delete, immutable après `used_at`) |
-| `src/main/java/com/dony/api/emailotp/EmailOtpRepository.java` | `findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc` + `countByEmailSince` |
-| `src/main/java/com/dony/api/emailotp/EmailOtpProperties.java` | `@ConfigurationProperties("dony.email")` : resend-api-key, from-address, otp-template |
-| `src/main/java/com/dony/api/emailotp/ResendEmailService.java` | Appel REST `POST https://api.resend.com/emails` via `RestClient` |
-| `src/main/java/com/dony/api/emailotp/EmailOtpService.java` | Logique métier : génération SecureRandom, rate-limit, BCrypt, vérification, custom token Firebase |
-| `src/main/java/com/dony/api/emailotp/dto/EmailOtpSendRequest.java` | `{ email }` validé `@Email @NotBlank` |
-| `src/main/java/com/dony/api/emailotp/dto/EmailOtpSendResponse.java` | `{ expiresAt: Instant }` |
-| `src/main/java/com/dony/api/emailotp/dto/EmailOtpVerifyRequest.java` | `{ email, code }` — `code` validé `@Pattern(regexp="\\d{6}")` |
-| `src/main/java/com/dony/api/emailotp/dto/EmailOtpVerifyResponse.java` | `{ customToken: String }` |
-| `src/main/java/com/dony/api/emailotp/EmailOtpController.java` | `POST /auth/email-otp/send` + `POST /auth/email-otp/verify` (public, pas d'auth Firebase) |
-| `src/test/java/com/dony/api/emailotp/EmailOtpServiceTest.java` | 10 tests unitaires (sendOtp × 2, verifyOtp × 8) |
-| `src/test/java/com/dony/api/emailotp/EmailOtpControllerIntegrationTest.java` | 8 tests MockMvc (200/422/429 send, 200/400/422/429 verify) |
-| `src/test/java/com/dony/api/emailotp/ResendEmailServiceTest.java` | 1 test unitaire (couverture de la chaîne RestClient) |
+| `src/main/java/com/yadony/api/emailotp/EmailOtpEntity.java` | Entité JPA non-BaseEntity (pas de soft-delete, immutable après `used_at`) |
+| `src/main/java/com/yadony/api/emailotp/EmailOtpRepository.java` | `findTopByEmailAndUsedAtIsNullOrderByCreatedAtDesc` + `countByEmailSince` |
+| `src/main/java/com/yadony/api/emailotp/EmailOtpProperties.java` | `@ConfigurationProperties("yadony.email")` : resend-api-key, from-address, otp-template |
+| `src/main/java/com/yadony/api/emailotp/ResendEmailService.java` | Appel REST `POST https://api.resend.com/emails` via `RestClient` |
+| `src/main/java/com/yadony/api/emailotp/EmailOtpService.java` | Logique métier : génération SecureRandom, rate-limit, BCrypt, vérification, custom token Firebase |
+| `src/main/java/com/yadony/api/emailotp/dto/EmailOtpSendRequest.java` | `{ email }` validé `@Email @NotBlank` |
+| `src/main/java/com/yadony/api/emailotp/dto/EmailOtpSendResponse.java` | `{ expiresAt: Instant }` |
+| `src/main/java/com/yadony/api/emailotp/dto/EmailOtpVerifyRequest.java` | `{ email, code }` — `code` validé `@Pattern(regexp="\\d{6}")` |
+| `src/main/java/com/yadony/api/emailotp/dto/EmailOtpVerifyResponse.java` | `{ customToken: String }` |
+| `src/main/java/com/yadony/api/emailotp/EmailOtpController.java` | `POST /auth/email-otp/send` + `POST /auth/email-otp/verify` (public, pas d'auth Firebase) |
+| `src/test/java/com/yadony/api/emailotp/EmailOtpServiceTest.java` | 10 tests unitaires (sendOtp × 2, verifyOtp × 8) |
+| `src/test/java/com/yadony/api/emailotp/EmailOtpControllerIntegrationTest.java` | 8 tests MockMvc (200/422/429 send, 200/400/422/429 verify) |
+| `src/test/java/com/yadony/api/emailotp/ResendEmailServiceTest.java` | 1 test unitaire (couverture de la chaîne RestClient) |
 
 ## Fichiers modifiés
 
 | Fichier | Ce qui a changé |
 |---------|-----------------|
-| `src/main/resources/application.yml` | Ajout section `dony.email` (resend-api-key, from-address, otp-template) |
-| `src/main/resources/application-test.yml` | Valeurs de test pour `dony.email` (clé bidon, template simple) |
-| `src/main/java/com/dony/api/config/SecurityConfig.java` | Bean `BCryptPasswordEncoder` (strength 10) ; endpoints `/auth/email-otp/**` ajoutés aux routes publiques |
-| `src/main/java/com/dony/api/config/FirebaseConfig.java` | Bean `FirebaseAuth` injectable (optionnel en test) |
-| `src/main/java/com/dony/api/auth/FirebaseTokenFilter.java` | Ligne 78 : `setAuthentication(uid, null, ...)` → `setAuthentication(uid, decoded, ...)` pour que le `FirebaseToken` soit disponible en `SecurityContext.credentials` même pour les nouveaux utilisateurs |
-| `src/main/java/com/dony/api/auth/UserRepository.java` | Ajout `existsByEmail(String)` + `findByEmail(String)` |
-| `src/main/java/com/dony/api/auth/dto/RegisterRequest.java` | `phoneNumber` devient `@Nullable` (était `@NotBlank`) ; ajout champ `@Nullable @Email email` |
-| `src/main/java/com/dony/api/auth/AuthService.java` | `register()` reçoit maintenant `FirebaseToken decodedToken` ; `createUser()` routé par `sign_in_provider` |
-| `src/main/java/com/dony/api/auth/AuthController.java` | Extrait `FirebaseToken` du `SecurityContext.credentials` et le passe à `authService.register()` |
-| `src/test/java/com/dony/api/auth/AuthServiceTest.java` | Tests existants adaptés au nouveau `RegisterRequest` et signature `register(uid, token, req)` ; +7 tests multi-provider |
+| `src/main/resources/application.yml` | Ajout section `yadony.email` (resend-api-key, from-address, otp-template) |
+| `src/main/resources/application-test.yml` | Valeurs de test pour `yadony.email` (clé bidon, template simple) |
+| `src/main/java/com/yadony/api/config/SecurityConfig.java` | Bean `BCryptPasswordEncoder` (strength 10) ; endpoints `/auth/email-otp/**` ajoutés aux routes publiques |
+| `src/main/java/com/yadony/api/config/FirebaseConfig.java` | Bean `FirebaseAuth` injectable (optionnel en test) |
+| `src/main/java/com/yadony/api/auth/FirebaseTokenFilter.java` | Ligne 78 : `setAuthentication(uid, null, ...)` → `setAuthentication(uid, decoded, ...)` pour que le `FirebaseToken` soit disponible en `SecurityContext.credentials` même pour les nouveaux utilisateurs |
+| `src/main/java/com/yadony/api/auth/UserRepository.java` | Ajout `existsByEmail(String)` + `findByEmail(String)` |
+| `src/main/java/com/yadony/api/auth/dto/RegisterRequest.java` | `phoneNumber` devient `@Nullable` (était `@NotBlank`) ; ajout champ `@Nullable @Email email` |
+| `src/main/java/com/yadony/api/auth/AuthService.java` | `register()` reçoit maintenant `FirebaseToken decodedToken` ; `createUser()` routé par `sign_in_provider` |
+| `src/main/java/com/yadony/api/auth/AuthController.java` | Extrait `FirebaseToken` du `SecurityContext.credentials` et le passe à `authService.register()` |
+| `src/test/java/com/yadony/api/auth/AuthServiceTest.java` | Tests existants adaptés au nouveau `RegisterRequest` et signature `register(uid, token, req)` ; +7 tests multi-provider |
 
 ---
 

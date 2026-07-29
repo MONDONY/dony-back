@@ -10,14 +10,14 @@ Ajout d'une colonne `total_kg` sur `announcements` représentant la capacité to
 - `src/main/resources/db/migration/V41__add_total_kg_to_announcements.sql` — migration Flyway : ajoute la colonne, backfill via `available_kg + sum(weight_kg)` des bids dont le poids a été déduit (`ACCEPTED`, `COMPLETED`, `NO_SHOW`, `PARCEL_REFUSED`), puis `SET NOT NULL`.
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/matching/AnnouncementEntity.java` — champ `totalKg` + getter/setter, mappé sur `total_kg NOT NULL precision 5 scale 2`.
-- `src/main/java/com/dony/api/matching/AnnouncementService.java` :
+- `src/main/java/com/yadony/api/matching/AnnouncementEntity.java` — champ `totalKg` + getter/setter, mappé sur `total_kg NOT NULL precision 5 scale 2`.
+- `src/main/java/com/yadony/api/matching/AnnouncementService.java` :
   - `createAnnouncement` → set `totalKg = availableKg`.
   - `updateAnnouncement` → set `totalKg = availableKg` (l'update est déjà rejeté si des bids ACCEPTED existent, donc il n'y a pas de poids réservé à préserver).
   - `toResponse`, `toSearchResponse`, `getAnnouncementDetail`, `updateAnnouncement` → propagent `totalKg` dans les DTOs.
-- `src/main/java/com/dony/api/matching/dto/AnnouncementResponse.java` — ajout du champ `totalKg`.
-- `src/main/java/com/dony/api/matching/dto/AnnouncementDetailResponse.java` — idem.
-- `src/main/java/com/dony/api/matching/dto/AnnouncementSearchResponse.java` — idem.
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementResponse.java` — ajout du champ `totalKg`.
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementDetailResponse.java` — idem.
+- `src/main/java/com/yadony/api/matching/dto/AnnouncementSearchResponse.java` — idem.
 - 7 tests (entité créée puis assertée) : ajout de `setTotalKg(...)` après chaque `setAvailableKg(...)`.
 - `AnnouncementServiceTest` : 2 nouveaux tests.
 

@@ -1,10 +1,10 @@
-# Story — Commission Dony : wallet prioritaire, carte en fallback (Backend)
+# Story — Commission Yadony : wallet prioritaire, carte en fallback (Backend)
 
 **Date:** 2026-06-02
 **Status:** ✅ Complète
 
 ## Résumé
-Pour les bids hors escrow (CASH, WAVE, ORANGE_MONEY), Dony ne prélève que sa commission (12 %) auprès du **voyageur**. Le prélèvement se fait désormais **sur le wallet en priorité**, et **sur la carte enregistrée en fallback** — au lieu d'exiger obligatoirement une carte. La capacité de prélèvement n'est plus vérifiée à la création d'annonce mais **à l'acceptation du bid**. Le routage des remboursements suit le canal réellement utilisé (`commission_charged_via`).
+Pour les bids hors escrow (CASH, WAVE, ORANGE_MONEY), Yadony ne prélève que sa commission (12 %) auprès du **voyageur**. Le prélèvement se fait désormais **sur le wallet en priorité**, et **sur la carte enregistrée en fallback** — au lieu d'exiger obligatoirement une carte. La capacité de prélèvement n'est plus vérifiée à la création d'annonce mais **à l'acceptation du bid**. Le routage des remboursements suit le canal réellement utilisé (`commission_charged_via`).
 
 ## Fichiers créés
 - `payments/cash/CommissionChargedVia.java` — enum `{ WALLET, CARD }` : canal de prélèvement, sert au routage des remboursements.

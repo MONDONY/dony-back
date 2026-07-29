@@ -10,38 +10,38 @@ Refonte du flux de réservation : le voyageur reçoit la notification d'une dema
 ## Fichiers créés
 - `src/main/resources/db/migration/V37__bids_add_payment_intent.sql` — colonnes `payment_intent_id`, `awaiting_payment_expires_at` + index partiel scheduler + index payment_intent
 - `src/main/resources/db/migration/V38__payments_add_legacy_flag_and_charge_id.sql` — colonnes `legacy_destination_charge` (default false, backfill true sur les rows existants), `stripe_charge_id` + index
-- `src/main/java/com/dony/api/matching/BidCheckoutService.java` — orchestration `POST /bids/checkout` (validations métier + insertion `AWAITING_PAYMENT` + délégation PaymentService)
-- `src/main/java/com/dony/api/matching/AwaitingPaymentCleanupScheduler.java` — cleanup bids non payés à T+15min (suppression physique, gestion de la race condition `payment_intent_unexpected_state`)
-- `src/main/java/com/dony/api/matching/BidTimeoutScheduler.java` — auto-annulation des bids `PENDING` non répondus dans `min(24h, departure - 12h)`
-- `src/main/java/com/dony/api/matching/dto/BidCheckoutRequest.java` — DTO entrée checkout
-- `src/main/java/com/dony/api/matching/dto/BidCheckoutResponse.java` — DTO sortie (bidId, clientSecret, publishableKey, expiresAt)
-- `src/main/java/com/dony/api/payments/BidAcceptedEventListener.java` — capture du PaymentIntent sur le compte plateforme à l'acceptation (uniquement si `legacy = false`)
-- `src/test/java/com/dony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
-- `src/test/java/com/dony/api/matching/BidCheckoutControllerIntegrationTest.java`
-- `src/test/java/com/dony/api/matching/BidCheckoutServiceTest.java`
-- `src/test/java/com/dony/api/matching/BidEntityMigrationTest.java`
-- `src/test/java/com/dony/api/matching/BidStatusTest.java`
-- `src/test/java/com/dony/api/matching/BidTimeoutSchedulerTest.java`
-- `src/test/java/com/dony/api/matching/BidVisibilityTest.java`
-- `src/test/java/com/dony/api/matching/dto/BidCheckoutRequestTest.java`
-- `src/test/java/com/dony/api/payments/BidAcceptedEventListenerTest.java`
-- `src/test/java/com/dony/api/payments/BidRejectedEventListenerTest.java`
-- `src/test/java/com/dony/api/payments/DeliveryEventListenerTest.java`
-- `src/test/java/com/dony/api/payments/PaymentEntityV38MigrationTest.java`
-- `src/test/java/com/dony/api/payments/PaymentServiceCancelCaptureTest.java`
-- `src/test/java/com/dony/api/payments/PaymentServiceTestFactory.java`
-- `src/test/java/com/dony/api/payments/PaymentWebhookBidPromotionTest.java`
-- `src/test/java/com/dony/api/payments/PaymentWebhookChargeIdTest.java`
+- `src/main/java/com/yadony/api/matching/BidCheckoutService.java` — orchestration `POST /bids/checkout` (validations métier + insertion `AWAITING_PAYMENT` + délégation PaymentService)
+- `src/main/java/com/yadony/api/matching/AwaitingPaymentCleanupScheduler.java` — cleanup bids non payés à T+15min (suppression physique, gestion de la race condition `payment_intent_unexpected_state`)
+- `src/main/java/com/yadony/api/matching/BidTimeoutScheduler.java` — auto-annulation des bids `PENDING` non répondus dans `min(24h, departure - 12h)`
+- `src/main/java/com/yadony/api/matching/dto/BidCheckoutRequest.java` — DTO entrée checkout
+- `src/main/java/com/yadony/api/matching/dto/BidCheckoutResponse.java` — DTO sortie (bidId, clientSecret, publishableKey, expiresAt)
+- `src/main/java/com/yadony/api/payments/BidAcceptedEventListener.java` — capture du PaymentIntent sur le compte plateforme à l'acceptation (uniquement si `legacy = false`)
+- `src/test/java/com/yadony/api/matching/AwaitingPaymentCleanupSchedulerTest.java`
+- `src/test/java/com/yadony/api/matching/BidCheckoutControllerIntegrationTest.java`
+- `src/test/java/com/yadony/api/matching/BidCheckoutServiceTest.java`
+- `src/test/java/com/yadony/api/matching/BidEntityMigrationTest.java`
+- `src/test/java/com/yadony/api/matching/BidStatusTest.java`
+- `src/test/java/com/yadony/api/matching/BidTimeoutSchedulerTest.java`
+- `src/test/java/com/yadony/api/matching/BidVisibilityTest.java`
+- `src/test/java/com/yadony/api/matching/dto/BidCheckoutRequestTest.java`
+- `src/test/java/com/yadony/api/payments/BidAcceptedEventListenerTest.java`
+- `src/test/java/com/yadony/api/payments/BidRejectedEventListenerTest.java`
+- `src/test/java/com/yadony/api/payments/DeliveryEventListenerTest.java`
+- `src/test/java/com/yadony/api/payments/PaymentEntityV38MigrationTest.java`
+- `src/test/java/com/yadony/api/payments/PaymentServiceCancelCaptureTest.java`
+- `src/test/java/com/yadony/api/payments/PaymentServiceTestFactory.java`
+- `src/test/java/com/yadony/api/payments/PaymentWebhookBidPromotionTest.java`
+- `src/test/java/com/yadony/api/payments/PaymentWebhookChargeIdTest.java`
 
 ## Fichiers modifiés
-- `src/main/java/com/dony/api/matching/BidStatus.java` — ajout `AWAITING_PAYMENT`
-- `src/main/java/com/dony/api/matching/BidEntity.java` — `paymentIntentId`, `awaitingPaymentExpiresAt`
-- `src/main/java/com/dony/api/matching/BidRepository.java` — `findByPaymentIntentId`, `findByStatusAndAwaitingPaymentExpiresAtBefore`, `findPendingTimedOut`
-- `src/main/java/com/dony/api/matching/BidService.java` — `getBidsForAnnouncement` filtre `AWAITING_PAYMENT` (vue voyageur) ; `cancelBid` publie `BidRejectedEvent(CANCELLED_BY_SENDER)` ; suppression de la publication `BidCreatedEvent` dans `createBid` (désormais publié au webhook)
-- `src/main/java/com/dony/api/matching/BidController.java` — endpoint `POST /api/v1/bids/checkout` ajouté ; ancien `POST /announcements/{id}/bids` retiré (breaking change Flutter)
-- `src/main/java/com/dony/api/payments/PaymentService.java` — `capturePaymentIntent(String)` et `cancelPaymentIntent(String)` exposées ; `promoteBidOnPaymentAuthorized` (transition `AWAITING_PAYMENT` → `PENDING`, audit log, publication `BidCreatedEvent`) ; `createEscrow` refactoré (drop `transfer_data` + `application_fee_amount`) ; webhook persiste `stripe_charge_id` ; extraction de `dispatchWebhookEvent`
-- `src/main/java/com/dony/api/payments/PaymentEntity.java` — `legacyDestinationCharge` (default false), `stripeChargeId`
-- `src/main/java/com/dony/api/payments/DeliveryEventListener.java` — dual-path : `pi.capture()` pour les rows legacy, `Transfer.create(...)` (avec `setSourceTransaction(stripeChargeId)`) pour les rows v2 ; `UserRepository` injecté pour récupérer le `stripeAccountId` du voyageur ; `// TODO Q6` documenté sur le calcul net (commission seule, sans frais Transfer)
+- `src/main/java/com/yadony/api/matching/BidStatus.java` — ajout `AWAITING_PAYMENT`
+- `src/main/java/com/yadony/api/matching/BidEntity.java` — `paymentIntentId`, `awaitingPaymentExpiresAt`
+- `src/main/java/com/yadony/api/matching/BidRepository.java` — `findByPaymentIntentId`, `findByStatusAndAwaitingPaymentExpiresAtBefore`, `findPendingTimedOut`
+- `src/main/java/com/yadony/api/matching/BidService.java` — `getBidsForAnnouncement` filtre `AWAITING_PAYMENT` (vue voyageur) ; `cancelBid` publie `BidRejectedEvent(CANCELLED_BY_SENDER)` ; suppression de la publication `BidCreatedEvent` dans `createBid` (désormais publié au webhook)
+- `src/main/java/com/yadony/api/matching/BidController.java` — endpoint `POST /api/v1/bids/checkout` ajouté ; ancien `POST /announcements/{id}/bids` retiré (breaking change Flutter)
+- `src/main/java/com/yadony/api/payments/PaymentService.java` — `capturePaymentIntent(String)` et `cancelPaymentIntent(String)` exposées ; `promoteBidOnPaymentAuthorized` (transition `AWAITING_PAYMENT` → `PENDING`, audit log, publication `BidCreatedEvent`) ; `createEscrow` refactoré (drop `transfer_data` + `application_fee_amount`) ; webhook persiste `stripe_charge_id` ; extraction de `dispatchWebhookEvent`
+- `src/main/java/com/yadony/api/payments/PaymentEntity.java` — `legacyDestinationCharge` (default false), `stripeChargeId`
+- `src/main/java/com/yadony/api/payments/DeliveryEventListener.java` — dual-path : `pi.capture()` pour les rows legacy, `Transfer.create(...)` (avec `setSourceTransaction(stripeChargeId)`) pour les rows v2 ; `UserRepository` injecté pour récupérer le `stripeAccountId` du voyageur ; `// TODO Q6` documenté sur le calcul net (commission seule, sans frais Transfer)
 
 ## Comment ça fonctionne (pour la maintenance)
 

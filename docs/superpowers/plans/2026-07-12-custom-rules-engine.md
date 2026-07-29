@@ -23,16 +23,16 @@
 - Les règles custom d'action `send_alert`/`trigger_search`/`invite_sender`/`close_announcement` sont ignorées (jamais évaluées, aucun historique).
 - Ordre entre customs de même type : `createdAt` croissant (déjà l'ordre de `findByTravelerIdOrderByCreatedAtAsc`), première qui matche gagne.
 - TDD strict (RED avant GREEN), commits fréquents, pas de `Co-Authored-By: Claude`, messages de commit en français type `feat(automation): …`.
-- Aucun changement de schéma, aucun changement front (dony-pro), aucun changement Flutter.
+- Aucun changement de schéma, aucun changement front (yadony-pro), aucun changement Flutter.
 
 ---
 
 ### Task 1: `BidEvaluationContext` + `CustomRuleConditionEvaluator` (évaluateur pur)
 
 **Files:**
-- Create: `src/main/java/com/dony/api/automation/BidEvaluationContext.java`
-- Create: `src/main/java/com/dony/api/automation/CustomRuleConditionEvaluator.java`
-- Test: `src/test/java/com/dony/api/automation/CustomRuleConditionEvaluatorTest.java`
+- Create: `src/main/java/com/yadony/api/automation/BidEvaluationContext.java`
+- Create: `src/main/java/com/yadony/api/automation/CustomRuleConditionEvaluator.java`
+- Test: `src/test/java/com/yadony/api/automation/CustomRuleConditionEvaluatorTest.java`
 
 **Interfaces:**
 - Consomme : `AutomationRuleEntity` existante (`getConditions(): List<Map<String,Object>>`, `getId(): UUID` hérité de `BaseEntity`).
@@ -42,10 +42,10 @@
 
 - [ ] **Step 1: Écrire les tests qui échouent**
 
-Créer `src/test/java/com/dony/api/automation/CustomRuleConditionEvaluatorTest.java` :
+Créer `src/test/java/com/yadony/api/automation/CustomRuleConditionEvaluatorTest.java` :
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import org.junit.jupiter.api.Test;
 
@@ -189,15 +189,15 @@ class CustomRuleConditionEvaluatorTest {
 
 - [ ] **Step 2: Vérifier que les tests échouent (compilation)**
 
-Run: `cd /Users/aboubakardiakite/Desktop/dony/dony-back && ./mvnw test -Dtest=CustomRuleConditionEvaluatorTest`
+Run: `cd /Users/aboubakardiakite/Desktop/yadony/yadony-back && ./mvnw test -Dtest=CustomRuleConditionEvaluatorTest`
 Expected: FAIL — erreur de compilation, `BidEvaluationContext` et `CustomRuleConditionEvaluator` n'existent pas.
 
 - [ ] **Step 3: Implémentation minimale**
 
-Créer `src/main/java/com/dony/api/automation/BidEvaluationContext.java` :
+Créer `src/main/java/com/yadony/api/automation/BidEvaluationContext.java` :
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import java.math.BigDecimal;
 
@@ -216,10 +216,10 @@ record BidEvaluationContext(
 }
 ```
 
-Créer `src/main/java/com/dony/api/automation/CustomRuleConditionEvaluator.java` :
+Créer `src/main/java/com/yadony/api/automation/CustomRuleConditionEvaluator.java` :
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -338,15 +338,15 @@ Expected: PASS, 15 tests verts.
 
 - [ ] **Step 5: Suite complète du package automation**
 
-Run: `./mvnw test -Dtest='com.dony.api.automation.*'`
+Run: `./mvnw test -Dtest='com.yadony.api.automation.*'`
 Expected: PASS, aucune régression.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/automation/BidEvaluationContext.java \
-        src/main/java/com/dony/api/automation/CustomRuleConditionEvaluator.java \
-        src/test/java/com/dony/api/automation/CustomRuleConditionEvaluatorTest.java
+git add src/main/java/com/yadony/api/automation/BidEvaluationContext.java \
+        src/main/java/com/yadony/api/automation/CustomRuleConditionEvaluator.java \
+        src/test/java/com/yadony/api/automation/CustomRuleConditionEvaluatorTest.java
 git commit -m "feat(automation): évaluateur pur des conditions de règles personnalisées"
 ```
 
@@ -355,12 +355,12 @@ git commit -m "feat(automation): évaluateur pur des conditions de règles perso
 ### Task 2: Intégration dans `AutomationBidListener` (phases refus/acceptation, customs + presets)
 
 **Files:**
-- Modify: `src/main/java/com/dony/api/automation/AutomationBidListener.java`
-- Test: `src/test/java/com/dony/api/automation/AutomationBidListenerTest.java` (étendre, ne pas réécrire)
+- Modify: `src/main/java/com/yadony/api/automation/AutomationBidListener.java`
+- Test: `src/test/java/com/yadony/api/automation/AutomationBidListenerTest.java` (étendre, ne pas réécrire)
 
 **Interfaces:**
 - Consomme (Task 1) : `CustomRuleConditionEvaluator.matches(AutomationRuleEntity, BidEvaluationContext)` (statique, package-private) et le record `BidEvaluationContext(BigDecimal weightKg, String corridor, String contentCategory, BigDecimal senderRating, BigDecimal capacityFreeKg, Long hoursBeforeDeparture)`.
-- Consomme (existant) : `BidRepository` (`com.dony.api.matching`, `findById(UUID): Optional<BidEntity>`), `BidEntity.getContentCategory(): String`, `UserEntity.getAverageRating(): BigDecimal`, `AnnouncementEntity.getAvailableKg(): BigDecimal` / `getDepartureAt(): OffsetDateTime`, `AutomationActionExecutor.tryExecuteBidAction(rule, travelerId, bidId, actionTaken, Supplier<Void>): boolean`, `BidService.acceptBidBySystem(UUID, UUID)` / `rejectBidBySystem(UUID, UUID, String)`.
+- Consomme (existant) : `BidRepository` (`com.yadony.api.matching`, `findById(UUID): Optional<BidEntity>`), `BidEntity.getContentCategory(): String`, `UserEntity.getAverageRating(): BigDecimal`, `AnnouncementEntity.getAvailableKg(): BigDecimal` / `getDepartureAt(): OffsetDateTime`, `AutomationActionExecutor.tryExecuteBidAction(rule, travelerId, bidId, actionTaken, Supplier<Void>): boolean`, `BidService.acceptBidBySystem(UUID, UUID)` / `rejectBidBySystem(UUID, UUID, String)`.
 - Produit : nouveau paramètre de constructeur `BidRepository bidRepository` (dernier paramètre — les tests existants instancient le listener à la main et devront être mis à jour).
 
 **⚠️ Piège connu :** ne JAMAIS mettre `@Transactional` sur cette classe ni sur `onBidCreated` (voir Global Constraints et la Javadoc existante de la classe — elle explique le pourquoi).
@@ -369,13 +369,13 @@ git commit -m "feat(automation): évaluateur pur des conditions de règles perso
 
 - [ ] **Step 1: Écrire les tests qui échouent**
 
-Dans `src/test/java/com/dony/api/automation/AutomationBidListenerTest.java` :
+Dans `src/test/java/com/yadony/api/automation/AutomationBidListenerTest.java` :
 
 1. Ajouter les imports manquants :
 
 ```java
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
+import com.yadony.api.matching.BidEntity;
+import com.yadony.api.matching.BidRepository;
 ```
 
 2. Ajouter le mock et mettre à jour le constructeur dans `setUp()` :
@@ -620,13 +620,13 @@ Expected: FAIL — erreur de compilation (constructeur à 7 paramètres inexista
 
 - [ ] **Step 3: Implémentation**
 
-Modifier `src/main/java/com/dony/api/automation/AutomationBidListener.java` :
+Modifier `src/main/java/com/yadony/api/automation/AutomationBidListener.java` :
 
 1. Imports supplémentaires :
 
 ```java
-import com.dony.api.matching.BidEntity;
-import com.dony.api.matching.BidRepository;
+import com.yadony.api.matching.BidEntity;
+import com.yadony.api.matching.BidRepository;
 import java.time.Duration;
 ```
 
@@ -809,7 +809,7 @@ Expected: PASS, aucune régression sur le reste du projet.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/automation/AutomationBidListener.java \
-        src/test/java/com/dony/api/automation/AutomationBidListenerTest.java
+git add src/main/java/com/yadony/api/automation/AutomationBidListener.java \
+        src/test/java/com/yadony/api/automation/AutomationBidListenerTest.java
 git commit -m "feat(automation): exécution des règles personnalisées auto_accept/auto_reject sur BidCreatedEvent"
 ```

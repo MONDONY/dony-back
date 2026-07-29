@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Doter le backend dony d'une observabilité de production complète : métriques techniques et métier exposées au format Prometheus, collectées par un agent Grafana Alloy sur chaque VPS et poussées vers Grafana Cloud (dashboards, alertes Discord, monitoring uptime externe).
+**Goal:** Doter le backend yadony d'une observabilité de production complète : métriques techniques et métier exposées au format Prometheus, collectées par un agent Grafana Alloy sur chaque VPS et poussées vers Grafana Cloud (dashboards, alertes Discord, monitoring uptime externe).
 
 **Architecture:** Le backend expose `/actuator/prometheus` via Micrometer (métriques techniques out-of-the-box). Les métriques métier sont produites par un unique `BusinessMetricsListener` qui écoute les événements de domaine déjà publiés par l'application — aucun service métier n'est modifié, conformément à la règle « communication cross-package par événements uniquement ». Un conteneur Grafana Alloy par VPS scrape les métriques, collecte les logs Docker et pousse le tout vers Grafana Cloud, où sont configurés dashboards, alertes et sondes uptime.
 
@@ -21,7 +21,7 @@
      `metrics:write` et `logs:write`. Noter aussi les URLs et identifiants de
      push Prometheus et Loki (visibles dans « Connections → … »).
   3. Créer un salon Discord `#alertes-prod` et un **webhook** dessus.
-  4. Ajouter dans le `.env` de **chaque VPS** : `DONY_ENV` (`staging` ou
+  4. Ajouter dans le `.env` de **chaque VPS** : `YADONY_ENV` (`staging` ou
      `prod`), `GRAFANA_PROM_URL`, `GRAFANA_PROM_USER`, `GRAFANA_LOKI_URL`,
      `GRAFANA_LOKI_USER`, `GRAFANA_CLOUD_TOKEN`.
 
@@ -32,18 +32,18 @@ existants (vérifiés dans le code) :
 
 | Compteur Micrometer | Événement écouté | Tag |
 |---|---|---|
-| `dony.users.registered` | `UserRegisteredEvent` | — |
-| `dony.announcements.created` | `AnnouncementCreatedEvent` | — |
-| `dony.bids.created` | `BidCreatedEvent` | `corridor` |
-| `dony.bids.accepted` | `BidAcceptedEvent` | — |
-| `dony.bids.rejected` | `BidRejectedEvent` | — |
-| `dony.payments.escrow_ready` | `PaymentEscrowReadyEvent` | — |
-| `dony.payments.released` | `PaymentReleasedEvent` | — |
-| `dony.kyc.verified` | `UserKycVerifiedEvent` | — |
-| `dony.deliveries.confirmed` | `DeliveryConfirmedEvent` | — |
-| `dony.disputes.opened` | `DisputeOpenedEvent` | — |
-| `dony.cancellations.confirmed` | `CancellationConfirmedEvent` | `reason` |
-| `dony.travelers.no_show` | `VoyageurNoShowEvent` | — |
+| `yadony.users.registered` | `UserRegisteredEvent` | — |
+| `yadony.announcements.created` | `AnnouncementCreatedEvent` | — |
+| `yadony.bids.created` | `BidCreatedEvent` | `corridor` |
+| `yadony.bids.accepted` | `BidAcceptedEvent` | — |
+| `yadony.bids.rejected` | `BidRejectedEvent` | — |
+| `yadony.payments.escrow_ready` | `PaymentEscrowReadyEvent` | — |
+| `yadony.payments.released` | `PaymentReleasedEvent` | — |
+| `yadony.kyc.verified` | `UserKycVerifiedEvent` | — |
+| `yadony.deliveries.confirmed` | `DeliveryConfirmedEvent` | — |
+| `yadony.disputes.opened` | `DisputeOpenedEvent` | — |
+| `yadony.cancellations.confirmed` | `CancellationConfirmedEvent` | `reason` |
+| `yadony.travelers.no_show` | `VoyageurNoShowEvent` | — |
 
 > **Décision de design (raffinement du spec) :** le spec prévoyait un *helper*
 > de métriques + une instrumentation par package. Le code étant déjà riche en
@@ -58,10 +58,10 @@ existants (vérifiés dans le code) :
 |---|---|
 | `pom.xml` (modifier) | Ajout de la dépendance `micrometer-registry-prometheus` |
 | `src/main/resources/application.yml` (modifier) | Exposer l'endpoint Actuator `prometheus` |
-| `src/main/java/com/dony/api/config/SecurityConfig.java` (modifier) | `permitAll` sur `/actuator/prometheus` |
-| `src/main/java/com/dony/api/common/metrics/BusinessMetricsListener.java` (créer) | Compteurs métier event-driven |
-| `src/test/java/com/dony/api/common/metrics/BusinessMetricsListenerTest.java` (créer) | Tests unitaires des compteurs |
-| `src/test/java/com/dony/api/common/metrics/PrometheusEndpointIntegrationTest.java` (créer) | Test d'intégration de l'endpoint |
+| `src/main/java/com/yadony/api/config/SecurityConfig.java` (modifier) | `permitAll` sur `/actuator/prometheus` |
+| `src/main/java/com/yadony/api/common/metrics/BusinessMetricsListener.java` (créer) | Compteurs métier event-driven |
+| `src/test/java/com/yadony/api/common/metrics/BusinessMetricsListenerTest.java` (créer) | Tests unitaires des compteurs |
+| `src/test/java/com/yadony/api/common/metrics/PrometheusEndpointIntegrationTest.java` (créer) | Test d'intégration de l'endpoint |
 | `nginx/nginx.conf` (modifier) | Bloquer `/actuator/*` (sauf health) côté public |
 | `nginx/nginx.staging.conf` (modifier) | Idem pour staging |
 | `monitoring/alloy/config.alloy` (créer) | Config de l'agent Grafana Alloy |
@@ -109,14 +109,14 @@ git commit -m "Feat: dépendance Micrometer Prometheus"
 ### Task 2: Exposer et sécuriser l'endpoint `/actuator/prometheus`
 
 **Files:**
-- Test: `src/test/java/com/dony/api/common/metrics/PrometheusEndpointIntegrationTest.java`
+- Test: `src/test/java/com/yadony/api/common/metrics/PrometheusEndpointIntegrationTest.java`
 - Modify: `src/main/resources/application.yml` (bloc `management.endpoints.web.exposure.include`)
-- Modify: `src/main/java/com/dony/api/config/SecurityConfig.java` (liste `permitAll`)
+- Modify: `src/main/java/com/yadony/api/config/SecurityConfig.java` (liste `permitAll`)
 
 - [ ] **Step 1: Écrire le test d'intégration (qui échoue)**
 
 ```java
-package com.dony.api.common.metrics;
+package com.yadony.api.common.metrics;
 
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.Test;
@@ -195,7 +195,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/resources/application.yml src/main/java/com/dony/api/config/SecurityConfig.java src/test/java/com/dony/api/common/metrics/PrometheusEndpointIntegrationTest.java
+git add src/main/resources/application.yml src/main/java/com/yadony/api/config/SecurityConfig.java src/test/java/com/yadony/api/common/metrics/PrometheusEndpointIntegrationTest.java
 git commit -m "Feat: exposer l'endpoint Actuator prometheus"
 ```
 
@@ -244,20 +244,20 @@ git commit -m "Feat: bloquer les endpoints Actuator non-health côté public"
 ### Task 4: `BusinessMetricsListener` — compteurs métier
 
 **Files:**
-- Test: `src/test/java/com/dony/api/common/metrics/BusinessMetricsListenerTest.java`
-- Create: `src/main/java/com/dony/api/common/metrics/BusinessMetricsListener.java`
+- Test: `src/test/java/com/yadony/api/common/metrics/BusinessMetricsListenerTest.java`
+- Create: `src/main/java/com/yadony/api/common/metrics/BusinessMetricsListener.java`
 
 - [ ] **Step 1: Écrire les tests unitaires (qui échouent)**
 
 ```java
-package com.dony.api.common.metrics;
+package com.yadony.api.common.metrics;
 
-import com.dony.api.auth.events.UserRegisteredEvent;
-import com.dony.api.cancellation.CancellationReason;
-import com.dony.api.cancellation.events.CancellationConfirmedEvent;
-import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidCreatedEvent;
-import com.dony.api.tracking.events.DeliveryConfirmedEvent;
+import com.yadony.api.auth.events.UserRegisteredEvent;
+import com.yadony.api.cancellation.CancellationReason;
+import com.yadony.api.cancellation.events.CancellationConfirmedEvent;
+import com.yadony.api.matching.events.BidAcceptedEvent;
+import com.yadony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.tracking.events.DeliveryConfirmedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -282,7 +282,7 @@ class BusinessMetricsListenerTest {
     void onUserRegistered_incrementsCounter() {
         listener.onUserRegistered(new UserRegisteredEvent(UUID.randomUUID(), "fb-uid"));
 
-        assertThat(registry.counter("dony.users.registered").count()).isEqualTo(1.0);
+        assertThat(registry.counter("yadony.users.registered").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -291,7 +291,7 @@ class BusinessMetricsListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "Awa", new BigDecimal("5.0"), "PAR-DKR"));
 
-        assertThat(registry.counter("dony.bids.created", "corridor", "PAR-DKR").count())
+        assertThat(registry.counter("yadony.bids.created", "corridor", "PAR-DKR").count())
                 .isEqualTo(1.0);
     }
 
@@ -301,7 +301,7 @@ class BusinessMetricsListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 "Awa", new BigDecimal("5.0"), null));
 
-        assertThat(registry.counter("dony.bids.created", "corridor", "unknown").count())
+        assertThat(registry.counter("yadony.bids.created", "corridor", "unknown").count())
                 .isEqualTo(1.0);
     }
 
@@ -310,7 +310,7 @@ class BusinessMetricsListenerTest {
         listener.onDeliveryConfirmed(new DeliveryConfirmedEvent(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
 
-        assertThat(registry.counter("dony.deliveries.confirmed").count()).isEqualTo(1.0);
+        assertThat(registry.counter("yadony.deliveries.confirmed").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -318,7 +318,7 @@ class BusinessMetricsListenerTest {
         listener.onCancellationConfirmed(new CancellationConfirmedEvent(
                 UUID.randomUUID(), UUID.randomUUID(), CancellationReason.TRIP_CANCELLED));
 
-        assertThat(registry.counter("dony.cancellations.confirmed",
+        assertThat(registry.counter("yadony.cancellations.confirmed",
                 "reason", "TRIP_CANCELLED").count()).isEqualTo(1.0);
     }
 
@@ -329,7 +329,7 @@ class BusinessMetricsListenerTest {
         listener.onBidAccepted(new BidAcceptedEvent(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
 
-        assertThat(registry.counter("dony.bids.accepted").count()).isEqualTo(2.0);
+        assertThat(registry.counter("yadony.bids.accepted").count()).isEqualTo(2.0);
     }
 }
 ```
@@ -342,20 +342,20 @@ Expected: FAIL — `BusinessMetricsListener` n'existe pas (erreur de compilation
 - [ ] **Step 3: Créer `BusinessMetricsListener`**
 
 ```java
-package com.dony.api.common.metrics;
+package com.yadony.api.common.metrics;
 
-import com.dony.api.auth.events.UserRegisteredEvent;
-import com.dony.api.cancellation.events.CancellationConfirmedEvent;
-import com.dony.api.disputes.events.DisputeOpenedEvent;
-import com.dony.api.kyc.events.UserKycVerifiedEvent;
-import com.dony.api.matching.events.AnnouncementCreatedEvent;
-import com.dony.api.matching.events.BidAcceptedEvent;
-import com.dony.api.matching.events.BidCreatedEvent;
-import com.dony.api.matching.events.BidRejectedEvent;
-import com.dony.api.matching.events.VoyageurNoShowEvent;
-import com.dony.api.payments.events.PaymentEscrowReadyEvent;
-import com.dony.api.payments.events.PaymentReleasedEvent;
-import com.dony.api.tracking.events.DeliveryConfirmedEvent;
+import com.yadony.api.auth.events.UserRegisteredEvent;
+import com.yadony.api.cancellation.events.CancellationConfirmedEvent;
+import com.yadony.api.disputes.events.DisputeOpenedEvent;
+import com.yadony.api.kyc.events.UserKycVerifiedEvent;
+import com.yadony.api.matching.events.AnnouncementCreatedEvent;
+import com.yadony.api.matching.events.BidAcceptedEvent;
+import com.yadony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.matching.events.BidRejectedEvent;
+import com.yadony.api.matching.events.VoyageurNoShowEvent;
+import com.yadony.api.payments.events.PaymentEscrowReadyEvent;
+import com.yadony.api.payments.events.PaymentReleasedEvent;
+import com.yadony.api.tracking.events.DeliveryConfirmedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -380,64 +380,64 @@ public class BusinessMetricsListener {
 
     @EventListener
     public void onUserRegistered(UserRegisteredEvent event) {
-        registry.counter("dony.users.registered").increment();
+        registry.counter("yadony.users.registered").increment();
     }
 
     @EventListener
     public void onAnnouncementCreated(AnnouncementCreatedEvent event) {
-        registry.counter("dony.announcements.created").increment();
+        registry.counter("yadony.announcements.created").increment();
     }
 
     @EventListener
     public void onBidCreated(BidCreatedEvent event) {
-        registry.counter("dony.bids.created", "corridor", safe(event.getCorridor()))
+        registry.counter("yadony.bids.created", "corridor", safe(event.getCorridor()))
                 .increment();
     }
 
     @EventListener
     public void onBidAccepted(BidAcceptedEvent event) {
-        registry.counter("dony.bids.accepted").increment();
+        registry.counter("yadony.bids.accepted").increment();
     }
 
     @EventListener
     public void onBidRejected(BidRejectedEvent event) {
-        registry.counter("dony.bids.rejected").increment();
+        registry.counter("yadony.bids.rejected").increment();
     }
 
     @EventListener
     public void onPaymentEscrowReady(PaymentEscrowReadyEvent event) {
-        registry.counter("dony.payments.escrow_ready").increment();
+        registry.counter("yadony.payments.escrow_ready").increment();
     }
 
     @EventListener
     public void onPaymentReleased(PaymentReleasedEvent event) {
-        registry.counter("dony.payments.released").increment();
+        registry.counter("yadony.payments.released").increment();
     }
 
     @EventListener
     public void onKycVerified(UserKycVerifiedEvent event) {
-        registry.counter("dony.kyc.verified").increment();
+        registry.counter("yadony.kyc.verified").increment();
     }
 
     @EventListener
     public void onDeliveryConfirmed(DeliveryConfirmedEvent event) {
-        registry.counter("dony.deliveries.confirmed").increment();
+        registry.counter("yadony.deliveries.confirmed").increment();
     }
 
     @EventListener
     public void onDisputeOpened(DisputeOpenedEvent event) {
-        registry.counter("dony.disputes.opened").increment();
+        registry.counter("yadony.disputes.opened").increment();
     }
 
     @EventListener
     public void onCancellationConfirmed(CancellationConfirmedEvent event) {
         String reason = event.reason() == null ? "unknown" : event.reason().name();
-        registry.counter("dony.cancellations.confirmed", "reason", reason).increment();
+        registry.counter("yadony.cancellations.confirmed", "reason", reason).increment();
     }
 
     @EventListener
     public void onTravelerNoShow(VoyageurNoShowEvent event) {
-        registry.counter("dony.travelers.no_show").increment();
+        registry.counter("yadony.travelers.no_show").increment();
     }
 
     private static String safe(String value) {
@@ -459,7 +459,7 @@ Expected: BUILD SUCCESS — aucun test cassé
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/common/metrics/BusinessMetricsListener.java src/test/java/com/dony/api/common/metrics/BusinessMetricsListenerTest.java
+git add src/main/java/com/yadony/api/common/metrics/BusinessMetricsListener.java src/test/java/com/yadony/api/common/metrics/BusinessMetricsListenerTest.java
 git commit -m "Feat: compteurs métier event-driven (BusinessMetricsListener)"
 ```
 
@@ -481,7 +481,7 @@ fournis par variables d'environnement (depuis le `.env` du VPS). Le label
 // ── Sortie métriques : Grafana Cloud (Prometheus) ────────────────────────
 prometheus.remote_write "grafana_cloud" {
   external_labels = {
-    env = sys.env("DONY_ENV"),
+    env = sys.env("YADONY_ENV"),
   }
   endpoint {
     url = sys.env("GRAFANA_PROM_URL")
@@ -493,7 +493,7 @@ prometheus.remote_write "grafana_cloud" {
 }
 
 // ── Scrape des métriques applicatives (Spring Boot Actuator) ──────────────
-prometheus.scrape "dony_api" {
+prometheus.scrape "yadony_api" {
   targets = [
     {
       "__address__"      = "api:8080",
@@ -502,7 +502,7 @@ prometheus.scrape "dony_api" {
   ]
   forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
   scrape_interval = "30s"
-  job_name        = "dony-api"
+  job_name        = "yadony-api"
 }
 
 // ── Scrape des métriques de l'hôte (CPU, RAM, disque) ─────────────────────
@@ -556,7 +556,7 @@ loki.source.docker "containers" {
 loki.process "add_env_label" {
   stage.static_labels {
     values = {
-      env = sys.env("DONY_ENV"),
+      env = sys.env("YADONY_ENV"),
     }
   }
   forward_to = [loki.write.grafana_cloud.receiver]
@@ -590,14 +590,14 @@ Ajouter ce service dans la section `services:` (par exemple après `api`) :
 ```yaml
   alloy:
     image: grafana/alloy:latest
-    container_name: dony_alloy
+    container_name: yadony_alloy
     restart: unless-stopped
     command:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
     environment:
-      DONY_ENV: prod
+      YADONY_ENV: prod
       GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
       GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
       GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
@@ -606,41 +606,41 @@ Ajouter ce service dans la section `services:` (par exemple après `api`) :
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dony_alloy_data:/var/lib/alloy/data
+      - yadony_alloy_data:/var/lib/alloy/data
       # Systèmes de fichiers de l'hôte pour les métriques CPU/RAM/disque
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
-      - dony_internal
+      - yadony_internal
     depends_on:
       - api
 ```
 
 Et déclarer le volume — dans la section `volumes:` de `docker-compose.prod.yml`,
-ajouter `dony_alloy_data:` sous le volume existant `dony_db_prod_data:` :
+ajouter `yadony_alloy_data:` sous le volume existant `yadony_db_prod_data:` :
 
 ```yaml
 volumes:
-  dony_db_prod_data:
-  dony_alloy_data:
+  yadony_db_prod_data:
+  yadony_alloy_data:
 ```
 
 - [ ] **Step 2: Ajouter le service `alloy` dans `docker-compose.staging.yml`**
 
-Même service, mais avec `DONY_ENV: staging` :
+Même service, mais avec `YADONY_ENV: staging` :
 
 ```yaml
   alloy:
     image: grafana/alloy:latest
-    container_name: dony_alloy
+    container_name: yadony_alloy
     restart: unless-stopped
     command:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
     environment:
-      DONY_ENV: staging
+      YADONY_ENV: staging
       GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
       GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
       GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
@@ -649,13 +649,13 @@ Même service, mais avec `DONY_ENV: staging` :
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dony_alloy_data:/var/lib/alloy/data
+      - yadony_alloy_data:/var/lib/alloy/data
       # Systèmes de fichiers de l'hôte pour les métriques CPU/RAM/disque
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
-      - dony_internal
+      - yadony_internal
     depends_on:
       - api
 ```
@@ -664,8 +664,8 @@ Et dans la section `volumes:` de `docker-compose.staging.yml` :
 
 ```yaml
 volumes:
-  dony_db_staging_data:
-  dony_alloy_data:
+  yadony_db_staging_data:
+  yadony_alloy_data:
 ```
 
 - [ ] **Step 3: Valider les deux fichiers Compose**
@@ -694,7 +694,7 @@ l'interface web et ne peut pas être versionné en code à ce stade. Les requêt
 PromQL exactes sont fournies — ce ne sont pas des placeholders.
 
 ````markdown
-# Monitoring dony — Grafana Cloud
+# Monitoring yadony — Grafana Cloud
 
 ## 1. Compte et tokens
 
@@ -704,14 +704,14 @@ PromQL exactes sont fournies — ce ne sont pas des placeholders.
 3. Idem pour « Hosted logs (Loki) » : `GRAFANA_LOKI_URL`, `GRAFANA_LOKI_USER`.
 4. Générer un token d'accès (`GRAFANA_CLOUD_TOKEN`) avec les scopes
    `metrics:write` et `logs:write`.
-5. Renseigner ces 5 variables + `DONY_ENV` dans le `.env` de chaque VPS.
+5. Renseigner ces 5 variables + `YADONY_ENV` dans le `.env` de chaque VPS.
 
 ## 2. Agent Alloy
 
 L'agent tourne en conteneur sur chaque VPS (service `alloy` des fichiers
-Compose). Vérifier après déploiement : `docker logs dony_alloy` ne doit pas
+Compose). Vérifier après déploiement : `docker logs yadony_alloy` ne doit pas
 afficher d'erreur d'authentification, et les cibles doivent être `up` dans
-Grafana (Explore → `up{job="dony-api"}`).
+Grafana (Explore → `up{job="yadony-api"}`).
 
 ## 3. Dashboard technique
 
@@ -721,29 +721,29 @@ la stack. Il couvre heap, GC, threads, et les requêtes HTTP.
 
 ## 4. Dashboard métier
 
-Créer un nouveau dashboard « dony — Métier » avec un panneau par métrique.
+Créer un nouveau dashboard « yadony — Métier » avec un panneau par métrique.
 Type de panneau : « Time series », sauf mention contraire. Requêtes PromQL
 (le filtre `{env="$env"}` suppose une variable de dashboard `env`) :
 
 | Panneau | Requête PromQL |
 |---|---|
-| Inscriptions / h | `sum(rate(dony_users_registered_total{env="$env"}[1h])) * 3600` |
-| Annonces créées / h | `sum(rate(dony_announcements_created_total{env="$env"}[1h])) * 3600` |
-| Bids créés / h par corridor | `sum by (corridor) (rate(dony_bids_created_total{env="$env"}[1h])) * 3600` |
-| Taux d'acceptation des bids | `sum(rate(dony_bids_accepted_total{env="$env"}[6h])) / clamp_min(sum(rate(dony_bids_created_total{env="$env"}[6h])), 0.0001)` |
-| Paiements en escrow / h | `sum(rate(dony_payments_escrow_ready_total{env="$env"}[1h])) * 3600` |
-| Paiements libérés / h | `sum(rate(dony_payments_released_total{env="$env"}[1h])) * 3600` |
-| KYC validés / h | `sum(rate(dony_kyc_verified_total{env="$env"}[1h])) * 3600` |
-| Livraisons confirmées / h | `sum(rate(dony_deliveries_confirmed_total{env="$env"}[1h])) * 3600` |
-| Litiges ouverts (total 24 h) | `sum(increase(dony_disputes_opened_total{env="$env"}[24h]))` |
-| Annulations par motif (24 h) | `sum by (reason) (increase(dony_cancellations_confirmed_total{env="$env"}[24h]))` |
-| No-show voyageurs (24 h) | `sum(increase(dony_travelers_no_show_total{env="$env"}[24h]))` |
+| Inscriptions / h | `sum(rate(yadony_users_registered_total{env="$env"}[1h])) * 3600` |
+| Annonces créées / h | `sum(rate(yadony_announcements_created_total{env="$env"}[1h])) * 3600` |
+| Bids créés / h par corridor | `sum by (corridor) (rate(yadony_bids_created_total{env="$env"}[1h])) * 3600` |
+| Taux d'acceptation des bids | `sum(rate(yadony_bids_accepted_total{env="$env"}[6h])) / clamp_min(sum(rate(yadony_bids_created_total{env="$env"}[6h])), 0.0001)` |
+| Paiements en escrow / h | `sum(rate(yadony_payments_escrow_ready_total{env="$env"}[1h])) * 3600` |
+| Paiements libérés / h | `sum(rate(yadony_payments_released_total{env="$env"}[1h])) * 3600` |
+| KYC validés / h | `sum(rate(yadony_kyc_verified_total{env="$env"}[1h])) * 3600` |
+| Livraisons confirmées / h | `sum(rate(yadony_deliveries_confirmed_total{env="$env"}[1h])) * 3600` |
+| Litiges ouverts (total 24 h) | `sum(increase(yadony_disputes_opened_total{env="$env"}[24h]))` |
+| Annulations par motif (24 h) | `sum by (reason) (increase(yadony_cancellations_confirmed_total{env="$env"}[24h]))` |
+| No-show voyageurs (24 h) | `sum(increase(yadony_travelers_no_show_total{env="$env"}[24h]))` |
 
-> Les séries `dony_*` n'apparaissent qu'après la première occurrence de
+> Les séries `yadony_*` n'apparaissent qu'après la première occurrence de
 > l'événement correspondant. C'est normal sur un environnement neuf.
 
 Après création, exporter le JSON (Dashboard settings → JSON Model) et le
-committer dans `monitoring/dashboards/dony-metier.json`.
+committer dans `monitoring/dashboards/yadony-metier.json`.
 
 ## 5. Contact point Discord
 
@@ -760,19 +760,19 @@ persistance, contact point = Discord.
 
 | Alerte | Requête PromQL | Condition | for |
 |---|---|---|---|
-| API prod down | `up{job="dony-api", env="prod"}` | `IS BELOW 1` | 2m |
+| API prod down | `up{job="yadony-api", env="prod"}` | `IS BELOW 1` | 2m |
 | Taux d'erreurs 5xx élevé | `sum(rate(http_server_requests_seconds_count{env="prod", status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{env="prod"}[5m])), 0.0001)` | `IS ABOVE 0.05` | 5m |
 | Latence p95 élevée | `histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{env="prod"}[5m])))` | `IS ABOVE 2` | 10m |
 | Heap JVM proche saturation | `sum(jvm_memory_used_bytes{env="prod", area="heap"}) / sum(jvm_memory_max_bytes{env="prod", area="heap"})` | `IS ABOVE 0.9` | 10m |
 | Disque hôte presque plein | `1 - (node_filesystem_avail_bytes{env="prod", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{env="prod", fstype!~"tmpfs|overlay"})` | `IS ABOVE 0.85` | 15m |
 | Pool DB épuisé | `hikaricp_connections_pending{env="prod"}` | `IS ABOVE 5` | 5m |
-| Échecs de paiement anormaux | `sum(increase(dony_disputes_opened_total{env="prod"}[1h]))` | `IS ABOVE 10` | 5m |
+| Échecs de paiement anormaux | `sum(increase(yadony_disputes_opened_total{env="prod"}[1h]))` | `IS ABOVE 10` | 5m |
 
 ## 7. Monitoring uptime externe
 
 Grafana → Testing & synthetics → Synthetic Monitoring → Create check :
 - Type : HTTP.
-- Cible : `https://api.dony.app/api/v1/actuator/health`.
+- Cible : `https://api.yadony.app/api/v1/actuator/health`.
 - Fréquence : 1 min. Sondes : 2-3 régions proches (Europe).
 - Associer une alerte sur l'échec de la sonde → contact point Discord.
 ````
@@ -804,7 +804,7 @@ Expected: BUILD SUCCESS — noter le pourcentage de couverture global dans `targ
 - [ ] **Step 2: Créer le document de story**
 
 Rédiger `docs/stories-done/story-observabilite.md` en suivant le gabarit
-imposé par `dony-back/CLAUDE.md` (sections : Résumé, Fichiers créés, Fichiers
+imposé par `yadony-back/CLAUDE.md` (sections : Résumé, Fichiers créés, Fichiers
 modifiés, Comment ça fonctionne, Critères d'acceptation, Tests, Décisions
 techniques). Points obligatoires à documenter :
 
@@ -836,8 +836,8 @@ Expected: BUILD SUCCESS
 Démarrage local (`./mvnw spring-boot:run -Dspring.profiles.active=dev`), puis
 déclencher une inscription ou un bid, et vérifier :
 
-Run: `curl -s http://localhost:8080/api/v1/actuator/prometheus | grep -E "^dony_|jvm_memory_used_bytes"`
-Expected: au moins `jvm_memory_used_bytes` et une ligne `dony_..._total`
+Run: `curl -s http://localhost:8080/api/v1/actuator/prometheus | grep -E "^yadony_|jvm_memory_used_bytes"`
+Expected: au moins `jvm_memory_used_bytes` et une ligne `yadony_..._total`
 
 - [ ] **Les fichiers Compose et la config Alloy sont valides**
 

@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/mondony/dony-back
+  IMAGE_NAME: ghcr.io/yadony/yadony-back
 
 jobs:
 
@@ -45,10 +45,10 @@ jobs:
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
-            cd ~/dony
+            cd ~/yadony
             [ -f .env ] || { echo ".env introuvable sur le VPS"; exit 1; }
-            sed -i '/^DONY_IMAGE_TAG=/d' .env
-            echo "DONY_IMAGE_TAG=${{ inputs.image_tag }}" >> .env
+            sed -i '/^YADONY_IMAGE_TAG=/d' .env
+            echo "YADONY_IMAGE_TAG=${{ inputs.image_tag }}" >> .env
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.prod.yml pull api
             docker compose -f docker-compose.prod.yml up -d --no-deps api

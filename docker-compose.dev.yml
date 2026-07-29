@@ -1,24 +1,24 @@
 services:
   db:
     image: postgres:16
-    container_name: dony_db
+    container_name: yadony_db
     environment:
-      POSTGRES_DB: dony_dev
-      POSTGRES_USER: dony
-      POSTGRES_PASSWORD: dony_dev_password
+      POSTGRES_DB: yadony_dev
+      POSTGRES_USER: yadony
+      POSTGRES_PASSWORD: yadony_dev_password
     ports:
       - "5432:5432"
     volumes:
-      - dony_db_data:/var/lib/postgresql/data
+      - yadony_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dony -d dony_dev"]
+      test: ["CMD-SHELL", "pg_isready -U yadony -d yadony_dev"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   adminer:
     image: adminer
-    container_name: dony_adminer
+    container_name: yadony_adminer
     ports:
       - "8888:8080"
     depends_on:
@@ -27,16 +27,16 @@ services:
   # MinIO — S3-compatible local storage (remplace Cloudflare R2 en dev)
   minio:
     image: minio/minio:latest
-    container_name: dony_minio
+    container_name: yadony_minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: dony
-      MINIO_ROOT_PASSWORD: dony_dev_password
+      MINIO_ROOT_USER: yadony
+      MINIO_ROOT_PASSWORD: yadony_dev_password
     ports:
       - "9000:9000"   # API S3
       - "9001:9001"   # Console web
     volumes:
-      - dony_minio_data:/data
+      - yadony_minio_data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -47,7 +47,7 @@ services:
   # Requiert : source .env.dev avant docker compose up pour que ${STRIPE_SECRET_KEY} soit résolu
   stripe-cli-kyc:
     image: stripe/stripe-cli:latest
-    container_name: dony_stripe_cli_kyc
+    container_name: yadony_stripe_cli_kyc
     environment:
       - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command: ["listen", "--events", "identity.verification_session.verified,identity.verification_session.requires_input,identity.verification_session.canceled", "--forward-to", "http://host.docker.internal:8080/api/v1/kyc/webhook"]
@@ -61,7 +61,7 @@ services:
   # payment_intent.succeeded : recharge wallet (capture_method=automatic) — crédite le wallet via PaymentStripeWebhookHandler
   stripe-cli-payments:
     image: stripe/stripe-cli:latest
-    container_name: dony_stripe_cli_payments
+    container_name: yadony_stripe_cli_payments
     environment:
       - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
     command: ["listen", "--events", "account.updated,payment_intent.amount_capturable_updated,payment_intent.succeeded,payment_intent.payment_failed,charge.refunded", "--forward-connect-to", "http://host.docker.internal:8080/api/v1/payments/webhook", "--forward-to", "http://host.docker.internal:8080/api/v1/payments/webhook"]
@@ -70,5 +70,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  dony_db_data:
-  dony_minio_data:
+  yadony_db_data:
+  yadony_minio_data:

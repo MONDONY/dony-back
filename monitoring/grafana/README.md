@@ -1,6 +1,6 @@
-# Dashboards Grafana — Dony Monitoring
+# Dashboards Grafana — Yadony Monitoring
 
-4 dashboards préconfigurés pour monitorer l'API dony en staging.
+4 dashboards préconfigurés pour monitorer l'API yadony en staging.
 
 ## 📊 Dashboards disponibles
 
@@ -105,7 +105,7 @@ Ajoute ces alertes dans Grafana :
 
 ```yaml
 # API Down
-expr: up{job="dony-api"} == 0
+expr: up{job="yadony-api"} == 0
 for: 1m
 
 # High Error Rate
@@ -132,12 +132,12 @@ expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_
 
 ### Requêtes Prometheus invalides
 - Aller dans Grafana **Explore** → vérifier que Prometheus datasource répond
-- Tester une requête simple : `up{job="dony-api"}`
+- Tester une requête simple : `up{job="yadony-api"}`
 
 ### Logs manquants
 - Vérifier que Loki datasource est configuré
 - Vérifier que `GRAFANA_LOKI_URL` est correct
-- Vérifier les logs Alloy : `docker logs dony_alloy`
+- Vérifier les logs Alloy : `docker logs yadony_alloy`
 
 ---
 

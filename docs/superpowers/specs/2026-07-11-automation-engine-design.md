@@ -2,10 +2,10 @@
 
 ## Contexte
 
-`dony-pro` expose une page "Automatisations" (`/automatisations`) listant 6 règles préconfigurées avec toggles, une section règles personnalisées (hors scope ici) et un historique. L'infrastructure CRUD existe déjà des deux côtés :
+`yadony-pro` expose une page "Automatisations" (`/automatisations`) listant 6 règles préconfigurées avec toggles, une section règles personnalisées (hors scope ici) et un historique. L'infrastructure CRUD existe déjà des deux côtés :
 
-- **Front** (`dony-pro`) : `AutomationsDashboard.vue` / `useAutomations()` / `automationsService.ts` — appels réels à `GET/POST/PUT/DELETE /travelers/me/automation-rules` et `GET /travelers/me/automation-history`, pas de données statiques.
-- **Back** (`dony-back`) : package `com.dony.api.automation` — `AutomationRuleEntity`, `AutomationRuleRepository`, `AutomationHistoryEntity/Repository`, `AutomationRuleController`, `AutomationRuleService`. CRUD complet, testé.
+- **Front** (`yadony-pro`) : `AutomationsDashboard.vue` / `useAutomations()` / `automationsService.ts` — appels réels à `GET/POST/PUT/DELETE /travelers/me/automation-rules` et `GET /travelers/me/automation-history`, pas de données statiques.
+- **Back** (`yadony-back`) : package `com.yadony.api.automation` — `AutomationRuleEntity`, `AutomationRuleRepository`, `AutomationHistoryEntity/Repository`, `AutomationRuleController`, `AutomationRuleService`. CRUD complet, testé.
 
 **Ce qui manque, et l'objet de ce chantier** : aucun moteur n'évalue ces règles ni n'agit dessus. Aucun `@Scheduled` dans `automation`, aucune référence à ce package depuis `matching`/`bids`, `AutomationHistoryRepository` n'est jamais écrit en prod.
 
@@ -37,7 +37,7 @@ Les deux écoutent le même `BidCreatedEvent` pour un même voyageur. Ordre d'é
 2. Si pas de refus, règle 1 (accept confiance) évaluée.
 3. Une seule action possible par bid (accept XOR reject XOR aucune action = laissé en attente pour décision manuelle du voyageur).
 
-### Nouveau composant : `AutomationEngine` (package `com.dony.api.automation`)
+### Nouveau composant : `AutomationEngine` (package `com.yadony.api.automation`)
 
 - `AutomationBidListener` : `@EventListener` sur `BidCreatedEvent`, résout les règles actives 1/2/6 du voyageur propriétaire de l'annonce, évalue, agit.
 - `AutomationAnnouncementListener` : `@EventListener` sur `AnnouncementPublishedEvent`, gère la règle 5.
@@ -115,7 +115,7 @@ Plafond quotidien configurable (défaut 20) d'actions automatiques (accept + rej
 - Au-delà du plafond : la règle concernée passe `enabled=false` en base, une notification critique alerte le voyageur ("Ta règle d'automatisation a été désactivée après {N} actions aujourd'hui — vérifie ta configuration"), et l'action en cours n'est **pas** exécutée (le bid reste en attente de décision manuelle).
 - Le plafond est une **constante applicative** (`DAILY_ACTION_CAP = 20`), non configurable par le voyageur, pour éviter qu'un plafond mal réglé annule sa propre protection.
 
-### UI de configuration des seuils (dony-pro)
+### UI de configuration des seuils (yadony-pro)
 
 Ajout de champs dans `PresetRuleCard.vue` (affichés uniquement pour les presets 1, 4, 6 quand la carte est dépliée/éditée) :
 
@@ -137,4 +137,4 @@ TDD strict, conforme CLAUDE.md (couverture ≥ 90 % viséee, mais projet déjà 
 
 - Règles personnalisées SI→ALORS (DSL générique)
 - Règle 3 (déjà acquise, non liée au toggle)
-- Flutter (dony_app) — cette feature est spécifique au back-office web voyageur pro
+- Flutter (yadony_app) — cette feature est spécifique au back-office web voyageur pro

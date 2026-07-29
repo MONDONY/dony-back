@@ -28,7 +28,7 @@ I_KNOW_ITS_NOT_PROD="${I_KNOW_ITS_NOT_PROD:-false}"
 # ─── gardes ───────────────────────────────────────────────────────────────────
 if [[ -z "$BASE_URL" ]]; then echo "ERREUR: BASE_URL vide."; exit 1; fi
 case "$BASE_URL" in
-  *api.dony.app*|*api.dony.store*)
+  *api.yadony.app*|*api.yadony.com*)
     echo "REFUS: BASE_URL ressemble à la PRODUCTION ($BASE_URL). Abandon."; exit 1;;
 esac
 # Refuse toute cible qui ne ressemble pas à staging/local, sauf override explicite.
@@ -49,7 +49,7 @@ fi
 export K6_ID_TOKEN
 
 # Avertissement rate-limit si on passe par le domaine public nginx.
-if [[ "$BASE_URL" == *staging*dony* && "$BASE_URL" == https://* ]]; then
+if [[ "$BASE_URL" == *staging*yadony* && "$BASE_URL" == https://* ]]; then
   echo "⚠️  BASE_URL passe par le domaine public (nginx) → rate-limit 30 req/min/IP."
   echo "    Au-delà du burst, tout sera 429. Pour un vrai test de capacité, bypasse"
   echo "    nginx (backend direct :8080) ou lève le rate-limit (cf. STAGING.md)."

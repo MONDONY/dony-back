@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rendre fonctionnelles 5 des 6 règles d'automatisation préconfigurées de `dony-pro` (la 6e — fermeture auto à capacité 0 — est déjà acquise, hors scope) : un moteur backend qui évalue les règles activées par chaque voyageur et agit réellement (accepter/refuser un bid, notifier), plus l'UI de configuration des seuils côté web.
+**Goal:** Rendre fonctionnelles 5 des 6 règles d'automatisation préconfigurées de `yadony-pro` (la 6e — fermeture auto à capacité 0 — est déjà acquise, hors scope) : un moteur backend qui évalue les règles activées par chaque voyageur et agit réellement (accepter/refuser un bid, notifier), plus l'UI de configuration des seuils côté web.
 
-**Architecture:** Package `com.dony.api.automation` (dony-back) enrichi de listeners Spring Event (`@EventListener`/`@TransactionalEventListener`) réagissant à `BidCreatedEvent` et `AnnouncementPublishedEvent`, et d'un scheduler `@Scheduled` pour la règle temporelle. Chaque déclenchement écrit une ligne dans `automation_history` (déjà existant, jamais écrit à ce jour) et respecte un plafond quotidien anti-emballement. Côté `dony-pro`, ajout de champs de configuration de seuils dans `PresetRuleCard.vue`.
+**Architecture:** Package `com.yadony.api.automation` (yadony-back) enrichi de listeners Spring Event (`@EventListener`/`@TransactionalEventListener`) réagissant à `BidCreatedEvent` et `AnnouncementPublishedEvent`, et d'un scheduler `@Scheduled` pour la règle temporelle. Chaque déclenchement écrit une ligne dans `automation_history` (déjà existant, jamais écrit à ce jour) et respecte un plafond quotidien anti-emballement. Côté `yadony-pro`, ajout de champs de configuration de seuils dans `PresetRuleCard.vue`.
 
 **Tech Stack:** Spring Boot 3.4 (Java 21), Spring Events, `@Scheduled`, PostgreSQL/Flyway, JUnit 5 + Mockito côté back ; Vue 3.5 + vitest côté front.
 
@@ -26,8 +26,8 @@
 ### Task 1: Méthodes système `acceptBidBySystem`/`rejectBidBySystem`
 
 **Files:**
-- Modify: `dony-back/src/main/java/com/dony/api/matching/BidService.java` (méthodes `acceptBid` lignes 457-511, `rejectBid` lignes 518-546)
-- Test: `dony-back/src/test/java/com/dony/api/matching/BidServiceTest.java`
+- Modify: `yadony-back/src/main/java/com/yadony/api/matching/BidService.java` (méthodes `acceptBid` lignes 457-511, `rejectBid` lignes 518-546)
+- Test: `yadony-back/src/test/java/com/yadony/api/matching/BidServiceTest.java`
 
 **Interfaces:**
 - Produces: `BidResponse acceptBidBySystem(UUID bidId, UUID travelerId)` et `BidResponse rejectBidBySystem(UUID bidId, UUID travelerId, String reason)`, publics sur `BidService`, appelables par le futur `AutomationBidListener` (Task 3) sans `firebaseUid`.
@@ -93,10 +93,10 @@ Dans `BidService.java`, remplacer le corps de `acceptBid` par un appel à une m�
 @CacheEvict(value = "announcements-search", allEntries = true)
 public BidResponse acceptBid(UUID bidId, String firebaseUid) {
     BidEntity bid = bidRepository.findByIdForUpdate(bidId)
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                     "bid-not-found", "Bid Not Found", "Demande introuvable"));
     AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(bid.getAnnouncementId())
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                     "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
     UserEntity traveler = findUserByFirebaseUid(firebaseUid);
     requireTravelerOwnsAnnouncement(traveler, announcement);
@@ -113,10 +113,10 @@ public BidResponse acceptBid(UUID bidId, String firebaseUid) {
 @CacheEvict(value = "announcements-search", allEntries = true)
 public BidResponse acceptBidBySystem(UUID bidId, UUID travelerId) {
     BidEntity bid = bidRepository.findByIdForUpdate(bidId)
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                     "bid-not-found", "Bid Not Found", "Demande introuvable"));
     AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(bid.getAnnouncementId())
-            .orElseThrow(() -> new DonyBusinessException(HttpStatus.NOT_FOUND,
+            .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                     "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
     if (!announcement.getTravelerId().equals(travelerId)) {
         throw new IllegalStateException(
@@ -133,7 +133,7 @@ private BidResponse doAcceptBid(BidEntity bid, AnnouncementEntity announcement, 
     if (announcement.getStatus() == AnnouncementStatus.IN_PROGRESS
             || announcement.getStatus() == AnnouncementStatus.COMPLETED
             || announcement.getStatus() == AnnouncementStatus.CANCELLED) {
-        throw new DonyBusinessException(HttpStatus.CONFLICT,
+        throw new YadonyBusinessException(HttpStatus.CONFLICT,
                 "announcement-not-accepting", "Announcement Not Accepting",
                 "Le voyageur est déjà parti, ce trajet n'accepte plus de colis");
     }
@@ -141,7 +141,7 @@ private BidResponse doAcceptBid(BidEntity bid, AnnouncementEntity announcement, 
     boolean isKgFree = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
     if (!isKgFree && bid.getWeightKg() != null
             && bid.getWeightKg().compareTo(announcement.getAvailableKg()) > 0) {
-        throw new DonyBusinessException(
+        throw new YadonyBusinessException(
                 HttpStatus.CONFLICT, "capacity-insufficient", "Insufficient Capacity",
                 "Capacité insuffisante pour accepter cette demande");
     }
@@ -241,7 +241,7 @@ Expected: PASS intégral (les tests existants d'`acceptBid`/`rejectBid` doivent 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/BidService.java src/test/java/com/dony/api/matching/BidServiceTest.java
+git add src/main/java/com/yadony/api/matching/BidService.java src/test/java/com/yadony/api/matching/BidServiceTest.java
 git commit -m "feat(automation): méthodes système acceptBidBySystem/rejectBidBySystem sur BidService"
 ```
 
@@ -250,8 +250,8 @@ git commit -m "feat(automation): méthodes système acceptBidBySystem/rejectBidB
 ### Task 2: `AutomationActionExecutor` — écriture historique + garde-fou quotidien
 
 **Files:**
-- Create: `dony-back/src/main/java/com/dony/api/automation/AutomationActionExecutor.java`
-- Test: `dony-back/src/test/java/com/dony/api/automation/AutomationActionExecutorTest.java`
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/AutomationActionExecutor.java`
+- Test: `yadony-back/src/test/java/com/yadony/api/automation/AutomationActionExecutorTest.java`
 
 **Interfaces:**
 - Consumes: `AutomationRuleRepository`, `AutomationHistoryRepository`, `AutomationRuleService.countTodayActions(UUID)` (déjà existant), `BidService.acceptBidBySystem`/`rejectBidBySystem` (Task 1), `NotificationDispatcher.notifyUser` (déjà existant).
@@ -265,9 +265,9 @@ git commit -m "feat(automation): méthodes système acceptBidBySystem/rejectBidB
 - [ ] **Step 1: Écrire le test RED**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.common.DonyBusinessException;
+import com.yadony.api.common.YadonyBusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -322,7 +322,7 @@ class AutomationActionExecutorTest {
         when(ruleService.countTodayActions(travelerId)).thenReturn(0L);
 
         boolean executed = executor.tryExecuteBidAction(rule, travelerId, bidId,
-                "AUTO_ACCEPT", () -> { throw new DonyBusinessException(
+                "AUTO_ACCEPT", () -> { throw new YadonyBusinessException(
                         org.springframework.http.HttpStatus.CONFLICT, "capacity-insufficient",
                         "x", "Capacité insuffisante"); });
 
@@ -355,7 +355,7 @@ Expected: FAIL — compilation error, la classe n'existe pas.
 - [ ] **Step 3: Implémenter `AutomationActionExecutor`**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -442,7 +442,7 @@ Expected: PASS (3/3).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/automation/AutomationActionExecutor.java src/test/java/com/dony/api/automation/AutomationActionExecutorTest.java
+git add src/main/java/com/yadony/api/automation/AutomationActionExecutor.java src/test/java/com/yadony/api/automation/AutomationActionExecutorTest.java
 git commit -m "feat(automation): AutomationActionExecutor — historique systématique + plafond quotidien"
 ```
 
@@ -451,8 +451,8 @@ git commit -m "feat(automation): AutomationActionExecutor — historique systém
 ### Task 3: `AutomationBidListener` — règles 1 (accepter confiance), 2 (refuser trop lourd), 6 (dernière minute)
 
 **Files:**
-- Create: `dony-back/src/main/java/com/dony/api/automation/AutomationBidListener.java`
-- Test: `dony-back/src/test/java/com/dony/api/automation/AutomationBidListenerTest.java`
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/AutomationBidListener.java`
+- Test: `yadony-back/src/test/java/com/yadony/api/automation/AutomationBidListenerTest.java`
 
 **Interfaces:**
 - Consumes: `BidCreatedEvent` (`bidId, announcementId, travelerId, senderId, senderFirstName, weightKg, corridor`), `AutomationRuleRepository.findByTravelerIdOrderByCreatedAtAsc`, `BidService.acceptBidBySystem`/`rejectBidBySystem` (Task 1), `AutomationActionExecutor` (Task 2), `UserRepository.findById` (pour `averageRating`), `BidRepository.findById` + `AnnouncementRepository.findById` (pour relire poids/capacité/departureAt), `NotificationDispatcher.notifyUser`.
@@ -461,15 +461,15 @@ git commit -m "feat(automation): AutomationActionExecutor — historique systém
 - [ ] **Step 1: Écrire le test RED (priorité refus > accept, et règle 6 indépendante)**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.matching.BidService;
-import com.dony.api.matching.events.BidCreatedEvent;
-import com.dony.api.notifications.NotificationDispatcher;
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.BidService;
+import com.yadony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.notifications.NotificationDispatcher;
+import com.yadony.api.auth.UserEntity;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.matching.AnnouncementEntity;
+import com.yadony.api.matching.AnnouncementRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -646,15 +646,15 @@ Expected: FAIL — la classe `AutomationBidListener` n'existe pas.
 - [ ] **Step 3: Implémenter `AutomationBidListener`**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.auth.UserEntity;
-import com.dony.api.auth.UserRepository;
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
-import com.dony.api.matching.BidService;
-import com.dony.api.matching.events.BidCreatedEvent;
-import com.dony.api.notifications.NotificationDispatcher;
+import com.yadony.api.auth.UserEntity;
+import com.yadony.api.auth.UserRepository;
+import com.yadony.api.matching.AnnouncementEntity;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.BidService;
+import com.yadony.api.matching.events.BidCreatedEvent;
+import com.yadony.api.notifications.NotificationDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -789,7 +789,7 @@ Expected: PASS (5/5).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/automation/AutomationBidListener.java src/test/java/com/dony/api/automation/AutomationBidListenerTest.java
+git add src/main/java/com/yadony/api/automation/AutomationBidListener.java src/test/java/com/yadony/api/automation/AutomationBidListenerTest.java
 git commit -m "feat(automation): AutomationBidListener — accepter confiance, refuser trop lourd, alerte dernière minute"
 ```
 
@@ -798,11 +798,11 @@ git commit -m "feat(automation): AutomationBidListener — accepter confiance, r
 ### Task 4: Migration watermark + `CapacityWatchScheduler` (règle 4)
 
 **Files:**
-- Create: `dony-back/src/main/resources/db/migration/V170__automation_capacity_watermarks.sql`
-- Create: `dony-back/src/main/java/com/dony/api/automation/AutomationCapacityWatermarkEntity.java`
-- Create: `dony-back/src/main/java/com/dony/api/automation/AutomationCapacityWatermarkRepository.java`
-- Create: `dony-back/src/main/java/com/dony/api/automation/CapacityWatchScheduler.java`
-- Test: `dony-back/src/test/java/com/dony/api/automation/CapacityWatchSchedulerTest.java`
+- Create: `yadony-back/src/main/resources/db/migration/V170__automation_capacity_watermarks.sql`
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/AutomationCapacityWatermarkEntity.java`
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/AutomationCapacityWatermarkRepository.java`
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/CapacityWatchScheduler.java`
+- Test: `yadony-back/src/test/java/com/yadony/api/automation/CapacityWatchSchedulerTest.java`
 
 **Interfaces:**
 - Consumes: `AutomationRuleRepository`, `AnnouncementRepository.findActiveByTravelerId(UUID)` (déjà existant), `AutomationCapacityWatermarkRepository` (nouveau), `NotificationDispatcher.notifyUser`, `AutomationActionExecutor.recordNotification`.
@@ -826,7 +826,7 @@ CREATE TABLE automation_capacity_watermarks (
 
 ```java
 // AutomationCapacityWatermarkEntity.java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
@@ -863,7 +863,7 @@ public class AutomationCapacityWatermarkEntity {
 
 ```java
 // AutomationCapacityWatermarkRepository.java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -880,11 +880,11 @@ public interface AutomationCapacityWatermarkRepository
 - [ ] **Step 3: Écrire le test RED du scheduler**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
-import com.dony.api.notifications.NotificationDispatcher;
+import com.yadony.api.matching.AnnouncementEntity;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.notifications.NotificationDispatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -1021,11 +1021,11 @@ Expected: FAIL — classes inexistantes.
 - [ ] **Step 5: Implémenter `CapacityWatchScheduler`**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.matching.AnnouncementEntity;
-import com.dony.api.matching.AnnouncementRepository;
-import com.dony.api.notifications.NotificationDispatcher;
+import com.yadony.api.matching.AnnouncementEntity;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.notifications.NotificationDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -1168,10 +1168,10 @@ Expected: migration appliquée sans erreur, 4/4 tests PASS.
 
 ```bash
 git add src/main/resources/db/migration/V170__automation_capacity_watermarks.sql \
-        src/main/java/com/dony/api/automation/AutomationCapacityWatermarkEntity.java \
-        src/main/java/com/dony/api/automation/AutomationCapacityWatermarkRepository.java \
-        src/main/java/com/dony/api/automation/CapacityWatchScheduler.java \
-        src/test/java/com/dony/api/automation/CapacityWatchSchedulerTest.java
+        src/main/java/com/yadony/api/automation/AutomationCapacityWatermarkEntity.java \
+        src/main/java/com/yadony/api/automation/AutomationCapacityWatermarkRepository.java \
+        src/main/java/com/yadony/api/automation/CapacityWatchScheduler.java \
+        src/test/java/com/yadony/api/automation/CapacityWatchSchedulerTest.java
 git commit -m "feat(automation): CapacityWatchScheduler — alerte capacité libérée (règle 4)"
 ```
 
@@ -1180,9 +1180,9 @@ git commit -m "feat(automation): CapacityWatchScheduler — alerte capacité lib
 ### Task 5: `AutomationAnnouncementListener` — règle 5 (expéditeurs fidèles)
 
 **Files:**
-- Modify: `dony-back/src/main/java/com/dony/api/matching/BidRepository.java` (nouvelle query)
-- Create: `dony-back/src/main/java/com/dony/api/automation/AutomationAnnouncementListener.java`
-- Test: `dony-back/src/test/java/com/dony/api/automation/AutomationAnnouncementListenerTest.java`
+- Modify: `yadony-back/src/main/java/com/yadony/api/matching/BidRepository.java` (nouvelle query)
+- Create: `yadony-back/src/main/java/com/yadony/api/automation/AutomationAnnouncementListener.java`
+- Test: `yadony-back/src/test/java/com/yadony/api/automation/AutomationAnnouncementListenerTest.java`
 
 **Interfaces:**
 - Produces: `List<UUID> BidRepository.findLoyalSenderIds(UUID travelerId, String departureCity, String arrivalCity)`.
@@ -1194,7 +1194,7 @@ git commit -m "feat(automation): CapacityWatchScheduler — alerte capacité lib
 @Query("SELECT DISTINCT b.senderId FROM BidEntity b " +
        "JOIN AnnouncementEntity a ON a.id = b.announcementId " +
        "WHERE a.travelerId = :travelerId AND a.departureCity = :departureCity " +
-       "AND a.arrivalCity = :arrivalCity AND b.status = com.dony.api.matching.BidStatus.ACCEPTED " +
+       "AND a.arrivalCity = :arrivalCity AND b.status = com.yadony.api.matching.BidStatus.ACCEPTED " +
        "AND b.deletedAt IS NULL")
 List<UUID> findLoyalSenderIds(@Param("travelerId") UUID travelerId,
                               @Param("departureCity") String departureCity,
@@ -1204,11 +1204,11 @@ List<UUID> findLoyalSenderIds(@Param("travelerId") UUID travelerId,
 - [ ] **Step 2: Écrire le test RED**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.matching.AnnouncementPublishedEvent;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.notifications.NotificationDispatcher;
+import com.yadony.api.matching.AnnouncementPublishedEvent;
+import com.yadony.api.matching.BidRepository;
+import com.yadony.api.notifications.NotificationDispatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -1301,11 +1301,11 @@ Expected: FAIL — classe inexistante.
 - [ ] **Step 4: Implémenter `AutomationAnnouncementListener`**
 
 ```java
-package com.dony.api.automation;
+package com.yadony.api.automation;
 
-import com.dony.api.matching.AnnouncementPublishedEvent;
-import com.dony.api.matching.BidRepository;
-import com.dony.api.notifications.NotificationDispatcher;
+import com.yadony.api.matching.AnnouncementPublishedEvent;
+import com.yadony.api.matching.BidRepository;
+import com.yadony.api.notifications.NotificationDispatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -1370,21 +1370,21 @@ Expected: PASS (3/3).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/main/java/com/dony/api/matching/BidRepository.java \
-        src/main/java/com/dony/api/automation/AutomationAnnouncementListener.java \
-        src/test/java/com/dony/api/automation/AutomationAnnouncementListenerTest.java
+git add src/main/java/com/yadony/api/matching/BidRepository.java \
+        src/main/java/com/yadony/api/automation/AutomationAnnouncementListener.java \
+        src/test/java/com/yadony/api/automation/AutomationAnnouncementListenerTest.java
 git commit -m "feat(automation): AutomationAnnouncementListener — notifier expéditeurs fidèles (règle 5)"
 ```
 
 ---
 
-### Task 6: UI de configuration des seuils (dony-pro)
+### Task 6: UI de configuration des seuils (yadony-pro)
 
 **Files:**
-- Modify: `dony-pro/app/features/automations/types/index.ts`
-- Modify: `dony-pro/app/features/automations/composables/useAutomations.ts`
-- Modify: `dony-pro/app/features/automations/components/PresetRuleCard.vue`
-- Test: `dony-pro/tests/unit/features/automations/PresetRuleCard.spec.ts` (créer si absent), `dony-pro/tests/unit/features/automations/useAutomations.spec.ts` (créer si absent — vérifier d'abord s'il existe déjà un test composable pour ce module)
+- Modify: `yadony-pro/app/features/automations/types/index.ts`
+- Modify: `yadony-pro/app/features/automations/composables/useAutomations.ts`
+- Modify: `yadony-pro/app/features/automations/components/PresetRuleCard.vue`
+- Test: `yadony-pro/tests/unit/features/automations/PresetRuleCard.spec.ts` (créer si absent), `yadony-pro/tests/unit/features/automations/useAutomations.spec.ts` (créer si absent — vérifier d'abord s'il existe déjà un test composable pour ce module)
 
 **Interfaces:**
 - Consumes: `automationsService.updateRule(id, payload)` (déjà existant, accepte déjà `config`).
@@ -1392,7 +1392,7 @@ git commit -m "feat(automation): AutomationAnnouncementListener — notifier exp
 
 - [ ] **Step 1: Vérifier l'existant avant d'écrire les tests**
 
-Lire `dony-pro/tests/unit/features/automations/` (s'il existe) pour identifier le pattern de test déjà utilisé sur ce module (mocks `automationsService`, structure `describe`/`it`) — copier ce pattern plutôt que d'en inventer un nouveau. S'il n'existe aucun test pour ce module, s'inspirer du pattern `tests/unit/features/trajets/useAnnouncementForm.spec.ts` (mock du service via `vi.mock`, `beforeEach` avec `vi.clearAllMocks()`).
+Lire `yadony-pro/tests/unit/features/automations/` (s'il existe) pour identifier le pattern de test déjà utilisé sur ce module (mocks `automationsService`, structure `describe`/`it`) — copier ce pattern plutôt que d'en inventer un nouveau. S'il n'existe aucun test pour ce module, s'inspirer du pattern `tests/unit/features/trajets/useAnnouncementForm.spec.ts` (mock du service via `vi.mock`, `beforeEach` avec `vi.clearAllMocks()`).
 
 - [ ] **Step 2: Ajouter `hoursBeforeDeparture` au type `PresetRuleConfig`**
 

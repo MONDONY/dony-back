@@ -119,7 +119,7 @@ Expéditeur                Backend                    Stripe                Voya
 
 Le code v1 (encore en place avant cette refonte) utilise le pattern Stripe **destination charges** : chaque `PaymentIntent` est créé avec `transfer_data.destination = traveler.stripeAccountId` et `application_fee_amount = 12%`. Cela signifie que **dès la capture**, l'argent quitte la plateforme et arrive sur le compte Connect du voyageur.
 
-Conséquences inacceptables pour Dony :
+Conséquences inacceptables pour Yadony :
 
 1. **Capture à l'acceptation = paiement immédiat au voyageur**, avant qu'il n'ait voyagé. Pas de séquestre réel.
 2. **Capture à la livraison** (l'autre option) impossible : le hold Stripe expire après **7 jours** alors qu'un voyage peut être planifié à **2 mois** d'écart.
@@ -613,12 +613,12 @@ Pour chaque ligne avec `risk != 'OK'` : décision manuelle (capture immédiate, 
 
 **Action requise** :
 1. Faire valider par un **expert-comptable** que ce schéma est compatible avec la comptabilité actuelle de la plateforme (ou s'il faut un nouveau plan comptable).
-2. Vérifier la **TVA** : si Dony est intermédiaire transparent, OK ; si requalifié en intermédiaire opaque, la TVA s'applique sur le total et non sur la commission.
+2. Vérifier la **TVA** : si Yadony est intermédiaire transparent, OK ; si requalifié en intermédiaire opaque, la TVA s'applique sur le total et non sur la commission.
 3. Documenter le schéma des écritures dans `docs/accounting/` (à créer).
 
 ### Q6 — Frais Stripe Transfer EUR → comptes Connect zone CFA — **🚨 BLOCKER DEV**
 
-**Hypothèse de travail** : les Transfers Stripe entre comptes EUR sont gratuits dans la zone SEPA. Mais Dony cible la diaspora africaine : les voyageurs peuvent avoir des comptes connectés au Sénégal, Côte d'Ivoire, Mali, Cameroun.
+**Hypothèse de travail** : les Transfers Stripe entre comptes EUR sont gratuits dans la zone SEPA. Mais Yadony cible la diaspora africaine : les voyageurs peuvent avoir des comptes connectés au Sénégal, Côte d'Ivoire, Mali, Cameroun.
 
 **Question critique** : quel est le coût d'un Transfer EUR → compte Stripe Connect d'un voyageur en zone CFA ?
 
@@ -636,7 +636,7 @@ BigDecimal net = payment.getAmount()
     .subtract(transferFees);  // ← à déterminer selon zone du voyageur
 ```
 
-Sinon : soit Dony absorbe les frais (perte sur chaque livraison), soit le voyageur reçoit moins qu'annoncé (problème UX et juridique).
+Sinon : soit Yadony absorbe les frais (perte sur chaque livraison), soit le voyageur reçoit moins qu'annoncé (problème UX et juridique).
 
 **Action — à faire AVANT d'écrire le code de la Task 9d** :
 
@@ -647,7 +647,7 @@ Sinon : soit Dony absorbe les frais (perte sur chaque livraison), soit le voyage
    - Si non-gratuit : barème fixe ou pourcentage ?
 3. **Selon la réponse** :
    - **Gratuit** → garder la formule actuelle, `transferFees = 0`.
-   - **Non-gratuit, fixe ou %** → ajouter une colonne `transfer_fees` sur `payments` populée à la création (avec un `StripeFeesCalculator` côté `PaymentService`), et utiliser `transferFees` dans `DeliveryEventListener`. **Recalibrer la commission** si nécessaire pour préserver la marge nette de Dony.
+   - **Non-gratuit, fixe ou %** → ajouter une colonne `transfer_fees` sur `payments` populée à la création (avec un `StripeFeesCalculator` côté `PaymentService`), et utiliser `transferFees` dans `DeliveryEventListener`. **Recalibrer la commission** si nécessaire pour préserver la marge nette de Yadony.
    - **Restriction de devise** → potentiellement bloquant pour le pays concerné. Décider : soit on n'accepte que des voyageurs avec compte EUR-zone-européenne, soit on attend une autre solution (Wave / Orange Money via les services existants `WaveService` / `OrangeMoneyService` mentionnés dans l'architecture).
 
 **Statut** : tant que ce point n'est pas tranché, la **Task 9d ne peut pas être finalisée** (même si elle peut être ébauchée avec la formule simplifiée). Marquer le code avec `// TODO Q6 : adjust net amount based on transfer fees once Stripe support clarifies pricing for CFA zone`.
@@ -662,7 +662,7 @@ Sinon : soit Dony absorbe les frais (perte sur chaque livraison), soit le voyage
 
 **À ouvrir cette semaine.** Décrire :
 
-> Marketplace P2P (peer-to-peer) Dony — connecte voyageurs et expéditeurs de la diaspora africaine pour le transport de colis. Configuration actuelle : comptes Connect Express avec capability `transfers` activée. Migration prévue de "destination charges" (`transfer_data.destination` + `application_fee_amount`) vers "separate charges and transfers" (capture sur compte plateforme, Transfer manuel à la livraison).
+> Marketplace P2P (peer-to-peer) Yadony — connecte voyageurs et expéditeurs de la diaspora africaine pour le transport de colis. Configuration actuelle : comptes Connect Express avec capability `transfers` activée. Migration prévue de "destination charges" (`transfer_data.destination` + `application_fee_amount`) vers "separate charges and transfers" (capture sur compte plateforme, Transfer manuel à la livraison).
 >
 > Questions :
 > 1. **Conformité** : nous prévoyons de détenir les fonds clients sur le compte plateforme entre l'acceptation du voyageur et la confirmation de livraison. Selon le profil de voyage, ce délai peut atteindre 2 mois (vol planifié à long terme). Est-ce compatible avec la licence Stripe sous laquelle nous opérons (Stripe Payments France / EU) ? Y a-t-il un seuil de durée ou de volume au-delà duquel un statut réglementaire complémentaire (Agent PSP, EME) est requis ?
@@ -685,7 +685,7 @@ Budget estimatif : 1500-3000 €. Garder la réponse écrite dans `docs/complian
 
 **À planifier dans la foulée de A2** (l'avis fiscal de l'avocat oriente la consultation comptable). Décrire :
 
-> Migration du schéma comptable : avant, Dony percevait une commission via `application_fee_amount` (visible directement sur le compte plateforme Stripe). Désormais, Dony encaisse 100 % du montant et reverse une partie au voyageur. Quel est le bon schéma d'écritures comptables ? Quelle est l'incidence sur la déclaration de TVA si la plateforme est intermédiaire opaque vs transparent ?
+> Migration du schéma comptable : avant, Yadony percevait une commission via `application_fee_amount` (visible directement sur le compte plateforme Stripe). Désormais, Yadony encaisse 100 % du montant et reverse une partie au voyageur. Quel est le bon schéma d'écritures comptables ? Quelle est l'incidence sur la déclaration de TVA si la plateforme est intermédiaire opaque vs transparent ?
 
 ---
 

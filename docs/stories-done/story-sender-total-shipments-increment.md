@@ -22,19 +22,19 @@ Une livraison réussie = +1 par bid. Pas d'agrégation par annonce (à la diffé
 
 ### Backend
 - `src/main/resources/db/migration/V40__add_total_shipments_and_counted_flag.sql` — colonnes `users.total_shipments` (INT NOT NULL DEFAULT 0) et `bids.shipment_counted` (BOOLEAN NOT NULL DEFAULT FALSE).
-- `src/main/java/com/dony/api/auth/SenderStatsListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` + `@Transactional(REQUIRES_NEW)` qui consomme `DeliveryConfirmedEvent` et incrémente le compteur.
-- `src/test/java/com/dony/api/auth/SenderStatsListenerTest.java` — 6 tests Mockito.
-- `src/test/java/com/dony/api/auth/SenderStatsListenerIT.java` — 4 tests d'intégration `@SpringBootTest`.
+- `src/main/java/com/yadony/api/auth/SenderStatsListener.java` — listener `@TransactionalEventListener(AFTER_COMMIT)` + `@Transactional(REQUIRES_NEW)` qui consomme `DeliveryConfirmedEvent` et incrémente le compteur.
+- `src/test/java/com/yadony/api/auth/SenderStatsListenerTest.java` — 6 tests Mockito.
+- `src/test/java/com/yadony/api/auth/SenderStatsListenerIT.java` — 4 tests d'intégration `@SpringBootTest`.
 
 ## Fichiers modifiés
 
 ### Backend
-- `src/main/java/com/dony/api/auth/UserEntity.java` — champ `int totalShipments` + getter/setter.
-- `src/main/java/com/dony/api/matching/BidEntity.java` — champ `boolean shipmentCounted` + getter/setter.
-- `src/main/java/com/dony/api/auth/dto/UserResponse.java` — nouveau champ `int totalShipments`.
-- `src/main/java/com/dony/api/auth/AuthService.java` — `toResponse(...)` propage `getTotalShipments()`.
-- `src/main/java/com/dony/api/matching/dto/BidResponse.java` — nouveau champ `Integer senderTotalShipments` (nullable si sender inconnu).
-- `src/main/java/com/dony/api/matching/BidService.java` — `toResponse(...)` injecte `sender.getTotalShipments()`.
+- `src/main/java/com/yadony/api/auth/UserEntity.java` — champ `int totalShipments` + getter/setter.
+- `src/main/java/com/yadony/api/matching/BidEntity.java` — champ `boolean shipmentCounted` + getter/setter.
+- `src/main/java/com/yadony/api/auth/dto/UserResponse.java` — nouveau champ `int totalShipments`.
+- `src/main/java/com/yadony/api/auth/AuthService.java` — `toResponse(...)` propage `getTotalShipments()`.
+- `src/main/java/com/yadony/api/matching/dto/BidResponse.java` — nouveau champ `Integer senderTotalShipments` (nullable si sender inconnu).
+- `src/main/java/com/yadony/api/matching/BidService.java` — `toResponse(...)` injecte `sender.getTotalShipments()`.
 
 ### Flutter
 - `lib/features/auth/data/models/user_model.dart` — champ `final int totalShipments` (default 0), parsing JSON, props Equatable.

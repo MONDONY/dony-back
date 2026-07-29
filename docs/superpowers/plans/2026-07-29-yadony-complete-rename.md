@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remplacer complètement l'identité Dony par Yadony et le domaine `dony.store` par `yadony.com` dans le backend.
+**Goal:** Remplacer complètement l'identité Yadony par Yadony et le domaine `yadony.com` par `yadony.com` dans le backend.
 
 **Architecture:** Le renommage est réalisé par couches vérifiables : espace de noms Java, symboles Java, configuration applicative, infrastructure, puis documentation. Les migrations Flyway historiques constituent une zone immuable et sont exclues de tous les remplacements.
 
@@ -62,7 +62,7 @@ if git ls-files -z \
   | grep -zv '^src/main/resources/db/migration/' \
   | grep -zv '^docs/superpowers/specs/2026-07-29-yadony-complete-rename-design.md$' \
   | grep -zv '^docs/superpowers/plans/2026-07-29-yadony-complete-rename.md$' \
-  | xargs -0 rg -l -i 'dony'; then
+  | xargs -0 rg -l -i 'yadony'; then
   exit 1
 fi
 ```
@@ -72,18 +72,18 @@ Expected: FAIL, car l'ancien nom est encore présent hors migrations.
 ### Task 2: Renommer l'espace de noms et les symboles Java
 
 **Files:**
-- Move: `src/main/java/com/dony/` → `src/main/java/com/yadony/`
-- Move: `src/test/java/com/dony/` → `src/test/java/com/yadony/`
+- Move: `src/main/java/com/yadony/` → `src/main/java/com/yadony/`
+- Move: `src/test/java/com/yadony/` → `src/test/java/com/yadony/`
 - Modify: tous les fichiers `*.java` sous ces deux nouveaux répertoires
-- Rename: `src/main/java/com/yadony/api/DonyBackApplication.java` → `src/main/java/com/yadony/api/YadonyBackApplication.java`
-- Rename: `src/main/java/com/yadony/api/common/DonyBusinessException.java` → `src/main/java/com/yadony/api/common/YadonyBusinessException.java`
-- Rename: `src/main/java/com/yadony/api/common/DonyNotFoundException.java` → `src/main/java/com/yadony/api/common/YadonyNotFoundException.java`
-- Rename: `src/main/java/com/yadony/api/config/DonyConfig.java` → `src/main/java/com/yadony/api/config/YadonyConfig.java`
-- Rename: `src/main/java/com/yadony/api/config/DonyConfigProperties.java` → `src/main/java/com/yadony/api/config/YadonyConfigProperties.java`
-- Rename: tests Java dont le nom contient `Dony`
+- Rename: `src/main/java/com/yadony/api/YadonyBackApplication.java` → `src/main/java/com/yadony/api/YadonyBackApplication.java`
+- Rename: `src/main/java/com/yadony/api/common/YadonyBusinessException.java` → `src/main/java/com/yadony/api/common/YadonyBusinessException.java`
+- Rename: `src/main/java/com/yadony/api/common/YadonyNotFoundException.java` → `src/main/java/com/yadony/api/common/YadonyNotFoundException.java`
+- Rename: `src/main/java/com/yadony/api/config/YadonyConfig.java` → `src/main/java/com/yadony/api/config/YadonyConfig.java`
+- Rename: `src/main/java/com/yadony/api/config/YadonyConfigProperties.java` → `src/main/java/com/yadony/api/config/YadonyConfigProperties.java`
+- Rename: tests Java dont le nom contient `Yadony`
 
 **Interfaces:**
-- Consumes: package racine `com.dony.api` et symboles `Dony*`
+- Consumes: package racine `com.yadony.api` et symboles `Yadony*`
 - Produces: package racine `com.yadony.api` et symboles `Yadony*`
 
 - [ ] **Step 1: Déplacer les arbres de packages**
@@ -92,8 +92,8 @@ Utiliser des déplacements Git afin de préserver l'historique :
 
 ```bash
 mkdir -p src/main/java/com/yadony src/test/java/com/yadony
-git mv src/main/java/com/dony/api src/main/java/com/yadony/api
-git mv src/test/java/com/dony/api src/test/java/com/yadony/api
+git mv src/main/java/com/yadony/api src/main/java/com/yadony/api
+git mv src/test/java/com/yadony/api src/test/java/com/yadony/api
 ```
 
 - [ ] **Step 2: Remplacer le package et les symboles dans les sources Java**
@@ -101,15 +101,15 @@ git mv src/test/java/com/dony/api src/test/java/com/yadony/api
 Appliquer, dans les fichiers Java suivis sous `src/main/java` et `src/test/java`, les transformations exactes :
 
 ```text
-com.dony.api              -> com.yadony.api
-DonyBackApplication       -> YadonyBackApplication
-DonyBusinessException     -> YadonyBusinessException
-DonyNotFoundException     -> YadonyNotFoundException
-DonyConfigProperties      -> YadonyConfigProperties
-DonyConfig                -> YadonyConfig
-"Dony"                    -> "Yadony"
-"dony"                    -> "yadony"
-"DONY"                    -> "YADONY"
+com.yadony.api              -> com.yadony.api
+YadonyBackApplication       -> YadonyBackApplication
+YadonyBusinessException     -> YadonyBusinessException
+YadonyNotFoundException     -> YadonyNotFoundException
+YadonyConfigProperties      -> YadonyConfigProperties
+YadonyConfig                -> YadonyConfig
+"Yadony"                    -> "Yadony"
+"yadony"                    -> "yadony"
+"YADONY"                    -> "YADONY"
 ```
 
 - [ ] **Step 3: Renommer les fichiers correspondant aux classes renommées**
@@ -117,14 +117,14 @@ DonyConfig                -> YadonyConfig
 Run:
 
 ```bash
-git mv src/main/java/com/yadony/api/DonyBackApplication.java src/main/java/com/yadony/api/YadonyBackApplication.java
-git mv src/main/java/com/yadony/api/common/DonyBusinessException.java src/main/java/com/yadony/api/common/YadonyBusinessException.java
-git mv src/main/java/com/yadony/api/common/DonyNotFoundException.java src/main/java/com/yadony/api/common/YadonyNotFoundException.java
-git mv src/main/java/com/yadony/api/config/DonyConfig.java src/main/java/com/yadony/api/config/YadonyConfig.java
-git mv src/main/java/com/yadony/api/config/DonyConfigProperties.java src/main/java/com/yadony/api/config/YadonyConfigProperties.java
+git mv src/main/java/com/yadony/api/YadonyBackApplication.java src/main/java/com/yadony/api/YadonyBackApplication.java
+git mv src/main/java/com/yadony/api/common/YadonyBusinessException.java src/main/java/com/yadony/api/common/YadonyBusinessException.java
+git mv src/main/java/com/yadony/api/common/YadonyNotFoundException.java src/main/java/com/yadony/api/common/YadonyNotFoundException.java
+git mv src/main/java/com/yadony/api/config/YadonyConfig.java src/main/java/com/yadony/api/config/YadonyConfig.java
+git mv src/main/java/com/yadony/api/config/YadonyConfigProperties.java src/main/java/com/yadony/api/config/YadonyConfigProperties.java
 ```
 
-Renommer de la même façon chaque test dont le nom de fichier contient `Dony`.
+Renommer de la même façon chaque test dont le nom de fichier contient `Yadony`.
 
 - [ ] **Step 4: Vérifier la compilation Java**
 
@@ -159,7 +159,7 @@ git commit -m "refactor: renomme les packages Java en Yadony"
 - Modify: `.env.staging.template`
 
 **Interfaces:**
-- Consumes: propriétés `dony.*`, variables `DONY_*`, artefact `dony-back`, schéma `dony://`
+- Consumes: propriétés `yadony.*`, variables `YADONY_*`, artefact `yadony-back`, schéma `yadony://`
 - Produces: propriétés `yadony.*`, variables `YADONY_*`, artefact `yadony-back`, schéma `yadony://`
 
 - [ ] **Step 1: Remplacer les identifiants de configuration**
@@ -167,17 +167,17 @@ git commit -m "refactor: renomme les packages Java en Yadony"
 Appliquer les transformations avec respect de la casse :
 
 ```text
-dony.store   -> yadony.com
-dony://      -> yadony://
-dony-back    -> yadony-back
-dony_test    -> yadony_test
-dony-test    -> yadony-test
-dony.app     -> yadony.com
-dony:        -> yadony:
-DONY_        -> YADONY_
-Dony         -> Yadony
-dony         -> yadony
-DONY         -> YADONY
+yadony.com   -> yadony.com
+yadony://      -> yadony://
+yadony-back    -> yadony-back
+yadony_test    -> yadony_test
+yadony-test    -> yadony-test
+yadony.app     -> yadony.com
+yadony:        -> yadony:
+YADONY_        -> YADONY_
+Yadony         -> Yadony
+yadony         -> yadony
+YADONY         -> YADONY
 ```
 
 Ne modifier aucun fichier sous `src/main/resources/db/migration/`.
@@ -224,16 +224,16 @@ git commit -m "config: bascule la configuration vers Yadony"
 Appliquer les transformations exactes hors migrations :
 
 ```text
-api-staging.dony.store -> api-staging.yadony.com
-api.dony.store         -> api.yadony.com
-dony.store             -> yadony.com
-mondony/dony-back      -> yadony/yadony-back
-MONDONY/dony-back      -> YADONY/yadony-back
-dony-back              -> yadony-back
-dony_                  -> yadony_
-dony-                  -> yadony-
-dony                    -> yadony
-DONY                    -> YADONY
+api-staging.yadony.com -> api-staging.yadony.com
+api.yadony.com         -> api.yadony.com
+yadony.com             -> yadony.com
+yadony/yadony-back      -> yadony/yadony-back
+YADONY/yadony-back      -> YADONY/yadony-back
+yadony-back              -> yadony-back
+yadony_                  -> yadony_
+yadony-                  -> yadony-
+yadony                    -> yadony
+YADONY                    -> YADONY
 ```
 
 - [ ] **Step 2: Valider les fichiers Docker Compose**
@@ -273,8 +273,8 @@ git commit -m "chore: renomme l infrastructure en Yadony"
 - Modify: `NEXT_STEPS.md`
 - Modify: `GITHUB_SECRETS_SETUP.md`
 - Modify: `docs/**/*.md`
-- Modify: `.agents/skills/dony-back-rules/SKILL.md`
-- Rename: `.agents/skills/dony-back-rules/` → `.agents/skills/yadony-back-rules/`
+- Modify: `.agents/skills/yadony-back-rules/SKILL.md`
+- Rename: `.agents/skills/yadony-back-rules/` → `.agents/skills/yadony-back-rules/`
 
 **Interfaces:**
 - Consumes: documentation et compétence locale portant l'ancien nom
@@ -291,7 +291,7 @@ car ils ne sont pas des migrations exécutables.
 Run:
 
 ```bash
-git mv .agents/skills/dony-back-rules .agents/skills/yadony-back-rules
+git mv .agents/skills/yadony-back-rules .agents/skills/yadony-back-rules
 ```
 
 Modifier son en-tête en `name: yadony-back-rules` et son contenu pour employer
@@ -323,7 +323,7 @@ if git ls-files -z \
   | grep -zv '^src/main/resources/db/migration/' \
   | grep -zv '^docs/superpowers/specs/2026-07-29-yadony-complete-rename-design.md$' \
   | grep -zv '^docs/superpowers/plans/2026-07-29-yadony-complete-rename.md$' \
-  | xargs -0 rg -n -i 'dony'; then
+  | xargs -0 rg -n -i 'yadony'; then
   exit 1
 fi
 ```
@@ -380,7 +380,7 @@ Expected: `BUILD SUCCESS` et création de `target/yadony-back-*.jar`.
 Le bilan final doit signaler explicitement :
 
 ```text
-- recréer ou renommer les secrets DONY_* en YADONY_*
+- recréer ou renommer les secrets YADONY_* en YADONY_*
 - préparer les nouveaux DNS et certificats pour yadony.com
 - créer ou migrer les bases, utilisateurs, volumes et buckets Yadony
 - vérifier l'existence de l'organisation/dépôt GitHub YADONY/yadony-back

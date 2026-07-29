@@ -8,7 +8,7 @@
 -- éventuelles séquences. CASCADE résout l'ordre des FK automatiquement.
 --
 -- Usage :
---   docker exec -i dony_db psql -U dony -d dony_dev < scripts/wipe_dev_data.sql
+--   docker exec -i yadony_db psql -U yadony -d yadony_dev < scripts/wipe_dev_data.sql
 
 BEGIN;
 

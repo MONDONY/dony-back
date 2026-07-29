@@ -2,7 +2,7 @@
 
 **Dernière mise à jour :** 2026-05-05 (PR 5 — migration `on_behalf_of`)
 
-Ce document couvre les décisions de conception, le cycle de vie et la configuration de Stripe Connect sur la plateforme Dony. Pour le flux de paiement de bout en bout, voir [`payments-flow.md`](./payments-flow.md).
+Ce document couvre les décisions de conception, le cycle de vie et la configuration de Stripe Connect sur la plateforme Yadony. Pour le flux de paiement de bout en bout, voir [`payments-flow.md`](./payments-flow.md).
 
 ---
 
@@ -10,13 +10,13 @@ Ce document couvre les décisions de conception, le cycle de vie et la configura
 
 ### Fiscal / Légal
 
-Sans `on_behalf_of`, la **plateforme** est le marchand de référence. Le compte Stripe du voyageur reçoit des virements, mais Stripe et les réseaux de cartes attribuent la vente à Dony. C'est juridiquement incorrect : c'est le voyageur qui fournit le service de transport et qui assume la responsabilité des marchandises.
+Sans `on_behalf_of`, la **plateforme** est le marchand de référence. Le compte Stripe du voyageur reçoit des virements, mais Stripe et les réseaux de cartes attribuent la vente à Yadony. C'est juridiquement incorrect : c'est le voyageur qui fournit le service de transport et qui assume la responsabilité des marchandises.
 
-Avec `on_behalf_of=<id_compte_connect_voyageur>`, le **compte Connect du voyageur est le marchand de règlement**. Stripe déclare le voyageur comme vendeur. C'est la posture légale correcte en France et dans la plupart des juridictions d'Afrique de l'Ouest où Dony opère (Dakar, Abidjan, Bamako, Douala).
+Avec `on_behalf_of=<id_compte_connect_voyageur>`, le **compte Connect du voyageur est le marchand de règlement**. Stripe déclare le voyageur comme vendeur. C'est la posture légale correcte en France et dans la plupart des juridictions d'Afrique de l'Ouest où Yadony opère (Dakar, Abidjan, Bamako, Douala).
 
 ### UX
 
-Le relevé bancaire de l'expéditeur affiche le **nom de l'entreprise du voyageur** (ou son nom pour les comptes Express individuels), et non "Dony". Cela réduit les rétrofacturations des expéditeurs qui ne reconnaissent pas un prélèvement générique de la plateforme.
+Le relevé bancaire de l'expéditeur affiche le **nom de l'entreprise du voyageur** (ou son nom pour les comptes Express individuels), et non "Yadony". Cela réduit les rétrofacturations des expéditeurs qui ne reconnaissent pas un prélèvement générique de la plateforme.
 
 ### Exigence réglementaire / capacité Stripe
 
@@ -163,18 +163,18 @@ PaymentService.handleAccountUpdated(event)
 
 ```yaml
 # application.yml (extrait pertinent)
-dony:
+yadony:
   stripe:
     connect:
       mcc: "4215"                          # Services de messagerie
                                            # TODO: valider vs 4214 (Services de livraison)
                                            #       avec le juridique avant la mise en prod
-      product-description: "Dony — Marketplace P2P de transport de colis connectant expéditeurs de la diaspora africaine et voyageurs"
-      business-url: "https://dony.app"
-      return-url: "dony://stripe/onboarding/complete"
+      product-description: "Yadony — Marketplace P2P de transport de colis connectant expéditeurs de la diaspora africaine et voyageurs"
+      business-url: "https://yadony.app"
+      return-url: "yadony://stripe/onboarding/complete"
       # ^ dev : schéma URI personnalisé (intent-filter Android / URL scheme iOS)
       # ^ prod : doit migrer vers un Universal Link HTTPS (voir docs/deep-links.md)
-      refresh-url: "dony://stripe/onboarding/refresh"
+      refresh-url: "yadony://stripe/onboarding/refresh"
       # ^ même remarque — prod nécessite un Universal Link HTTPS
 
   commission:
@@ -194,4 +194,4 @@ Le MCC `4215` (Services de messagerie, aérien ou terrestre, fret) est utilisé 
 
 ### Note sur les deep links
 
-Les `return-url` et `refresh-url` utilisent le schéma URI personnalisé `dony://`. Les politiques de l'App Store Apple et du Google Play Store, ainsi que les recommandations Stripe, exigent des **Universal Links HTTPS** (iOS) et des **Android App Links** (Android) en production. Le schéma `dony://` est acceptable uniquement pour le développement local et les tests internes (TestFlight / piste interne). Voir `docs/deep-links.md` pour le plan de migration.
+Les `return-url` et `refresh-url` utilisent le schéma URI personnalisé `yadony://`. Les politiques de l'App Store Apple et du Google Play Store, ainsi que les recommandations Stripe, exigent des **Universal Links HTTPS** (iOS) et des **Android App Links** (Android) en production. Le schéma `yadony://` est acceptable uniquement pour le développement local et les tests internes (TestFlight / piste interne). Voir `docs/deep-links.md` pour le plan de migration.

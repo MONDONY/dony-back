@@ -51,13 +51,13 @@ GHCR_PAT = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 **Comment générer le PAT :**
 1. GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. Generate new token (classic)
-3. Donner un nom : `dony-cicd-ghcr`
+3. Donner un nom : `yadony-cicd-ghcr`
 4. Cocher les permissions : `write:packages`, `read:packages`
 5. Générer et copier (⚠️ Secret — ne pas oublier !)
 
 #### 2.3 Base de Données
 ```
-DB_USERNAME = dony
+DB_USERNAME = yadony
 DB_PASSWORD = your_secure_password_here_min_16_chars
 ```
 
@@ -95,7 +95,7 @@ Récupérer depuis [Google Cloud Console](https://console.cloud.google.com) → 
 ```
 AWS_S3_ENDPOINT = https://your-account.r2.cloudflarestorage.com
 AWS_S3_REGION = auto
-AWS_S3_BUCKET = dony-staging
+AWS_S3_BUCKET = yadony-staging
 AWS_S3_ACCESS_KEY = xxxxxxxxxxxxxxxxxxxx
 AWS_S3_SECRET_KEY = xxxxxxxxxxxxxxxxxxxx
 ```
@@ -129,7 +129,7 @@ Optionnel. Récupérer depuis [Grafana Cloud](https://grafana.com/auth/sign-in/g
 
 #### 2.11 CORS
 ```
-CORS_ALLOWED_ORIGINS = https://api-staging.dony.store,http://localhost:3000
+CORS_ALLOWED_ORIGINS = https://api-staging.yadony.com,http://localhost:3000
 ```
 
 Domaines autorisés pour les requêtes CORS. Adapter selon votre config.
@@ -140,9 +140,9 @@ Domaines autorisés pour les requêtes CORS. Adapter selon votre config.
 
 ```bash
 # Lister les secrets (sans afficher les valeurs)
-gh secret list --org MONDONY
+gh secret list --org YADONY
 # ou
-gh secret list --repo MONDONY/dony-back
+gh secret list --repo YADONY/yadony-back
 ```
 
 Pour vérifier dans l'UI : **Settings → Secrets and variables → Actions → All secrets**
@@ -160,7 +160,7 @@ git push origin test/deployment-check
 
 # 2. Ouvrir une PR ou attendre que la CI passe
 # 3. Observer les logs du workflow "Deploy Staging"
-# 4. Accéder à l'API : https://api-staging.dony.store/api/v1/actuator/health
+# 4. Accéder à l'API : https://api-staging.yadony.com/api/v1/actuator/health
 ```
 
 ### Logs du Workflow
@@ -187,7 +187,7 @@ git push origin test/deployment-check
 | `OVH_SSH_KEY` | ~/.ssh/id_ed25519 | ✅ | Clé privée SSH |
 | `GHCR_USERNAME` | GitHub | ✅ | Login GitHub |
 | `GHCR_PAT` | GitHub | ✅ | Token personnel GitHub |
-| `DB_USERNAME` | Config | ✅ | Utilisateur BD (dony) |
+| `DB_USERNAME` | Config | ✅ | Utilisateur BD (yadony) |
 | `DB_PASSWORD` | Config | ✅ | Mot de passe BD |
 | `ENCRYPTION_KEY` | `openssl rand -base64 32` | ✅ | Clé AES-256 |
 | `STRIPE_SECRET_KEY` | Stripe | ✅ | Clé secrète Stripe |
@@ -250,16 +250,16 @@ API not available after 60s
 ```bash
 ssh debian@141.95.41.96
 
-cd ~/dony
+cd ~/yadony
 
 # Vérifier les conteneurs
 docker ps -a
 
 # Logs de l'API
-docker logs dony_api | tail -50
+docker logs yadony_api | tail -50
 
 # Vérifier la BD
-docker exec dony_db_staging pg_isready -U dony
+docker exec yadony_db_staging pg_isready -U yadony
 ```
 
 ### ❌ Disk Space Issues

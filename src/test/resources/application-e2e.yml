@@ -31,7 +31,7 @@ hetzner:
   s3:
     endpoint: http://localhost:9000
     region: eu-central
-    bucket: dony-test
+    bucket: yadony-test
     access-key: test
     secret-key: test
 
@@ -39,7 +39,7 @@ aws:
   s3:
     endpoint: http://localhost:9000
     region: eu-central
-    bucket: dony-test
+    bucket: yadony-test
     access-key: test
     secret-key: test
 
@@ -54,7 +54,7 @@ stripe:
 
 app:
   encryption:
-    key: dony-e2e-encryption-key-not-for-production-use-32-bytes
+    key: yadony-e2e-encryption-key-not-for-production-use-32-bytes
   places:
     api-key: test-places-key
     allowed-countries: SN,CI,ML,CM
@@ -64,7 +64,7 @@ app:
     daily-quota-reverse: 100000
     block-when-quota-exceeded: false
 
-dony:
+yadony:
   # E2E tests run with header-based auth and no real KYC/Stripe onboarding, so the
   # enforcement gates must be off (same as application-test.yml) — otherwise every
   # announcement/bid creation is blocked with 422. NEVER false in prod.
@@ -72,7 +72,7 @@ dony:
     enforce: false
   stripe:
     enforce: false
-    return-url: https://dony.app/payments/onboarding/return
-    refresh-url: https://dony.app/payments/onboarding/refresh
+    return-url: https://yadony.app/payments/onboarding/return
+    refresh-url: https://yadony.app/payments/onboarding/refresh
   commission:
     rate: 0.12

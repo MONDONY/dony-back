@@ -13,13 +13,13 @@ server:
 
 logging:
   level:
-    com.dony.api: DEBUG
+    com.yadony.api: DEBUG
     org.springframework.security: INFO
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://dony_db_staging:5432/dony_staging}
-    username: ${DB_USERNAME:dony}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://yadony_db_staging:5432/yadony_staging}
+    username: ${DB_USERNAME:yadony}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -27,11 +27,11 @@ spring:
       minimum-idle: 2
 
 # Stripe Connect : Stripe exige des URLs HTTPS pour return/refresh.
-# Le défaut de application.yml (dony://) est un deep link invalide côté Stripe.
+# Le défaut de application.yml (yadony://) est un deep link invalide côté Stripe.
 # Ces endpoints backend (StripeOnboardingRedirectController) redirigent en 302
-# vers le deep link dony:// pour revenir dans l'app.
-dony:
+# vers le deep link yadony:// pour revenir dans l'app.
+yadony:
   stripe:
     connect:
-      return-url: "https://api-staging.dony.store/api/v1/payments/onboarding/return"
-      refresh-url: "https://api-staging.dony.store/api/v1/payments/onboarding/refresh"
+      return-url: "https://api-staging.yadony.com/api/v1/payments/onboarding/return"
+      refresh-url: "https://api-staging.yadony.com/api/v1/payments/onboarding/refresh"

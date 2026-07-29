@@ -1,4 +1,4 @@
-# Configuration de la CI/CD dony
+# Configuration de la CI/CD yadony
 
 ## Vue d'ensemble
 
@@ -23,7 +23,7 @@ Secrets : `OVH_HOST`, `OVH_USER`, `OVH_SSH_KEY` (VPS staging).
 
 ## Préparation des VPS
 
-Sur chaque VPS, dans `~/dony/` :
+Sur chaque VPS, dans `~/yadony/` :
 - VPS staging : `docker-compose.staging.yml`, `nginx/nginx.staging.conf`,
   `nginx/certs/`, `nginx/www/`, `firebase-service-account.json`, `.env`.
 - VPS prod : `docker-compose.prod.yml`, `nginx/nginx.conf`, `nginx/certs/`,

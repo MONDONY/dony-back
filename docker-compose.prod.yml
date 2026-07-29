@@ -1,7 +1,7 @@
 services:
   api:
-    image: ghcr.io/mondony/dony-back:${DONY_IMAGE_TAG:-latest}
-    container_name: dony_api
+    image: ghcr.io/yadony/yadony-back:${YADONY_IMAGE_TAG:-latest}
+    container_name: yadony_api
     restart: unless-stopped
     # Toutes les variables (secrets inclus) vivent dans le .env à côté de ce
     # fichier : une variable ajoutée au .env atteint le conteneur sans toucher
@@ -16,7 +16,7 @@ services:
       db:
         condition: service_healthy
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/actuator/health || exit 1"]
       interval: 30s
@@ -26,14 +26,14 @@ services:
 
   alloy:
     image: grafana/alloy:v1.8.3
-    container_name: dony_alloy
+    container_name: yadony_alloy
     restart: unless-stopped
     command:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
     environment:
-      DONY_ENV: prod
+      YADONY_ENV: prod
       GRAFANA_PROM_URL: ${GRAFANA_PROM_URL}
       GRAFANA_PROM_USER: ${GRAFANA_PROM_USER}
       GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
@@ -42,50 +42,50 @@ services:
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dony_alloy_data:/var/lib/alloy/data
+      - yadony_alloy_data:/var/lib/alloy/data
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
-      - dony_internal
+      - yadony_internal
     depends_on:
       - api
 
   db:
     image: postgres:16-alpine
-    container_name: dony_db_prod
+    container_name: yadony_db_prod
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dony_prod
+      POSTGRES_DB: yadony_prod
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - dony_db_prod_data:/var/lib/postgresql/data
+      - yadony_db_prod_data:/var/lib/postgresql/data
     # Aucun port exposé — accessible uniquement via le réseau interne Docker
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d dony_prod"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d yadony_prod"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   db-backup:
     image: postgres:16-alpine
-    container_name: dony_db_backup
+    container_name: yadony_db_backup
     restart: unless-stopped
     environment:
       PGPASSWORD: ${DB_PASSWORD}
     volumes:
       - ./backups:/backups
     networks:
-      - dony_internal
+      - yadony_internal
     # Backup immédiat au démarrage, puis toutes les 24h. Keep last 7 days.
     entrypoint: >
       sh -c "
         backup() {
           FILE=/backups/backup_$$(date +%Y%m%d_%H%M%S).sql.gz;
-          pg_dump -h db -U ${DB_USERNAME} dony_prod | gzip > $$FILE;
+          pg_dump -h db -U ${DB_USERNAME} yadony_prod | gzip > $$FILE;
           echo \"Backup created: $$FILE\";
           find /backups -name 'backup_*.sql.gz' -mtime +7 -delete;
         };
@@ -98,7 +98,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: dony_nginx
+    container_name: yadony_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -110,12 +110,12 @@ services:
     depends_on:
       - api
     networks:
-      - dony_internal
+      - yadony_internal
 
 volumes:
-  dony_db_prod_data:
-  dony_alloy_data:
+  yadony_db_prod_data:
+  yadony_alloy_data:
 
 networks:
-  dony_internal:
+  yadony_internal:
     driver: bridge

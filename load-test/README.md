@@ -1,4 +1,4 @@
-# dony k6 Load Tests
+# yadony k6 Load Tests
 
 P2P marketplace load-test suite using [k6](https://k6.io/).
 
@@ -32,7 +32,7 @@ export BASE_URL="https://staging.api.example.com/api/v1"
 
 # Firebase credentials for the test account
 export FIREBASE_API_KEY="AIza..."
-export K6_TEST_EMAIL="loadtest@dony-staging.example.com"
+export K6_TEST_EMAIL="loadtest@yadony-staging.example.com"
 export K6_TEST_PASSWORD="..."
 
 # Optional — enables the idempotent write cycle in favorites.js
@@ -58,7 +58,7 @@ Without `ROLE_TRAVELER`:
 To assign the role on staging:
 ```sql
 INSERT INTO user_roles (user_id, role)
-SELECT id, 'ROLE_TRAVELER' FROM users WHERE email = 'loadtest@dony-staging.example.com'
+SELECT id, 'ROLE_TRAVELER' FROM users WHERE email = 'loadtest@yadony-staging.example.com'
 ON CONFLICT DO NOTHING;
 ```
 
@@ -153,6 +153,6 @@ k6 exits with a non-zero code if any threshold is breached.
 
 ## WARNING — NEVER run against production
 
-**NEVER point `BASE_URL` at `https://api.dony.app`.**
+**NEVER point `BASE_URL` at `https://api.yadony.app`.**
 
-The runner (`run.sh`) refuses to execute if `BASE_URL` contains `api.dony.app` or is empty. This guard protects real users and production data. Load tests must only target **staging** or a local dev environment.
+The runner (`run.sh`) refuses to execute if `BASE_URL` contains `api.yadony.app` or is empty. This guard protects real users and production data. Load tests must only target **staging** or a local dev environment.

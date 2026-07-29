@@ -1,8 +1,8 @@
 {
   "dashboard": {
-    "title": "Dony Infrastructure — Système et Hôte",
+    "title": "Yadony Infrastructure — Système et Hôte",
     "description": "Ressources système : CPU, RAM, disque, réseau",
-    "tags": ["dony", "infrastructure", "system"],
+    "tags": ["yadony", "infrastructure", "system"],
     "timezone": "UTC",
     "panels": [
       {

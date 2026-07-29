@@ -10,7 +10,7 @@ server:
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://db:5432/dony_prod}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://db:5432/yadony_prod}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -24,7 +24,7 @@ stripe:
     payments-secret: ${STRIPE_WEBHOOK_PAYMENTS_SECRET}
     kyc-secret: ${STRIPE_WEBHOOK_KYC_SECRET}
 
-dony:
+yadony:
   kyc:
     enforce: true
   stripe:

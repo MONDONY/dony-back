@@ -36,7 +36,7 @@ ACTIVE ────────────────────────�
                                                │ J+30 (scheduler)
 ACTIVE ◄──────────────────────────────         ▼
            POST /auth/me/reactivate       BANNED + soft-deleted
-                                         (pseudonymisation RGPD)
+                                         (pseuyadonymisation RGPD)
 ```
 
 `FirebaseTokenFilter` : `PENDING_DELETION` laisse passer les requêtes (l'utilisateur peut se rétracter). Seuls `SUSPENDED` et `BANNED` bloquent.
@@ -142,7 +142,7 @@ public void finalizeExpiredDeletions() {
 ### `UserService.finalizeGdprDeletion(UserEntity user)`
 
 Extrait de la logique actuelle de `deleteAccount()` :
-1. Pseudonymise les données personnelles (email, téléphone, nom, prénom, ville, date de naissance, fcmToken)
+1. Pseuyadonymise les données personnelles (email, téléphone, nom, prénom, ville, date de naissance, fcmToken)
 2. `user.setStatus(BANNED)`
 3. `user.softDelete()` — set `deleted_at = now()` (**correction du bug actuel**)
 4. Soft-delete du record KYC associé
@@ -185,7 +185,7 @@ Extrait de la logique actuelle de `deleteAccount()` :
 - Demande idempotente (déjà `PENDING_DELETION`) → `204`, event non re-publié
 - Réactivation depuis `PENDING_DELETION` → statut `ACTIVE`, `deletionRequestedAt` null
 - Réactivation depuis `ACTIVE` → `409`
-- `finalizeGdprDeletion` → pseudonymisation + `deleted_at` set + Firebase révoqué
+- `finalizeGdprDeletion` → pseuyadonymisation + `deleted_at` set + Firebase révoqué
 
 ### `AccountDeletionSchedulerTest`
 - Seuls les users avec `deletionRequestedAt < now - 30j` sont finalisés

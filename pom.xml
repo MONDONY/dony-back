@@ -9,11 +9,11 @@
 		<relativePath/>
 	</parent>
 
-	<groupId>com.dony</groupId>
-	<artifactId>dony-back</artifactId>
+	<groupId>com.yadony</groupId>
+	<artifactId>yadony-back</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>dony-back</name>
-	<description>dony P2P marketplace backend</description>
+	<name>yadony-back</name>
+	<description>yadony P2P marketplace backend</description>
 
 	<properties>
 		<!-- Tags exclus par défaut ; -DexcludedGroups= (vide) pour lancer firebase-live -->
@@ -376,63 +376,63 @@
 							</rules>
 							<excludes>
 								<!-- Main app bootstrap -->
-								<exclude>com/dony/api/DonyBackApplication.class</exclude>
+								<exclude>com/yadony/api/YadonyBackApplication.class</exclude>
 								<!-- Spring configuration beans -->
-								<exclude>com/dony/api/config/**</exclude>
+								<exclude>com/yadony/api/config/**</exclude>
 								<!-- HTTP filter (requires FirebaseAuth + Spring context) -->
-								<exclude>com/dony/api/auth/FirebaseTokenFilter.class</exclude>
+								<exclude>com/yadony/api/auth/FirebaseTokenFilter.class</exclude>
 								<!-- Infrastructure / stub-only services -->
-								<exclude>com/dony/api/notifications/FcmService.class</exclude>
-								<exclude>com/dony/api/notifications/SmsService.class</exclude>
-								<exclude>com/dony/api/common/StorageService.class</exclude>
-								<exclude>com/dony/api/common/StorageController.class</exclude>
+								<exclude>com/yadony/api/notifications/FcmService.class</exclude>
+								<exclude>com/yadony/api/notifications/SmsService.class</exclude>
+								<exclude>com/yadony/api/common/StorageService.class</exclude>
+								<exclude>com/yadony/api/common/StorageController.class</exclude>
 								<!-- Thin HTTP adapters (controllers) -->
-								<exclude>com/dony/api/**/*Controller.class</exclude>
+								<exclude>com/yadony/api/**/*Controller.class</exclude>
 								<!-- Cron schedulers -->
-								<exclude>com/dony/api/**/*Scheduler.class</exclude>
+								<exclude>com/yadony/api/**/*Scheduler.class</exclude>
 								<!-- Spring event listeners -->
-								<exclude>com/dony/api/**/*EventListener.class</exclude>
+								<exclude>com/yadony/api/**/*EventListener.class</exclude>
 								<!-- JPA entities -->
-								<exclude>com/dony/api/**/*Entity.class</exclude>
-								<exclude>com/dony/api/common/BaseEntity.class</exclude>
+								<exclude>com/yadony/api/**/*Entity.class</exclude>
+								<exclude>com/yadony/api/common/BaseEntity.class</exclude>
 								<!-- Spring Data repository interfaces -->
-								<exclude>com/dony/api/**/*Repository.class</exclude>
+								<exclude>com/yadony/api/**/*Repository.class</exclude>
 								<!-- DTO classes (pure data) -->
-								<exclude>com/dony/api/**/dto/**</exclude>
+								<exclude>com/yadony/api/**/dto/**</exclude>
 								<!-- Event POJOs -->
-								<exclude>com/dony/api/**/events/**</exclude>
+								<exclude>com/yadony/api/**/events/**</exclude>
 								<!-- Enums -->
-								<exclude>com/dony/api/auth/KycStatus.class</exclude>
-								<exclude>com/dony/api/auth/Role.class</exclude>
-								<exclude>com/dony/api/auth/UserStatus.class</exclude>
-								<exclude>com/dony/api/matching/BidStatus.class</exclude>
-								<exclude>com/dony/api/matching/AnnouncementStatus.class</exclude>
-								<exclude>com/dony/api/kyc/KycVerificationStatus.class</exclude>
-								<exclude>com/dony/api/tracking/TrackingEventType.class</exclude>
-								<exclude>com/dony/api/payments/PaymentStatus.class</exclude>
+								<exclude>com/yadony/api/auth/KycStatus.class</exclude>
+								<exclude>com/yadony/api/auth/Role.class</exclude>
+								<exclude>com/yadony/api/auth/UserStatus.class</exclude>
+								<exclude>com/yadony/api/matching/BidStatus.class</exclude>
+								<exclude>com/yadony/api/matching/AnnouncementStatus.class</exclude>
+								<exclude>com/yadony/api/kyc/KycVerificationStatus.class</exclude>
+								<exclude>com/yadony/api/tracking/TrackingEventType.class</exclude>
+								<exclude>com/yadony/api/payments/PaymentStatus.class</exclude>
 								<!-- Thin exception wrappers and common utilities -->
-								<exclude>com/dony/api/common/DonyBusinessException.class</exclude>
-								<exclude>com/dony/api/common/DonyNotFoundException.class</exclude>
-								<exclude>com/dony/api/common/PageResponse.class</exclude>
+								<exclude>com/yadony/api/common/YadonyBusinessException.class</exclude>
+								<exclude>com/yadony/api/common/YadonyNotFoundException.class</exclude>
+								<exclude>com/yadony/api/common/PageResponse.class</exclude>
 								<!-- Admin module -->
-								<exclude>com/dony/api/admin/**</exclude>
+								<exclude>com/yadony/api/admin/**</exclude>
 								<!-- JPA Specification (lambda-only) -->
-								<exclude>com/dony/api/matching/AnnouncementSpecification.class</exclude>
-								<exclude>com/dony/api/matching/AnnouncementSpecification$*.class</exclude>
+								<exclude>com/yadony/api/matching/AnnouncementSpecification.class</exclude>
+								<exclude>com/yadony/api/matching/AnnouncementSpecification$*.class</exclude>
 								<!-- External infrastructure service wrappers (requires live Firestore) -->
-								<exclude>com/dony/api/messaging/FirestoreService.class</exclude>
+								<exclude>com/yadony/api/messaging/FirestoreService.class</exclude>
 								<!-- Conversation service: tightly coupled with FirestoreService (above) -->
-								<exclude>com/dony/api/messaging/ConversationService.class</exclude>
+								<exclude>com/yadony/api/messaging/ConversationService.class</exclude>
 								<!-- Analytics aggregation services (complex SQL queries — covered by E2E) -->
-								<exclude>com/dony/api/matching/ProAnalyticsService.class</exclude>
-								<exclude>com/dony/api/matching/TravelerStatsService.class</exclude>
+								<exclude>com/yadony/api/matching/ProAnalyticsService.class</exclude>
+								<exclude>com/yadony/api/matching/TravelerStatsService.class</exclude>
 								<!-- Stripe inbox enums (trivial generated code) -->
-								<exclude>com/dony/api/common/stripe/StripeWebhookSource.class</exclude>
-								<exclude>com/dony/api/common/stripe/StripeEventStatus.class</exclude>
+								<exclude>com/yadony/api/common/stripe/StripeWebhookSource.class</exclude>
+								<exclude>com/yadony/api/common/stripe/StripeEventStatus.class</exclude>
 								<!-- Chargeback status enum -->
-								<exclude>com/dony/api/payments/chargeback/ChargebackStatus.class</exclude>
+								<exclude>com/yadony/api/payments/chargeback/ChargebackStatus.class</exclude>
 								<!-- City data loader (bulk import — integration only) -->
-								<exclude>com/dony/api/city/GeoNamesDataLoader.class</exclude>
+								<exclude>com/yadony/api/city/GeoNamesDataLoader.class</exclude>
 							</excludes>
 						</configuration>
 					</execution>

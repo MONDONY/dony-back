@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reconstruire la chaîne CI/CD du backend dony : quality gates sur chaque PR, déploiement automatique sur le VPS staging à chaque merge sur `main`, et promotion manuelle contrôlée vers le VPS prod.
+**Goal:** Reconstruire la chaîne CI/CD du backend yadony : quality gates sur chaque PR, déploiement automatique sur le VPS staging à chaque merge sur `main`, et promotion manuelle contrôlée vers le VPS prod.
 
 **Architecture:** Quatre workflows GitHub Actions remplacent les trois actuels. La CI valide la qualité ; `deploy-staging.yml` build l'image Docker, la pousse sur `ghcr.io` et la déploie sur staging ; `deploy-prod.yml` (manuel, avec approbation via GitHub Environment) promeut en prod **exactement** l'image validée en staging — sans rebuild. Chaque VPS a son propre fichier Compose, son profil Spring et son fichier `.env`.
 
@@ -16,7 +16,7 @@ Ces étapes sont à réaliser par l'utilisateur ; elles ne bloquent pas l'écrit
 des fichiers mais sont nécessaires pour que les déploiements fonctionnent :
 
 1. Provisionner le VPS staging OVH, installer Docker + Docker Compose.
-2. Configurer le DNS `api-staging.dony.app` → IP du VPS staging.
+2. Configurer le DNS `api-staging.yadony.app` → IP du VPS staging.
 3. Créer les **GitHub Environments** `staging` et `production` (Settings →
    Environments). Activer sur `production` la règle « Required reviewers ».
 4. Renseigner les secrets, **scopés par environnement** (mêmes noms dans les
@@ -24,7 +24,7 @@ des fichiers mais sont nécessaires pour que les déploiements fonctionnent :
    - Environnement `staging` : `OVH_HOST`, `OVH_USER`, `OVH_SSH_KEY`.
    - Environnement `production` : `OVH_HOST`, `OVH_USER`, `OVH_SSH_KEY`,
      `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
-5. Sur chaque VPS, créer le répertoire `~/dony` contenant : le fichier Compose
+5. Sur chaque VPS, créer le répertoire `~/yadony` contenant : le fichier Compose
    correspondant, le `.env`, `firebase-service-account.json`, et le dossier
    `nginx/`.
 
@@ -38,9 +38,9 @@ des fichiers mais sont nécessaires pour que les déploiements fonctionnent :
 | Fichier | Responsabilité |
 |---|---|
 | `src/main/resources/application-staging.yml` (créer) | Profil Spring staging : durcissement comme prod, logs verbeux |
-| `nginx/nginx.staging.conf` (créer) | Config nginx staging : `server_name api-staging.dony.app` |
+| `nginx/nginx.staging.conf` (créer) | Config nginx staging : `server_name api-staging.yadony.app` |
 | `docker-compose.staging.yml` (créer) | Stack staging : api + db + nginx + db-backup |
-| `docker-compose.prod.yml` (modifier) | Tag d'image paramétrable via `DONY_IMAGE_TAG` |
+| `docker-compose.prod.yml` (modifier) | Tag d'image paramétrable via `YADONY_IMAGE_TAG` |
 | `.github/workflows/ci.yml` (créer) | Quality gates — remplace `quality.yml` |
 | `.github/workflows/deploy-staging.yml` (créer) | Build + push + déploiement staging auto |
 | `.github/workflows/deploy-prod.yml` (créer) | Promotion manuelle vers prod |
@@ -81,7 +81,7 @@ server:
 
 logging:
   level:
-    com.dony.api: DEBUG
+    com.yadony.api: DEBUG
     org.springframework.security: INFO
 ```
 
@@ -136,7 +136,7 @@ http {
 
     server {
         listen 80;
-        server_name api-staging.dony.app;
+        server_name api-staging.yadony.app;
 
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;
@@ -150,10 +150,10 @@ http {
     server {
         listen 443 ssl;
         http2  on;
-        server_name api-staging.dony.app;
+        server_name api-staging.yadony.app;
 
-        ssl_certificate     /etc/letsencrypt/live/api-staging.dony.app/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/api-staging.dony.app/privkey.pem;
+        ssl_certificate     /etc/letsencrypt/live/api-staging.yadony.app/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/api-staging.yadony.app/privkey.pem;
         ssl_protocols       TLSv1.2 TLSv1.3;
         ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
         ssl_prefer_server_ciphers off;
@@ -213,7 +213,7 @@ Expected: `VALIDE` (la résolution des certificats échoue hors VPS, mais la syn
 
 ```bash
 git add nginx/nginx.staging.conf
-git commit -m "Feat: config nginx staging (api-staging.dony.app)"
+git commit -m "Feat: config nginx staging (api-staging.yadony.app)"
 ```
 
 ---
@@ -225,14 +225,14 @@ git commit -m "Feat: config nginx staging (api-staging.dony.app)"
 
 - [ ] **Step 1: Créer `docker-compose.staging.yml`**
 
-Calqué sur `docker-compose.prod.yml` : base de données `dony_staging`,
+Calqué sur `docker-compose.prod.yml` : base de données `yadony_staging`,
 profil Spring `staging`, image taguée `staging`, config nginx staging.
 
 ```yaml
 services:
   api:
-    image: ghcr.io/mondony/dony-back:staging
-    container_name: dony_api
+    image: ghcr.io/yadony/yadony-back:staging
+    container_name: yadony_api
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: staging
@@ -248,7 +248,7 @@ services:
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       AWS_S3_ACCESS_KEY: ${AWS_S3_ACCESS_KEY}
       AWS_S3_SECRET_KEY: ${AWS_S3_SECRET_KEY}
-      APP_BASE_URL: https://api-staging.dony.app
+      APP_BASE_URL: https://api-staging.yadony.app
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
     volumes:
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
@@ -256,7 +256,7 @@ services:
       db:
         condition: service_healthy
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/actuator/health || exit 1"]
       interval: 30s
@@ -266,25 +266,25 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: dony_db_staging
+    container_name: yadony_db_staging
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dony_staging
+      POSTGRES_DB: yadony_staging
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - dony_db_staging_data:/var/lib/postgresql/data
+      - yadony_db_staging_data:/var/lib/postgresql/data
     networks:
-      - dony_internal
+      - yadony_internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d dony_staging"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d yadony_staging"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: dony_nginx
+    container_name: yadony_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -296,13 +296,13 @@ services:
     depends_on:
       - api
     networks:
-      - dony_internal
+      - yadony_internal
 
 volumes:
-  dony_db_staging_data:
+  yadony_db_staging_data:
 
 networks:
-  dony_internal:
+  yadony_internal:
     driver: bridge
 ```
 
@@ -330,17 +330,17 @@ git commit -m "Feat: stack Docker Compose staging"
 Remplacer la ligne :
 
 ```yaml
-    image: ghcr.io/mondony/dony-back:latest
+    image: ghcr.io/yadony/yadony-back:latest
 ```
 
 par :
 
 ```yaml
-    image: ghcr.io/mondony/dony-back:${DONY_IMAGE_TAG:-latest}
+    image: ghcr.io/yadony/yadony-back:${YADONY_IMAGE_TAG:-latest}
 ```
 
 Cela permet à `deploy-prod.yml` de promouvoir un tag immuable précis
-(`sha-xxxxxxx`) en écrivant `DONY_IMAGE_TAG` dans le `.env` du VPS — et donc de
+(`sha-xxxxxxx`) en écrivant `YADONY_IMAGE_TAG` dans le `.env` du VPS — et donc de
 faire un rollback en redéployant un ancien `sha`.
 
 - [ ] **Step 2: Valider le fichier Compose**
@@ -352,7 +352,7 @@ Expected: `VALIDE`
 
 ```bash
 git add docker-compose.prod.yml
-git commit -m "Feat: tag d'image prod paramétrable via DONY_IMAGE_TAG"
+git commit -m "Feat: tag d'image prod paramétrable via YADONY_IMAGE_TAG"
 ```
 
 ---
@@ -514,7 +514,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/mondony/dony-back
+  IMAGE_NAME: ghcr.io/yadony/yadony-back
 
 jobs:
 
@@ -576,7 +576,7 @@ jobs:
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
-            cd ~/dony
+            cd ~/yadony
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.staging.yml pull api
             docker compose -f docker-compose.staging.yml up -d --no-deps api
@@ -640,7 +640,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/mondony/dony-back
+  IMAGE_NAME: ghcr.io/yadony/yadony-back
 
 jobs:
 
@@ -675,9 +675,9 @@ jobs:
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
-            cd ~/dony
-            grep -v '^DONY_IMAGE_TAG=' .env > .env.tmp || true
-            echo "DONY_IMAGE_TAG=${{ inputs.image_tag }}" >> .env.tmp
+            cd ~/yadony
+            grep -v '^YADONY_IMAGE_TAG=' .env > .env.tmp || true
+            echo "YADONY_IMAGE_TAG=${{ inputs.image_tag }}" >> .env.tmp
             mv .env.tmp .env
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.prod.yml pull api
@@ -811,7 +811,7 @@ git commit -m "Feat: workflow sécurité hebdo, suppression des anciens workflow
 - [ ] **Step 1: Créer le guide de setup**
 
 ```markdown
-# Configuration de la CI/CD dony
+# Configuration de la CI/CD yadony
 
 ## Vue d'ensemble
 
@@ -836,7 +836,7 @@ Secrets : `OVH_HOST`, `OVH_USER`, `OVH_SSH_KEY` (VPS staging).
 
 ## Préparation des VPS
 
-Sur chaque VPS, dans `~/dony/` :
+Sur chaque VPS, dans `~/yadony/` :
 - VPS staging : `docker-compose.staging.yml`, `nginx/nginx.staging.conf`,
   `nginx/certs/`, `nginx/www/`, `firebase-service-account.json`, `.env`.
 - VPS prod : `docker-compose.prod.yml`, `nginx/nginx.conf`, `nginx/certs/`,
@@ -888,7 +888,7 @@ Expected: `COMPOSE OK`
 
 - [ ] **Build de l'image Docker fonctionnel**
 
-Run: `docker build -t dony-back:plan-check . && echo "BUILD OK"`
+Run: `docker build -t yadony-back:plan-check . && echo "BUILD OK"`
 Expected: `BUILD OK`
 
 ---

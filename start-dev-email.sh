@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Démarrage backend dony en dev avec override email Resend (sandbox sender)
+# Démarrage backend yadony en dev avec override email Resend (sandbox sender)
 # pour débloquer le login email en dev (domaine yadony.com non vérifié).
 set -u
 cd "$(dirname "$0")" || exit 1

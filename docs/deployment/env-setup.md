@@ -1,4 +1,4 @@
-# Configuration des variables d'environnement — dony-back
+# Configuration des variables d'environnement — yadony-back
 
 Ce guide liste **toutes** les variables et clés nécessaires, où les mettre, et comment les générer.
 
@@ -7,7 +7,7 @@ Ce guide liste **toutes** les variables et clés nécessaires, où les mettre, e
 ## Vue d'ensemble : deux endroits à configurer
 
 ```
-GitHub (Settings → Secrets)       VPS ~/dony/.env
+GitHub (Settings → Secrets)       VPS ~/yadony/.env
 ──────────────────────────         ───────────────────────────────
 Secrets de déploiement SSH    +    Variables runtime de l'API
 Tokens Sentry                      Clés Stripe, Firebase, S3, etc.
@@ -17,7 +17,7 @@ Tokens Sentry                      Clés Stripe, Firebase, S3, etc.
 
 ## 1. GitHub Secrets
 
-Aller sur : **github.com/MONDONY/dony-back → Settings → Secrets and variables → Actions**
+Aller sur : **github.com/YADONY/yadony-back → Settings → Secrets and variables → Actions**
 
 ### 1.1 Secrets partagés (tous les environnements)
 
@@ -35,7 +35,7 @@ Aller sur : **github.com/MONDONY/dony-back → Settings → Secrets and variable
 |--------|-------------|-------------------|
 | `SENTRY_AUTH_TOKEN` | Token d'auth Sentry | sentry.io → Settings → Auth Tokens → Create |
 | `SENTRY_ORG` | Slug de ton organisation Sentry | URL Sentry : `sentry.io/organizations/<slug>/` |
-| `SENTRY_PROJECT` | Nom du projet Sentry | Sentry → Projects → nom du projet `dony-back` |
+| `SENTRY_PROJECT` | Nom du projet Sentry | Sentry → Projects → nom du projet `yadony-back` |
 
 ### 1.3 Créer les GitHub Environments
 
@@ -45,12 +45,12 @@ Dans **Settings → Environments** :
 
 ---
 
-## 2. VPS Staging — fichier `~/dony/.env`
+## 2. VPS Staging — fichier `~/yadony/.env`
 
 Se connecter au VPS staging, puis :
 
 ```bash
-cd ~/dony
+cd ~/yadony
 nano .env
 ```
 
@@ -58,7 +58,7 @@ Contenu complet du fichier `.env` staging :
 
 ```dotenv
 # ── Base de données ──────────────────────────────────────────────
-DB_USERNAME=dony
+DB_USERNAME=yadony
 DB_PASSWORD=<mot_de_passe_fort>
 
 # ── Stripe ───────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ GOOGLE_PLACES_API_KEY=AIza...
 # ── Hetzner Object Storage (S3-compatible) ───────────────────────
 AWS_S3_ENDPOINT=https://fsn1.your-objectstorage.com
 AWS_S3_REGION=fsn1
-AWS_S3_BUCKET=dony-staging
+AWS_S3_BUCKET=yadony-staging
 AWS_S3_ACCESS_KEY=<access_key>
 AWS_S3_SECRET_KEY=<secret_key>
 
@@ -94,17 +94,17 @@ GRAFANA_CLOUD_TOKEN=glc_eyJ...
 
 ---
 
-## 3. VPS Production — fichier `~/dony/.env`
+## 3. VPS Production — fichier `~/yadony/.env`
 
 Même structure que staging, avec :
 - Clés Stripe **live** (`sk_live_...` / `whsec_...`)
-- Bucket S3 prod (`dony-prod`)
+- Bucket S3 prod (`yadony-prod`)
 - `CORS_ALLOWED_ORIGINS=https://yadony.com`
 - Variable gérée automatiquement par le workflow deploy-prod :
 
 ```dotenv
 # Géré automatiquement par GitHub Actions deploy-prod.yml — ne pas modifier manuellement
-DONY_IMAGE_TAG=staging
+YADONY_IMAGE_TAG=staging
 ```
 
 ---
@@ -115,11 +115,11 @@ Le fichier `firebase-service-account.json` doit être placé manuellement sur ch
 
 ```bash
 # Depuis ta machine locale, copier le fichier sur le VPS
-scp firebase-service-account.json ubuntu@<IP_VPS>:~/dony/firebase-service-account.json
+scp firebase-service-account.json ubuntu@<IP_VPS>:~/yadony/firebase-service-account.json
 ```
 
 **Comment l'obtenir :**
-1. console.firebase.google.com → Projet dony
+1. console.firebase.google.com → Projet yadony
 2. Paramètres du projet → Comptes de service
 3. Générer une nouvelle clé privée → télécharger le JSON
 
@@ -138,12 +138,12 @@ Les Cloud Functions utilisent le système de **params Firebase v2** (`defineStri
 | `BACKEND_URL` | URL publique du backend Spring Boot (sans `/api/v1`) | `https://api.yadony.com` |
 | `INTERNAL_SECRET` | Secret partagé entre la function et le backend | chaîne aléatoire ≥ 32 chars |
 
-> `INTERNAL_SECRET` doit correspondre exactement à `dony.internal.secret` dans le fichier `.env` du VPS (propriété Spring Boot `@Value("${dony.internal.secret:}")`).
+> `INTERNAL_SECRET` doit correspondre exactement à `yadony.internal.secret` dans le fichier `.env` du VPS (propriété Spring Boot `@Value("${yadony.internal.secret:}")`).
 
 ### 5.2 Créer le fichier `.env` de production
 
 ```bash
-cd /path/to/dony-functions
+cd /path/to/yadony-functions
 
 # Créer le fichier .env (déployé en production — ne jamais committer)
 cat > .env << 'EOF'
@@ -154,27 +154,27 @@ EOF
 
 > **Attention :** `.env.local` (déjà présent) est uniquement pour l'émulateur local. En production, Firebase lit `.env`. Les deux fichiers coexistent.
 
-### 5.3 Ajouter `dony.internal.secret` sur les VPS
+### 5.3 Ajouter `yadony.internal.secret` sur les VPS
 
-Dans `~/dony/.env` sur le VPS staging et prod, ajouter :
+Dans `~/yadony/.env` sur le VPS staging et prod, ajouter :
 
 ```dotenv
 # ── Sécurité interne (Cloud Functions → Backend) ─────────────────
-DONY_INTERNAL_SECRET=<même_valeur_que_INTERNAL_SECRET_dans_.env_functions>
+YADONY_INTERNAL_SECRET=<même_valeur_que_INTERNAL_SECRET_dans_.env_functions>
 ```
 
 Et dans `application-staging.yml` / `application-prod.yml` (ou via variable d'environnement dans Docker Compose) :
 
 ```yaml
-dony:
+yadony:
   internal:
-    secret: ${DONY_INTERNAL_SECRET}
+    secret: ${YADONY_INTERNAL_SECRET}
 ```
 
 ### 5.4 Déployer les fonctions avec les variables
 
 ```bash
-cd dony-functions
+cd yadony-functions
 
 # Déployer (le fichier .env est envoyé automatiquement avec la function)
 firebase deploy --only functions
@@ -199,10 +199,10 @@ Pour tester les push notifications en local sans déployer :
 
 ```bash
 # Terminal 1 — Spring Boot backend
-cd dony-back && ./mvnw spring-boot:run -Dspring.profiles.active=dev
+cd yadony-back && ./mvnw spring-boot:run -Dspring.profiles.active=dev
 
 # Terminal 2 — Émulateur Firebase (lit .env.local automatiquement)
-cd dony-functions && firebase emulators:start --only functions,firestore
+cd yadony-functions && firebase emulators:start --only functions,firestore
 # → BACKEND_URL=http://localhost:8080 depuis .env.local
 # → La function appelle bien le backend local
 ```
@@ -219,20 +219,20 @@ Sur ta machine locale :
 
 ```bash
 # Générer une paire de clés dédiée au déploiement (sans passphrase)
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/dony_deploy -N ""
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/yadony_deploy -N ""
 
 # Afficher la clé publique → à ajouter sur le VPS
-cat ~/.ssh/dony_deploy.pub
+cat ~/.ssh/yadony_deploy.pub
 
 # Afficher la clé privée → à coller dans GitHub Secret OVH_SSH_KEY
-cat ~/.ssh/dony_deploy
+cat ~/.ssh/yadony_deploy
 ```
 
 Sur le VPS :
 
 ```bash
 # Ajouter la clé publique aux clés autorisées
-echo "<contenu_de_dony_deploy.pub>" >> ~/.ssh/authorized_keys
+echo "<contenu_de_yadony_deploy.pub>" >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
@@ -275,28 +275,28 @@ openssl rand -base64 24
 - [ ] Environment `production` créé (avec required reviewer)
 
 ### VPS Staging
-- [ ] `~/dony/.env` créé avec toutes les variables
-- [ ] `~/dony/firebase-service-account.json` copié
+- [ ] `~/yadony/.env` créé avec toutes les variables
+- [ ] `~/yadony/firebase-service-account.json` copié
 - [ ] Clé SSH publique ajoutée dans `~/.ssh/authorized_keys`
-- [ ] Dossier `~/dony/backups/` créé : `mkdir -p ~/dony/backups`
-- [ ] Dossier `~/dony/nginx/certs/` créé pour Let's Encrypt
+- [ ] Dossier `~/yadony/backups/` créé : `mkdir -p ~/yadony/backups`
+- [ ] Dossier `~/yadony/nginx/certs/` créé pour Let's Encrypt
 
 ### VPS Production
 - [ ] Même checklist que staging
 - [ ] Clés Stripe **live** (pas test)
-- [ ] `DONY_IMAGE_TAG=staging` présent dans `.env` (valeur initiale)
+- [ ] `YADONY_IMAGE_TAG=staging` présent dans `.env` (valeur initiale)
 
 ### Cloud Functions Firebase
-- [ ] Fichier `dony-functions/.env` créé avec `BACKEND_URL` et `INTERNAL_SECRET`
-- [ ] `DONY_INTERNAL_SECRET` ajouté dans `~/dony/.env` sur chaque VPS
-- [ ] `dony.internal.secret: ${DONY_INTERNAL_SECRET}` dans `application-staging.yml` et `application-prod.yml`
+- [ ] Fichier `yadony-functions/.env` créé avec `BACKEND_URL` et `INTERNAL_SECRET`
+- [ ] `YADONY_INTERNAL_SECRET` ajouté dans `~/yadony/.env` sur chaque VPS
+- [ ] `yadony.internal.secret: ${YADONY_INTERNAL_SECRET}` dans `application-staging.yml` et `application-prod.yml`
 - [ ] `firebase deploy --only functions` exécuté après création du `.env`
-- [ ] `dony-functions/.env` ajouté dans `.gitignore` (ne jamais committer)
+- [ ] `yadony-functions/.env` ajouté dans `.gitignore` (ne jamais committer)
 
 ### Vérification finale
 ```bash
 # Sur le VPS, tester que Docker Compose lit bien le .env
-cd ~/dony
+cd ~/yadony
 docker compose -f docker-compose.staging.yml config | grep -E "DB_USERNAME|STRIPE|INTERNAL"
 # Les valeurs réelles doivent apparaître (pas les placeholders ${...})
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-back_monkey.py — robustness fuzzer ("monkey") for the dony backend.
+back_monkey.py — robustness fuzzer ("monkey") for the yadony backend.
 
 Fires randomized HTTP requests at the API and asserts the server NEVER
 returns 5xx. Proper handling = 4xx (401/403 bad auth, 400/422 bad input,

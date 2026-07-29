@@ -38,7 +38,7 @@ scénarios pour quasiment chaque branche — effort multi-jours.
   **`StripeGateway`** (voir §3).
 - `CucumberHooks` — avant chaque scénario : configure RestAssured, `TRUNCATE … CASCADE`
   (isolation), re-stub les mocks (Storage, `placesRestTemplate`).
-- `application-e2e.yml` — `dony.kyc.enforce=false`, `dony.stripe.enforce=false`,
+- `application-e2e.yml` — `yadony.kyc.enforce=false`, `yadony.stripe.enforce=false`,
   `spring.main.allow-bean-definition-overriding=true`, `app.places.*`.
 - **Ponts SQL** (`TestDataSteps`) — l'E2E n'a pas de vrai KYC/Stripe ; on force les états via
   SQL : `le KYC de X est vérifié`, `le compte X est un compte PRO`,
@@ -90,5 +90,5 @@ tracking, requests, auth) rapporte sans toucher au code de prod.
 ## 5. Règles à respecter
 - **Aucun commit** demandé sur cette session.
 - `StripeGatewayImpl` est un passe-plat strict : ne pas y mettre de logique métier.
-- Garder `dony.*.enforce=false` **uniquement** en profil e2e/test (jamais en prod).
+- Garder `yadony.*.enforce=false` **uniquement** en profil e2e/test (jamais en prod).
 - Après tout changement : `./mvnw verify` doit rester vert (le gating casse sinon).

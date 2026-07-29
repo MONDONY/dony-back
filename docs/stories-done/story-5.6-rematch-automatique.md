@@ -9,18 +9,18 @@ Quand un voyageur annule son trajet (`cancelTrip`), chaque expéditeur affecté 
 
 ## Fichiers créés
 
-- `src/main/java/com/dony/api/cancellation/RematchService.java` — génère les suggestions de rematch pour chaque `CancellationEntity` créée par `cancelTrip` (une par bid/expéditeur affecté), via une `Specification` composée réutilisant `matching/AnnouncementSpecification`.
-- `src/test/java/com/dony/api/cancellation/RematchServiceTest.java` — tests unitaires Mockito (fenêtre, capacité, exclusions, tri, limite, multi-expéditeurs, cas GRID `weightKg == null`).
-- `src/test/java/com/dony/api/cancellation/RematchSpecificationDbTest.java` — tests `@DataJpaTest` sur une vraie DB H2/Hibernate exerçant `buildAlternativesSpec` (seul niveau où le bug de null-safety sur `weightKg` se manifeste réellement).
+- `src/main/java/com/yadony/api/cancellation/RematchService.java` — génère les suggestions de rematch pour chaque `CancellationEntity` créée par `cancelTrip` (une par bid/expéditeur affecté), via une `Specification` composée réutilisant `matching/AnnouncementSpecification`.
+- `src/test/java/com/yadony/api/cancellation/RematchServiceTest.java` — tests unitaires Mockito (fenêtre, capacité, exclusions, tri, limite, multi-expéditeurs, cas GRID `weightKg == null`).
+- `src/test/java/com/yadony/api/cancellation/RematchSpecificationDbTest.java` — tests `@DataJpaTest` sur une vraie DB H2/Hibernate exerçant `buildAlternativesSpec` (seul niveau où le bug de null-safety sur `weightKg` se manifeste réellement).
 
 ## Fichiers modifiés
 
-- `src/main/java/com/dony/api/cancellation/CancellationService.java` — `cancelTrip` délègue la génération de suggestions à `RematchService.generateForCancellations(...)` (ancienne méthode privée `generateRematchSuggestions`, full scan + 1er expéditeur seulement, supprimée) ; `buildRematchSuggestionDtos` réécrite pour batch-charger annonces alternatives et voyageurs (`findAllById`, plus de N+1) et enrichir les DTOs avec les infos voyageur.
-- `src/main/java/com/dony/api/cancellation/dto/RematchSuggestionDto.java` — +3 champs additifs en fin de record : `travelerFirstName`, `travelerRating` (`BigDecimal`, nullable), `travelerRatingCount` (`Integer`, nullable).
-- `src/main/java/com/dony/api/cancellation/events/TripCancelledEvent.java` — +champ additif `Map<UUID, RematchBySenderInfo> rematchBySender` (clé = senderId, `RematchBySenderInfo(cancellationId, suggestionCount)`, record imbriqué défini dans l'event pour éviter une dépendance `notifications/` → `cancellation/`) ; nouveau constructeur complet 8-arg, les 3 constructeurs existants (7/6/5 args) préservés et délèguent avec `Map.of()`.
-- `src/main/java/com/dony/api/notifications/NotificationDispatcher.java` — `onTripCancelled` rendu conditionnel selon `RematchBySenderInfo` (3 branches : legacy, ≥1 suggestion avec deep link, 0 suggestion) ; passé de `@EventListener @Async` à `@TransactionalEventListener(phase = AFTER_COMMIT) @Async` (fix post-revue).
-- `src/main/java/com/dony/api/matching/BidService.java` — `toResponse` calcule `tripCancellationId`/`tripCancellationRematchStatus` via un discriminant par élimination (voir « Pièges »).
-- `src/main/java/com/dony/api/matching/dto/BidResponse.java` — +2 champs additifs en fin de record : `UUID tripCancellationId`, `String tripCancellationRematchStatus`.
+- `src/main/java/com/yadony/api/cancellation/CancellationService.java` — `cancelTrip` délègue la génération de suggestions à `RematchService.generateForCancellations(...)` (ancienne méthode privée `generateRematchSuggestions`, full scan + 1er expéditeur seulement, supprimée) ; `buildRematchSuggestionDtos` réécrite pour batch-charger annonces alternatives et voyageurs (`findAllById`, plus de N+1) et enrichir les DTOs avec les infos voyageur.
+- `src/main/java/com/yadony/api/cancellation/dto/RematchSuggestionDto.java` — +3 champs additifs en fin de record : `travelerFirstName`, `travelerRating` (`BigDecimal`, nullable), `travelerRatingCount` (`Integer`, nullable).
+- `src/main/java/com/yadony/api/cancellation/events/TripCancelledEvent.java` — +champ additif `Map<UUID, RematchBySenderInfo> rematchBySender` (clé = senderId, `RematchBySenderInfo(cancellationId, suggestionCount)`, record imbriqué défini dans l'event pour éviter une dépendance `notifications/` → `cancellation/`) ; nouveau constructeur complet 8-arg, les 3 constructeurs existants (7/6/5 args) préservés et délèguent avec `Map.of()`.
+- `src/main/java/com/yadony/api/notifications/NotificationDispatcher.java` — `onTripCancelled` rendu conditionnel selon `RematchBySenderInfo` (3 branches : legacy, ≥1 suggestion avec deep link, 0 suggestion) ; passé de `@EventListener @Async` à `@TransactionalEventListener(phase = AFTER_COMMIT) @Async` (fix post-revue).
+- `src/main/java/com/yadony/api/matching/BidService.java` — `toResponse` calcule `tripCancellationId`/`tripCancellationRematchStatus` via un discriminant par élimination (voir « Pièges »).
+- `src/main/java/com/yadony/api/matching/dto/BidResponse.java` — +2 champs additifs en fin de record : `UUID tripCancellationId`, `String tripCancellationRematchStatus`.
 - Tests adaptés au nouveau paramètre de constructeur / au nouveau comportement : `CancellationServiceTest.java`, `CancellationNoShowTest.java`, `CancellationServiceAfterHandoverTest.java`, `CancellationServiceDeliveryNoShowTest.java`, `CancellationServiceNoShowTest.java`, `CancellationServiceReturnCodeTest.java`, `NotificationDispatcherTest.java`, `BidServiceTest.java`.
 
 ## Comment ça fonctionne (pour la maintenance)

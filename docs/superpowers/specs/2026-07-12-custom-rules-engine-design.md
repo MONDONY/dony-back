@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Le chantier précédent (`2026-07-11-automation-engine-design.md`, PR #96 dony-back / PR #10 dony-pro) a livré le moteur d'exécution des **règles préconfigurées**. Les **règles personnalisées** (SI→ALORS, créées via `AutomationRuleModal.vue`) étaient explicitement hors scope : le CRUD fonctionne (création, édition, toggle, suppression, affichage), mais aucun moteur ne les évalue.
+Le chantier précédent (`2026-07-11-automation-engine-design.md`, PR #96 yadony-back / PR #10 yadony-pro) a livré le moteur d'exécution des **règles préconfigurées**. Les **règles personnalisées** (SI→ALORS, créées via `AutomationRuleModal.vue`) étaient explicitement hors scope : le CRUD fonctionne (création, édition, toggle, suppression, affichage), mais aucun moteur ne les évalue.
 
 **Bug constaté en production par l'utilisateur** : une règle custom « Refuser colis avec des aliments » (SI Type de contenu = Poissons → ALORS Refuser automatiquement), active, n'a eu aucun effet quand un expéditeur a soumis une demande correspondante. Comportement attendu vu le scope précédent, mais surprise silencieuse côté produit — objet de ce chantier.
 
@@ -36,7 +36,7 @@ Même point d'entrée que les presets bid-scoped : `BidCreatedEvent` (publié ap
 
 ### Nouveau composant : `CustomRuleConditionEvaluator`
 
-Classe dédiée dans `com.dony.api.automation` (bean Spring sans état, ou classe statique pure — au choix de l'implémentation, pure de préférence pour la testabilité) :
+Classe dédiée dans `com.yadony.api.automation` (bean Spring sans état, ou classe statique pure — au choix de l'implémentation, pure de préférence pour la testabilité) :
 
 ```java
 boolean matches(AutomationRuleEntity rule, BidEvaluationContext ctx)
@@ -103,7 +103,7 @@ Une seule action bid (accept XOR reject) par bid, comme aujourd'hui. Les règles
 
 Chaque action custom écrit une ligne `automation_history` via le chemin existant : `ruleLabel` = `rule.getName()` (le nom saisi par l'utilisateur, ex. « Refuser colis avec des aliments »), `actionTaken` = `CUSTOM_AUTO_REJECT`/`CUSTOM_AUTO_ACCEPT`, `result` = SUCCESS/FAILURE/CAP_REACHED. Aucune ligne pour une règle qui ne matche pas (pas de bruit).
 
-### Frontend (dony-pro)
+### Frontend (yadony-pro)
 
 **Aucun changement requis.** La création/édition de règles custom fonctionne déjà (`AutomationRuleModal.vue`), l'historique affiche déjà les entrées via `ruleLabel`. Le chantier est 100 % backend.
 
@@ -134,4 +134,4 @@ TDD strict. Nouveau code visé ≥ 90 %.
 - Logique OU entre conditions, opérateurs `contains`/regex, pliage d'accents
 - Matching partiel intra-libellé sur `content_type` (« Poissons » ≠ « poisson frais ») — le matching **par élément** de la liste jointe par virgule, lui, est en scope (cf. § Périmètre, point 3)
 - Vocabulaire contrôlé pour `content_type` (le champ reste du texte libre des deux côtés — amélioration produit future : liste fermée partagée expéditeur/voyageur)
-- Tout changement front (dony-pro) et Flutter (dony_app)
+- Tout changement front (yadony-pro) et Flutter (yadony_app)

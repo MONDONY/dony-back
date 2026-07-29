@@ -1,18 +1,18 @@
 # Spec — Taux de commission : override par utilisateur + codes promo
 
 **Statut :** 📋 Spec (non implémentée) · **Date :** 2026-06-02
-**Périmètre :** backend `com.dony.api.*` + app Flutter · **Pré-requis :** refactor « source unique `dony.commission.rate` » (déjà livré, branche `feature/price-coherence`).
+**Périmètre :** backend `com.yadony.api.*` + app Flutter · **Pré-requis :** refactor « source unique `yadony.commission.rate` » (déjà livré, branche `feature/price-coherence`).
 
 ---
 
 ## 1. Contexte & état actuel
 
-Depuis le refactor « source unique », le taux de commission Dony vient d'**un seul** endroit : la propriété `dony.commission.rate` (défaut `0.12`, surchargeable par `DONY_COMMISSION_RATE`). Elle pilote :
+Depuis le refactor « source unique », le taux de commission Yadony vient d'**un seul** endroit : la propriété `yadony.commission.rate` (défaut `0.12`, surchargeable par `YADONY_COMMISSION_RATE`). Elle pilote :
 - le **montant facturé** : `PaymentService` → `amount = totalNet × (1 + rate)` ;
 - les **prix affichés** : `PriceGridService.displayPrice(net)` → `unitPriceDisplay` (MIXED) **et** `pricePerKgDisplay` (KG), consommés par toutes les surfaces app ;
 - les **stats PRO** : `ProAnalyticsService`.
 
-Modèle métier : `pricePerKg`/`unitPriceNet` = **NET voyageur** (ce qu'il touche). L'expéditeur paie `net × (1 + rate)` ; Dony garde `net × rate` ; le voyageur reçoit le net.
+Modèle métier : `pricePerKg`/`unitPriceNet` = **NET voyageur** (ce qu'il touche). L'expéditeur paie `net × (1 + rate)` ; Yadony garde `net × rate` ; le voyageur reçoit le net.
 
 Existant connexe : **parrainage à crédits €** (`ReferralService`, `UserCreditEntity`) — un grand livre de crédits en centimes, **non appliqué au paiement** aujourd'hui. Distinct du taux de commission.
 
@@ -28,7 +28,7 @@ Existant connexe : **parrainage à crédits €** (`ReferralService`, `UserCredi
 |---|---|
 | L'override par utilisateur s'applique à… | **Voyageur ET expéditeur** (les deux, avec règle de priorité) |
 | Mécanisme du code promo | **Réduction du taux de commission** (pas un crédit €) |
-| Bénéficiaire d'une commission réduite | **L'expéditeur paie moins** (net voyageur inchangé, Dony réduit sa marge) |
+| Bénéficiaire d'une commission réduite | **L'expéditeur paie moins** (net voyageur inchangé, Yadony réduit sa marge) |
 
 ---
 
@@ -104,7 +104,7 @@ ALTER TABLE bids ADD COLUMN commission_rate DECIMAL(4,3);   -- backfill avec le 
 ALTER TABLE bids ADD COLUMN promo_code_id UUID REFERENCES promo_codes(id);
 ```
 
-> Migrations Flyway `V(n+1)` (ne jamais modifier l'existant). Backfill `bids.commission_rate` = valeur de `dony.commission.rate` au moment de la migration pour les bids déjà créés.
+> Migrations Flyway `V(n+1)` (ne jamais modifier l'existant). Backfill `bids.commission_rate` = valeur de `yadony.commission.rate` au moment de la migration pour les bids déjà créés.
 
 ---
 
@@ -127,7 +127,7 @@ Permet à l'app d'afficher le total exact **sans** le calculer localement (impos
 
 ## 7. Front (app Flutter)
 
-- **Override voyageur** : rien de neuf — les cartes/écrans lisent déjà `pricePerKgDisplay`/`unitPriceDisplay` (calculés backend avec le taux du voyageur). Le `donyCommissionRate` global reste un repli.
+- **Override voyageur** : rien de neuf — les cartes/écrans lisent déjà `pricePerKgDisplay`/`unitPriceDisplay` (calculés backend avec le taux du voyageur). Le `yadonyCommissionRate` global reste un repli.
 - **Code promo** :
   - Champ « code promo » dans `CreateBidBottomSheet` / `create_bid_screen`.
   - **Arrêter le calcul local** du total quand un code/override entre en jeu → appeler `POST /bids/quote` et afficher `total` + `commission` renvoyés. (Aujourd'hui : `netToSenderPrice` local, qui ne connaît pas la remise.)

@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:dony_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;INIT=CREATE SCHEMA IF NOT EXISTS kyc_schema
+    url: jdbc:h2:mem:yadony_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;INIT=CREATE SCHEMA IF NOT EXISTS kyc_schema
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -31,7 +31,7 @@ hetzner:
   s3:
     endpoint: http://localhost:9000
     region: eu-central
-    bucket: dony-test
+    bucket: yadony-test
     access-key: test
     secret-key: test
 
@@ -39,7 +39,7 @@ aws:
   s3:
     endpoint: http://localhost:9000
     region: eu-central
-    bucket: dony-test
+    bucket: yadony-test
     access-key: test
     secret-key: test
 
@@ -50,10 +50,10 @@ stripe:
     payments-secret: whsec_test_payments
     kyc-secret: whsec_test_kyc
 
-dony:
+yadony:
   email:
     resend-api-key: "test-resend-key"
-    from-address: "noreply@test.dony.app"
+    from-address: "noreply@test.yadony.app"
     otp-template: "Test code: %s"
   urgency:
     threshold-days: 3
@@ -102,7 +102,7 @@ dony:
 
 app:
   encryption:
-    key: dony-test-encryption-key-not-for-production-use-32-bytes
+    key: yadony-test-encryption-key-not-for-production-use-32-bytes
   places:
     api-key: test-api-key
     allowed-countries: ""

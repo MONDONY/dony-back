@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/mondony/dony-back
+  IMAGE_NAME: ghcr.io/yadony/yadony-back
 
 jobs:
 
@@ -142,8 +142,8 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set -e
-            mkdir -p ~/dony
-            cd ~/dony
+            mkdir -p ~/yadony
+            cd ~/yadony
             echo "📁 Création des répertoires..."
             mkdir -p nginx/certs nginx/www backups
             echo "🧹 Réinitialisation du dossier monitoring (config régénérée depuis le repo)..."
@@ -161,7 +161,7 @@ jobs:
           echo "${{ secrets.OVH_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519"
-          DEST="${{ secrets.OVH_USER }}@${{ secrets.OVH_HOST }}:~/dony"
+          DEST="${{ secrets.OVH_USER }}@${{ secrets.OVH_HOST }}:~/yadony"
 
           echo "📤 docker-compose.staging.yml (source unique)..."
           scp $SSH_OPTS docker-compose.staging.yml "$DEST/"
@@ -187,7 +187,7 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set -e
-            cd ~/dony
+            cd ~/yadony
 
             echo "🔐 Connexion à GHCR..."
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
@@ -211,11 +211,11 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set -e
-            cd ~/dony
+            cd ~/yadony
 
             echo "🔍 Vérification de PostgreSQL..."
             for i in $(seq 1 6); do
-              if docker exec dony_db_staging pg_isready -U "${{ secrets.DB_USERNAME }}" -d dony_staging 2>/dev/null | grep -q "accepting"; then
+              if docker exec yadony_db_staging pg_isready -U "${{ secrets.DB_USERNAME }}" -d yadony_staging 2>/dev/null | grep -q "accepting"; then
                 echo "✅ PostgreSQL healthy (tentative $i)"
                 exit 0
               fi
@@ -233,19 +233,19 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set -e
-            cd ~/dony
+            cd ~/yadony
 
             echo "🔍 Vérification de l'API..."
             for i in $(seq 1 12); do
               # Attendre que le conteneur soit prêt
-              if ! docker ps | grep -q dony_api; then
+              if ! docker ps | grep -q yadony_api; then
                 echo "  ⏳ Tentative $i/12 — conteneur en démarrage..."
                 sleep 5
                 continue
               fi
 
               # Vérifier l'endpoint health
-              STATUS=$(docker exec dony_api wget -q -O - http://localhost:8080/api/v1/actuator/health 2>/dev/null | grep -o '"status":"[^"]*"' | grep -o '[^"]*"$' | tr -d '"' || echo "UNKNOWN")
+              STATUS=$(docker exec yadony_api wget -q -O - http://localhost:8080/api/v1/actuator/health 2>/dev/null | grep -o '"status":"[^"]*"' | grep -o '[^"]*"$' | tr -d '"' || echo "UNKNOWN")
 
               if [ "$STATUS" = "UP" ]; then
                 echo "✅ API healthy (tentative $i/12)"
@@ -257,7 +257,7 @@ jobs:
 
             echo "❌ API non disponible après 60s"
             echo "📋 Derniers logs:"
-            docker logs dony_api | tail -20
+            docker logs yadony_api | tail -20
             exit 1
 
       - name: Rapport de déploiement
@@ -269,7 +269,7 @@ jobs:
           key: ${{ secrets.OVH_SSH_KEY }}
           script: |
             set +e
-            cd ~/dony
+            cd ~/yadony
 
             echo ""
             echo "═════════════════════════════════════════"
@@ -277,15 +277,15 @@ jobs:
             echo "═════════════════════════════════════════"
             echo ""
             echo "🐳 Conteneurs:"
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "dony_|NAMES"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "yadony_|NAMES"
             echo ""
             echo "📦 Images:"
-            docker images | grep dony | head -3
+            docker images | grep yadony | head -3
             echo ""
             echo "💾 Volumes:"
-            docker volume ls | grep dony
+            docker volume ls | grep yadony
             echo ""
             echo "📝 Logs API (dernières 10 lignes):"
-            docker logs dony_api --tail 10
+            docker logs yadony_api --tail 10
             echo ""
             echo "═════════════════════════════════════════"
