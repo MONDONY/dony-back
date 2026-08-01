@@ -432,6 +432,48 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("getById() — brouillon")
+    class GetByIdDraft {
+
+        private PackageRequestEntity draftOwnedBySender(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.DRAFT);
+            return e;
+        }
+
+        @Test @DisplayName("le propriétaire voit son brouillon")
+        void getById_owner_seesDraft() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draftOwnedBySender(id)));
+
+            assertThatCode(() -> service.getById(SENDER_ID, id)).doesNotThrowAnyException();
+        }
+
+        @Test @DisplayName("un tiers reçoit 404, pas 403")
+        void getById_stranger_throws404() {
+            UUID id = UUID.randomUUID();
+            UUID stranger = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draftOwnedBySender(id)));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(id, stranger))
+                .thenReturn(false);
+
+            // 403 révélerait qu'une demande existe derrière cet id.
+            assertThatThrownBy(() -> service.getById(stranger, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/not-found");
+        }
+    }
+
     @Nested @DisplayName("update() — édition tant qu'aucun accord")
     class UpdateTests {
 

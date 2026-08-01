@@ -402,7 +402,16 @@ public class PackageRequestService {
             || entity.getStatus() == PackageRequestStatus.NEGOTIATING;
 
         if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+            // Un brouillon n'a jamais été rendu public : répondre « interdit »
+            // apprendrait à un tiers qu'une demande existe derrière cet id. Les
+            // autres statuts non listés ont, eux, déjà été publics.
+            HttpStatus status = entity.getStatus() == PackageRequestStatus.DRAFT
+                ? HttpStatus.NOT_FOUND
+                : HttpStatus.FORBIDDEN;
+            String reason = entity.getStatus() == PackageRequestStatus.DRAFT
+                ? "request/not-found"
+                : "request/forbidden";
+            throw new ResponseStatusException(status, reason);
         }
         // Voyageur (non-owner) : expose son thread ACTIF pour que l'app bascule le CTA
         // (« Proposer mon trajet » → « Voir ma négociation » / proposition de trajet).
