@@ -1,5 +1,5 @@
 package com.yadony.api.requests.entity;
 
 public enum PackageRequestStatus {
-    OPEN, NEGOTIATING, ACCEPTED, EXPIRED, CANCELLED, COMPLETED
+    DRAFT, OPEN, NEGOTIATING, ACCEPTED, EXPIRED, CANCELLED, COMPLETED
 }
