@@ -346,6 +346,9 @@ public class PackageRequestService {
         if (entity.getDepartureCity().equalsIgnoreCase(entity.getArrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
         }
+        if (entity.getDesiredDate().isBefore(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/desired-date-in-past");
+        }
         if (entity.getDesiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }

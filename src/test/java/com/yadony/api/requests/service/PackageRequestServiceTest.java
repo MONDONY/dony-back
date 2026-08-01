@@ -1374,5 +1374,18 @@ class PackageRequestServiceTest {
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("request/max-open-reached");
         }
+
+        @Test @DisplayName("date déjà passée → 422 request/desired-date-in-past")
+        void publish_desiredDateInPast_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setDesiredDate(LocalDate.now().minusDays(5));  // Passée de 5 jours
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/desired-date-in-past");
+        }
     }
 }
