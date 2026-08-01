@@ -19,6 +19,9 @@ public interface PackageRequestRepository
 
     long countBySenderIdAndStatusIn(UUID senderId, List<PackageRequestStatus> statuses);
 
+    /** Brouillons d'un expéditeur — plafonné par yadony.limits.drafts (free/PRO). */
+    long countBySenderIdAndStatus(UUID senderId, PackageRequestStatus status);
+
     @Query("""
         SELECT p FROM PackageRequestEntity p
         WHERE p.status IN ('OPEN', 'NEGOTIATING')

@@ -6,6 +6,7 @@ import com.yadony.api.auth.UserRepository;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.config.ContentCategoryNormalizer;
+import com.yadony.api.config.YadonyConfigProperties;
 import com.yadony.api.favorites.FavoriteRepository;
 import com.yadony.api.favorites.FavoriteTargetType;
 import com.yadony.api.matching.MatchingService;
@@ -59,6 +60,7 @@ public class PackageRequestService {
     private final FavoriteRepository favoriteRepository;
     private final PackageRequestSearchMapper packageRequestSearchMapper;
     private final MatchingService matchingService;
+    private final YadonyConfigProperties yadonyConfig;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -72,7 +74,8 @@ public class PackageRequestService {
                                   PackageRequestPhotoService photoService,
                                   FavoriteRepository favoriteRepository,
                                   PackageRequestSearchMapper packageRequestSearchMapper,
-                                  MatchingService matchingService) {
+                                  MatchingService matchingService,
+                                  YadonyConfigProperties yadonyConfig) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -86,6 +89,7 @@ public class PackageRequestService {
         this.favoriteRepository = favoriteRepository;
         this.packageRequestSearchMapper = packageRequestSearchMapper;
         this.matchingService = matchingService;
+        this.yadonyConfig = yadonyConfig;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -129,7 +133,18 @@ public class PackageRequestService {
         UserEntity sender = userRepository.findById(senderId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
 
-        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+        boolean isDraft = Boolean.TRUE.equals(req.saveAsDraft());
+
+        // Un brouillon n'est pas publié : ni KYC ni quota de demandes ouvertes ne
+        // s'appliquent encore. Les deux sont rejoués à la publication.
+        //
+        // Le contrôle KYC garde sa position d'origine (avant les validations métier)
+        // et le contrôle de quota la sienne (après) : les tests de validation
+        // existants (mobile money, budget ferme, corridor, date) n'attendent pas
+        // d'appel à countBySenderIdAndStatusIn et échoueraient sur un mock non
+        // stubbé (long non-stubbé = 0, comparé à maxOpenRequestsPerSender() = 0
+        // par défaut → 409 déclenché avant la validation attendue).
+        if (!isDraft && sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
         }
         rejectMobileMoneyMethods(req.acceptedPaymentMethods());
@@ -143,10 +158,14 @@ public class PackageRequestService {
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
-        long openCount = repository.countBySenderIdAndStatusIn(senderId,
-            List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
-        if (openCount >= config.maxOpenRequestsPerSender()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+        if (!isDraft) {
+            long openCount = repository.countBySenderIdAndStatusIn(senderId,
+                List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
+            if (openCount >= config.maxOpenRequestsPerSender()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+            }
+        } else {
+            assertDraftQuotaAvailable(senderId, sender);
         }
 
         // gross → net conversion: net = gross / (1 + commissionRate)
@@ -174,22 +193,46 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
-        entity.setStatus(PackageRequestStatus.OPEN);
-        // The customs disclaimer is auto-accepted at publication; the sender
-        // approves it implicitly when creating (publishing) the request.
-        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setStatus(isDraft ? PackageRequestStatus.DRAFT : PackageRequestStatus.OPEN);
+        // Le disclaimer douanier est accepté à la publication. Tant que la demande
+        // est un brouillon, l'expéditeur n'a rien publié — donc rien signé.
+        if (!isDraft) {
+            entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        }
 
         PackageRequestEntity saved = repository.save(entity);
         photoService.replacePhotos(saved.getId(), senderId, req.photoKeys());
 
-        eventPublisher.publishEvent(new PackageRequestCreatedEvent(
-            saved.getId(), senderId, saved.getDepartureCity(),
-            saved.getArrivalCity(), saved.getDesiredDate()
-        ));
-        auditService.log("PACKAGE_REQUEST", saved.getId(), "CREATED", senderId,
-            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        if (isDraft) {
+            auditService.log("PACKAGE_REQUEST", saved.getId(), "DRAFT_CREATED", senderId,
+                Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        } else {
+            eventPublisher.publishEvent(new PackageRequestCreatedEvent(
+                saved.getId(), senderId, saved.getDepartureCity(),
+                saved.getArrivalCity(), saved.getDesiredDate()
+            ));
+            auditService.log("PACKAGE_REQUEST", saved.getId(), "CREATED", senderId,
+                Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        }
 
         return saved;
+    }
+
+    /**
+     * Plafonne les brouillons d'un expéditeur au même quota que les trajets
+     * (yadony.limits.drafts) : un utilisateur a un quota de brouillons, pas un
+     * quota par type d'objet. Appelé aussi à la dépublication, sans quoi
+     * dépublier deviendrait un moyen de contourner le plafond.
+     */
+    private void assertDraftQuotaAvailable(UUID senderId, UserEntity sender) {
+        YadonyConfigProperties.Limits limits = yadonyConfig.limits() != null
+            ? yadonyConfig.limits()
+            : new YadonyConfigProperties.Limits(null, null);
+        int maxDrafts = sender.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
+        long draftCount = repository.countBySenderIdAndStatus(senderId, PackageRequestStatus.DRAFT);
+        if (draftCount >= maxDrafts) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "draft-limit-reached");
+        }
     }
 
     // ─── update ──────────────────────────────────────────────────────────────────

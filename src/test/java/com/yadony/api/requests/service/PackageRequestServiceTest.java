@@ -100,7 +100,8 @@ class PackageRequestServiceTest {
         service = new PackageRequestService(
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
-                storageService, photoService, favoriteRepository, realMapper, matchingService);
+                storageService, photoService, favoriteRepository, realMapper, matchingService,
+                yadonyConfig);
     }
 
     // ========== Task 12: create() tests ==========
@@ -144,7 +145,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
-                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), keys);
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), keys, null);
 
             service.create(SENDER_ID, req);
 
@@ -173,7 +174,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -200,7 +201,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.WAVE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -216,7 +217,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.ORANGE_MONEY)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -232,7 +233,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -253,7 +254,7 @@ class PackageRequestServiceTest {
                 "desc", null, "https://evil.example/pixel.gif",
                 "10e arr", "Plateau",
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -278,7 +279,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("23"), "Médicaments", "desc",
                 new BigDecimal("39.20"), null, null, null,
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
 
@@ -301,7 +302,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("5"), "Hi-fi, Téléphone", "desc",
                 new BigDecimal("28.00"), null, null, null,
-                true, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
 
@@ -316,7 +317,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("6"), "Médicaments", null,
                 null /* pas de budget */, null, null, null,
-                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -445,7 +446,7 @@ class PackageRequestServiceTest {
                 "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
                 new BigDecimal("8"), "electronique", "desc",
                 new BigDecimal("56.00"), null, "7e", "ACI 2000",
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             var resp = service.update(SENDER_ID, entity.getId(), req);
 
@@ -473,7 +474,7 @@ class PackageRequestServiceTest {
                 "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
                 new BigDecimal("8"), "Hi-fi, Téléphone", "desc",
                 new BigDecimal("56.00"), null, "7e", "ACI 2000",
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             service.update(SENDER_ID, entity.getId(), req);
 
@@ -526,7 +527,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, null, null, null, null,
-                false, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                false, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -541,7 +542,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Paris", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
-                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -1102,7 +1103,7 @@ class PackageRequestServiceTest {
             "Cadeau pour ma mère", new BigDecimal("28.00"), null,
             "10e arr", "Plateau",
             true, EnumSet.of(PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
     }
 
     // ========== AvatarUrl in SenderPublicProfile ==========
@@ -1176,6 +1177,103 @@ class PackageRequestServiceTest {
 
             var result = page.getContent().get(0);
             assertThat(result.sender().avatarUrl()).isNull();
+        }
+    }
+
+    // ========== Brouillons ==========
+
+    /** Construit une requête de création valide ; saveAsDraft piloté par l'appelant. */
+    private PackageRequestCreateRequest draftRequest(Boolean saveAsDraft) {
+        return new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(10), 2,
+                new BigDecimal("3.0"), "Documents", null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), null, saveAsDraft);
+    }
+
+    @Nested @DisplayName("create() — brouillon")
+    class CreateDraft {
+
+        @BeforeEach
+        void stubSave() {
+            // lenient : create_asDraft_overLimit_throws403 lève 403 avant d'atteindre
+            // repository.save(), ce qui rendrait ce stub "inutile" en strict-stubs.
+            lenient().when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> {
+                PackageRequestEntity e = inv.getArgument(0);
+                setId(e, UUID.randomUUID());
+                return e;
+            });
+        }
+
+        @Test @DisplayName("saveAsDraft=true → statut DRAFT, aucun event, aucun disclaimer")
+        void create_asDraft_doesNotPublish() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(true));
+
+            ArgumentCaptor<PackageRequestEntity> captor =
+                    ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            PackageRequestEntity saved = captor.getValue();
+
+            assertThat(saved.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+            // Le disclaimer douanier se signe à la publication, pas à la rédaction.
+            assertThat(saved.getDisclaimerSignedAt()).isNull();
+            // L'event déclenche les alertes corridor : le publier notifierait une
+            // demande que personne ne peut voir.
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestCreatedEvent.class));
+            verify(auditService).log(eq("PACKAGE_REQUEST"), any(), eq("DRAFT_CREATED"),
+                    eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("brouillon : KYC non vérifié accepté")
+        void create_asDraft_doesNotRequireKyc() {
+            sender.setKycStatus(KycStatus.PENDING);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            assertThatCode(() -> service.create(SENDER_ID, draftRequest(true)))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test @DisplayName("brouillon : ne compte pas dans maxOpenRequestsPerSender")
+        void create_asDraft_ignoresOpenQuota() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(true));
+
+            verify(repository, never()).countBySenderIdAndStatusIn(any(), any());
+        }
+
+        @Test @DisplayName("limite de brouillons atteinte → 403 draft-limit-reached")
+        void create_asDraft_overLimit_throws403() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            // maxDrafts() vaut 1 par défaut quand yadony.limits.drafts n'est pas configuré.
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(1L);
+
+            assertThatThrownBy(() -> service.create(SENDER_ID, draftRequest(true)))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("draft-limit-reached");
+        }
+
+        @Test @DisplayName("saveAsDraft=null → publication directe (comportement historique)")
+        void create_nullFlag_publishesDirectly() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(null));
+
+            ArgumentCaptor<PackageRequestEntity> captor =
+                    ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
         }
     }
 }

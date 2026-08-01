@@ -106,7 +106,7 @@ class PackageRequestControllerIT {
             "Cadeau", new BigDecimal("28.00"), null,
             "10e", "Plateau",
             true, java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
     }
 
     private PackageRequestResponse fakeResponse(UUID id) {
@@ -278,7 +278,7 @@ class PackageRequestControllerIT {
             "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
             new BigDecimal("5"), "vetements", "desc",
             new BigDecimal("28.00"), null, "10e", "Plateau",
-            true, java.util.Set.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE), List.of());
+            true, java.util.Set.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE), List.of(), null);
 
         mockMvc.perform(put("/package-requests/" + id)
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -465,7 +465,7 @@ class PackageRequestControllerIT {
             "10e", "Plateau",
             false,  // non négociable — budget requis
             java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
 
         when(service.create(eq(SENDER_UUID), any()))
             .thenThrow(new org.springframework.web.server.ResponseStatusException(
@@ -517,7 +517,7 @@ class PackageRequestControllerIT {
             java.util.EnumSet.of(
                 com.yadony.api.payments.cash.PaymentMethod.STRIPE,
                 com.yadony.api.payments.cash.PaymentMethod.CASH)
-        , List.of());
+        , List.of(), null);
 
         mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))

@@ -150,7 +150,8 @@ class PackageRequestServiceMatchingTest {
         service = new PackageRequestService(
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
-                storageService, photoService, favoriteRepository, realMapper, matchingService);
+                storageService, photoService, favoriteRepository, realMapper, matchingService,
+                yadonyConfig);
     }
 
     @Test
