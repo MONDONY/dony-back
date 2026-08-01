@@ -152,7 +152,7 @@ Les boutons de la sheet respectent la règle projet : jamais de `DonyButton` dan
 
 Le bouton `…` de l'AppBar est **supprimé**. C'est lui l'action morte : la grille le remplace, on ne le remplit pas.
 
-Le bouton rouge sticky « Annuler la demande » disparaît au profit de la tuile Annuler, avec le même dialogue de confirmation destructive qu'aujourd'hui.
+Le bouton rouge sticky « Annuler la demande » disparaît au profit de la tuile Annuler. **Correction par rapport à l'échange précédent :** l'action actuelle n'a en réalité *aucune* confirmation — le tap annule immédiatement. La tuile « Supprimer » du trajet (`owner_action_grid.dart:138-154`), elle, confirme via `DonyDialog.show(..., variant: DonyDialogVariant.destructive)`. La tuile Annuler de la demande adopte ce même garde-fou : c'est la même refonte qui la fait cohabiter avec des tuiles qui confirment déjà, l'incohérence serait immédiatement visible.
 
 **L'édition ne se durcit pas.** Le trajet désactive « Modifier » dès qu'une demande existe ; la demande d'envoi, elle, sait déjà s'éditer en cours de négociation (les offres ouvertes sont auto-rejetées côté backend et l'utilisateur en est averti par `PackageRequestCreateWizard.requiresEditWarning`). Ce comportement est conservé — l'aligner sur le trajet serait une régression fonctionnelle.
 
