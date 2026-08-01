@@ -1388,4 +1388,42 @@ class PackageRequestServiceTest {
                     .hasMessageContaining("request/desired-date-in-past");
         }
     }
+
+    @Nested @DisplayName("update() — brouillon")
+    class UpdateDraft {
+
+        @Test @DisplayName("éditer un brouillon le laisse DRAFT")
+        void update_draft_staysDraft() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setStatus(PackageRequestStatus.DRAFT);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.update(SENDER_ID, id, draftRequest(null));
+
+            // Sans garde, update() posait OPEN en dur et publiait le brouillon en
+            // silence — la demande devenait visible de tous à la première édition.
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+        }
+
+        @Test @DisplayName("éditer une demande en négociation la repasse OPEN")
+        void update_negotiating_returnsToOpen() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setStatus(PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.update(SENDER_ID, id, draftRequest(null));
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+        }
+    }
 }

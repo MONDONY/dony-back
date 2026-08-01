@@ -239,7 +239,7 @@ public class PackageRequestService {
 
     /**
      * Modifie une demande tant qu'aucun accord n'a été conclu avec un voyageur
-     * (statut {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
+     * (statut {@code DRAFT}, {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
      * terminée → 409 {@code request/not-editable}.
      *
      * <p>Les termes de la demande changent : toute offre en cours ({@code OPEN})
@@ -255,7 +255,8 @@ public class PackageRequestService {
         if (!entity.getSenderId().equals(callerUid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        if (entity.getStatus() != PackageRequestStatus.OPEN
+        if (entity.getStatus() != PackageRequestStatus.DRAFT
+            && entity.getStatus() != PackageRequestStatus.OPEN
             && entity.getStatus() != PackageRequestStatus.NEGOTIATING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
         }
@@ -300,7 +301,12 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
-        entity.setStatus(PackageRequestStatus.OPEN);
+        // Repasser en OPEN sert à sortir d'une négociation dont les termes ont
+        // changé. Un brouillon n'a pas de négociation et ne doit pas être publié
+        // par une simple édition.
+        if (entity.getStatus() != PackageRequestStatus.DRAFT) {
+            entity.setStatus(PackageRequestStatus.OPEN);
+        }
 
         PackageRequestEntity saved = repository.save(entity);
         // photoKeys == null → on conserve les photos existantes (édition sans toucher aux photos).
