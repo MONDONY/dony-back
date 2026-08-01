@@ -315,6 +315,64 @@ public class PackageRequestService {
         return toResponse(saved);
     }
 
+    // ─── publish ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Publie un brouillon (DRAFT → OPEN).
+     *
+     * <p>Toutes les validations de publication sont rejouées et non supposées
+     * acquises à la création : les données ont pu être modifiées depuis, et une
+     * date sort naturellement de la fenêtre autorisée avec le temps.
+     */
+    @Transactional
+    public PackageRequestResponse publish(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // 404 et non 403 : un brouillon est invisible des tiers, répondre « interdit »
+        // révélerait son existence.
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found");
+        }
+        if (entity.getStatus() != PackageRequestStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-draft");
+        }
+
+        UserEntity sender = userRepository.findById(callerUid)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
+        }
+        if (entity.getDepartureCity().equalsIgnoreCase(entity.getArrivalCity())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
+        }
+        if (entity.getDesiredDate().isAfter(LocalDate.now().plusDays(90))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
+        }
+        if (!entity.isNegotiable() && entity.getTargetPriceEur() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "request/target-price-required-firm");
+        }
+        long openCount = repository.countBySenderIdAndStatusIn(callerUid,
+            List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
+        if (openCount >= config.maxOpenRequestsPerSender()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+        }
+
+        entity.setStatus(PackageRequestStatus.OPEN);
+        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        PackageRequestEntity saved = repository.save(entity);
+
+        eventPublisher.publishEvent(new PackageRequestCreatedEvent(
+            saved.getId(), callerUid, saved.getDepartureCity(),
+            saved.getArrivalCity(), saved.getDesiredDate()
+        ));
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "PUBLISHED", callerUid,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return toResponse(saved);
+    }
+
     // ─── getById ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)

@@ -1276,4 +1276,103 @@ class PackageRequestServiceTest {
             verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
         }
     }
+
+    @Nested @DisplayName("publish()")
+    class Publish {
+
+        private PackageRequestEntity draft(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.DRAFT);
+            return e;
+        }
+
+        @Test @DisplayName("DRAFT → OPEN + event + disclaimer signé + audit PUBLISHED")
+        void publish_draft_becomesOpen() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.publish(SENDER_ID, id);
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            assertThat(e.getDisclaimerSignedAt()).isNotNull();
+            verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(id), eq("PUBLISHED"),
+                    eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("non-propriétaire → 404 (ne révèle pas l'existence)")
+        void publish_notOwner_throws404() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+
+            assertThatThrownBy(() -> service.publish(UUID.randomUUID(), id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/not-found");
+        }
+
+        @Test @DisplayName("déjà publiée → 409 request/not-draft")
+        void publish_alreadyOpen_throws409() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setStatus(PackageRequestStatus.OPEN);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/not-draft");
+        }
+
+        @Test @DisplayName("KYC non vérifié → 403 kyc/not-verified")
+        void publish_kycNotVerified_throws403() {
+            UUID id = UUID.randomUUID();
+            sender.setKycStatus(KycStatus.PENDING);
+            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("kyc/not-verified");
+        }
+
+        @Test @DisplayName("date devenue trop lointaine → 422 request/date-too-far")
+        void publish_dateTooFar_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setDesiredDate(LocalDate.now().plusDays(120));
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/date-too-far");
+        }
+
+        @Test @DisplayName("quota de demandes ouvertes atteint → 409 max-open-reached")
+        void publish_overOpenQuota_throws409() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(config.maxOpenRequestsPerSender()).thenReturn(1);
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(1L);
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/max-open-reached");
+        }
+    }
 }

@@ -529,4 +529,45 @@ class PackageRequestControllerIT {
             .andExpect(jsonPath("$.acceptedPaymentMethods",
                 org.hamcrest.Matchers.hasItems("STRIPE", "CASH")));
     }
+
+    // ─── Task 3 : publish() tests ──────────────────────────────────────────────
+
+    @Test
+    void post_publish_ownDraft_returns200() throws Exception {
+        UUID draftId = UUID.randomUUID();
+        PackageRequestResponse draftResponse = new PackageRequestResponse(
+            draftId, SENDER_UUID,
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.yadony.api.matching.TransportMode.PLANE,
+            "vetements",
+            "Cadeau", new BigDecimal("25"), null,
+            "10e", "Plateau",
+            PackageRequestStatus.OPEN, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE),
+            new BigDecimal("28.00")
+        , List.of(), null, null);
+        when(service.publish(eq(SENDER_UUID), eq(draftId))).thenReturn(draftResponse);
+
+        mockMvc.perform(post("/package-requests/" + draftId + "/publish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    void post_publish_othersDraft_returns404() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        when(service.publish(eq(SENDER_UUID), eq(otherId)))
+            .thenThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "request/not-found"));
+
+        mockMvc.perform(post("/package-requests/" + otherId + "/publish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isNotFound());
+    }
 }
