@@ -64,6 +64,7 @@ class AnnouncementServiceTest {
     @Mock private com.yadony.api.common.StorageService storageService;
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private com.yadony.api.requests.repository.PackageRequestRepository packageRequestRepository;
+    @Mock private com.yadony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
 
     private AnnouncementService announcementService;
 
@@ -79,7 +80,8 @@ class AnnouncementServiceTest {
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
-                storageService, favoriteRepository, realMapper, packageRequestRepository);
+                storageService, favoriteRepository, realMapper, packageRequestRepository,
+                negotiationThreadRepository);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -1769,7 +1771,8 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository,
+                    negotiationThreadRepository);
 
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             // le nouveau count (hors DRAFT) renvoie 1 => sous la limite (2) => création OK
@@ -2100,7 +2103,8 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository,
+                    negotiationThreadRepository);
 
             AnnouncementEntity draft = draftEntityOwnedBy(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
@@ -2146,7 +2150,7 @@ class AnnouncementServiceTest {
     class UnpublishAnnouncementTests {
 
         @Test
-        @DisplayName("ACTIVE sans demande → DRAFT + audit ANNOUNCEMENT_UNPUBLISHED")
+        @DisplayName("ACTIVE sans demande → DRAFT + audit UNPUBLISHED")
         void unpublish_activeWithoutBids_becomesDraft() {
             UserEntity user = standardUser();
             AnnouncementEntity active = buildAnnouncement(user);
@@ -2167,7 +2171,7 @@ class AnnouncementServiceTest {
             assertThat(result.status()).isEqualTo("DRAFT");
             verify(announcementRepository).findByIdForUpdate(active.getId());
             verify(auditService).log(eq("ANNOUNCEMENT"), eq(active.getId()),
-                    eq("ANNOUNCEMENT_UNPUBLISHED"), eq(user.getId()), anyMap());
+                    eq("UNPUBLISHED"), eq(user.getId()), anyMap());
         }
 
         @Test
@@ -2185,6 +2189,26 @@ class AnnouncementServiceTest {
                         YadonyBusinessException ex = (YadonyBusinessException) e;
                         assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
                         assertThat(ex.getErrorCode()).isEqualTo("announcement/has-bids");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("trajet référencé par une négociation sans bid → 409 announcement/has-negotiations")
+        void unpublish_withNegotiationThreadButNoBid_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(negotiationThreadRepository.existsByTravelerAnnouncementId(active.getId())).thenReturn(true);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/has-negotiations");
                     });
             verify(announcementRepository, never()).save(any());
         }

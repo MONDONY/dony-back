@@ -27,6 +27,7 @@ import com.yadony.api.matching.events.BidExpiredOnDepartureEvent;
 import com.yadony.api.matching.AnnouncementPublishedEvent;
 import com.yadony.api.requests.entity.PackageRequestStatus;
 import com.yadony.api.requests.repository.PackageRequestRepository;
+import com.yadony.api.requests.repository.NegotiationThreadRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,6 +97,7 @@ public class AnnouncementService {
     private final FavoriteRepository favoriteRepository;
     private final AnnouncementSearchMapper announcementSearchMapper;
     private final PackageRequestRepository packageRequestRepository;
+    private final NegotiationThreadRepository negotiationThreadRepository;
 
     @Value("${yadony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -115,7 +117,8 @@ public class AnnouncementService {
             StorageService storageService,
             FavoriteRepository favoriteRepository,
             AnnouncementSearchMapper announcementSearchMapper,
-            PackageRequestRepository packageRequestRepository
+            PackageRequestRepository packageRequestRepository,
+            NegotiationThreadRepository negotiationThreadRepository
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -129,6 +132,7 @@ public class AnnouncementService {
         this.favoriteRepository = favoriteRepository;
         this.announcementSearchMapper = announcementSearchMapper;
         this.packageRequestRepository = packageRequestRepository;
+        this.negotiationThreadRepository = negotiationThreadRepository;
     }
 
     @Transactional(readOnly = true)
@@ -911,6 +915,10 @@ public class AnnouncementService {
             throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/has-bids",
                     "Has Bids", "Ce trajet a déjà reçu des demandes et ne peut plus être dépublié");
         }
+        if (negotiationThreadRepository.existsByTravelerAnnouncementId(id)) {
+            throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/has-negotiations",
+                    "Has Negotiations", "Ce trajet est lié à une négociation et ne peut plus être dépublié");
+        }
 
         YadonyConfigProperties.Limits limits = config.limits() != null
                 ? config.limits()
@@ -928,7 +936,7 @@ public class AnnouncementService {
         announcement.setStatus(AnnouncementStatus.DRAFT);
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
-        auditService.log("ANNOUNCEMENT", saved.getId(), "ANNOUNCEMENT_UNPUBLISHED", user.getId(),
+        auditService.log("ANNOUNCEMENT", saved.getId(), "UNPUBLISHED", user.getId(),
                 Map.of("departureCity", saved.getDepartureCity(),
                         "arrivalCity", saved.getArrivalCity()));
 
