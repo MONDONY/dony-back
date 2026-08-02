@@ -142,6 +142,7 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
+          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set -e
             mkdir -p ~/yadony
@@ -170,6 +171,7 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
+          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             cd ~/yadony
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -182,6 +184,7 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
+          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             for i in $(seq 1 12); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/actuator/health)
