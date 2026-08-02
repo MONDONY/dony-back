@@ -252,7 +252,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements",
-                "desc", null, "https://evil.example/pixel.gif",
+                "desc", new BigDecimal("30.00"), "https://evil.example/pixel.gif",
                 "10e arr", "Plateau",
                 true, EnumSet.of(PaymentMethod.STRIPE)
             , List.of(), null);
@@ -310,7 +310,7 @@ class PackageRequestServiceTest {
             assertThat(saved.getContentCategory()).isEqualTo("Téléphone & électronique");
         }
 
-        @Test @DisplayName("budget null + non négociable → 422 target-price-required-firm")
+        @Test @DisplayName("budget null + non négociable → 422 target-price-required")
         void create_firmPrice_requiresBudget() {
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
 
@@ -322,7 +322,22 @@ class PackageRequestServiceTest {
 
             assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("target-price-required-firm");
+                .hasMessageContaining("target-price-required");
+        }
+
+        @Test @DisplayName("budget null + négociable → 422 target-price-required")
+        void create_negotiablePrice_requiresBudget() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("6"), "Médicaments", null,
+                null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
+
+            assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required");
         }
     }
 
@@ -574,7 +589,22 @@ class PackageRequestServiceTest {
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("target-price-required-firm");
+                .hasMessageContaining("target-price-required");
+        }
+
+        @Test @DisplayName("prix négociable sans budget → 422")
+        void update_negotiableWithoutBudget_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required");
         }
 
         @Test @DisplayName("corridor invalide (mêmes villes) → 422")
@@ -1229,7 +1259,7 @@ class PackageRequestServiceTest {
     private PackageRequestCreateRequest draftRequest(Boolean saveAsDraft) {
         return new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(10), 2,
-                new BigDecimal("3.0"), "Documents", null, null, null, null, null,
+                new BigDecimal("3.0"), "Documents", null, new BigDecimal("30.00"), null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE), null, saveAsDraft);
     }
 
@@ -1333,6 +1363,7 @@ class PackageRequestServiceTest {
             e.setDateToleranceDays((short) 2);
             e.setWeightKg(new BigDecimal("3.0"));
             e.setContentCategory("Documents");
+            e.setTargetPriceEur(new BigDecimal("30.00"));
             e.setNegotiable(true);
             e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
             e.setStatus(PackageRequestStatus.DRAFT);
@@ -1429,6 +1460,19 @@ class PackageRequestServiceTest {
             assertThatThrownBy(() -> service.publish(SENDER_ID, id))
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("request/desired-date-in-past");
+        }
+
+        @Test @DisplayName("budget absent → 422 request/target-price-required")
+        void publish_withoutBudget_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setTargetPriceEur(null);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/target-price-required");
         }
     }
 

@@ -17,7 +17,7 @@ public record PackageRequestCreateRequest(
     // (500, cf. V171__unify_content_categories.sql pour le pourquoi).
     @NotBlank @Size(max = 500) String contentCategory,
     @Size(max = 500) String description,
-    // Budget TOTAL (gross) saisi par l'expéditeur ; converti en net au service. Requis si !negotiable.
+    // Budget TOTAL (gross) obligatoire ; converti en net au service.
     @DecimalMin("0.0") @DecimalMax("560.0") BigDecimal totalBudgetEur,
     @Size(max = 500) String photoUrl,
     @Size(max = 100) String pickupNeighborhood,

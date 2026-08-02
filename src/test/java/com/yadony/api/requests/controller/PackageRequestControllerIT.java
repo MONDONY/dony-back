@@ -451,7 +451,7 @@ class PackageRequestControllerIT {
     // ─── Task 13 — nouveaux cas IT ──────────────────────────────────────────────
 
     /**
-     * Cas 1 : demande non négociable sans budget → 422 avec code "target-price-required-firm"
+     * Cas 1 : demande sans budget → 422 avec code "target-price-required"
      * Rule: PackageRequestService.createAndReturnEntity checks !negotiable && totalBudgetEur == null
      */
     @Test
@@ -470,7 +470,7 @@ class PackageRequestControllerIT {
         when(service.create(eq(SENDER_UUID), any()))
             .thenThrow(new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm"));
+                "request/target-price-required"));
 
         mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -478,7 +478,7 @@ class PackageRequestControllerIT {
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(content().contentType("application/problem+json"))
-            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("request/target-price-required-firm")));
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("request/target-price-required")));
     }
 
     /**

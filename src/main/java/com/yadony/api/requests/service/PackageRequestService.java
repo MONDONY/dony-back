@@ -153,16 +153,13 @@ public class PackageRequestService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
         }
         rejectMobileMoneyMethods(req.acceptedPaymentMethods());
-        if (!req.negotiable() && req.totalBudgetEur() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm");
-        }
         if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
         }
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
+        requireTargetPrice(req.totalBudgetEur());
         if (!isDraft) {
             long openCount = repository.countBySenderIdAndStatusIn(senderId,
                 List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
@@ -267,16 +264,13 @@ public class PackageRequestService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
         }
         rejectMobileMoneyMethods(req.acceptedPaymentMethods());
-        if (!req.negotiable() && req.totalBudgetEur() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm");
-        }
         if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
         }
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
+        requireTargetPrice(req.totalBudgetEur());
 
         BigDecimal netTarget = null;
         if (req.totalBudgetEur() != null) {
@@ -364,10 +358,7 @@ public class PackageRequestService {
         if (entity.getDesiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
-        if (!entity.isNegotiable() && entity.getTargetPriceEur() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm");
-        }
+        requireTargetPrice(entity.getTargetPriceEur());
         long openCount = repository.countBySenderIdAndStatusIn(callerUid,
             List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
         if (openCount >= config.maxOpenRequestsPerSender()) {
@@ -811,5 +802,12 @@ public class PackageRequestService {
                     "request/invalid-photo-url");
         }
         return photoUrl;
+    }
+
+    private static void requireTargetPrice(BigDecimal targetPriceEur) {
+        if (targetPriceEur == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "request/target-price-required");
+        }
     }
 }
