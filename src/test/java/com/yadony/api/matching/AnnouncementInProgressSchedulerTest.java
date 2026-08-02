@@ -84,7 +84,8 @@ class AnnouncementInProgressTransitionTest {
                 mock(com.yadony.api.country.FlagService.class),
                 mock(com.yadony.api.common.StorageService.class),
                 mock(com.yadony.api.favorites.FavoriteRepository.class),
-                mock(AnnouncementSearchMapper.class));
+                mock(AnnouncementSearchMapper.class),
+                mock(com.yadony.api.requests.repository.PackageRequestRepository.class));
     }
 
     private static void setId(Object entity, UUID id) {

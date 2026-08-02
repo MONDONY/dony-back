@@ -76,7 +76,7 @@ public class BidCheckoutService {
             userRepository.save(sender);
         }
 
-        AnnouncementEntity announcement = announcementRepository.findById(req.announcementId())
+        AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(req.announcementId())
             .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                 "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 

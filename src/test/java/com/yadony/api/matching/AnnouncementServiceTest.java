@@ -63,6 +63,7 @@ class AnnouncementServiceTest {
     @Mock private com.yadony.api.country.FlagService flagService;
     @Mock private com.yadony.api.common.StorageService storageService;
     @Mock private FavoriteRepository favoriteRepository;
+    @Mock private com.yadony.api.requests.repository.PackageRequestRepository packageRequestRepository;
 
     private AnnouncementService announcementService;
 
@@ -78,7 +79,7 @@ class AnnouncementServiceTest {
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
-                storageService, favoriteRepository, realMapper);
+                storageService, favoriteRepository, realMapper, packageRequestRepository);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -1768,7 +1769,7 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository);
 
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             // le nouveau count (hors DRAFT) renvoie 1 => sous la limite (2) => création OK
@@ -2099,7 +2100,7 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository);
 
             AnnouncementEntity draft = draftEntityOwnedBy(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
@@ -2165,8 +2166,8 @@ class AnnouncementServiceTest {
             assertThat(active.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
             assertThat(result.status()).isEqualTo("DRAFT");
             verify(announcementRepository).findByIdForUpdate(active.getId());
-            verify(auditService).log(eq("USER"), eq(user.getId()),
-                    eq("ANNOUNCEMENT_UNPUBLISHED"), eq(active.getId()), anyMap());
+            verify(auditService).log(eq("ANNOUNCEMENT"), eq(active.getId()),
+                    eq("ANNOUNCEMENT_UNPUBLISHED"), eq(user.getId()), anyMap());
         }
 
         @Test

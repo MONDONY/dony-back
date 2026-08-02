@@ -126,7 +126,9 @@ class FavoriteServiceTest {
     @Test
     void addPackageRequest_insertsWhenAbsent() {
         UUID reqId = UUID.randomUUID();
-        when(packageRequestRepository.existsById(reqId)).thenReturn(true);
+        PackageRequestEntity request = new PackageRequestEntity();
+        request.setStatus(PackageRequestStatus.OPEN);
+        when(packageRequestRepository.findById(reqId)).thenReturn(Optional.of(request));
         when(favoriteRepository.existsByUserIdAndTargetTypeAndTargetId(userId, FavoriteTargetType.PACKAGE_REQUEST, reqId))
                 .thenReturn(false);
 
@@ -138,7 +140,7 @@ class FavoriteServiceTest {
     @Test
     void addPackageRequest_notFoundWhenMissing() {
         UUID reqId = UUID.randomUUID();
-        when(packageRequestRepository.existsById(reqId)).thenReturn(false);
+        when(packageRequestRepository.findById(reqId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.addFavorite(UID, FavoriteTargetType.PACKAGE_REQUEST, reqId))
                 .isInstanceOf(YadonyNotFoundException.class);

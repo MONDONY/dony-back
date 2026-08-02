@@ -116,10 +116,19 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.GONE, "request/expired");
         }
 
+        if (request.getStatus() == PackageRequestStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found");
+        }
+
         if (request.getStatus() == PackageRequestStatus.ACCEPTED
                 || request.getStatus() == PackageRequestStatus.COMPLETED
                 || request.getStatus() == PackageRequestStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-finalized");
+        }
+
+        if (request.getStatus() != PackageRequestStatus.OPEN
+                && request.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-open");
         }
 
         if (!request.isNegotiable()) {

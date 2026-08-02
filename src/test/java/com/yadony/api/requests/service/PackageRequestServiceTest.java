@@ -51,6 +51,7 @@ class PackageRequestServiceTest {
     @Mock private PackageRequestPhotoService photoService;
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private com.yadony.api.matching.MatchingService matchingService;
+    @Mock private com.yadony.api.matching.AnnouncementRepository announcementRepository;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (yadony.urgency.threshold-days). */
     private final YadonyConfigProperties yadonyConfig =
             new YadonyConfigProperties(null, null, new YadonyConfigProperties.Urgency(3), null);
@@ -101,7 +102,7 @@ class PackageRequestServiceTest {
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
                 storageService, photoService, favoriteRepository, realMapper, matchingService,
-                yadonyConfig);
+                yadonyConfig, announcementRepository);
     }
 
     // ========== Task 12: create() tests ==========
@@ -1342,7 +1343,7 @@ class PackageRequestServiceTest {
         void publish_draft_becomesOpen() {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = draft(id);
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
             when(config.maxOpenRequestsPerSender()).thenReturn(10);
             when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
@@ -1360,7 +1361,7 @@ class PackageRequestServiceTest {
         @Test @DisplayName("non-propriétaire → 404 (ne révèle pas l'existence)")
         void publish_notOwner_throws404() {
             UUID id = UUID.randomUUID();
-            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
 
             assertThatThrownBy(() -> service.publish(UUID.randomUUID(), id))
                     .isInstanceOf(ResponseStatusException.class)
@@ -1372,7 +1373,7 @@ class PackageRequestServiceTest {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = draft(id);
             e.setStatus(PackageRequestStatus.OPEN);
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
 
             assertThatThrownBy(() -> service.publish(SENDER_ID, id))
                     .isInstanceOf(ResponseStatusException.class)
@@ -1383,7 +1384,7 @@ class PackageRequestServiceTest {
         void publish_kycNotVerified_throws403() {
             UUID id = UUID.randomUUID();
             sender.setKycStatus(KycStatus.PENDING);
-            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
 
             assertThatThrownBy(() -> service.publish(SENDER_ID, id))
@@ -1396,7 +1397,7 @@ class PackageRequestServiceTest {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = draft(id);
             e.setDesiredDate(LocalDate.now().plusDays(120));
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
 
             assertThatThrownBy(() -> service.publish(SENDER_ID, id))
@@ -1407,7 +1408,7 @@ class PackageRequestServiceTest {
         @Test @DisplayName("quota de demandes ouvertes atteint → 409 max-open-reached")
         void publish_overOpenQuota_throws409() {
             UUID id = UUID.randomUUID();
-            when(repository.findById(id)).thenReturn(Optional.of(draft(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
             when(config.maxOpenRequestsPerSender()).thenReturn(1);
             when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(1L);
@@ -1422,7 +1423,7 @@ class PackageRequestServiceTest {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = draft(id);
             e.setDesiredDate(LocalDate.now().minusDays(5));  // Passée de 5 jours
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
 
             assertThatThrownBy(() -> service.publish(SENDER_ID, id))
@@ -1454,7 +1455,7 @@ class PackageRequestServiceTest {
         void unpublish_openWithoutOffers_becomesDraft() {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = openRequest(id);
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
             when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
             when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
@@ -1471,7 +1472,7 @@ class PackageRequestServiceTest {
         @Test @DisplayName("au moins une offre → 409 request/has-offers")
         void unpublish_withOffers_throws409() {
             UUID id = UUID.randomUUID();
-            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
             when(threadRepository.findByPackageRequestId(id))
                 .thenReturn(List.of(new NegotiationThreadEntity()));
 
@@ -1485,7 +1486,7 @@ class PackageRequestServiceTest {
             UUID id = UUID.randomUUID();
             PackageRequestEntity e = openRequest(id);
             e.setStatus(PackageRequestStatus.ACCEPTED);
-            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
 
             assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
                 .isInstanceOf(ResponseStatusException.class)
@@ -1495,7 +1496,7 @@ class PackageRequestServiceTest {
         @Test @DisplayName("non-propriétaire → 403 request/forbidden")
         void unpublish_notOwner_throws403() {
             UUID id = UUID.randomUUID();
-            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
 
             assertThatThrownBy(() -> service.unpublish(UUID.randomUUID(), id))
                 .isInstanceOf(ResponseStatusException.class)
@@ -1505,7 +1506,7 @@ class PackageRequestServiceTest {
         @Test @DisplayName("quota de brouillons atteint → 403 draft-limit-reached")
         void unpublish_overDraftQuota_throws403() {
             UUID id = UUID.randomUUID();
-            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
             when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
             when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))

@@ -25,6 +25,8 @@ import com.yadony.api.matching.events.AnnouncementDeletedEvent;
 import com.yadony.api.matching.events.AnnouncementInProgressEvent;
 import com.yadony.api.matching.events.BidExpiredOnDepartureEvent;
 import com.yadony.api.matching.AnnouncementPublishedEvent;
+import com.yadony.api.requests.entity.PackageRequestStatus;
+import com.yadony.api.requests.repository.PackageRequestRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -93,6 +95,7 @@ public class AnnouncementService {
     private final StorageService storageService;
     private final FavoriteRepository favoriteRepository;
     private final AnnouncementSearchMapper announcementSearchMapper;
+    private final PackageRequestRepository packageRequestRepository;
 
     @Value("${yadony.kyc.enforce:true}")
     private boolean enforceKyc;
@@ -111,7 +114,8 @@ public class AnnouncementService {
             com.yadony.api.country.FlagService flagService,
             StorageService storageService,
             FavoriteRepository favoriteRepository,
-            AnnouncementSearchMapper announcementSearchMapper
+            AnnouncementSearchMapper announcementSearchMapper,
+            PackageRequestRepository packageRequestRepository
     ) {
         this.announcementRepository = announcementRepository;
         this.bidRepository = bidRepository;
@@ -124,6 +128,7 @@ public class AnnouncementService {
         this.storageService = storageService;
         this.favoriteRepository = favoriteRepository;
         this.announcementSearchMapper = announcementSearchMapper;
+        this.packageRequestRepository = packageRequestRepository;
     }
 
     @Transactional(readOnly = true)
@@ -315,8 +320,8 @@ public class AnnouncementService {
                     ? config.limits()
                     : new YadonyConfigProperties.Limits(null, null);
             int maxDrafts = user.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
-            long draftCount = announcementRepository
-                    .countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT);
+            long draftCount = announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT)
+                    + packageRequestRepository.countBySenderIdAndStatus(user.getId(), PackageRequestStatus.DRAFT);
             if (draftCount >= maxDrafts) {
                 throw new YadonyBusinessException(HttpStatus.FORBIDDEN, "draft-limit-reached",
                         "Draft Limit Reached",
@@ -911,8 +916,8 @@ public class AnnouncementService {
                 ? config.limits()
                 : new YadonyConfigProperties.Limits(null, null);
         int maxDrafts = user.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
-        long draftCount = announcementRepository
-                .countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT);
+        long draftCount = announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT)
+                + packageRequestRepository.countBySenderIdAndStatus(user.getId(), PackageRequestStatus.DRAFT);
         if (draftCount >= maxDrafts) {
             throw new YadonyBusinessException(HttpStatus.FORBIDDEN, "draft-limit-reached",
                     "Draft Limit Reached",
@@ -923,7 +928,7 @@ public class AnnouncementService {
         announcement.setStatus(AnnouncementStatus.DRAFT);
         AnnouncementEntity saved = announcementRepository.save(announcement);
 
-        auditService.log("USER", user.getId(), "ANNOUNCEMENT_UNPUBLISHED", saved.getId(),
+        auditService.log("ANNOUNCEMENT", saved.getId(), "ANNOUNCEMENT_UNPUBLISHED", user.getId(),
                 Map.of("departureCity", saved.getDepartureCity(),
                         "arrivalCity", saved.getArrivalCity()));
 

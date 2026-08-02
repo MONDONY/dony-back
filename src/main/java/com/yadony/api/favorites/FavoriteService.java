@@ -107,7 +107,8 @@ public class FavoriteService {
         if (ids.isEmpty()) return List.of();
         List<AnnouncementEntity> active = announcementRepository.findAllById(ids).stream()
                 .filter(a -> a.getStatus() != AnnouncementStatus.CANCELLED
-                        && a.getStatus() != AnnouncementStatus.COMPLETED)
+                        && a.getStatus() != AnnouncementStatus.COMPLETED
+                        && a.getStatus() != AnnouncementStatus.DRAFT)
                 .toList();
         if (active.isEmpty()) return List.of();
         Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
@@ -130,7 +131,8 @@ public class FavoriteService {
                 packageRequestRepository.findAllById(ids).stream()
                         .filter(pr -> pr.getStatus() != PackageRequestStatus.CANCELLED
                                 && pr.getStatus() != PackageRequestStatus.COMPLETED
-                                && pr.getStatus() != PackageRequestStatus.EXPIRED)
+                                && pr.getStatus() != PackageRequestStatus.EXPIRED
+                                && pr.getStatus() != PackageRequestStatus.DRAFT)
                         .toList();
         if (active.isEmpty()) return List.of();
         Set<UUID> favIdSet = new HashSet<>(ids); // all are favorites
@@ -155,6 +157,9 @@ public class FavoriteService {
             case TRIP -> {
                 AnnouncementEntity trip = announcementRepository.findById(targetId)
                         .orElseThrow(() -> new YadonyNotFoundException("Trajet introuvable: " + targetId));
+                if (trip.getStatus() == AnnouncementStatus.DRAFT) {
+                    throw new YadonyNotFoundException("Trajet introuvable: " + targetId);
+                }
                 if (userId.equals(trip.getTravelerId())) {
                     throw new YadonyBusinessException(
                             HttpStatus.UNPROCESSABLE_ENTITY,
@@ -165,7 +170,10 @@ public class FavoriteService {
                 }
             }
             case PACKAGE_REQUEST -> {
-                if (!packageRequestRepository.existsById(targetId)) {
+                var request = packageRequestRepository.findById(targetId)
+                        .orElseThrow(() -> new YadonyNotFoundException(
+                                "Demande d'envoi introuvable: " + targetId));
+                if (request.getStatus() == PackageRequestStatus.DRAFT) {
                     throw new YadonyNotFoundException("Demande d'envoi introuvable: " + targetId);
                 }
             }

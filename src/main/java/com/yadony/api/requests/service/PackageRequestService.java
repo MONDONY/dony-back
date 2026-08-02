@@ -10,6 +10,8 @@ import com.yadony.api.config.YadonyConfigProperties;
 import com.yadony.api.favorites.FavoriteRepository;
 import com.yadony.api.favorites.FavoriteTargetType;
 import com.yadony.api.matching.MatchingService;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.AnnouncementStatus;
 import com.yadony.api.payments.cash.CommissionProperties;
 import com.yadony.api.payments.cash.PaymentMethod;
 import com.yadony.api.requests.RequestsConfig;
@@ -61,6 +63,7 @@ public class PackageRequestService {
     private final PackageRequestSearchMapper packageRequestSearchMapper;
     private final MatchingService matchingService;
     private final YadonyConfigProperties yadonyConfig;
+    private final AnnouncementRepository announcementRepository;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -75,7 +78,8 @@ public class PackageRequestService {
                                   FavoriteRepository favoriteRepository,
                                   PackageRequestSearchMapper packageRequestSearchMapper,
                                   MatchingService matchingService,
-                                  YadonyConfigProperties yadonyConfig) {
+                                  YadonyConfigProperties yadonyConfig,
+                                  AnnouncementRepository announcementRepository) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -90,6 +94,7 @@ public class PackageRequestService {
         this.packageRequestSearchMapper = packageRequestSearchMapper;
         this.matchingService = matchingService;
         this.yadonyConfig = yadonyConfig;
+        this.announcementRepository = announcementRepository;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -229,7 +234,8 @@ public class PackageRequestService {
             ? yadonyConfig.limits()
             : new YadonyConfigProperties.Limits(null, null);
         int maxDrafts = sender.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
-        long draftCount = repository.countBySenderIdAndStatus(senderId, PackageRequestStatus.DRAFT);
+        long draftCount = repository.countBySenderIdAndStatus(senderId, PackageRequestStatus.DRAFT)
+            + announcementRepository.countByTravelerIdAndStatus(senderId, AnnouncementStatus.DRAFT);
         if (draftCount >= maxDrafts) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "draft-limit-reached");
         }
@@ -332,7 +338,7 @@ public class PackageRequestService {
      */
     @Transactional
     public PackageRequestResponse publish(UUID callerUid, UUID requestId) {
-        PackageRequestEntity entity = repository.findById(requestId)
+        PackageRequestEntity entity = repository.findByIdForUpdate(requestId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
         // 404 et non 403 : un brouillon est invisible des tiers, répondre « interdit »
@@ -393,7 +399,7 @@ public class PackageRequestService {
      */
     @Transactional
     public PackageRequestResponse unpublish(UUID callerUid, UUID requestId) {
-        PackageRequestEntity entity = repository.findById(requestId)
+        PackageRequestEntity entity = repository.findByIdForUpdate(requestId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
         // La demande est publique ici : 403 ne révèle rien qu'on ne sache déjà.
