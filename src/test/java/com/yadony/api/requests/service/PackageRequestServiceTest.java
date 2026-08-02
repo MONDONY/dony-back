@@ -1148,6 +1148,44 @@ class PackageRequestServiceTest {
             assertThat(result.getContent().get(0).senderId()).isEqualTo(SENDER_ID);
         }
 
+        @Test @DisplayName("répare une demande NEGOTIATING sans négociation active")
+        void findMine_staleNegotiatingRequest_reopensIt() {
+            PackageRequestEntity entity = buildEntity(
+                SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            NegotiationThreadEntity rejected = new NegotiationThreadEntity();
+            rejected.setStatus(NegotiationThreadStatus.REJECTED);
+            when(repository.findBySenderIdOrderByCreatedAtDesc(eq(SENDER_ID), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(rejected));
+
+            var result = service.findMine(
+                SENDER_ID, org.springframework.data.domain.PageRequest.of(0, 20));
+
+            assertThat(result.getContent().get(0).status())
+                .isEqualTo(PackageRequestStatus.OPEN);
+            verify(repository).save(entity);
+        }
+
+        @Test @DisplayName("conserve NEGOTIATING quand une offre reste active")
+        void findMine_activeNegotiation_keepsStatus() {
+            PackageRequestEntity entity = buildEntity(
+                SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            NegotiationThreadEntity active = new NegotiationThreadEntity();
+            active.setStatus(NegotiationThreadStatus.OPEN);
+            when(repository.findBySenderIdOrderByCreatedAtDesc(eq(SENDER_ID), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(active));
+
+            var result = service.findMine(
+                SENDER_ID, org.springframework.data.domain.PageRequest.of(0, 20));
+
+            assertThat(result.getContent().get(0).status())
+                .isEqualTo(PackageRequestStatus.NEGOTIATING);
+            verify(repository, never()).save(entity);
+        }
+
     }
 
     // ─── Shared helpers ─────────────────────────────────────────────────────────

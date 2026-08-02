@@ -462,10 +462,19 @@ public class PackageRequestService {
 
     // ─── findMine ─────────────────────────────────────────────────────────────────
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<PackageRequestResponse> findMine(UUID senderId, Pageable pageable) {
-        return repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable)
-            .map(this::toResponse);
+        Page<PackageRequestEntity> requests =
+            repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable);
+        requests.stream()
+            .filter(request -> request.getStatus() == PackageRequestStatus.NEGOTIATING)
+            .filter(request -> threadRepository.findByPackageRequestId(request.getId()).stream()
+                .noneMatch(thread -> thread.getStatus().isActive()))
+            .forEach(request -> {
+                request.setStatus(PackageRequestStatus.OPEN);
+                repository.save(request);
+            });
+        return requests.map(this::toResponse);
     }
 
     // ─── cancel ──────────────────────────────────────────────────────────────────
