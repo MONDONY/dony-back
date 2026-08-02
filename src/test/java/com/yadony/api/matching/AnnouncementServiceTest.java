@@ -2138,6 +2138,110 @@ class AnnouncementServiceTest {
         }
     }
 
+    // ─── unpublishAnnouncement (ACTIVE → DRAFT) ───────────────────────────────
+
+    @Nested
+    @DisplayName("unpublishAnnouncement()")
+    class UnpublishAnnouncementTests {
+
+        @Test
+        @DisplayName("ACTIVE sans demande → DRAFT + audit ANNOUNCEMENT_UNPUBLISHED")
+        void unpublish_activeWithoutBids_becomesDraft() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(0L);
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(active.getId())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(eq(active.getId()), anyList())).thenReturn(0L);
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            AnnouncementDetailResponse result = announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID);
+
+            assertThat(active.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
+            assertThat(result.status()).isEqualTo("DRAFT");
+            verify(auditService).log(eq("USER"), eq(user.getId()),
+                    eq("ANNOUNCEMENT_UNPUBLISHED"), eq(active.getId()), anyMap());
+        }
+
+        @Test
+        @DisplayName("au moins une demande reçue → 409 announcement/has-bids")
+        void unpublish_withBids_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(1L);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/has-bids");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("statut non ACTIVE → 409 announcement/not-unpublishable")
+        void unpublish_notActive_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity completed = buildAnnouncement(user);
+            completed.setStatus(AnnouncementStatus.COMPLETED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(completed.getId())).thenReturn(Optional.of(completed));
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(completed.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/not-unpublishable");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("non-propriétaire → 403")
+        void unpublish_notOwner_throws403() {
+            UserEntity otherUser = standardUser();
+            setId(otherUser, UUID.randomUUID());
+            AnnouncementEntity active = buildAnnouncement(standardUser());
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> assertThat(((YadonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("quota de brouillons atteint → 403 draft-limit-reached")
+        void unpublish_overDraftQuota_throws403() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(1L);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("draft-limit-reached");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+    }
+
     // ─── Audit anti-fuite DRAFT (Task 5) ───────────────────────────────────────
 
     @Nested

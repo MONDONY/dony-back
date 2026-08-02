@@ -878,6 +878,59 @@ public class AnnouncementService {
     }
 
     /**
+     * Retire un trajet de la circulation sans l'annuler (ACTIVE → DRAFT).
+     *
+     * <p>Un trajet ne peut être dépublié qu'avant sa première demande : un expéditeur
+     * ayant déjà sollicité le voyageur a agi sur la foi de sa publication.
+     */
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public AnnouncementDetailResponse unpublishAnnouncement(UUID id, String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
+                        "user-not-found", "User Not Found", "Utilisateur introuvable"));
+
+        AnnouncementEntity announcement = announcementRepository.findById(id)
+                .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
+                        "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
+
+        if (!announcement.getTravelerId().equals(user.getId())) {
+            throw new YadonyBusinessException(HttpStatus.FORBIDDEN, "forbidden", "Forbidden",
+                    "Vous n'êtes pas autorisé à dépublier cette annonce");
+        }
+        if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
+            throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/not-unpublishable",
+                    "Not Unpublishable", "Seul un trajet actif peut être dépublié");
+        }
+        if (bidRepository.countByAnnouncementId(id) > 0) {
+            throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/has-bids",
+                    "Has Bids", "Ce trajet a déjà reçu des demandes et ne peut plus être dépublié");
+        }
+
+        YadonyConfigProperties.Limits limits = config.limits() != null
+                ? config.limits()
+                : new YadonyConfigProperties.Limits(null, null);
+        int maxDrafts = user.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
+        long draftCount = announcementRepository
+                .countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT);
+        if (draftCount >= maxDrafts) {
+            throw new YadonyBusinessException(HttpStatus.FORBIDDEN, "draft-limit-reached",
+                    "Draft Limit Reached",
+                    "Limite de " + maxDrafts + " brouillon(s) atteinte."
+                            + (user.isProAccount() ? "" : " Passez en PRO pour en créer davantage."));
+        }
+
+        announcement.setStatus(AnnouncementStatus.DRAFT);
+        AnnouncementEntity saved = announcementRepository.save(announcement);
+
+        auditService.log("USER", user.getId(), "ANNOUNCEMENT_UNPUBLISHED", saved.getId(),
+                Map.of("departureCity", saved.getDepartureCity(),
+                        "arrivalCity", saved.getArrivalCity()));
+
+        return getAnnouncementDetail(saved.getId(), firebaseUid);
+    }
+
+    /**
      * Contrôles de publication partagés entre {@link #createAnnouncement} (chemin non-brouillon)
      * et {@link #publishAnnouncement} (DRAFT→ACTIVE) : suspension de publication, KYC vérifié,
      * limite mensuelle d'annonces (hors PRO).
