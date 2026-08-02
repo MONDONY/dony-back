@@ -2151,6 +2151,7 @@ class AnnouncementServiceTest {
             AnnouncementEntity active = buildAnnouncement(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
             when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
             when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
                     .thenReturn(0L);
@@ -2163,6 +2164,7 @@ class AnnouncementServiceTest {
 
             assertThat(active.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
             assertThat(result.status()).isEqualTo("DRAFT");
+            verify(announcementRepository).findByIdForUpdate(active.getId());
             verify(auditService).log(eq("USER"), eq(user.getId()),
                     eq("ANNOUNCEMENT_UNPUBLISHED"), eq(active.getId()), anyMap());
         }
@@ -2173,7 +2175,7 @@ class AnnouncementServiceTest {
             UserEntity user = standardUser();
             AnnouncementEntity active = buildAnnouncement(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
             when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(1L);
 
             assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
@@ -2193,7 +2195,7 @@ class AnnouncementServiceTest {
             AnnouncementEntity completed = buildAnnouncement(user);
             completed.setStatus(AnnouncementStatus.COMPLETED);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(announcementRepository.findById(completed.getId())).thenReturn(Optional.of(completed));
+            when(announcementRepository.findByIdForUpdate(completed.getId())).thenReturn(Optional.of(completed));
 
             assertThatThrownBy(() -> announcementService.unpublishAnnouncement(completed.getId(), FIREBASE_UID))
                     .isInstanceOf(YadonyBusinessException.class)
@@ -2212,7 +2214,7 @@ class AnnouncementServiceTest {
             setId(otherUser, UUID.randomUUID());
             AnnouncementEntity active = buildAnnouncement(standardUser());
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
-            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
 
             assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
                     .isInstanceOf(YadonyBusinessException.class)
@@ -2226,7 +2228,7 @@ class AnnouncementServiceTest {
             UserEntity user = standardUser();
             AnnouncementEntity active = buildAnnouncement(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
             when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
             when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
                     .thenReturn(1L);

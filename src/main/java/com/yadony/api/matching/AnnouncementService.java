@@ -890,7 +890,7 @@ public class AnnouncementService {
                 .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                         "user-not-found", "User Not Found", "Utilisateur introuvable"));
 
-        AnnouncementEntity announcement = announcementRepository.findById(id)
+        AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new YadonyBusinessException(HttpStatus.NOT_FOUND,
                         "announcement-not-found", "Announcement Not Found", "Annonce introuvable"));
 
