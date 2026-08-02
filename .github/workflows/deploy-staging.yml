@@ -203,7 +203,9 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.OVH_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519"
+          echo "${{ secrets.OVH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          SSH_OPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -i ~/.ssh/id_ed25519"
           DEST="${{ secrets.OVH_USER }}@${{ secrets.OVH_HOST }}:~/yadony"
 
           echo "📤 docker-compose.staging.yml (source unique)..."
