@@ -1128,7 +1128,7 @@ public class NegotiationService {
         return toResponse(thread, msgs, null, travelerEntity, request, callerId, senderName, linkedAnn);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
@@ -1138,6 +1138,16 @@ public class NegotiationService {
 
         if (!callerId.equals(request.getSenderId()) && !callerId.equals(thread.getTravelerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        if (thread.getStatus().isActive()) {
+            LocalDateTime readAt = LocalDateTime.now(ZoneOffset.UTC);
+            if (callerId.equals(request.getSenderId())) {
+                thread.setSenderLastReadAt(readAt);
+            } else {
+                thread.setTravelerLastReadAt(readAt);
+            }
+            threadRepo.save(thread);
         }
 
         List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
@@ -1326,6 +1336,15 @@ public class NegotiationService {
                 : !isMyTurn;                             // en OPEN, la partie qui n'a pas la main attend
         boolean canNudge = nudgeStatus && callerIsWaiting && waitedEnough && nudgeNotRecent;
 
+        LocalDateTime lastReadAt = callerId.equals(request.getSenderId())
+            ? t.getSenderLastReadAt()
+            : t.getTravelerLastReadAt();
+        boolean hasUnread = messages.stream().anyMatch(message ->
+            !message.fromUserId().equals(callerId)
+                && (lastReadAt == null
+                    || message.createdAt() == null
+                    || message.createdAt().isAfter(lastReadAt)));
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1345,7 +1364,8 @@ public class NegotiationService {
             t.getMaterializedBidId(),
             cashCommissionAvailable,
             t.getAvailablePaymentMethods(),
-            canNudge
+            canNudge,
+            hasUnread
         );
     }
 

@@ -46,5 +46,7 @@ public record NegotiationThreadResponse(
     Set<PaymentMethod> availablePaymentMethods,
     // Vrai si le viewer peut relancer l'autre partie (thread OPEN/AWAITING_TRIP, ce n'est pas
     // son tour, attente > 1h depuis la dernière activité, et pas de relance déjà envoyée < 1h).
-    boolean canNudge
+    boolean canNudge,
+    // Une réponse de l'autre participant est arrivée depuis la dernière ouverture du fil.
+    boolean hasUnread
 ) {}

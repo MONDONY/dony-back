@@ -871,6 +871,9 @@ class NegotiationServiceTest {
 
             var resp = service.getById(TRAVELER_ID, THREAD_ID);
             assertThat(resp.id()).isEqualTo(THREAD_ID);
+            assertThat(thread.getTravelerLastReadAt()).isNotNull();
+            assertThat(resp.hasUnread()).isFalse();
+            verify(threadRepo).save(thread);
         }
 
         @Test
