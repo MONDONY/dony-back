@@ -280,6 +280,7 @@ public class NegotiationService {
         thread.setStatus(NegotiationThreadStatus.REJECTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+        reopenRequestWhenNoActiveNegotiation(request);
 
         auditService.log("NEGOTIATION_THREAD", threadId, "REJECTED", callerId,
             Map.of("reason", req.reason() != null ? req.reason() : ""));
@@ -336,6 +337,7 @@ public class NegotiationService {
         thread.setStatus(NegotiationThreadStatus.CANCELLED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+        reopenRequestWhenNoActiveNegotiation(request);
 
         UUID otherParty = isSender ? thread.getTravelerId() : request.getSenderId();
         String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
@@ -343,6 +345,18 @@ public class NegotiationService {
             thread.getId(), request.getId(), callerId, otherParty, byName, releaseEscrow));
         auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
             Map.of("reason", reason == null ? "" : reason));
+    }
+
+    private void reopenRequestWhenNoActiveNegotiation(PackageRequestEntity request) {
+        if (request.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            return;
+        }
+        boolean hasActiveThread = threadRepo.findByPackageRequestId(request.getId()).stream()
+            .anyMatch(thread -> thread.getStatus().isActive());
+        if (!hasActiveThread) {
+            request.setStatus(PackageRequestStatus.OPEN);
+            requestRepo.save(request);
+        }
     }
 
     /**
