@@ -183,7 +183,6 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
-          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set -e
             mkdir -p ~/yadony
@@ -231,7 +230,6 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
-          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set -e
             cd ~/yadony
@@ -256,7 +254,6 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
-          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set -e
             cd ~/yadony
@@ -279,7 +276,6 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
-          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set -e
             cd ~/yadony
@@ -316,7 +312,6 @@ jobs:
           host: ${{ secrets.OVH_HOST }}
           username: ${{ secrets.OVH_USER }}
           key: ${{ secrets.OVH_SSH_KEY }}
-          fingerprint: ${{ secrets.OVH_SSH_FINGERPRINT }}
           script: |
             set +e
             cd ~/yadony
