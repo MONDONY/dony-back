@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/yadony/yadony-back
+  IMAGE_NAME: ghcr.io/mondony/yadony-back
 
 jobs:
 
