@@ -126,7 +126,8 @@ class BidCreateGuardTest {
         AnnouncementEntity announcement = buildAnnouncement();
 
         when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
-        when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+        when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID))
+                .thenReturn(Optional.of(announcement));
         when(blockService.isBlockedEitherWay(SENDER_ID, TRAVELER_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> bidService.createBid(ANNOUNCEMENT_ID, SENDER_UID, buildRequest(), httpRequest))
@@ -148,7 +149,8 @@ class BidCreateGuardTest {
         traveler.setContactKycOnly(true);
 
         when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender));
-        when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+        when(announcementRepository.findByIdForUpdate(ANNOUNCEMENT_ID))
+                .thenReturn(Optional.of(announcement));
         when(blockService.isBlockedEitherWay(SENDER_ID, TRAVELER_ID)).thenReturn(false);
         when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
 
