@@ -24,7 +24,7 @@ public class RequestsSteps extends AbstractSteps {
 
     @Quand("je crée une demande de colis négociable sauvegardée sous {string}")
     public void whenCreateNegotiableRequest(String alias) {
-        Response resp = asCurrentUser().body(buildRequestBody(true, null)).post("/package-requests");
+        Response resp = asCurrentUser().body(buildRequestBody(true, 100.0)).post("/package-requests");
         store(resp);
         saveIfPresent(alias);
     }

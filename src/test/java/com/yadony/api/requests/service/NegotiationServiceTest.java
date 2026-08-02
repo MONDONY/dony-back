@@ -423,6 +423,21 @@ class NegotiationServiceTest {
         }
 
         @Test
+        @DisplayName("dernière négociation rejetée → demande de nouveau OPEN")
+        void reject_lastActiveThread_reopensRequest() {
+            request.setStatus(PackageRequestStatus.NEGOTIATING);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of(thread));
+
+            service.reject(TRAVELER_ID, THREAD_ID,
+                new com.yadony.api.requests.dto.NegotiationRejectRequest("Terminé"));
+
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            verify(requestRepo).save(request);
+        }
+
+        @Test
         @DisplayName("non-participant → 403")
         void reject_outsider_throws403() {
             when(threadRepo.findById(THREAD_ID)).thenReturn(java.util.Optional.of(thread));
@@ -517,6 +532,22 @@ class NegotiationServiceTest {
             assertThat(publishedEvent.releaseEscrow()).isFalse();
             verify(auditService).log(eq("NEGOTIATION_THREAD"), eq(THREAD_ID), eq("CANCELLED"), eq(SENDER_ID), any());
             verify(escrowPort, never()).releaseEscrowForMethodSwitch(any());
+        }
+
+        @Test
+        @DisplayName("une autre négociation active demeure → demande reste NEGOTIATING")
+        void cancel_withAnotherActiveThread_keepsRequestNegotiating() {
+            request.setStatus(PackageRequestStatus.NEGOTIATING);
+            NegotiationThreadEntity other = new NegotiationThreadEntity();
+            other.setStatus(NegotiationThreadStatus.OPEN);
+            when(threadRepo.findById(THREAD_ID)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findByPackageRequestId(REQUEST_ID)).thenReturn(List.of(thread, other));
+
+            service.cancelNegotiation(SENDER_ID, THREAD_ID, null);
+
+            assertThat(request.getStatus()).isEqualTo(PackageRequestStatus.NEGOTIATING);
+            verify(requestRepo, never()).save(request);
         }
 
         @Test
@@ -840,6 +871,9 @@ class NegotiationServiceTest {
 
             var resp = service.getById(TRAVELER_ID, THREAD_ID);
             assertThat(resp.id()).isEqualTo(THREAD_ID);
+            assertThat(thread.getTravelerLastReadAt()).isNotNull();
+            assertThat(resp.hasUnread()).isFalse();
+            verify(threadRepo).save(thread);
         }
 
         @Test

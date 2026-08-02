@@ -16,5 +16,9 @@ public enum NegotiationThreadStatus {
     /** Rejet auto : un thread concurrent sur la même demande a été ACCEPTED. */
     AUTO_REJECTED,
     /** Expiré faute d'activité. */
-    EXPIRED
+    EXPIRED;
+
+    public boolean isActive() {
+        return this == OPEN || this == AWAITING_TRIP || this == AWAITING_PAYMENT;
+    }
 }

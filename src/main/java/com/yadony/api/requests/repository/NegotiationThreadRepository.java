@@ -49,6 +49,8 @@ public interface NegotiationThreadRepository extends JpaRepository<NegotiationTh
      */
     Optional<NegotiationThreadEntity> findByTravelerAnnouncementId(UUID travelerAnnouncementId);
 
+    boolean existsByTravelerAnnouncementId(UUID travelerAnnouncementId);
+
     long countByTravelerIdAndStatus(UUID travelerId, NegotiationThreadStatus status);
 
     @Query("""

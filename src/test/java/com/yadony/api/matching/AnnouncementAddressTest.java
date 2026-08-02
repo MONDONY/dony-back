@@ -83,7 +83,9 @@ class AnnouncementServiceAddressTest {
                 auditService, eventPublisher, cfg, priceGridService, flagService,
                 mock(com.yadony.api.common.StorageService.class),
                 mock(com.yadony.api.favorites.FavoriteRepository.class),
-                mock(AnnouncementSearchMapper.class));
+                mock(AnnouncementSearchMapper.class),
+                mock(com.yadony.api.requests.repository.PackageRequestRepository.class),
+                mock(com.yadony.api.requests.repository.NegotiationThreadRepository.class));
     }
 
     private static final String TRAVELER_UID = "firebase-uid-123";

@@ -122,6 +122,12 @@ public class AnnouncementController {
         return ResponseEntity.ok(announcementService.publishAnnouncement(id, firebaseUid));
     }
 
+    @PostMapping("/{id}/unpublish")
+    public ResponseEntity<AnnouncementDetailResponse> unpublishAnnouncement(@PathVariable UUID id) {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(announcementService.unpublishAnnouncement(id, firebaseUid));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteAnnouncement(@PathVariable UUID id) {
         String firebaseUid = requireFirebaseUid();

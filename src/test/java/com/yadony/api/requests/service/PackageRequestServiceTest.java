@@ -51,6 +51,7 @@ class PackageRequestServiceTest {
     @Mock private PackageRequestPhotoService photoService;
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private com.yadony.api.matching.MatchingService matchingService;
+    @Mock private com.yadony.api.matching.AnnouncementRepository announcementRepository;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (yadony.urgency.threshold-days). */
     private final YadonyConfigProperties yadonyConfig =
             new YadonyConfigProperties(null, null, new YadonyConfigProperties.Urgency(3), null);
@@ -100,7 +101,8 @@ class PackageRequestServiceTest {
         service = new PackageRequestService(
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
-                storageService, photoService, favoriteRepository, realMapper, matchingService);
+                storageService, photoService, favoriteRepository, realMapper, matchingService,
+                yadonyConfig, announcementRepository);
     }
 
     // ========== Task 12: create() tests ==========
@@ -144,7 +146,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
-                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), keys);
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), keys, null);
 
             service.create(SENDER_ID, req);
 
@@ -173,7 +175,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -200,7 +202,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.WAVE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -216,7 +218,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.ORANGE_MONEY)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -232,7 +234,7 @@ class PackageRequestServiceTest {
                 new BigDecimal("5"), "vetements",
                 null, null, null, null, null,
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -250,10 +252,10 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar",
                 LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements",
-                "desc", null, "https://evil.example/pixel.gif",
+                "desc", new BigDecimal("30.00"), "https://evil.example/pixel.gif",
                 "10e arr", "Plateau",
                 true, EnumSet.of(PaymentMethod.STRIPE)
-            , List.of());
+            , List.of(), null);
 
             assertThatThrownBy(() -> service.create(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -278,7 +280,7 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("23"), "Médicaments", "desc",
                 new BigDecimal("39.20"), null, null, null,
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
 
@@ -301,14 +303,14 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("5"), "Hi-fi, Téléphone", "desc",
                 new BigDecimal("28.00"), null, null, null,
-                true, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             PackageRequestEntity saved = service.createAndReturnEntity(SENDER_ID, req);
 
             assertThat(saved.getContentCategory()).isEqualTo("Téléphone & électronique");
         }
 
-        @Test @DisplayName("budget null + non négociable → 422 target-price-required-firm")
+        @Test @DisplayName("budget null + non négociable → 422 target-price-required")
         void create_firmPrice_requiresBudget() {
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
 
@@ -316,11 +318,26 @@ class PackageRequestServiceTest {
                 "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
                 new BigDecimal("6"), "Médicaments", null,
                 null /* pas de budget */, null, null, null,
-                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                false /* non négociable */, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("target-price-required-firm");
+                .hasMessageContaining("target-price-required");
+        }
+
+        @Test @DisplayName("budget null + négociable → 422 target-price-required")
+        void create_negotiablePrice_requiresBudget() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("6"), "Médicaments", null,
+                null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
+
+            assertThatThrownBy(() -> service.createAndReturnEntity(SENDER_ID, req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required");
         }
     }
 
@@ -431,6 +448,48 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("getById() — brouillon")
+    class GetByIdDraft {
+
+        private PackageRequestEntity draftOwnedBySender(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.DRAFT);
+            return e;
+        }
+
+        @Test @DisplayName("le propriétaire voit son brouillon")
+        void getById_owner_seesDraft() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draftOwnedBySender(id)));
+
+            assertThatCode(() -> service.getById(SENDER_ID, id)).doesNotThrowAnyException();
+        }
+
+        @Test @DisplayName("un tiers reçoit 404, pas 403")
+        void getById_stranger_throws404() {
+            UUID id = UUID.randomUUID();
+            UUID stranger = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(draftOwnedBySender(id)));
+            when(threadRepository.existsByPackageRequestIdAndTravelerId(id, stranger))
+                .thenReturn(false);
+
+            // 403 révélerait qu'une demande existe derrière cet id.
+            assertThatThrownBy(() -> service.getById(stranger, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/not-found");
+        }
+    }
+
     @Nested @DisplayName("update() — édition tant qu'aucun accord")
     class UpdateTests {
 
@@ -445,7 +504,7 @@ class PackageRequestServiceTest {
                 "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
                 new BigDecimal("8"), "electronique", "desc",
                 new BigDecimal("56.00"), null, "7e", "ACI 2000",
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             var resp = service.update(SENDER_ID, entity.getId(), req);
 
@@ -473,7 +532,7 @@ class PackageRequestServiceTest {
                 "Lyon", "Bamako", LocalDate.now().plusDays(10), 3,
                 new BigDecimal("8"), "Hi-fi, Téléphone", "desc",
                 new BigDecimal("56.00"), null, "7e", "ACI 2000",
-                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of());
+                true, EnumSet.of(PaymentMethod.STRIPE, PaymentMethod.CASH), List.of(), null);
 
             service.update(SENDER_ID, entity.getId(), req);
 
@@ -526,11 +585,26 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, null, null, null, null,
-                false, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                false, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("target-price-required-firm");
+                .hasMessageContaining("target-price-required");
+        }
+
+        @Test @DisplayName("prix négociable sans budget → 422")
+        void update_negotiableWithoutBudget_throws422() {
+            PackageRequestEntity entity = buildEntity(SENDER_ID, PackageRequestStatus.OPEN);
+            when(repository.findById(entity.getId())).thenReturn(Optional.of(entity));
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
+                new BigDecimal("5"), "vetements", null, null, null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
+
+            assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("target-price-required");
         }
 
         @Test @DisplayName("corridor invalide (mêmes villes) → 422")
@@ -541,7 +615,7 @@ class PackageRequestServiceTest {
             var req = new PackageRequestCreateRequest(
                 "Paris", "Paris", LocalDate.now().plusDays(7), 2,
                 new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
-                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of());
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of(), null);
 
             assertThatThrownBy(() -> service.update(SENDER_ID, entity.getId(), req))
                 .isInstanceOf(ResponseStatusException.class)
@@ -1074,6 +1148,44 @@ class PackageRequestServiceTest {
             assertThat(result.getContent().get(0).senderId()).isEqualTo(SENDER_ID);
         }
 
+        @Test @DisplayName("répare une demande NEGOTIATING sans négociation active")
+        void findMine_staleNegotiatingRequest_reopensIt() {
+            PackageRequestEntity entity = buildEntity(
+                SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            NegotiationThreadEntity rejected = new NegotiationThreadEntity();
+            rejected.setStatus(NegotiationThreadStatus.REJECTED);
+            when(repository.findBySenderIdOrderByCreatedAtDesc(eq(SENDER_ID), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(rejected));
+
+            var result = service.findMine(
+                SENDER_ID, org.springframework.data.domain.PageRequest.of(0, 20));
+
+            assertThat(result.getContent().get(0).status())
+                .isEqualTo(PackageRequestStatus.OPEN);
+            verify(repository).save(entity);
+        }
+
+        @Test @DisplayName("conserve NEGOTIATING quand une offre reste active")
+        void findMine_activeNegotiation_keepsStatus() {
+            PackageRequestEntity entity = buildEntity(
+                SENDER_ID, PackageRequestStatus.NEGOTIATING);
+            NegotiationThreadEntity active = new NegotiationThreadEntity();
+            active.setStatus(NegotiationThreadStatus.OPEN);
+            when(repository.findBySenderIdOrderByCreatedAtDesc(eq(SENDER_ID), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entity)));
+            when(threadRepository.findByPackageRequestId(entity.getId()))
+                .thenReturn(List.of(active));
+
+            var result = service.findMine(
+                SENDER_ID, org.springframework.data.domain.PageRequest.of(0, 20));
+
+            assertThat(result.getContent().get(0).status())
+                .isEqualTo(PackageRequestStatus.NEGOTIATING);
+            verify(repository, never()).save(entity);
+        }
+
     }
 
     // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -1102,7 +1214,7 @@ class PackageRequestServiceTest {
             "Cadeau pour ma mère", new BigDecimal("28.00"), null,
             "10e arr", "Plateau",
             true, EnumSet.of(PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
     }
 
     // ========== AvatarUrl in SenderPublicProfile ==========
@@ -1176,6 +1288,353 @@ class PackageRequestServiceTest {
 
             var result = page.getContent().get(0);
             assertThat(result.sender().avatarUrl()).isNull();
+        }
+    }
+
+    // ========== Brouillons ==========
+
+    /** Construit une requête de création valide ; saveAsDraft piloté par l'appelant. */
+    private PackageRequestCreateRequest draftRequest(Boolean saveAsDraft) {
+        return new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(10), 2,
+                new BigDecimal("3.0"), "Documents", null, new BigDecimal("30.00"), null, null, null,
+                true, EnumSet.of(PaymentMethod.STRIPE), null, saveAsDraft);
+    }
+
+    @Nested @DisplayName("create() — brouillon")
+    class CreateDraft {
+
+        @BeforeEach
+        void stubSave() {
+            // lenient : create_asDraft_overLimit_throws403 lève 403 avant d'atteindre
+            // repository.save(), ce qui rendrait ce stub "inutile" en strict-stubs.
+            lenient().when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> {
+                PackageRequestEntity e = inv.getArgument(0);
+                setId(e, UUID.randomUUID());
+                return e;
+            });
+        }
+
+        @Test @DisplayName("saveAsDraft=true → statut DRAFT, aucun event, aucun disclaimer")
+        void create_asDraft_doesNotPublish() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(true));
+
+            ArgumentCaptor<PackageRequestEntity> captor =
+                    ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            PackageRequestEntity saved = captor.getValue();
+
+            assertThat(saved.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+            // Le disclaimer douanier se signe à la publication, pas à la rédaction.
+            assertThat(saved.getDisclaimerSignedAt()).isNull();
+            // L'event déclenche les alertes corridor : le publier notifierait une
+            // demande que personne ne peut voir.
+            verify(eventPublisher, never()).publishEvent(any(PackageRequestCreatedEvent.class));
+            verify(auditService).log(eq("PACKAGE_REQUEST"), any(), eq("DRAFT_CREATED"),
+                    eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("brouillon : KYC non vérifié accepté")
+        void create_asDraft_doesNotRequireKyc() {
+            sender.setKycStatus(KycStatus.PENDING);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            assertThatCode(() -> service.create(SENDER_ID, draftRequest(true)))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test @DisplayName("brouillon : ne compte pas dans maxOpenRequestsPerSender")
+        void create_asDraft_ignoresOpenQuota() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(true));
+
+            verify(repository, never()).countBySenderIdAndStatusIn(any(), any());
+        }
+
+        @Test @DisplayName("limite de brouillons atteinte → 403 draft-limit-reached")
+        void create_asDraft_overLimit_throws403() {
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            // maxDrafts() vaut 1 par défaut quand yadony.limits.drafts n'est pas configuré.
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                    .thenReturn(1L);
+
+            assertThatThrownBy(() -> service.create(SENDER_ID, draftRequest(true)))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("draft-limit-reached");
+        }
+
+        @Test @DisplayName("saveAsDraft=null → publication directe (comportement historique)")
+        void create_nullFlag_publishesDirectly() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+
+            service.create(SENDER_ID, draftRequest(null));
+
+            ArgumentCaptor<PackageRequestEntity> captor =
+                    ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
+        }
+    }
+
+    @Nested @DisplayName("publish()")
+    class Publish {
+
+        private PackageRequestEntity draft(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setTargetPriceEur(new BigDecimal("30.00"));
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.DRAFT);
+            return e;
+        }
+
+        @Test @DisplayName("DRAFT → OPEN + event + disclaimer signé + audit PUBLISHED")
+        void publish_draft_becomesOpen() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.publish(SENDER_ID, id);
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+            assertThat(e.getDisclaimerSignedAt()).isNotNull();
+            verify(eventPublisher).publishEvent(any(PackageRequestCreatedEvent.class));
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(id), eq("PUBLISHED"),
+                    eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("non-propriétaire → 404 (ne révèle pas l'existence)")
+        void publish_notOwner_throws404() {
+            UUID id = UUID.randomUUID();
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
+
+            assertThatThrownBy(() -> service.publish(UUID.randomUUID(), id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/not-found");
+        }
+
+        @Test @DisplayName("déjà publiée → 409 request/not-draft")
+        void publish_alreadyOpen_throws409() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setStatus(PackageRequestStatus.OPEN);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/not-draft");
+        }
+
+        @Test @DisplayName("KYC non vérifié → 403 kyc/not-verified")
+        void publish_kycNotVerified_throws403() {
+            UUID id = UUID.randomUUID();
+            sender.setKycStatus(KycStatus.PENDING);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("kyc/not-verified");
+        }
+
+        @Test @DisplayName("date devenue trop lointaine → 422 request/date-too-far")
+        void publish_dateTooFar_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setDesiredDate(LocalDate.now().plusDays(120));
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/date-too-far");
+        }
+
+        @Test @DisplayName("quota de demandes ouvertes atteint → 409 max-open-reached")
+        void publish_overOpenQuota_throws409() {
+            UUID id = UUID.randomUUID();
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(draft(id)));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(config.maxOpenRequestsPerSender()).thenReturn(1);
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(1L);
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/max-open-reached");
+        }
+
+        @Test @DisplayName("date déjà passée → 422 request/desired-date-in-past")
+        void publish_desiredDateInPast_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setDesiredDate(LocalDate.now().minusDays(5));  // Passée de 5 jours
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/desired-date-in-past");
+        }
+
+        @Test @DisplayName("budget absent → 422 request/target-price-required")
+        void publish_withoutBudget_throws422() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = draft(id);
+            e.setTargetPriceEur(null);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+
+            assertThatThrownBy(() -> service.publish(SENDER_ID, id))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("request/target-price-required");
+        }
+    }
+
+    @Nested @DisplayName("unpublish()")
+    class Unpublish {
+
+        private PackageRequestEntity openRequest(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.OPEN);
+            return e;
+        }
+
+        @Test @DisplayName("OPEN sans offre → DRAFT + audit UNPUBLISHED")
+        void unpublish_openWithoutOffers_becomesDraft() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = openRequest(id);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                .thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.unpublish(SENDER_ID, id);
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(id), eq("UNPUBLISHED"),
+                eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("au moins une offre → 409 request/has-offers")
+        void unpublish_withOffers_throws409() {
+            UUID id = UUID.randomUUID();
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
+            when(threadRepository.findByPackageRequestId(id))
+                .thenReturn(List.of(new NegotiationThreadEntity()));
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/has-offers");
+        }
+
+        @Test @DisplayName("statut non OPEN → 409 request/not-unpublishable")
+        void unpublish_notOpen_throws409() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = openRequest(id);
+            e.setStatus(PackageRequestStatus.ACCEPTED);
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(e));
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/not-unpublishable");
+        }
+
+        @Test @DisplayName("non-propriétaire → 403 request/forbidden")
+        void unpublish_notOwner_throws403() {
+            UUID id = UUID.randomUUID();
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
+
+            assertThatThrownBy(() -> service.unpublish(UUID.randomUUID(), id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/forbidden");
+        }
+
+        @Test @DisplayName("quota de brouillons atteint → 403 draft-limit-reached")
+        void unpublish_overDraftQuota_throws403() {
+            UUID id = UUID.randomUUID();
+            when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(openRequest(id)));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                .thenReturn(1L);
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("draft-limit-reached");
+        }
+    }
+
+    @Nested @DisplayName("update() — brouillon")
+    class UpdateDraft {
+
+        @Test @DisplayName("éditer un brouillon le laisse DRAFT")
+        void update_draft_staysDraft() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setStatus(PackageRequestStatus.DRAFT);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.update(SENDER_ID, id, draftRequest(null));
+
+            // Sans garde, update() posait OPEN en dur et publiait le brouillon en
+            // silence — la demande devenait visible de tous à la première édition.
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+        }
+
+        @Test @DisplayName("éditer une demande en négociation la repasse OPEN")
+        void update_negotiating_returnsToOpen() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setStatus(PackageRequestStatus.NEGOTIATING);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.update(SENDER_ID, id, draftRequest(null));
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
         }
     }
 }

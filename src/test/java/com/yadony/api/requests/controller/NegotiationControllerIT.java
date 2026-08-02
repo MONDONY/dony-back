@@ -90,7 +90,8 @@ class NegotiationControllerIT {
             null,   // materializedBidId
             true,   // cashCommissionAvailable
             null,   // availablePaymentMethods
-            false   // canNudge
+            false,  // canNudge
+            false   // hasUnread
         );
     }
 
@@ -201,7 +202,8 @@ class NegotiationControllerIT {
             null,   // materializedBidId
             true,   // cashCommissionAvailable
             null,   // availablePaymentMethods
-            false   // canNudge
+            false,  // canNudge
+            false   // hasUnread
         );
         when(service.accept(eq(SENDER_UUID), eq(threadId), any())).thenReturn(thread);
 
@@ -384,7 +386,8 @@ class NegotiationControllerIT {
             null, // materializedBidId
             true, // cashCommissionAvailable
             null, // availablePaymentMethods
-            false // canNudge
+            false, // canNudge
+            false  // hasUnread
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
         when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any()))
@@ -508,7 +511,8 @@ class NegotiationControllerIT {
             null, // materializedBidId
             true, // cashCommissionAvailable
             null, // availablePaymentMethods
-            false // canNudge
+            false, // canNudge
+            false  // hasUnread
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(withTrip);
 

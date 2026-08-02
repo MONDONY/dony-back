@@ -161,6 +161,8 @@ class BidServiceTest {
         lenient().when(storageService.avatarUrl(any())).thenAnswer(inv -> inv.getArgument(0));
         // Return empty photos list by default — toResponse calls this for every bid
         lenient().when(bidPhotoService.activePhotos(any())).thenReturn(java.util.List.of());
+        lenient().when(announcementRepository.findByIdForUpdate(any()))
+                .thenAnswer(inv -> announcementRepository.findById(inv.getArgument(0)));
     }
 
     // ─── createBid ─────────────────────────────────────────────────────────────

@@ -63,6 +63,8 @@ class AnnouncementServiceTest {
     @Mock private com.yadony.api.country.FlagService flagService;
     @Mock private com.yadony.api.common.StorageService storageService;
     @Mock private FavoriteRepository favoriteRepository;
+    @Mock private com.yadony.api.requests.repository.PackageRequestRepository packageRequestRepository;
+    @Mock private com.yadony.api.requests.repository.NegotiationThreadRepository negotiationThreadRepository;
 
     private AnnouncementService announcementService;
 
@@ -78,7 +80,8 @@ class AnnouncementServiceTest {
         announcementService = new AnnouncementService(
                 announcementRepository, bidRepository, userRepository,
                 auditService, eventPublisher, config, priceGridService, flagService,
-                storageService, favoriteRepository, realMapper);
+                storageService, favoriteRepository, realMapper, packageRequestRepository,
+                negotiationThreadRepository);
     }
 
     private static final String FIREBASE_UID = "uid-traveler-001";
@@ -1768,7 +1771,8 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository,
+                    negotiationThreadRepository);
 
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
             // le nouveau count (hors DRAFT) renvoie 1 => sous la limite (2) => création OK
@@ -2099,7 +2103,8 @@ class AnnouncementServiceTest {
             AnnouncementService serviceWithLimits = new AnnouncementService(
                     announcementRepository, bidRepository, userRepository,
                     auditService, eventPublisher, configWithLimits, priceGridService, flagService,
-                    storageService, favoriteRepository, mapperWithLimits);
+                    storageService, favoriteRepository, mapperWithLimits, packageRequestRepository,
+                    negotiationThreadRepository);
 
             AnnouncementEntity draft = draftEntityOwnedBy(user);
             when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
@@ -2134,6 +2139,132 @@ class AnnouncementServiceTest {
                         assertThat(ex.getErrorCode()).isEqualTo("departure-date-passed");
                     });
             assertThat(draft.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
+            verify(announcementRepository, never()).save(any());
+        }
+    }
+
+    // ─── unpublishAnnouncement (ACTIVE → DRAFT) ───────────────────────────────
+
+    @Nested
+    @DisplayName("unpublishAnnouncement()")
+    class UnpublishAnnouncementTests {
+
+        @Test
+        @DisplayName("ACTIVE sans demande → DRAFT + audit UNPUBLISHED")
+        void unpublish_activeWithoutBids_becomesDraft() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.findById(active.getId())).thenReturn(Optional.of(active));
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(0L);
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(bidRepository.countVisibleByAnnouncementId(active.getId())).thenReturn(0L);
+            when(bidRepository.countByAnnouncementIdAndStatusIn(eq(active.getId()), anyList())).thenReturn(0L);
+            when(announcementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            AnnouncementDetailResponse result = announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID);
+
+            assertThat(active.getStatus()).isEqualTo(AnnouncementStatus.DRAFT);
+            assertThat(result.status()).isEqualTo("DRAFT");
+            verify(announcementRepository).findByIdForUpdate(active.getId());
+            verify(auditService).log(eq("ANNOUNCEMENT"), eq(active.getId()),
+                    eq("UNPUBLISHED"), eq(user.getId()), anyMap());
+        }
+
+        @Test
+        @DisplayName("au moins une demande reçue → 409 announcement/has-bids")
+        void unpublish_withBids_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(1L);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/has-bids");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("trajet référencé par une négociation sans bid → 409 announcement/has-negotiations")
+        void unpublish_withNegotiationThreadButNoBid_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(negotiationThreadRepository.existsByTravelerAnnouncementId(active.getId())).thenReturn(true);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/has-negotiations");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("statut non ACTIVE → 409 announcement/not-unpublishable")
+        void unpublish_notActive_throws409() {
+            UserEntity user = standardUser();
+            AnnouncementEntity completed = buildAnnouncement(user);
+            completed.setStatus(AnnouncementStatus.COMPLETED);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(completed.getId())).thenReturn(Optional.of(completed));
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(completed.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(ex.getErrorCode()).isEqualTo("announcement/not-unpublishable");
+                    });
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("non-propriétaire → 403")
+        void unpublish_notOwner_throws403() {
+            UserEntity otherUser = standardUser();
+            setId(otherUser, UUID.randomUUID());
+            AnnouncementEntity active = buildAnnouncement(standardUser());
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(otherUser));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> assertThat(((YadonyBusinessException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+            verify(announcementRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("quota de brouillons atteint → 403 draft-limit-reached")
+        void unpublish_overDraftQuota_throws403() {
+            UserEntity user = standardUser();
+            AnnouncementEntity active = buildAnnouncement(user);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(announcementRepository.findByIdForUpdate(active.getId())).thenReturn(Optional.of(active));
+            when(bidRepository.countByAnnouncementId(active.getId())).thenReturn(0L);
+            when(announcementRepository.countByTravelerIdAndStatus(user.getId(), AnnouncementStatus.DRAFT))
+                    .thenReturn(1L);
+
+            assertThatThrownBy(() -> announcementService.unpublishAnnouncement(active.getId(), FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(ex.getErrorCode()).isEqualTo("draft-limit-reached");
+                    });
             verify(announcementRepository, never()).save(any());
         }
     }

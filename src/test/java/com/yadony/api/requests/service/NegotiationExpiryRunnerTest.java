@@ -73,6 +73,22 @@ class NegotiationExpiryRunnerTest {
     }
 
     @Test
+    @DisplayName("expireThread — dernier fil actif → demande de nouveau OPEN")
+    void expireThread_lastActive_reopensRequest() {
+        NegotiationThreadEntity t = thread(NegotiationThreadStatus.OPEN);
+        PackageRequestEntity r = request(PackageRequestStatus.NEGOTIATING);
+        t.setPackageRequestId(r.getId());
+        when(threadRepo.findById(t.getId())).thenReturn(Optional.of(t));
+        when(requestRepo.findById(r.getId())).thenReturn(Optional.of(r));
+        when(threadRepo.findByPackageRequestId(r.getId())).thenReturn(java.util.List.of(t));
+
+        runner.expireThread(t.getId(), NegotiationThreadStatus.OPEN, "INACTIVE_OPEN");
+
+        assertThat(r.getStatus()).isEqualTo(PackageRequestStatus.OPEN);
+        verify(requestRepo).save(r);
+    }
+
+    @Test
     @DisplayName("expireThread — statut changé en concurrence (ACCEPTED) → skip idempotent, pas de clobber")
     void expireThread_statusChangedConcurrently_skips() {
         NegotiationThreadEntity t = thread(NegotiationThreadStatus.ACCEPTED);

@@ -17,7 +17,7 @@ public record PackageRequestCreateRequest(
     // (500, cf. V171__unify_content_categories.sql pour le pourquoi).
     @NotBlank @Size(max = 500) String contentCategory,
     @Size(max = 500) String description,
-    // Budget TOTAL (gross) saisi par l'expéditeur ; converti en net au service. Requis si !negotiable.
+    // Budget TOTAL (gross) obligatoire ; converti en net au service.
     @DecimalMin("0.0") @DecimalMax("560.0") BigDecimal totalBudgetEur,
     @Size(max = 500) String photoUrl,
     @Size(max = 100) String pickupNeighborhood,
@@ -25,5 +25,8 @@ public record PackageRequestCreateRequest(
     boolean negotiable,
     @NotEmpty Set<PaymentMethod> acceptedPaymentMethods,
     // Clés S3 des photos colis (max 4) — sous package_requests/{senderId}/. Remplace photoUrl.
-    @Size(max = 4) List<String> photoKeys
+    @Size(max = 4) List<String> photoKeys,
+    // null/false → publication directe (comportement historique) ; true → brouillon.
+    // Nullable et non primitif pour que l'absence du champ reste distincte de false.
+    Boolean saveAsDraft
 ) {}

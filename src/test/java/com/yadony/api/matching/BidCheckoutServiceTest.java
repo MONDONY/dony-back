@@ -69,7 +69,7 @@ class BidCheckoutServiceTest {
             "Recipient", "+221771234567", true, null, null);
 
         lenient().when(userRepository.findByFirebaseUid("uid-sender")).thenReturn(Optional.of(sender));
-        lenient().when(announcementRepository.findById(announcement.getId())).thenReturn(Optional.of(announcement));
+        lenient().when(announcementRepository.findByIdForUpdate(announcement.getId())).thenReturn(Optional.of(announcement));
         lenient().when(httpRequest.getRemoteAddr()).thenReturn("127.0.0.1");
     }
 
@@ -271,7 +271,7 @@ class BidCheckoutServiceTest {
         BidCheckoutRequest unknownAnn = new BidCheckoutRequest(
             UUID.randomUUID(), new BigDecimal("2"),
             "test", "OTHER", "Recipient", "+221771234567", true, null, null);
-        when(announcementRepository.findById(unknownAnn.announcementId())).thenReturn(Optional.empty());
+        when(announcementRepository.findByIdForUpdate(unknownAnn.announcementId())).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.checkout("uid-sender", unknownAnn, httpRequest))
             .isInstanceOf(YadonyBusinessException.class)
             .satisfies(e -> assertThat(((YadonyBusinessException) e).getErrorCode()).isEqualTo("announcement-not-found"));

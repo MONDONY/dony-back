@@ -106,7 +106,7 @@ class PackageRequestControllerIT {
             "Cadeau", new BigDecimal("28.00"), null,
             "10e", "Plateau",
             true, java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
     }
 
     private PackageRequestResponse fakeResponse(UUID id) {
@@ -278,7 +278,7 @@ class PackageRequestControllerIT {
             "Paris", "Dakar", LocalDate.now().plusDays(7), 2,
             new BigDecimal("5"), "vetements", "desc",
             new BigDecimal("28.00"), null, "10e", "Plateau",
-            true, java.util.Set.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE), List.of());
+            true, java.util.Set.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE), List.of(), null);
 
         mockMvc.perform(put("/package-requests/" + id)
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -451,7 +451,7 @@ class PackageRequestControllerIT {
     // ─── Task 13 — nouveaux cas IT ──────────────────────────────────────────────
 
     /**
-     * Cas 1 : demande non négociable sans budget → 422 avec code "target-price-required-firm"
+     * Cas 1 : demande sans budget → 422 avec code "target-price-required"
      * Rule: PackageRequestService.createAndReturnEntity checks !negotiable && totalBudgetEur == null
      */
     @Test
@@ -465,12 +465,12 @@ class PackageRequestControllerIT {
             "10e", "Plateau",
             false,  // non négociable — budget requis
             java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE)
-        , List.of());
+        , List.of(), null);
 
         when(service.create(eq(SENDER_UUID), any()))
             .thenThrow(new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm"));
+                "request/target-price-required"));
 
         mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -478,7 +478,7 @@ class PackageRequestControllerIT {
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(content().contentType("application/problem+json"))
-            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("request/target-price-required-firm")));
+            .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.endsWith("request/target-price-required")));
     }
 
     /**
@@ -517,7 +517,7 @@ class PackageRequestControllerIT {
             java.util.EnumSet.of(
                 com.yadony.api.payments.cash.PaymentMethod.STRIPE,
                 com.yadony.api.payments.cash.PaymentMethod.CASH)
-        , List.of());
+        , List.of(), null);
 
         mockMvc.perform(post("/package-requests")
                 .with(authentication(authAs("uid-sender", "SENDER")))
@@ -528,5 +528,86 @@ class PackageRequestControllerIT {
             .andExpect(jsonPath("$.acceptedPaymentMethods").isArray())
             .andExpect(jsonPath("$.acceptedPaymentMethods",
                 org.hamcrest.Matchers.hasItems("STRIPE", "CASH")));
+    }
+
+    // ─── Task 3 : publish() tests ──────────────────────────────────────────────
+
+    @Test
+    void post_publish_ownDraft_returns200() throws Exception {
+        UUID draftId = UUID.randomUUID();
+        PackageRequestResponse draftResponse = new PackageRequestResponse(
+            draftId, SENDER_UUID,
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.yadony.api.matching.TransportMode.PLANE,
+            "vetements",
+            "Cadeau", new BigDecimal("25"), null,
+            "10e", "Plateau",
+            PackageRequestStatus.OPEN, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE),
+            new BigDecimal("28.00")
+        , List.of(), null, null);
+        when(service.publish(eq(SENDER_UUID), eq(draftId))).thenReturn(draftResponse);
+
+        mockMvc.perform(post("/package-requests/" + draftId + "/publish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    void post_publish_othersDraft_returns404() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        when(service.publish(eq(SENDER_UUID), eq(otherId)))
+            .thenThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "request/not-found"));
+
+        mockMvc.perform(post("/package-requests/" + otherId + "/publish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isNotFound());
+    }
+
+    // ─── Task 6 : unpublish() tests ────────────────────────────────────────────
+
+    @Test
+    void post_unpublish_ownOpenRequest_returns200WithDraft() throws Exception {
+        UUID requestId = UUID.randomUUID();
+        PackageRequestResponse response = new PackageRequestResponse(
+            requestId, SENDER_UUID,
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.yadony.api.matching.TransportMode.PLANE,
+            "vetements",
+            "Cadeau", new BigDecimal("25"), null,
+            "10e", "Plateau",
+            PackageRequestStatus.DRAFT, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE),
+            new BigDecimal("28.00")
+        , List.of(), null, null);
+        when(service.unpublish(eq(SENDER_UUID), eq(requestId))).thenReturn(response);
+
+        mockMvc.perform(post("/package-requests/" + requestId + "/unpublish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    void post_unpublish_othersRequest_returns403() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        when(service.unpublish(eq(SENDER_UUID), eq(otherId)))
+            .thenThrow(new ResponseStatusException(FORBIDDEN, "request/forbidden"));
+
+        mockMvc.perform(post("/package-requests/" + otherId + "/unpublish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isForbidden());
     }
 }

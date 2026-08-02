@@ -183,7 +183,10 @@ public class BidService {
             userRepository.save(sender);
         }
 
-        AnnouncementEntity announcement = findAnnouncement(announcementId);
+        AnnouncementEntity announcement = announcementRepository.findByIdForUpdate(announcementId)
+                .orElseThrow(() -> new YadonyBusinessException(
+                        HttpStatus.NOT_FOUND, "announcement-not-found", "Announcement Not Found",
+                        "Annonce introuvable"));
 
         if (announcement.getStatus() != AnnouncementStatus.ACTIVE) {
             throw new YadonyBusinessException(

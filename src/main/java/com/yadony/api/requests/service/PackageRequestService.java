@@ -6,9 +6,12 @@ import com.yadony.api.auth.UserRepository;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.config.ContentCategoryNormalizer;
+import com.yadony.api.config.YadonyConfigProperties;
 import com.yadony.api.favorites.FavoriteRepository;
 import com.yadony.api.favorites.FavoriteTargetType;
 import com.yadony.api.matching.MatchingService;
+import com.yadony.api.matching.AnnouncementRepository;
+import com.yadony.api.matching.AnnouncementStatus;
 import com.yadony.api.payments.cash.CommissionProperties;
 import com.yadony.api.payments.cash.PaymentMethod;
 import com.yadony.api.requests.RequestsConfig;
@@ -59,6 +62,8 @@ public class PackageRequestService {
     private final FavoriteRepository favoriteRepository;
     private final PackageRequestSearchMapper packageRequestSearchMapper;
     private final MatchingService matchingService;
+    private final YadonyConfigProperties yadonyConfig;
+    private final AnnouncementRepository announcementRepository;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -72,7 +77,9 @@ public class PackageRequestService {
                                   PackageRequestPhotoService photoService,
                                   FavoriteRepository favoriteRepository,
                                   PackageRequestSearchMapper packageRequestSearchMapper,
-                                  MatchingService matchingService) {
+                                  MatchingService matchingService,
+                                  YadonyConfigProperties yadonyConfig,
+                                  AnnouncementRepository announcementRepository) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -86,6 +93,8 @@ public class PackageRequestService {
         this.favoriteRepository = favoriteRepository;
         this.packageRequestSearchMapper = packageRequestSearchMapper;
         this.matchingService = matchingService;
+        this.yadonyConfig = yadonyConfig;
+        this.announcementRepository = announcementRepository;
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -129,24 +138,36 @@ public class PackageRequestService {
         UserEntity sender = userRepository.findById(senderId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
 
-        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+        boolean isDraft = Boolean.TRUE.equals(req.saveAsDraft());
+
+        // Un brouillon n'est pas publié : ni KYC ni quota de demandes ouvertes ne
+        // s'appliquent encore. Les deux sont rejoués à la publication.
+        //
+        // Le contrôle KYC garde sa position d'origine (avant les validations métier)
+        // et le contrôle de quota la sienne (après) : les tests de validation
+        // existants (mobile money, budget ferme, corridor, date) n'attendent pas
+        // d'appel à countBySenderIdAndStatusIn et échoueraient sur un mock non
+        // stubbé (long non-stubbé = 0, comparé à maxOpenRequestsPerSender() = 0
+        // par défaut → 409 déclenché avant la validation attendue).
+        if (!isDraft && sender.getKycStatus() != KycStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
         }
         rejectMobileMoneyMethods(req.acceptedPaymentMethods());
-        if (!req.negotiable() && req.totalBudgetEur() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm");
-        }
         if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
         }
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
-        long openCount = repository.countBySenderIdAndStatusIn(senderId,
-            List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
-        if (openCount >= config.maxOpenRequestsPerSender()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+        requireTargetPrice(req.totalBudgetEur());
+        if (!isDraft) {
+            long openCount = repository.countBySenderIdAndStatusIn(senderId,
+                List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
+            if (openCount >= config.maxOpenRequestsPerSender()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+            }
+        } else {
+            assertDraftQuotaAvailable(senderId, sender);
         }
 
         // gross → net conversion: net = gross / (1 + commissionRate)
@@ -174,29 +195,54 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
-        entity.setStatus(PackageRequestStatus.OPEN);
-        // The customs disclaimer is auto-accepted at publication; the sender
-        // approves it implicitly when creating (publishing) the request.
-        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        entity.setStatus(isDraft ? PackageRequestStatus.DRAFT : PackageRequestStatus.OPEN);
+        // Le disclaimer douanier est accepté à la publication. Tant que la demande
+        // est un brouillon, l'expéditeur n'a rien publié — donc rien signé.
+        if (!isDraft) {
+            entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        }
 
         PackageRequestEntity saved = repository.save(entity);
         photoService.replacePhotos(saved.getId(), senderId, req.photoKeys());
 
-        eventPublisher.publishEvent(new PackageRequestCreatedEvent(
-            saved.getId(), senderId, saved.getDepartureCity(),
-            saved.getArrivalCity(), saved.getDesiredDate()
-        ));
-        auditService.log("PACKAGE_REQUEST", saved.getId(), "CREATED", senderId,
-            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        if (isDraft) {
+            auditService.log("PACKAGE_REQUEST", saved.getId(), "DRAFT_CREATED", senderId,
+                Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        } else {
+            eventPublisher.publishEvent(new PackageRequestCreatedEvent(
+                saved.getId(), senderId, saved.getDepartureCity(),
+                saved.getArrivalCity(), saved.getDesiredDate()
+            ));
+            auditService.log("PACKAGE_REQUEST", saved.getId(), "CREATED", senderId,
+                Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+        }
 
         return saved;
+    }
+
+    /**
+     * Plafonne les brouillons d'un expéditeur au même quota que les trajets
+     * (yadony.limits.drafts) : un utilisateur a un quota de brouillons, pas un
+     * quota par type d'objet. Appelé aussi à la dépublication, sans quoi
+     * dépublier deviendrait un moyen de contourner le plafond.
+     */
+    private void assertDraftQuotaAvailable(UUID senderId, UserEntity sender) {
+        YadonyConfigProperties.Limits limits = yadonyConfig.limits() != null
+            ? yadonyConfig.limits()
+            : new YadonyConfigProperties.Limits(null, null);
+        int maxDrafts = sender.isProAccount() ? limits.maxDraftsPro() : limits.maxDrafts();
+        long draftCount = repository.countBySenderIdAndStatus(senderId, PackageRequestStatus.DRAFT)
+            + announcementRepository.countByTravelerIdAndStatus(senderId, AnnouncementStatus.DRAFT);
+        if (draftCount >= maxDrafts) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "draft-limit-reached");
+        }
     }
 
     // ─── update ──────────────────────────────────────────────────────────────────
 
     /**
      * Modifie une demande tant qu'aucun accord n'a été conclu avec un voyageur
-     * (statut {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
+     * (statut {@code DRAFT}, {@code OPEN} ou {@code NEGOTIATING}). Une fois {@code ACCEPTED} ou
      * terminée → 409 {@code request/not-editable}.
      *
      * <p>Les termes de la demande changent : toute offre en cours ({@code OPEN})
@@ -212,21 +258,19 @@ public class PackageRequestService {
         if (!entity.getSenderId().equals(callerUid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
         }
-        if (entity.getStatus() != PackageRequestStatus.OPEN
+        if (entity.getStatus() != PackageRequestStatus.DRAFT
+            && entity.getStatus() != PackageRequestStatus.OPEN
             && entity.getStatus() != PackageRequestStatus.NEGOTIATING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-editable");
         }
         rejectMobileMoneyMethods(req.acceptedPaymentMethods());
-        if (!req.negotiable() && req.totalBudgetEur() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "request/target-price-required-firm");
-        }
         if (req.departureCity().equalsIgnoreCase(req.arrivalCity())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
         }
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
+        requireTargetPrice(req.totalBudgetEur());
 
         BigDecimal netTarget = null;
         if (req.totalBudgetEur() != null) {
@@ -257,7 +301,12 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
-        entity.setStatus(PackageRequestStatus.OPEN);
+        // Repasser en OPEN sert à sortir d'une négociation dont les termes ont
+        // changé. Un brouillon n'a pas de négociation et ne doit pas être publié
+        // par une simple édition.
+        if (entity.getStatus() != PackageRequestStatus.DRAFT) {
+            entity.setStatus(PackageRequestStatus.OPEN);
+        }
 
         PackageRequestEntity saved = repository.save(entity);
         // photoKeys == null → on conserve les photos existantes (édition sans toucher aux photos).
@@ -267,6 +316,104 @@ public class PackageRequestService {
         }
 
         auditService.log("PACKAGE_REQUEST", saved.getId(), "UPDATED", callerUid,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return toResponse(saved);
+    }
+
+    // ─── publish ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Publie un brouillon (DRAFT → OPEN).
+     *
+     * <p>Toutes les validations de publication sont rejouées et non supposées
+     * acquises à la création : les données ont pu être modifiées depuis, et une
+     * date sort naturellement de la fenêtre autorisée avec le temps.
+     */
+    @Transactional
+    public PackageRequestResponse publish(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findByIdForUpdate(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // 404 et non 403 : un brouillon est invisible des tiers, répondre « interdit »
+        // révélerait son existence.
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found");
+        }
+        if (entity.getStatus() != PackageRequestStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-draft");
+        }
+
+        UserEntity sender = userRepository.findById(callerUid)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        if (sender.getKycStatus() != KycStatus.VERIFIED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
+        }
+        if (entity.getDepartureCity().equalsIgnoreCase(entity.getArrivalCity())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/invalid-corridor");
+        }
+        if (entity.getDesiredDate().isBefore(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/desired-date-in-past");
+        }
+        if (entity.getDesiredDate().isAfter(LocalDate.now().plusDays(90))) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
+        }
+        requireTargetPrice(entity.getTargetPriceEur());
+        long openCount = repository.countBySenderIdAndStatusIn(callerUid,
+            List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
+        if (openCount >= config.maxOpenRequestsPerSender()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/max-open-reached");
+        }
+
+        entity.setStatus(PackageRequestStatus.OPEN);
+        entity.setDisclaimerSignedAt(LocalDateTime.now(ZoneOffset.UTC));
+        PackageRequestEntity saved = repository.save(entity);
+
+        eventPublisher.publishEvent(new PackageRequestCreatedEvent(
+            saved.getId(), callerUid, saved.getDepartureCity(),
+            saved.getArrivalCity(), saved.getDesiredDate()
+        ));
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "PUBLISHED", callerUid,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return toResponse(saved);
+    }
+
+    // ─── unpublish ───────────────────────────────────────────────────────────────
+
+    /**
+     * Retire une demande de la circulation sans l'annuler (OPEN → DRAFT).
+     *
+     * <p>Annuler est terminal ; dépublier ne l'est pas. L'opération n'est ouverte
+     * que tant qu'aucun voyageur ne s'est engagé : au-delà, des tiers ont agi sur
+     * la foi de la publication et le retrait unilatéral ne leur est pas opposable.
+     */
+    @Transactional
+    public PackageRequestResponse unpublish(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findByIdForUpdate(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // La demande est publique ici : 403 ne révèle rien qu'on ne sache déjà.
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() != PackageRequestStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-unpublishable");
+        }
+        // Test distinct du précédent : un thread peut exister alors que la demande
+        // est encore OPEN (offre reçue mais pas encore ouverte en négociation).
+        if (!threadRepository.findByPackageRequestId(requestId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/has-offers");
+        }
+
+        UserEntity sender = userRepository.findById(callerUid)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        assertDraftQuotaAvailable(callerUid, sender);
+
+        entity.setStatus(PackageRequestStatus.DRAFT);
+        PackageRequestEntity saved = repository.save(entity);
+
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "UNPUBLISHED", callerUid,
             Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
 
         return toResponse(saved);
@@ -292,7 +439,16 @@ public class PackageRequestService {
             || entity.getStatus() == PackageRequestStatus.NEGOTIATING;
 
         if (!isOwner && !isThreadParticipant && !isPubliclyListed) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+            // Un brouillon n'a jamais été rendu public : répondre « interdit »
+            // apprendrait à un tiers qu'une demande existe derrière cet id. Les
+            // autres statuts non listés ont, eux, déjà été publics.
+            HttpStatus status = entity.getStatus() == PackageRequestStatus.DRAFT
+                ? HttpStatus.NOT_FOUND
+                : HttpStatus.FORBIDDEN;
+            String reason = entity.getStatus() == PackageRequestStatus.DRAFT
+                ? "request/not-found"
+                : "request/forbidden";
+            throw new ResponseStatusException(status, reason);
         }
         // Voyageur (non-owner) : expose son thread ACTIF pour que l'app bascule le CTA
         // (« Proposer mon trajet » → « Voir ma négociation » / proposition de trajet).
@@ -306,10 +462,19 @@ public class PackageRequestService {
 
     // ─── findMine ─────────────────────────────────────────────────────────────────
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<PackageRequestResponse> findMine(UUID senderId, Pageable pageable) {
-        return repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable)
-            .map(this::toResponse);
+        Page<PackageRequestEntity> requests =
+            repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable);
+        requests.stream()
+            .filter(request -> request.getStatus() == PackageRequestStatus.NEGOTIATING)
+            .filter(request -> threadRepository.findByPackageRequestId(request.getId()).stream()
+                .noneMatch(thread -> thread.getStatus().isActive()))
+            .forEach(request -> {
+                request.setStatus(PackageRequestStatus.OPEN);
+                repository.save(request);
+            });
+        return requests.map(this::toResponse);
     }
 
     // ─── cancel ──────────────────────────────────────────────────────────────────
@@ -646,5 +811,12 @@ public class PackageRequestService {
                     "request/invalid-photo-url");
         }
         return photoUrl;
+    }
+
+    private static void requireTargetPrice(BigDecimal targetPriceEur) {
+        if (targetPriceEur == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "request/target-price-required");
+        }
     }
 }

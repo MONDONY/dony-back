@@ -59,10 +59,24 @@ public class NegotiationExpiryRunner {
         t.setStatus(NegotiationThreadStatus.EXPIRED);
         t.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(t);
+        reopenRequestWhenNoActiveNegotiation(t.getPackageRequestId());
         eventPublisher.publishEvent(new NegotiationExpiredEvent(
             t.getId(), t.getPackageRequestId(), null, t.getTravelerId()));
         auditService.log("NEGOTIATION_THREAD", t.getId(), "EXPIRED", null,
             Map.of("source", "SYSTEM", "reason", reason));
+    }
+
+    private void reopenRequestWhenNoActiveNegotiation(UUID requestId) {
+        PackageRequestEntity request = requestRepo.findById(requestId).orElse(null);
+        if (request == null || request.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            return;
+        }
+        boolean hasActiveThread = threadRepo.findByPackageRequestId(requestId).stream()
+            .anyMatch(thread -> thread.getStatus().isActive());
+        if (!hasActiveThread) {
+            request.setStatus(PackageRequestStatus.OPEN);
+            requestRepo.save(request);
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

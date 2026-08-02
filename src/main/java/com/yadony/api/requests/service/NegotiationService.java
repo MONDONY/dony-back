@@ -116,10 +116,19 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.GONE, "request/expired");
         }
 
+        if (request.getStatus() == PackageRequestStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found");
+        }
+
         if (request.getStatus() == PackageRequestStatus.ACCEPTED
                 || request.getStatus() == PackageRequestStatus.COMPLETED
                 || request.getStatus() == PackageRequestStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "request/already-finalized");
+        }
+
+        if (request.getStatus() != PackageRequestStatus.OPEN
+                && request.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-open");
         }
 
         if (!request.isNegotiable()) {
@@ -271,6 +280,7 @@ public class NegotiationService {
         thread.setStatus(NegotiationThreadStatus.REJECTED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+        reopenRequestWhenNoActiveNegotiation(request);
 
         auditService.log("NEGOTIATION_THREAD", threadId, "REJECTED", callerId,
             Map.of("reason", req.reason() != null ? req.reason() : ""));
@@ -327,6 +337,7 @@ public class NegotiationService {
         thread.setStatus(NegotiationThreadStatus.CANCELLED);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
         threadRepo.save(thread);
+        reopenRequestWhenNoActiveNegotiation(request);
 
         UUID otherParty = isSender ? thread.getTravelerId() : request.getSenderId();
         String byName = userRepository.findById(callerId).map(this::buildDisplayName).orElse(UserEntity.UNKNOWN_DISPLAY_NAME);
@@ -334,6 +345,18 @@ public class NegotiationService {
             thread.getId(), request.getId(), callerId, otherParty, byName, releaseEscrow));
         auditService.log("NEGOTIATION_THREAD", threadId, "CANCELLED", callerId,
             Map.of("reason", reason == null ? "" : reason));
+    }
+
+    private void reopenRequestWhenNoActiveNegotiation(PackageRequestEntity request) {
+        if (request.getStatus() != PackageRequestStatus.NEGOTIATING) {
+            return;
+        }
+        boolean hasActiveThread = threadRepo.findByPackageRequestId(request.getId()).stream()
+            .anyMatch(thread -> thread.getStatus().isActive());
+        if (!hasActiveThread) {
+            request.setStatus(PackageRequestStatus.OPEN);
+            requestRepo.save(request);
+        }
     }
 
     /**
@@ -1105,7 +1128,7 @@ public class NegotiationService {
         return toResponse(thread, msgs, null, travelerEntity, request, callerId, senderName, linkedAnn);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public NegotiationThreadResponse getById(UUID callerId, UUID threadId) {
         NegotiationThreadEntity thread = threadRepo.findById(threadId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
@@ -1115,6 +1138,16 @@ public class NegotiationService {
 
         if (!callerId.equals(request.getSenderId()) && !callerId.equals(thread.getTravelerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        if (thread.getStatus().isActive()) {
+            LocalDateTime readAt = LocalDateTime.now(ZoneOffset.UTC);
+            if (callerId.equals(request.getSenderId())) {
+                thread.setSenderLastReadAt(readAt);
+            } else {
+                thread.setTravelerLastReadAt(readAt);
+            }
+            threadRepo.save(thread);
         }
 
         List<NegotiationMessageResponse> messages = messageRepo.findByThreadIdOrderByCreatedAtAsc(threadId)
@@ -1303,6 +1336,15 @@ public class NegotiationService {
                 : !isMyTurn;                             // en OPEN, la partie qui n'a pas la main attend
         boolean canNudge = nudgeStatus && callerIsWaiting && waitedEnough && nudgeNotRecent;
 
+        LocalDateTime lastReadAt = callerId.equals(request.getSenderId())
+            ? t.getSenderLastReadAt()
+            : t.getTravelerLastReadAt();
+        boolean hasUnread = messages.stream().anyMatch(message ->
+            !message.fromUserId().equals(callerId)
+                && (lastReadAt == null
+                    || message.createdAt() == null
+                    || message.createdAt().isAfter(lastReadAt)));
+
         return new NegotiationThreadResponse(
             t.getId(), t.getPackageRequestId(), t.getTravelerId(),
             t.getTravelerAnnouncementId(), t.getTravelerTravelDate(), t.getTravelerAvailableKg(),
@@ -1322,7 +1364,8 @@ public class NegotiationService {
             t.getMaterializedBidId(),
             cashCommissionAvailable,
             t.getAvailablePaymentMethods(),
-            canNudge
+            canNudge,
+            hasUnread
         );
     }
 
