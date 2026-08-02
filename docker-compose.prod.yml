@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/yadony/yadony-back:${YADONY_IMAGE_TAG:-latest}
+    image: ghcr.io/mondony/yadony-back:${YADONY_IMAGE_TAG:-latest}
     container_name: yadony_api
     restart: unless-stopped
     # Toutes les variables (secrets inclus) vivent dans le .env à côté de ce
