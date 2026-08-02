@@ -570,4 +570,44 @@ class PackageRequestControllerIT {
                 .contentType(MediaType.APPLICATION_JSON))
             .andExpect(status().isNotFound());
     }
+
+    // ─── Task 6 : unpublish() tests ────────────────────────────────────────────
+
+    @Test
+    void post_unpublish_ownOpenRequest_returns200WithDraft() throws Exception {
+        UUID requestId = UUID.randomUUID();
+        PackageRequestResponse response = new PackageRequestResponse(
+            requestId, SENDER_UUID,
+            "Paris", "Dakar",
+            LocalDate.now().plusDays(7), 2,
+            new BigDecimal("5"), ParcelSize.SMALL,
+            com.yadony.api.matching.TransportMode.PLANE,
+            "vetements",
+            "Cadeau", new BigDecimal("25"), null,
+            "10e", "Plateau",
+            PackageRequestStatus.DRAFT, LocalDateTime.now(),
+            true,
+            java.util.EnumSet.of(com.yadony.api.payments.cash.PaymentMethod.STRIPE),
+            new BigDecimal("28.00")
+        , List.of(), null, null);
+        when(service.unpublish(eq(SENDER_UUID), eq(requestId))).thenReturn(response);
+
+        mockMvc.perform(post("/package-requests/" + requestId + "/unpublish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    void post_unpublish_othersRequest_returns403() throws Exception {
+        UUID otherId = UUID.randomUUID();
+        when(service.unpublish(eq(SENDER_UUID), eq(otherId)))
+            .thenThrow(new ResponseStatusException(FORBIDDEN, "request/forbidden"));
+
+        mockMvc.perform(post("/package-requests/" + otherId + "/unpublish")
+                .with(authentication(authAs("uid-sender", "SENDER")))
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isForbidden());
+    }
 }

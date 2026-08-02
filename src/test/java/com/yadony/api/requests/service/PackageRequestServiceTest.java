@@ -1431,6 +1431,92 @@ class PackageRequestServiceTest {
         }
     }
 
+    @Nested @DisplayName("unpublish()")
+    class Unpublish {
+
+        private PackageRequestEntity openRequest(UUID id) {
+            PackageRequestEntity e = new PackageRequestEntity();
+            setId(e, id);
+            e.setSenderId(SENDER_ID);
+            e.setDepartureCity("Paris");
+            e.setArrivalCity("Dakar");
+            e.setDesiredDate(LocalDate.now().plusDays(10));
+            e.setDateToleranceDays((short) 2);
+            e.setWeightKg(new BigDecimal("3.0"));
+            e.setContentCategory("Documents");
+            e.setNegotiable(true);
+            e.setAcceptedPaymentMethods(EnumSet.of(PaymentMethod.STRIPE));
+            e.setStatus(PackageRequestStatus.OPEN);
+            return e;
+        }
+
+        @Test @DisplayName("OPEN sans offre → DRAFT + audit UNPUBLISHED")
+        void unpublish_openWithoutOffers_becomesDraft() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = openRequest(id);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                .thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+            service.unpublish(SENDER_ID, id);
+
+            assertThat(e.getStatus()).isEqualTo(PackageRequestStatus.DRAFT);
+            verify(auditService).log(eq("PACKAGE_REQUEST"), eq(id), eq("UNPUBLISHED"),
+                eq(SENDER_ID), any());
+        }
+
+        @Test @DisplayName("au moins une offre → 409 request/has-offers")
+        void unpublish_withOffers_throws409() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+            when(threadRepository.findByPackageRequestId(id))
+                .thenReturn(List.of(new NegotiationThreadEntity()));
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/has-offers");
+        }
+
+        @Test @DisplayName("statut non OPEN → 409 request/not-unpublishable")
+        void unpublish_notOpen_throws409() {
+            UUID id = UUID.randomUUID();
+            PackageRequestEntity e = openRequest(id);
+            e.setStatus(PackageRequestStatus.ACCEPTED);
+            when(repository.findById(id)).thenReturn(Optional.of(e));
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/not-unpublishable");
+        }
+
+        @Test @DisplayName("non-propriétaire → 403 request/forbidden")
+        void unpublish_notOwner_throws403() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+
+            assertThatThrownBy(() -> service.unpublish(UUID.randomUUID(), id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("request/forbidden");
+        }
+
+        @Test @DisplayName("quota de brouillons atteint → 403 draft-limit-reached")
+        void unpublish_overDraftQuota_throws403() {
+            UUID id = UUID.randomUUID();
+            when(repository.findById(id)).thenReturn(Optional.of(openRequest(id)));
+            when(threadRepository.findByPackageRequestId(id)).thenReturn(List.of());
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatus(SENDER_ID, PackageRequestStatus.DRAFT))
+                .thenReturn(1L);
+
+            assertThatThrownBy(() -> service.unpublish(SENDER_ID, id))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("draft-limit-reached");
+        }
+    }
+
     @Nested @DisplayName("update() — brouillon")
     class UpdateDraft {
 

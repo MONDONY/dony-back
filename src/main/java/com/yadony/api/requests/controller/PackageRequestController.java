@@ -88,6 +88,13 @@ public class PackageRequestController {
         return service.publish(requireUserId(), id);
     }
 
+    /** Retire une demande de la circulation sans l'annuler (OPEN → DRAFT). */
+    @PostMapping("/{id}/unpublish")
+    @PreAuthorize("hasRole('SENDER')")
+    public PackageRequestResponse unpublish(@PathVariable UUID id) {
+        return service.unpublish(requireUserId(), id);
+    }
+
     @GetMapping("/{id}/threads")
     @PreAuthorize("hasRole('SENDER')")
     public java.util.List<com.yadony.api.requests.dto.NegotiationThreadResponse> listThreads(@PathVariable UUID id) {

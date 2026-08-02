@@ -382,6 +382,46 @@ public class PackageRequestService {
         return toResponse(saved);
     }
 
+    // ─── unpublish ───────────────────────────────────────────────────────────────
+
+    /**
+     * Retire une demande de la circulation sans l'annuler (OPEN → DRAFT).
+     *
+     * <p>Annuler est terminal ; dépublier ne l'est pas. L'opération n'est ouverte
+     * que tant qu'aucun voyageur ne s'est engagé : au-delà, des tiers ont agi sur
+     * la foi de la publication et le retrait unilatéral ne leur est pas opposable.
+     */
+    @Transactional
+    public PackageRequestResponse unpublish(UUID callerUid, UUID requestId) {
+        PackageRequestEntity entity = repository.findById(requestId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+
+        // La demande est publique ici : 403 ne révèle rien qu'on ne sache déjà.
+        if (!entity.getSenderId().equals(callerUid)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "request/forbidden");
+        }
+        if (entity.getStatus() != PackageRequestStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/not-unpublishable");
+        }
+        // Test distinct du précédent : un thread peut exister alors que la demande
+        // est encore OPEN (offre reçue mais pas encore ouverte en négociation).
+        if (!threadRepository.findByPackageRequestId(requestId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "request/has-offers");
+        }
+
+        UserEntity sender = userRepository.findById(callerUid)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user/not-found"));
+        assertDraftQuotaAvailable(callerUid, sender);
+
+        entity.setStatus(PackageRequestStatus.DRAFT);
+        PackageRequestEntity saved = repository.save(entity);
+
+        auditService.log("PACKAGE_REQUEST", saved.getId(), "UNPUBLISHED", callerUid,
+            Map.of("corridor", saved.getDepartureCity() + "->" + saved.getArrivalCity()));
+
+        return toResponse(saved);
+    }
+
     // ─── getById ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
