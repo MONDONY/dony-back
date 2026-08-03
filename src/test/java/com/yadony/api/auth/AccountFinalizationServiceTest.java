@@ -1,5 +1,6 @@
 package com.yadony.api.auth;
 
+import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
 import com.yadony.api.auth.events.UserFinalizedEvent;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.StorageService;
@@ -126,6 +127,24 @@ class AccountFinalizationServiceTest {
         ArgumentCaptor<UserFinalizedEvent> captor = ArgumentCaptor.forClass(UserFinalizedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertThat(captor.getValue().getReason()).isEqualTo(FinalizationReason.SOFT_GRACE_EXPIRED);
+    }
+
+    @Test
+    @DisplayName("publie AccountDeletionRequestedEvent pour annuler les annonces/bids du user (HARD_IMMEDIATE et SOFT_GRACE_EXPIRED ne passent jamais par requestDeletion())")
+    void publishesAccountDeletionRequestedEventForBothReasons() {
+        UserEntity user = makeUser();
+        UUID userId = user.getId();
+        when(kycRepository.findByUserId(any())).thenReturn(Optional.empty());
+        com.google.firebase.auth.FirebaseAuth mockAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+
+        try (MockedStatic<FirebaseAuth> staticAuth = mockStatic(FirebaseAuth.class)) {
+            staticAuth.when(FirebaseAuth::getInstance).thenReturn(mockAuth);
+            service.finalize(user, FinalizationReason.HARD_IMMEDIATE);
+        }
+
+        ArgumentCaptor<AccountDeletionRequestedEvent> captor = ArgumentCaptor.forClass(AccountDeletionRequestedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(userId);
     }
 
     @Test
