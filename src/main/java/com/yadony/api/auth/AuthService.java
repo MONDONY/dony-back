@@ -13,6 +13,7 @@ import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.payments.PaymentRepository;
+import com.yadony.api.payments.wallet.WalletAccountRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class AuthService {
     private final AuditService auditService;
     private final UserService userService;
     private final PaymentRepository paymentRepository;
+    private final WalletAccountRepository walletAccountRepository;
     private final AccountFinalizationService accountFinalizationService;
     private final ApplicationEventPublisher eventPublisher;
     private final ConnectedDevicesService connectedDevicesService;
@@ -56,6 +58,7 @@ public class AuthService {
                        AuditService auditService,
                        UserService userService,
                        PaymentRepository paymentRepository,
+                       WalletAccountRepository walletAccountRepository,
                        AccountFinalizationService accountFinalizationService,
                        ApplicationEventPublisher eventPublisher,
                        ConnectedDevicesService connectedDevicesService,
@@ -67,6 +70,7 @@ public class AuthService {
         this.auditService = auditService;
         this.userService = userService;
         this.paymentRepository = paymentRepository;
+        this.walletAccountRepository = walletAccountRepository;
         this.accountFinalizationService = accountFinalizationService;
         this.eventPublisher = eventPublisher;
         this.connectedDevicesService = connectedDevicesService;
@@ -322,6 +326,16 @@ public class AuthService {
             throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }
+
+        // Un solde wallet réel (rechargé par carte) devient orphelin et irrécupérable une fois
+        // le compte Firebase supprimé plus bas — aucun flow de remboursement wallet n'existe,
+        // contrairement à l'escrow Stripe ci-dessus.
+        walletAccountRepository.findByUserId(user.getId())
+                .filter(w -> w.getBalance().compareTo(java.math.BigDecimal.ZERO) > 0)
+                .ifPresent(w -> {
+                    throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
+                            "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord");
+                });
 
         FirebaseToken decoded = (FirebaseToken) SecurityContextHolder
                 .getContext().getAuthentication().getCredentials();

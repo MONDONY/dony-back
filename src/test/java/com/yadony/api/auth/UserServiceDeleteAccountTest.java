@@ -4,6 +4,8 @@ import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.yadony.api.payments.PaymentRepository;
+import com.yadony.api.payments.wallet.WalletAccountEntity;
+import com.yadony.api.payments.wallet.WalletAccountRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,7 @@ class UserServiceDeleteAccountTest {
 
     @Mock private UserRepository userRepository;
     @Mock private PaymentRepository paymentRepository;
+    @Mock private WalletAccountRepository walletAccountRepository;
     @Mock private AuditService auditService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AccountFinalizationService accountFinalizationService;
@@ -101,6 +104,24 @@ class UserServiceDeleteAccountTest {
                 ArgumentCaptor.forClass(AccountDeletionRequestedEvent.class);
             verify(eventPublisher).publishEvent(captor.capture());
             assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
+        }
+
+        @Test
+        @DisplayName("solde wallet positif → 422 wallet-balance-not-empty")
+        void positiveWalletBalance_throws422() {
+            UserEntity user = makeUser(UserStatus.ACTIVE);
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
+            WalletAccountEntity wallet = new WalletAccountEntity();
+            wallet.setBalance(java.math.BigDecimal.TEN);
+            when(walletAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.of(wallet));
+
+            assertThatThrownBy(() -> userService.requestDeletion(FIREBASE_UID))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting("status")
+                .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+
+            verify(userRepository, never()).save(any());
         }
 
         @Test
