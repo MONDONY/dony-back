@@ -721,20 +721,7 @@ public class BidService {
 
         BidStatus statusBeforeCancel = bid.getStatus();
 
-        // Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
-        // (sauf pour KG_FREE où la capacité n'est jamais décrémentée)
-        if (bid.getStatus() == BidStatus.ACCEPTED || bid.getStatus() == BidStatus.HANDED_OVER) {
-            if (announcement != null) {
-                boolean isKgFreeCancel = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
-                if (!isKgFreeCancel && bid.getWeightKg() != null) {
-                    announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
-                }
-                if (!isKgFreeCancel && announcement.getStatus() == AnnouncementStatus.FULL) {
-                    announcement.setStatus(AnnouncementStatus.ACTIVE);
-                }
-                announcementRepository.save(announcement);
-            }
-        }
+        restoreCapacityIfNeeded(bid, announcement);
 
         bid.setStatus(BidStatus.CANCELLED);
         bidRepository.save(bid);
@@ -759,6 +746,62 @@ public class BidService {
                 ? caller
                 : userRepository.findById(bid.getSenderId()).orElse(null);
         return toResponse(bid, senderUser);
+    }
+
+    /** Si le bid était déjà accepté ou remis, on rend le kilo au voyageur
+     *  (sauf pour KG_FREE où la capacité n'est jamais décrémentée). */
+    private void restoreCapacityIfNeeded(BidEntity bid, AnnouncementEntity announcement) {
+        if (bid.getStatus() != BidStatus.ACCEPTED && bid.getStatus() != BidStatus.HANDED_OVER) {
+            return;
+        }
+        if (announcement == null) {
+            return;
+        }
+        boolean isKgFreeCancel = announcement.getCapacityUnit() == CapacityUnit.KG_FREE;
+        if (!isKgFreeCancel && bid.getWeightKg() != null) {
+            announcement.setAvailableKg(announcement.getAvailableKg().add(bid.getWeightKg()));
+        }
+        if (!isKgFreeCancel && announcement.getStatus() == AnnouncementStatus.FULL) {
+            announcement.setStatus(AnnouncementStatus.ACTIVE);
+        }
+        announcementRepository.save(announcement);
+    }
+
+    private static final List<BidStatus> CANCELLABLE_BID_STATUSES = List.of(
+            BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED, BidStatus.AWAITING_PAYMENT);
+
+    /**
+     * Annulation système d'un bid suite à la suppression du compte de son expéditeur
+     * (AccountFinalizationService / AccountDeletionListener) — l'expéditeur n'a plus de
+     * session live, donc pas d'ownership/firebaseUid à vérifier ici (contrairement à
+     * {@link #cancelBid}). Réutilise le même cœur (restitution kg + BidRejectedEvent, donc
+     * refund via {@code payments.BidRejectedEventListener} et notification du sender) sans
+     * jamais toucher à l'annonce d'un tiers ni générer de rematch (pas éligible pour un
+     * simple retrait de demande, cf. {@link #cancelBid}).
+     * Idempotent : no-op si le bid n'existe plus ou n'est déjà plus dans un statut annulable.
+     */
+    @Transactional
+    @CacheEvict(value = "announcements-search", allEntries = true)
+    public void cancelBidForDeletedSender(UUID bidId) {
+        BidEntity bid = bidRepository.findById(bidId).orElse(null);
+        if (bid == null || !CANCELLABLE_BID_STATUSES.contains(bid.getStatus())) {
+            return;
+        }
+
+        AnnouncementEntity announcement =
+                announcementRepository.findById(bid.getAnnouncementId()).orElse(null);
+
+        restoreCapacityIfNeeded(bid, announcement);
+
+        bid.setStatus(BidStatus.CANCELLED);
+        bidRepository.save(bid);
+
+        auditService.log("BID", bidId, "BID_CANCELLED", bid.getSenderId(),
+                Map.of("actor", "SENDER_ACCOUNT_DELETED"));
+
+        eventPublisher.publishEvent(new BidRejectedEvent(
+                bid.getId(), bid.getSenderId(), "SENDER_ACCOUNT_DELETED",
+                bid.getAnnouncementId(), false));
     }
 
     @Transactional
@@ -1042,20 +1085,19 @@ public class BidService {
                 ? "RECIPIENT_NO_SHOW".equals(deliveryCancellation.getReason())
                 : null;
 
-        // La cancellation "trajet annulé" (RematchService/cancelTrip) est la même ligne
-        // HANDOVER que ci-dessus (contrainte UNIQUE(bid_id, scope) : au plus une par bid) —
-        // MAIS elle partage son scope/noShowStatus par défaut avec d'autres flux (no-show,
-        // annulation après remise), donc `reason` seul (texte libre côté cancelTrip) n'est PAS
-        // un discriminant positif fiable. announcement.status == CANCELLED n'est pas suffisant
-        // non plus à lui seul : AnnouncementRepository#cancelOpenAnnouncementsByUserId (bulk,
-        // appelé à la suppression de compte par AccountDeletionListener) passe aussi l'annonce
-        // à CANCELLED — sans créer de CancellationEntity — donc un bid dont la cancellation
-        // HANDOVER préexistante vient d'un no-show ou d'une annulation après remise (announcement
-        // restée ACTIVE/FULL à ce moment-là) peut ensuite se retrouver avec announcement CANCELLED
-        // si son voyageur supprime son compte plus tard. On combine donc les deux signaux :
-        // announcement CANCELLED ET reason qui n'est PAS l'une des constantes programmatiques
-        // des autres flux HANDOVER (SENDER_NO_SHOW, *_CANCEL_AFTER_HANDOVER — les seules valeurs
+        // La cancellation "trajet annulé" (RematchService/cancelTrip, et depuis le fix
+        // account-deletion, CancellationService#cancelAnnouncementForDeletedTraveler avec reason
+        // TRAVELER_ACCOUNT_DELETED) est la même ligne HANDOVER que ci-dessus (contrainte
+        // UNIQUE(bid_id, scope) : au plus une par bid) — MAIS elle partage son scope/noShowStatus
+        // par défaut avec d'autres flux (no-show, annulation après remise), donc `reason` seul
+        // (texte libre côté cancelTrip) n'est PAS un discriminant positif fiable. On combine donc
+        // announcement CANCELLED ET reason qui n'est PAS l'une des constantes programmatiques des
+        // autres flux HANDOVER (SENDER_NO_SHOW, *_CANCEL_AFTER_HANDOVER — les seules valeurs
         // non-libres jamais écrites sur une cancellation HANDOVER, cf. CancellationService).
+        // Historique : avant ce fix, la suppression de compte passait par un bulk UPDATE SQL
+        // (AnnouncementRepository#cancelOpenAnnouncementsByUserId, supprimée) qui basculait
+        // l'annonce à CANCELLED sans jamais créer de CancellationEntity — le double signal
+        // ci-dessous reste donc nécessaire pour les lignes déjà annulées par cet ancien mécanisme.
         //
         // Rematch bid-only (Task 4) : en plus du cas "trajet annulé" ci-dessus, une cancellation
         // HANDOVER dont `reason` est BID_CANCELLED_BY_TRAVELER ou BID_REJECTED_AFTER_PAYMENT

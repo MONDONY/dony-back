@@ -97,12 +97,6 @@ public interface AnnouncementRepository extends JpaRepository<AnnouncementEntity
     @Query("SELECT a FROM AnnouncementEntity a WHERE a.id = :id AND a.deletedAt IS NULL")
     Optional<AnnouncementEntity> findByIdForUpdate(@Param("id") UUID id);
 
-    @Modifying
-    @Query("UPDATE AnnouncementEntity a SET a.status = com.yadony.api.matching.AnnouncementStatus.CANCELLED " +
-           "WHERE a.travelerId = :userId AND a.status IN " +
-           "(com.yadony.api.matching.AnnouncementStatus.ACTIVE, com.yadony.api.matching.AnnouncementStatus.FULL)")
-    int cancelOpenAnnouncementsByUserId(@Param("userId") UUID userId);
-
     long countByTravelerIdAndCreatedAtBetween(UUID travelerId, LocalDateTime from, LocalDateTime to);
 
     long countByTravelerIdAndCreatedAtBetweenAndStatusNot(

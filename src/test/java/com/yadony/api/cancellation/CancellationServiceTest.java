@@ -414,6 +414,109 @@ class CancellationServiceTest {
         }
     }
 
+    // ─── cancelAnnouncementForDeletedTraveler ──────────────────────────────────
+    // Système : suite à la suppression du compte du voyageur (AccountFinalizationService),
+    // réutilise le même cœur que cancelTrip (bids annulés + CancellationEntity + rematch +
+    // TripCancelledEvent) mais SANS ownership/firebaseUid, et cancelle aussi FULL (pas
+    // seulement ACTIVE) puisqu'il n'y a plus personne pour rouvrir la capacité.
+    // Contrairement à cancelTrip : pas de pénalité de réputation (compte de toute façon banni).
+
+    @Nested
+    @DisplayName("cancelAnnouncementForDeletedTraveler()")
+    class CancelAnnouncementForDeletedTravelerTests {
+
+        @Test
+        @DisplayName("annonce ACTIVE sans bids → CANCELLED + TripCancelledEvent, pas de pénalité réputation")
+        void activeNoBids_cancelsAndPublishesEventWithoutReputationPenalty() {
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(List.of());
+
+            cancellationService.cancelAnnouncementForDeletedTraveler(ANNOUNCEMENT_ID);
+
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.CANCELLED);
+            verify(userRepository, never()).save(any());
+
+            ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
+            TripCancelledEvent evt = eventCaptor.getAllValues().stream()
+                    .filter(e -> e instanceof TripCancelledEvent)
+                    .map(e -> (TripCancelledEvent) e)
+                    .findFirst().orElseThrow();
+            assertThat(evt.getAnnouncementId()).isEqualTo(ANNOUNCEMENT_ID);
+        }
+
+        @Test
+        @DisplayName("annonce FULL (pas seulement ACTIVE) → annulée aussi")
+        void fullAnnouncement_cancelledToo() {
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            announcement.setStatus(AnnouncementStatus.FULL);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(List.of());
+
+            cancellationService.cancelAnnouncementForDeletedTraveler(ANNOUNCEMENT_ID);
+
+            assertThat(announcement.getStatus()).isEqualTo(AnnouncementStatus.CANCELLED);
+        }
+
+        @Test
+        @DisplayName("bid ACCEPTED → annulé + CancellationEntity avec reason TRAVELER_ACCOUNT_DELETED")
+        void withAcceptedBid_cancelsBidAndCreatesCancellationWithAccountDeletedReason() {
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            UUID senderId = UUID.randomUUID();
+            BidEntity acceptedBid = buildAcceptedBid(senderId);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+            when(bidRepository.findByAnnouncementIdAndStatusIn(ANNOUNCEMENT_ID,
+                    List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED)))
+                    .thenReturn(List.of(acceptedBid));
+            when(cancellationRepository.save(any(CancellationEntity.class))).thenAnswer(inv -> {
+                CancellationEntity c = inv.getArgument(0);
+                setId(c, UUID.randomUUID());
+                return c;
+            });
+
+            cancellationService.cancelAnnouncementForDeletedTraveler(ANNOUNCEMENT_ID);
+
+            assertThat(acceptedBid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            ArgumentCaptor<CancellationEntity> captor = ArgumentCaptor.forClass(CancellationEntity.class);
+            verify(cancellationRepository).save(captor.capture());
+            assertThat(captor.getValue().getBidId()).isEqualTo(acceptedBid.getId());
+            assertThat(captor.getValue().getReason()).isEqualTo(CancellationReason.TRAVELER_ACCOUNT_DELETED.name());
+        }
+
+        @Test
+        @DisplayName("annonce déjà CANCELLED → idempotent, no-op")
+        void alreadyCancelled_isNoOp() {
+            AnnouncementEntity announcement = buildAnnouncement(TRAVELER_ID);
+            announcement.setStatus(AnnouncementStatus.CANCELLED);
+
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            cancellationService.cancelAnnouncementForDeletedTraveler(ANNOUNCEMENT_ID);
+
+            verify(announcementRepository, never()).save(any());
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("annonce introuvable → no-op silencieux (pas d'exception)")
+        void unknownAnnouncement_isNoOp() {
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.empty());
+
+            assertThatCode(() -> cancellationService.cancelAnnouncementForDeletedTraveler(ANNOUNCEMENT_ID))
+                    .doesNotThrowAnyException();
+
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+    }
+
     // ─── getRematchSuggestions ─────────────────────────────────────────────────
 
     @Nested

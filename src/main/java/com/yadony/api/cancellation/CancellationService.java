@@ -105,6 +105,84 @@ public class CancellationService {
         announcement.setStatus(AnnouncementStatus.CANCELLED);
         announcementRepository.save(announcement);
 
+        List<CancellationEntity> cancellations =
+                cancelOpenBidsAndPublish(announcement, traveler.getId(), request.reason());
+
+        // Track cancellation count on traveler profile for reputation penalty
+        traveler.setCancellationCount(traveler.getCancellationCount() + 1);
+        userRepository.save(traveler);
+
+        int cancellationCount = traveler.getCancellationCount();
+
+        auditService.log("ANNOUNCEMENT", request.announcementId(), "TRIP_CANCELLED", traveler.getId(),
+                Map.of("reason", request.reason(),
+                       "affectedBids", String.valueOf(cancellations.size()),
+                       "cancellationCount", String.valueOf(cancellationCount)));
+
+        if (cancellationCount >= 3) {
+            auditService.log("USER", traveler.getId(), "HIGH_CANCELLATION_ALERT", traveler.getId(),
+                    Map.of("cancellationCount", String.valueOf(cancellationCount),
+                           "triggeringAnnouncementId", request.announcementId().toString()));
+            eventPublisher.publishEvent(new TravelerHighCancellationEvent(
+                    traveler.getId(), cancellationCount, request.announcementId()));
+        }
+
+        // La réponse HTTP continue de renvoyer les suggestions du PREMIER expéditeur affecté
+        // (comportement historique, consommé par l'écran voyageur post-annulation) ; les
+        // autres expéditeurs récupèrent les leurs via GET /cancellations/{id}/rematch.
+        List<RematchSuggestionDto> suggestions = cancellations.isEmpty()
+                ? List.of()
+                : buildRematchSuggestionDtos(cancellations.get(0).getId());
+
+        return new CancellationResponse(
+                request.announcementId(),
+                cancellations.size(),
+                request.reason(),
+                suggestions,
+                LocalDateTime.now(ZoneOffset.UTC)
+        );
+    }
+
+    /**
+     * Annulation système d'un trajet suite à la suppression du compte du voyageur
+     * (cf. {@code auth.AccountFinalizationService} → {@code AccountDeletionRequestedEvent}
+     * → {@code AccountDeletionCancellationListener}). Même cœur que {@link #cancelTrip}
+     * (bids ouverts annulés + CancellationEntity par bid + rematch + TripCancelledEvent, donc
+     * refund/notif/rematch pour chaque sender affecté) mais SANS vérification
+     * ownership/firebaseUid (acteur système) et SANS pénalité de réputation (le compte est de
+     * toute façon banni). Contrairement à {@code cancelTrip}, cancelle aussi FULL — pas
+     * seulement ACTIVE — puisqu'il n'y a plus personne pour rouvrir la capacité derrière.
+     * Idempotent : no-op si l'annonce n'existe plus ou n'est déjà plus ACTIVE/FULL.
+     */
+    @Transactional
+    public void cancelAnnouncementForDeletedTraveler(UUID announcementId) {
+        AnnouncementEntity announcement = announcementRepository.findById(announcementId).orElse(null);
+        if (announcement == null
+                || (announcement.getStatus() != AnnouncementStatus.ACTIVE
+                    && announcement.getStatus() != AnnouncementStatus.FULL)) {
+            return;
+        }
+
+        announcement.setStatus(AnnouncementStatus.CANCELLED);
+        announcementRepository.save(announcement);
+
+        List<CancellationEntity> cancellations = cancelOpenBidsAndPublish(
+                announcement, announcement.getTravelerId(), CancellationReason.TRAVELER_ACCOUNT_DELETED.name());
+
+        auditService.log("ANNOUNCEMENT", announcementId, "TRIP_CANCELLED", announcement.getTravelerId(),
+                Map.of("reason", CancellationReason.TRAVELER_ACCOUNT_DELETED.name(),
+                       "affectedBids", String.valueOf(cancellations.size())));
+    }
+
+    /**
+     * Cœur commun à {@link #cancelTrip} et {@link #cancelAnnouncementForDeletedTraveler} :
+     * annule les bids ouverts (PENDING/PAYMENT_ESCROWED/ACCEPTED) de l'annonce, crée une
+     * CancellationEntity par bid, génère le rematch, publie {@link TripCancelledEvent} (déclenche
+     * refund + notification + rematch côté listeners). L'annonce elle-même doit déjà avoir été
+     * basculée à CANCELLED par l'appelant.
+     */
+    private List<CancellationEntity> cancelOpenBidsAndPublish(
+            AnnouncementEntity announcement, UUID actorId, String reason) {
         // Cancel ALL in-progress bids on this trip (not just ACCEPTED) so each
         // sender's bid reflects the cancelled trip — sinon un bid PENDING /
         // PAYMENT_ESCROWED gardait son statut partout. Set « actif » canonique
@@ -113,7 +191,7 @@ public class CancellationService {
         // un PAYMENT_ESCROWED (escrow détenu) est remboursé, un PENDING cash
         // (sans paiement) est simplement annulé.
         List<BidEntity> affectedBids = bidRepository.findByAnnouncementIdAndStatusIn(
-                request.announcementId(),
+                announcement.getId(),
                 List.of(BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED));
 
         List<UUID> affectedSenderIds = new ArrayList<>();
@@ -126,31 +204,12 @@ public class CancellationService {
 
             CancellationEntity cancellation = new CancellationEntity();
             cancellation.setBidId(bid.getId());
-            cancellation.setCancelledBy(traveler.getId());
-            cancellation.setReason(request.reason());
+            cancellation.setCancelledBy(actorId);
+            cancellation.setReason(reason);
             cancellations.add(cancellationRepository.save(cancellation));
 
             affectedSenderIds.add(bid.getSenderId());
             affectedBidIds.add(bid.getId());
-        }
-
-        // Track cancellation count on traveler profile for reputation penalty
-        traveler.setCancellationCount(traveler.getCancellationCount() + 1);
-        userRepository.save(traveler);
-
-        int cancellationCount = traveler.getCancellationCount();
-
-        auditService.log("ANNOUNCEMENT", request.announcementId(), "TRIP_CANCELLED", traveler.getId(),
-                Map.of("reason", request.reason(),
-                       "affectedBids", String.valueOf(affectedBids.size()),
-                       "cancellationCount", String.valueOf(cancellationCount)));
-
-        if (cancellationCount >= 3) {
-            auditService.log("USER", traveler.getId(), "HIGH_CANCELLATION_ALERT", traveler.getId(),
-                    Map.of("cancellationCount", String.valueOf(cancellationCount),
-                           "triggeringAnnouncementId", request.announcementId().toString()));
-            eventPublisher.publishEvent(new TravelerHighCancellationEvent(
-                    traveler.getId(), cancellationCount, request.announcementId()));
         }
 
         // Build bidPaymentMethods so listeners (e.g. WalletCancellationListener) don't need BidRepository
@@ -178,23 +237,10 @@ public class CancellationService {
                 new TripCancelledEvent.RematchBySenderInfo(info.cancellationId(), info.suggestionCount())));
 
         eventPublisher.publishEvent(new TripCancelledEvent(
-                request.announcementId(), traveler.getId(), affectedSenderIds, request.reason(),
+                announcement.getId(), announcement.getTravelerId(), affectedSenderIds, reason,
                 affectedBidIds, bidPaymentMethods, bidCommissionChargedVia, rematchInfo));
 
-        // La réponse HTTP continue de renvoyer les suggestions du PREMIER expéditeur affecté
-        // (comportement historique, consommé par l'écran voyageur post-annulation) ; les
-        // autres expéditeurs récupèrent les leurs via GET /cancellations/{id}/rematch.
-        List<RematchSuggestionDto> suggestions = cancellations.isEmpty()
-                ? List.of()
-                : buildRematchSuggestionDtos(cancellations.get(0).getId());
-
-        return new CancellationResponse(
-                request.announcementId(),
-                affectedBids.size(),
-                request.reason(),
-                suggestions,
-                LocalDateTime.now(ZoneOffset.UTC)
-        );
+        return cancellations;
     }
 
     @Transactional(readOnly = true)

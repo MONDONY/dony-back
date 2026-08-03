@@ -194,6 +194,8 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
 
     List<BidEntity> findBySenderId(UUID senderId);
 
+    List<BidEntity> findBySenderIdAndStatusIn(UUID senderId, List<BidStatus> statuses);
+
     // For H-2 alert scheduler: ACCEPTED bids with handover starting in ≤ 2h, not yet alerted, not confirmed
     Optional<BidEntity> findByTrackingNumber(String trackingNumber);
 
@@ -263,25 +265,6 @@ public interface BidRepository extends JpaRepository<BidEntity, UUID> {
             @Param("halfDayThresholdDate") java.time.LocalDate halfDayThresholdDate,
             @Param("minGraceThreshold") LocalDateTime minGraceThreshold
     );
-
-    @Modifying
-    @Query("UPDATE BidEntity b SET b.status = com.yadony.api.matching.BidStatus.CANCELLED " +
-           "WHERE b.senderId = :userId " +
-           "AND b.status IN (com.yadony.api.matching.BidStatus.PENDING, " +
-           "                 com.yadony.api.matching.BidStatus.PAYMENT_ESCROWED, " +
-           "                 com.yadony.api.matching.BidStatus.ACCEPTED, " +
-           "                 com.yadony.api.matching.BidStatus.AWAITING_PAYMENT)")
-    int cancelOpenSenderBidsByUserId(@Param("userId") UUID userId);
-
-    @Modifying
-    @Query("UPDATE BidEntity b SET b.status = com.yadony.api.matching.BidStatus.CANCELLED " +
-           "WHERE b.announcementId IN " +
-           "  (SELECT a.id FROM AnnouncementEntity a WHERE a.travelerId = :userId) " +
-           "AND b.status IN (com.yadony.api.matching.BidStatus.PENDING, " +
-           "                 com.yadony.api.matching.BidStatus.PAYMENT_ESCROWED, " +
-           "                 com.yadony.api.matching.BidStatus.ACCEPTED, " +
-           "                 com.yadony.api.matching.BidStatus.AWAITING_PAYMENT)")
-    int cancelOpenTravelerBidsByUserId(@Param("userId") UUID userId);
 
     // Retourne le bid COMPLETED le plus récent pour lequel userId n'a pas encore noté
     // (en tant qu'expéditeur OU voyageur via la jointure avec announcements)

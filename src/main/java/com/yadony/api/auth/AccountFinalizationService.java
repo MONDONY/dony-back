@@ -69,10 +69,12 @@ public class AccountFinalizationService {
         storageService.deleteByPrefix("kyc/" + userId + "/");
 
         // 4. Publish events → cross-package cleanup
-        // AccountDeletionRequestedEvent : idempotent (cancelOpenAnnouncementsByUserId /
-        // cancelOpenSenderBidsByUserId filtrent sur status ACTIVE/FULL) — nécessaire ici
-        // car les chemins HARD_IMMEDIATE et SOFT_GRACE_EXPIRED n'ont jamais forcément
-        // transité par requestDeletion() (seul autre émetteur de cet event).
+        // AccountDeletionRequestedEvent : nécessaire ici car les chemins HARD_IMMEDIATE et
+        // SOFT_GRACE_EXPIRED n'ont jamais forcément transité par requestDeletion() (seul autre
+        // émetteur de cet event). Idempotent par construction : matching.AccountDeletionListener
+        // (bids où ce user est sender) et cancellation.AccountDeletionCancellationListener (ses
+        // annonces de voyageur) ne cancel-lent que ce qui est encore ACTIVE/FULL/ouvert — un
+        // second déclenchement (ex. déjà traité via requestDeletion) ne trouve plus rien à faire.
         eventPublisher.publishEvent(new AccountDeletionRequestedEvent(userId));
         eventPublisher.publishEvent(new UserFinalizedEvent(userId, reason));
 

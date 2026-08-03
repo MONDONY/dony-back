@@ -1749,6 +1749,106 @@ class BidServiceTest {
         }
     }
 
+    // ─── cancelBidForDeletedSender ─────────────────────────────────────────────
+    // Système : l'expéditeur de ce bid a supprimé son compte (AccountFinalizationService).
+    // Réutilise le même cœur que cancelBid (refund via BidRejectedEvent, restitution kg),
+    // sans firebaseUid/ownership — l'acteur système n'a pas de session live.
+
+    @Nested
+    @DisplayName("cancelBidForDeletedSender()")
+    class CancelBidForDeletedSenderTests {
+
+        @Test
+        @DisplayName("bid PENDING → CANCELLED + BidRejectedEvent, rematchEligible=false")
+        void pendingBid_cancelsAndPublishesNonEligibleEvent() {
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.PENDING);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(
+                    Optional.of(buildAnnouncement()));
+
+            bidService.cancelBidForDeletedSender(BID_ID);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            ArgumentCaptor<BidRejectedEvent> captor = ArgumentCaptor.forClass(BidRejectedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().getBidId()).isEqualTo(BID_ID);
+            assertThat(captor.getValue().getSenderId()).isEqualTo(SENDER_ID);
+            assertThat(captor.getValue().isRematchEligible()).isFalse();
+        }
+
+        @Test
+        @DisplayName("bid ACCEPTED → kg restitués à l'annonce")
+        void acceptedBid_restoresKg() {
+            AnnouncementEntity announcement = buildAnnouncement();
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.ACCEPTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+            when(bidRepository.save(any())).thenReturn(bid);
+            when(announcementRepository.findById(ANNOUNCEMENT_ID)).thenReturn(Optional.of(announcement));
+
+            bidService.cancelBidForDeletedSender(BID_ID);
+
+            assertThat(bid.getStatus()).isEqualTo(BidStatus.CANCELLED);
+            assertThat(announcement.getAvailableKg()).isEqualByComparingTo(BigDecimal.valueOf(25)); // 20+5
+            verify(announcementRepository).save(announcement);
+        }
+
+        @Test
+        @DisplayName("bid déjà CANCELLED → idempotent, no-op")
+        void alreadyCancelled_isNoOp() {
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.CANCELLED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
+            bidService.cancelBidForDeletedSender(BID_ID);
+
+            verify(bidRepository, never()).save(any());
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("bid REJECTED → idempotent, no-op")
+        void rejectedBid_isNoOp() {
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.REJECTED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
+            bidService.cancelBidForDeletedSender(BID_ID);
+
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("bid COMPLETED → idempotent, no-op")
+        void completedBid_isNoOp() {
+            BidEntity bid = buildBid();
+            bid.setStatus(BidStatus.COMPLETED);
+
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.of(bid));
+
+            bidService.cancelBidForDeletedSender(BID_ID);
+
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("bid introuvable → no-op silencieux (pas d'exception)")
+        void unknownBid_isNoOp() {
+            when(bidRepository.findById(BID_ID)).thenReturn(Optional.empty());
+
+            assertThatCode(() -> bidService.cancelBidForDeletedSender(BID_ID))
+                    .doesNotThrowAnyException();
+
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+    }
+
     // ─── hideBid ───────────────────────────────────────────────────────────────
 
     @Nested
@@ -2213,16 +2313,17 @@ class BidServiceTest {
         }
 
         @Test
-        @DisplayName("régression : no-show préexistant PUIS suppression de compte (bulk CANCELLED, "
-                + "sans CancellationEntity) → champs trip cancellation null, pas de faux positif")
+        @DisplayName("régression LEGACY : no-show préexistant PUIS bulk CANCELLED sans CancellationEntity "
+                + "(ancien mécanisme de suppression de compte, avant fix) → champs trip cancellation null")
         void toResponse_accountDeletionBulkCancelAfterPreexistingNoShow_tripCancellationFieldsAreNull() {
             UserEntity traveler = buildTraveler();
-            // Scénario du reviewer : (1) reportSenderNoShow crée une CancellationEntity HANDOVER
-            // (reason=SENDER_NO_SHOW) sur un bid ACCEPTED, l'annonce reste ACTIVE à ce moment-là ;
-            // (2) le voyageur supprime son compte → AccountDeletionListener appelle
-            // AnnouncementRepository#cancelOpenAnnouncementsByUserId, qui bascule l'annonce (et le
-            // bid) en CANCELLED en bulk SANS créer de nouvelle CancellationEntity. La cancellation
-            // no-show préexistante ne doit PAS être exposée comme "trajet annulé".
+            // Scénario du reviewer, désormais HISTORIQUE : (1) reportSenderNoShow crée une
+            // CancellationEntity HANDOVER (reason=SENDER_NO_SHOW) sur un bid ACCEPTED, l'annonce
+            // reste ACTIVE à ce moment-là ; (2) l'ANCIEN AccountDeletionListener (avant le fix
+            // account-deletion) basculait l'annonce (et le bid) en CANCELLED via un bulk UPDATE SQL
+            // sans créer de nouvelle CancellationEntity. Ce test simule directement l'état DB qui en
+            // résultait (toujours possible sur des lignes déjà annulées avant le fix) : la
+            // cancellation no-show préexistante ne doit PAS être exposée comme "trajet annulé".
             AnnouncementEntity announcement = buildAnnouncement();
             announcement.setStatus(AnnouncementStatus.CANCELLED);
             BidEntity bid = buildBid();
