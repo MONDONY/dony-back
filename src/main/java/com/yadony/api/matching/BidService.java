@@ -29,6 +29,7 @@ import com.yadony.api.payments.cash.PaymentMethod;
 import com.yadony.api.ratings.RatingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -489,7 +490,15 @@ public class BidService {
                 }).toList();
     }
 
+    // TTL courte (8 s, cf. CacheConfig) et volontairement SANS @CacheEvict : un
+    // bid change de statut des DEUX côtés (expéditeur ET voyageur), et cette
+    // méthode n'est appelée qu'avec l'id de l'un des deux — évincer sur mutation
+    // demanderait de retrouver puis invalider la clé de l'AUTRE partie à chaque
+    // point d'entrée (accept/reject/cancel/tracking...), ce qui est plus risqué
+    // (un oubli = cache jamais invalidé) qu'une expiration courte assumée. Le
+    // client tolère déjà ce délai (throttle 3 s sur le retour d'onglet).
     @Transactional(readOnly = true)
+    @Cacheable(value = "bids-me", key = "#firebaseUid")
     public List<BidResponse> getMyBids(String firebaseUid) {
         UserEntity user = findUserByFirebaseUid(firebaseUid);
         List<BidEntity> mine = bidRepository.findBySenderId(user.getId())
@@ -501,7 +510,10 @@ public class BidService {
                 .toList();
     }
 
+    // Même rationale que getMyBids ci-dessus (données bilatérales, TTL courte
+    // sans éviction manuelle).
     @Transactional(readOnly = true)
+    @Cacheable(value = "traveler-bids-me")
     public Page<BidResponse> getTravelerBids(String firebaseUid, String status, UUID announcementId, String q, int page, int size) {
         UserEntity traveler = findUserByFirebaseUid(firebaseUid);
         BidStatus bidStatus = (status != null && !status.isBlank()) ? BidStatus.valueOf(status) : null;

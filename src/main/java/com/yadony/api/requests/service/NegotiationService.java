@@ -16,6 +16,7 @@ import com.yadony.api.requests.dto.*;
 import com.yadony.api.requests.entity.*;
 import com.yadony.api.requests.event.*;
 import com.yadony.api.requests.repository.*;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -1163,7 +1164,13 @@ public class NegotiationService {
         return toResponse(thread, messages, null, threadTraveler, request, callerId, senderName, linkedAnn, true);
     }
 
+    // TTL courte (8 s, cf. CacheConfig), sans @CacheEvict : un thread de
+    // négociation est bilatéral (expéditeur + voyageur) et une douzaine de
+    // méthodes le mutent (accept/counter/reject/cancel/submitTrip/...) — les
+    // évincer toutes pour les DEUX participants à chaque fois serait fragile.
+    // L'expiration courte suffit, le client tolère déjà ce délai.
     @Transactional(readOnly = true)
+    @Cacheable(value = "negotiations-me", key = "#userId")
     public List<NegotiationThreadResponse> listMine(UUID userId) {
         List<NegotiationThreadEntity> threads = threadRepo.findByParticipant(userId);
 
