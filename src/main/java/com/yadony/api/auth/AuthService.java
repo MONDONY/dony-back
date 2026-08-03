@@ -323,6 +323,12 @@ public class AuthService {
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }
 
+        // Un solde wallet réel (rechargé par carte) devient orphelin et irrécupérable une fois
+        // le compte Firebase supprimé plus bas — aucun flow de remboursement wallet n'existe,
+        // contrairement à l'escrow Stripe ci-dessus. Règle portée par UserService pour rester
+        // identique entre suppression immédiate (ici) et suppression J+30 (requestDeletion).
+        userService.assertNoWalletBalance(user.getId());
+
         FirebaseToken decoded = (FirebaseToken) SecurityContextHolder
                 .getContext().getAuthentication().getCredentials();
         Object authTimeClaim = decoded.getClaims().get("auth_time");

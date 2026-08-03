@@ -116,6 +116,43 @@ class AuthServiceDeleteImmediatelyTest {
     }
 
     @Test
+    @DisplayName("solde wallet positif → 422 wallet-balance-not-empty")
+    void positiveWalletBalance_throws422() {
+        // No SecurityContext / auth_time stub needed : le check wallet précède le check auth_time.
+        // La règle elle-même vit dans UserService#assertNoWalletBalance (point unique, partagé
+        // avec requestDeletion) et y est testée sur le vrai repository ; ici on vérifie
+        // uniquement que deleteImmediately l'applique et s'arrête avant la finalisation.
+        when(userRepository.findByFirebaseUid(FIREBASE_UID))
+                .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
+        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
+        doThrow(new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
+                "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord"))
+                .when(userService).assertNoWalletBalance(USER_ID);
+
+        assertThatThrownBy(() -> authService.deleteImmediately(
+                FIREBASE_UID, new DeleteImmediatelyRequest(true)))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting("status").isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+
+        verify(accountFinalizationService, never()).finalize(any(), any());
+    }
+
+    @Test
+    @DisplayName("wallet à solde zéro → pas bloqué, finalisation appelée")
+    void zeroWalletBalance_doesNotBlock() {
+        long recentAuthTime = Instant.now().minusSeconds(60).getEpochSecond();
+        setupSecurityContext(recentAuthTime);
+        UserEntity user = makeUser(UserStatus.ACTIVE);
+        when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
+
+        authService.deleteImmediately(FIREBASE_UID, new DeleteImmediatelyRequest(true));
+
+        verify(userService).assertNoWalletBalance(USER_ID);
+        verify(accountFinalizationService).finalize(eq(user), eq(FinalizationReason.HARD_IMMEDIATE));
+    }
+
+    @Test
     @DisplayName("user déjà BANNED → 409")
     void alreadyBanned_throws409() {
         // No SecurityContext needed: BANNED check runs before auth_time check

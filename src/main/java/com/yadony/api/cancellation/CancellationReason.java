@@ -10,5 +10,8 @@ public enum CancellationReason {
     /** Voyageur annule le transport d'un colis payé (bid ACCEPTED/PAYMENT_ESCROWED), sans annuler le trajet. */
     BID_CANCELLED_BY_TRAVELER,
     /** Voyageur refuse une demande déjà payée (bid PAYMENT_ESCROWED) via rejectBid. */
-    BID_REJECTED_AFTER_PAYMENT
+    BID_REJECTED_AFTER_PAYMENT,
+    /** Système : le voyageur a supprimé son compte (hard-delete immédiat ou finalisation
+     *  RGPD J+30) — cf. {@code cancellation.AccountDeletionCancellationListener}. */
+    TRAVELER_ACCOUNT_DELETED
 }

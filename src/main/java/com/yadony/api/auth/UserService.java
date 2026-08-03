@@ -6,6 +6,7 @@ import com.yadony.api.auth.events.UserSuspendedEvent;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.yadony.api.payments.PaymentRepository;
+import com.yadony.api.payments.wallet.WalletAccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -25,20 +27,38 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
+    private final WalletAccountRepository walletAccountRepository;
     private final AuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final AccountFinalizationService accountFinalizationService;
 
     public UserService(UserRepository userRepository,
                        PaymentRepository paymentRepository,
+                       WalletAccountRepository walletAccountRepository,
                        AuditService auditService,
                        ApplicationEventPublisher eventPublisher,
                        AccountFinalizationService accountFinalizationService) {
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
+        this.walletAccountRepository = walletAccountRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.accountFinalizationService = accountFinalizationService;
+    }
+
+    /** Bloque la suppression tant qu'un solde wallet réel (rechargé par carte, cf.
+     *  WalletTopupOrchestrator) n'a pas été dépensé — sinon cet argent devient orphelin et
+     *  irrécupérable une fois le compte Firebase supprimé (aucun flow de remboursement wallet
+     *  n'existe, contrairement à l'escrow Stripe).
+     *  Point unique de la règle : appelé par {@link #requestDeletion} (soft J+30) ET par
+     *  {@code AuthService#deleteImmediately} (hard) — les deux seuls chemins de suppression. */
+    public void assertNoWalletBalance(UUID userId) {
+        walletAccountRepository.findByUserId(userId)
+                .filter(w -> w.getBalance().compareTo(BigDecimal.ZERO) > 0)
+                .ifPresent(w -> {
+                    throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
+                            "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord");
+                });
     }
 
     // Story 9.5 — Suspension automatique après trop de refus de colis
@@ -81,6 +101,7 @@ public class UserService {
             throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }
+        assertNoWalletBalance(user.getId());
 
         user.setStatus(UserStatus.PENDING_DELETION);
         user.setDeletionRequestedAt(Instant.now());
