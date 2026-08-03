@@ -30,6 +30,23 @@ public class CacheConfig {
                         .expireAfterWrite(30, TimeUnit.SECONDS)
                         .build());
 
+        // bids-me / traveler-bids-me / negotiations-me: TTL très courte (8 s),
+        // sans éviction manuelle. Ces endpoints "/me" sont tirés en rafale par
+        // l'app (tab switch, cold start) et se sont révélés être la première
+        // cause de saturation du rate-limit nginx en usage réel. La donnée est
+        // bilatérale (expéditeur + voyageur) et mutée par une dizaine de points
+        // d'entrée différents : une éviction manuelle exhaustive serait plus
+        // fragile (un oubli = cache jamais invalidé) qu'une expiration courte
+        // assumée — le client tolère déjà ce délai (throttle 3 s au retour
+        // d'onglet, cf. dony_app MainShell/ActivitesHubScreen).
+        for (String cacheName : java.util.List.of("bids-me", "traveler-bids-me", "negotiations-me")) {
+            manager.registerCustomCache(cacheName,
+                    Caffeine.newBuilder()
+                            .maximumSize(2000)
+                            .expireAfterWrite(8, TimeUnit.SECONDS)
+                            .build());
+        }
+
         // Standard caches that use the default spec
         manager.setCacheNames(java.util.List.of(
                 "announcements-search",
