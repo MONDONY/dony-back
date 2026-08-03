@@ -28,9 +28,6 @@ import static org.mockito.Mockito.when;
 @DisplayName("AccountDeletionListener — tests unitaires")
 class AccountDeletionListenerTest {
 
-    private static final List<BidStatus> OPEN_STATUSES = List.of(
-            BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED, BidStatus.AWAITING_PAYMENT);
-
     @Mock private BidRepository bidRepository;
     @Mock private BidService bidService;
 
@@ -65,7 +62,7 @@ class AccountDeletionListenerTest {
         BidEntity b2 = new BidEntity();
         setId(b2, bidId2);
 
-        when(bidRepository.findBySenderIdAndStatusIn(userId, OPEN_STATUSES)).thenReturn(List.of(b1, b2));
+        when(bidRepository.findBySenderIdAndStatusIn(userId, BidService.CANCELLABLE_BID_STATUSES)).thenReturn(List.of(b1, b2));
 
         listener.onDeletionRequested(new AccountDeletionRequestedEvent(userId));
 
@@ -77,7 +74,7 @@ class AccountDeletionListenerTest {
     @DisplayName("aucun bid ouvert → aucun appel à cancelBidForDeletedSender")
     void onDeletion_noOpenBids_noCalls() {
         UUID userId = UUID.randomUUID();
-        when(bidRepository.findBySenderIdAndStatusIn(userId, OPEN_STATUSES)).thenReturn(List.of());
+        when(bidRepository.findBySenderIdAndStatusIn(userId, BidService.CANCELLABLE_BID_STATUSES)).thenReturn(List.of());
 
         listener.onDeletionRequested(new AccountDeletionRequestedEvent(userId));
 

@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -48,10 +49,12 @@ public class UserService {
     /** Bloque la suppression tant qu'un solde wallet réel (rechargé par carte, cf.
      *  WalletTopupOrchestrator) n'a pas été dépensé — sinon cet argent devient orphelin et
      *  irrécupérable une fois le compte Firebase supprimé (aucun flow de remboursement wallet
-     *  n'existe, contrairement à l'escrow Stripe). */
-    private void assertNoWalletBalance(UUID userId) {
+     *  n'existe, contrairement à l'escrow Stripe).
+     *  Point unique de la règle : appelé par {@link #requestDeletion} (soft J+30) ET par
+     *  {@code AuthService#deleteImmediately} (hard) — les deux seuls chemins de suppression. */
+    public void assertNoWalletBalance(UUID userId) {
         walletAccountRepository.findByUserId(userId)
-                .filter(w -> w.getBalance().compareTo(java.math.BigDecimal.ZERO) > 0)
+                .filter(w -> w.getBalance().compareTo(BigDecimal.ZERO) > 0)
                 .ifPresent(w -> {
                     throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
                             "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord");

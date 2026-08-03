@@ -8,8 +8,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.util.List;
-
 /**
  * Le user supprimé est ici le SENDER : chaque bid ouvert qu'il a passé sur l'annonce
  * d'un AUTRE voyageur est annulé individuellement via {@link BidService#cancelBidForDeletedSender}
@@ -19,9 +17,6 @@ import java.util.List;
  */
 @Component
 public class AccountDeletionListener {
-
-    private static final List<BidStatus> OPEN_STATUSES = List.of(
-            BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED, BidStatus.AWAITING_PAYMENT);
 
     private final BidRepository bidRepository;
     private final BidService bidService;
@@ -38,7 +33,8 @@ public class AccountDeletionListener {
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onDeletionRequested(AccountDeletionRequestedEvent event) {
-        for (BidEntity bid : bidRepository.findBySenderIdAndStatusIn(event.getUserId(), OPEN_STATUSES)) {
+        for (BidEntity bid : bidRepository.findBySenderIdAndStatusIn(
+                event.getUserId(), BidService.CANCELLABLE_BID_STATUSES)) {
             bidService.cancelBidForDeletedSender(bid.getId());
         }
     }

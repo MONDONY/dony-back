@@ -767,7 +767,10 @@ public class BidService {
         announcementRepository.save(announcement);
     }
 
-    private static final List<BidStatus> CANCELLABLE_BID_STATUSES = List.of(
+    /** Statuts pour lesquels {@link #cancelBidForDeletedSender} agit encore. Exposé pour que
+     *  {@link AccountDeletionListener} sélectionne EXACTEMENT les bids que ce service traitera —
+     *  deux listes séparées divergeraient en silence (bids chargés puis ignorés, ou l'inverse). */
+    static final List<BidStatus> CANCELLABLE_BID_STATUSES = List.of(
             BidStatus.PENDING, BidStatus.PAYMENT_ESCROWED, BidStatus.ACCEPTED, BidStatus.AWAITING_PAYMENT);
 
     /**

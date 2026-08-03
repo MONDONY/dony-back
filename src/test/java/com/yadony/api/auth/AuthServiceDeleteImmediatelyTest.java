@@ -4,8 +4,6 @@ import com.yadony.api.auth.dto.DeleteImmediatelyRequest;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.yadony.api.payments.PaymentRepository;
-import com.yadony.api.payments.wallet.WalletAccountEntity;
-import com.yadony.api.payments.wallet.WalletAccountRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,7 +35,6 @@ class AuthServiceDeleteImmediatelyTest {
     @Mock private AuditService auditService;
     @Mock private UserService userService;
     @Mock private PaymentRepository paymentRepository;
-    @Mock private WalletAccountRepository walletAccountRepository;
     @Mock private AccountFinalizationService accountFinalizationService;
 
     @InjectMocks private AuthService authService;
@@ -122,12 +119,15 @@ class AuthServiceDeleteImmediatelyTest {
     @DisplayName("solde wallet positif → 422 wallet-balance-not-empty")
     void positiveWalletBalance_throws422() {
         // No SecurityContext / auth_time stub needed : le check wallet précède le check auth_time.
+        // La règle elle-même vit dans UserService#assertNoWalletBalance (point unique, partagé
+        // avec requestDeletion) et y est testée sur le vrai repository ; ici on vérifie
+        // uniquement que deleteImmediately l'applique et s'arrête avant la finalisation.
         when(userRepository.findByFirebaseUid(FIREBASE_UID))
                 .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
         when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
-        WalletAccountEntity wallet = new WalletAccountEntity();
-        wallet.setBalance(java.math.BigDecimal.TEN);
-        when(walletAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.of(wallet));
+        doThrow(new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
+                "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord"))
+                .when(userService).assertNoWalletBalance(USER_ID);
 
         assertThatThrownBy(() -> authService.deleteImmediately(
                 FIREBASE_UID, new DeleteImmediatelyRequest(true)))
@@ -138,19 +138,17 @@ class AuthServiceDeleteImmediatelyTest {
     }
 
     @Test
-    @DisplayName("wallet à solde zéro → pas bloqué par le check wallet")
+    @DisplayName("wallet à solde zéro → pas bloqué, finalisation appelée")
     void zeroWalletBalance_doesNotBlock() {
         long recentAuthTime = Instant.now().minusSeconds(60).getEpochSecond();
         setupSecurityContext(recentAuthTime);
         UserEntity user = makeUser(UserStatus.ACTIVE);
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
         when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
-        WalletAccountEntity wallet = new WalletAccountEntity();
-        wallet.setBalance(java.math.BigDecimal.ZERO);
-        when(walletAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.of(wallet));
 
         authService.deleteImmediately(FIREBASE_UID, new DeleteImmediatelyRequest(true));
 
+        verify(userService).assertNoWalletBalance(USER_ID);
         verify(accountFinalizationService).finalize(eq(user), eq(FinalizationReason.HARD_IMMEDIATE));
     }
 
