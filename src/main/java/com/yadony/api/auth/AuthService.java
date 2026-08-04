@@ -4,6 +4,7 @@ import com.yadony.api.admin.account.AdminAuthService;
 import com.yadony.api.admin.account.AdminAuthorities;
 import com.yadony.api.auth.dto.AdminInfo;
 import com.yadony.api.auth.dto.DeleteImmediatelyRequest;
+import com.yadony.api.auth.dto.DeletionEligibilityResponse;
 import com.yadony.api.auth.dto.RegisterRequest;
 import com.yadony.api.auth.dto.UpdateProfileRequest;
 import com.yadony.api.auth.dto.UpgradeToProRequest;
@@ -12,7 +13,6 @@ import com.yadony.api.auth.events.UserRegisteredEvent;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.yadony.api.common.StorageService;
-import com.yadony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +43,6 @@ public class AuthService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final UserService userService;
-    private final PaymentRepository paymentRepository;
     private final AccountFinalizationService accountFinalizationService;
     private final ApplicationEventPublisher eventPublisher;
     private final ConnectedDevicesService connectedDevicesService;
@@ -55,7 +54,6 @@ public class AuthService {
     public AuthService(UserRepository userRepository,
                        AuditService auditService,
                        UserService userService,
-                       PaymentRepository paymentRepository,
                        AccountFinalizationService accountFinalizationService,
                        ApplicationEventPublisher eventPublisher,
                        ConnectedDevicesService connectedDevicesService,
@@ -66,7 +64,6 @@ public class AuthService {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.userService = userService;
-        this.paymentRepository = paymentRepository;
         this.accountFinalizationService = accountFinalizationService;
         this.eventPublisher = eventPublisher;
         this.connectedDevicesService = connectedDevicesService;
@@ -302,6 +299,11 @@ public class AuthService {
         userService.deleteAccount(firebaseUid);
     }
 
+    // Story 9.8 — Vérification lecture seule avant tentative de suppression (cf. UserService).
+    public DeletionEligibilityResponse checkDeletionEligibility(String firebaseUid) {
+        return userService.checkDeletionEligibility(firebaseUid);
+    }
+
     /**
      * Suppression immédiate du compte (HARD_IMMEDIATE).
      * Vérifie : statut BANNED → 409, escrow actif → 422, auth_time récent (< 5 min) → 401.
@@ -318,7 +320,7 @@ public class AuthService {
                     "Conflict", "Ce compte est banni et ne peut pas être supprimé");
         }
 
-        if (paymentRepository.hasActiveEscrowForUser(user.getId())) {
+        if (userService.hasActiveEscrow(user.getId())) {
             throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }

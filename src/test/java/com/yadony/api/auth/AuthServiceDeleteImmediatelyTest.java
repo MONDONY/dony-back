@@ -3,7 +3,6 @@ package com.yadony.api.auth;
 import com.yadony.api.auth.dto.DeleteImmediatelyRequest;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
-import com.yadony.api.payments.PaymentRepository;
 import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +33,6 @@ class AuthServiceDeleteImmediatelyTest {
     @Mock private UserRepository userRepository;
     @Mock private AuditService auditService;
     @Mock private UserService userService;
-    @Mock private PaymentRepository paymentRepository;
     @Mock private AccountFinalizationService accountFinalizationService;
 
     @InjectMocks private AuthService authService;
@@ -88,7 +86,6 @@ class AuthServiceDeleteImmediatelyTest {
         setupSecurityContext(oldAuthTime);
         when(userRepository.findByFirebaseUid(FIREBASE_UID))
                 .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
-        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
 
         assertThatThrownBy(() -> authService.deleteImmediately(
                 FIREBASE_UID, new DeleteImmediatelyRequest(true)))
@@ -107,7 +104,7 @@ class AuthServiceDeleteImmediatelyTest {
 
         when(userRepository.findByFirebaseUid(FIREBASE_UID))
                 .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
-        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(true);
+        when(userService.hasActiveEscrow(USER_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> authService.deleteImmediately(
                 FIREBASE_UID, new DeleteImmediatelyRequest(true)))
@@ -124,7 +121,6 @@ class AuthServiceDeleteImmediatelyTest {
         // uniquement que deleteImmediately l'applique et s'arrête avant la finalisation.
         when(userRepository.findByFirebaseUid(FIREBASE_UID))
                 .thenReturn(Optional.of(makeUser(UserStatus.ACTIVE)));
-        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
         doThrow(new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
                 "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord"))
                 .when(userService).assertNoWalletBalance(USER_ID);
@@ -144,7 +140,6 @@ class AuthServiceDeleteImmediatelyTest {
         setupSecurityContext(recentAuthTime);
         UserEntity user = makeUser(UserStatus.ACTIVE);
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
 
         authService.deleteImmediately(FIREBASE_UID, new DeleteImmediatelyRequest(true));
 
@@ -156,7 +151,7 @@ class AuthServiceDeleteImmediatelyTest {
     @DisplayName("user déjà BANNED → 409")
     void alreadyBanned_throws409() {
         // No SecurityContext needed: BANNED check runs before auth_time check
-        // No paymentRepository stub needed: BANNED check runs before escrow check
+        // No escrow stub needed: BANNED check runs before escrow check
         when(userRepository.findByFirebaseUid(FIREBASE_UID))
                 .thenReturn(Optional.of(makeUser(UserStatus.BANNED)));
 
@@ -180,7 +175,6 @@ class AuthServiceDeleteImmediatelyTest {
         setupSecurityContext(recentAuthTime);
         UserEntity user = makeUser(UserStatus.ACTIVE);
         when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
-        when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
 
         authService.deleteImmediately(FIREBASE_UID, new DeleteImmediatelyRequest(true));
 

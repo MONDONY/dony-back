@@ -175,6 +175,65 @@ class UserServiceTest {
     }
 
     @Nested
+    @DisplayName("checkDeletionEligibility() — lecture seule, sans exception")
+    class CheckDeletionEligibilityTests {
+
+        @Test
+        @DisplayName("aucun blocage → canDelete=true, blockedReasonCode=null")
+        void noBlockers_returnsEligible() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
+            when(walletAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+
+            var result = userService.checkDeletionEligibility(FIREBASE_UID);
+
+            assertThat(result.canDelete()).isTrue();
+            assertThat(result.blockedReasonCode()).isNull();
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("escrow actif → canDelete=false, blockedReasonCode=active-transactions")
+        void activeEscrow_returnsBlocked() {
+            // Aucun stub wallet : l'absence d'UnnecessaryStubbing prouve que l'escrow est
+            // vérifié en premier et court-circuite le check wallet (même ordre que requestDeletion).
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(true);
+
+            var result = userService.checkDeletionEligibility(FIREBASE_UID);
+
+            assertThat(result.canDelete()).isFalse();
+            assertThat(result.blockedReasonCode()).isEqualTo("active-transactions");
+        }
+
+        @Test
+        @DisplayName("solde wallet positif → canDelete=false, blockedReasonCode=wallet-balance-not-empty")
+        void positiveWalletBalance_returnsBlocked() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.of(user));
+            when(paymentRepository.hasActiveEscrowForUser(USER_ID)).thenReturn(false);
+            WalletAccountEntity wallet = new WalletAccountEntity();
+            wallet.setBalance(java.math.BigDecimal.TEN);
+            when(walletAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.of(wallet));
+
+            var result = userService.checkDeletionEligibility(FIREBASE_UID);
+
+            assertThat(result.canDelete()).isFalse();
+            assertThat(result.blockedReasonCode()).isEqualTo("wallet-balance-not-empty");
+        }
+
+        @Test
+        @DisplayName("utilisateur inconnu → 404 NOT_FOUND")
+        void unknownUser_throws404() {
+            when(userRepository.findByFirebaseUid(FIREBASE_UID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.checkDeletionEligibility(FIREBASE_UID))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> assertThat(((YadonyBusinessException) e).getStatus())
+                            .isEqualTo(HttpStatus.NOT_FOUND));
+        }
+    }
+
+    @Nested
     @DisplayName("unsuspendUser()")
     class UnsuspendTests {
 
