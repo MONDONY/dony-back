@@ -159,17 +159,17 @@ class AdminBootstrapControllerIT {
         // ── 201 create mode: no super-admin exists ─────────────────────────────
 
         @Test
-        @DisplayName("Secret OK, no super-admin → 201 with login and temporaryPassword")
+        @DisplayName("Secret OK, no super-admin → 201 with email and temporaryPassword")
         void secretOk_noSuperAdmin_returns201WithCredentials() throws Exception {
             when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
                     .thenReturn(0L);
             when(adminAccountService.createAdmin(any(CreateAdminRequest.class), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "Abc123!XYZ@qwerty0987"));
+                    .thenReturn(new CredentialsResponse("admin.1@yadony.test", "Abc123!XYZ@qwerty0987"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.login").value("admin.1"))
+                    .andExpect(jsonPath("$.email").value("admin.1@yadony.test"))
                     .andExpect(jsonPath("$.temporaryPassword").value("Abc123!XYZ@qwerty0987"));
         }
 
@@ -179,7 +179,7 @@ class AdminBootstrapControllerIT {
             when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
                     .thenReturn(0L);
             when(adminAccountService.createAdmin(any(CreateAdminRequest.class), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "SomePass123!"));
+                    .thenReturn(new CredentialsResponse("admin.1@yadony.test", "SomePass123!"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
@@ -196,7 +196,7 @@ class AdminBootstrapControllerIT {
         // ── 200 break-glass mode: super-admin already exists ───────────────────
 
         @Test
-        @DisplayName("Secret OK, super-admin exists → 200 break-glass with login and temporaryPassword")
+        @DisplayName("Secret OK, super-admin exists → 200 break-glass with email and temporaryPassword")
         void secretOk_superAdminExists_returns200WithCredentials() throws Exception {
             UUID existingId = UUID.randomUUID();
             AdminUserEntity existing = buildSuperAdmin(existingId);
@@ -206,12 +206,12 @@ class AdminBootstrapControllerIT {
             when(adminUserRepository.findFirstByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
                     .thenReturn(Optional.of(existing));
             when(adminAccountService.resetPassword(eq(existingId), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "NewPass456!@XY"));
+                    .thenReturn(new CredentialsResponse("admin.1@yadony.test", "NewPass456!@XY"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.login").value("admin.1"))
+                    .andExpect(jsonPath("$.email").value("admin.1@yadony.test"))
                     .andExpect(jsonPath("$.temporaryPassword").value("NewPass456!@XY"));
         }
 
@@ -226,7 +226,7 @@ class AdminBootstrapControllerIT {
             when(adminUserRepository.findFirstByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
                     .thenReturn(Optional.of(existing));
             when(adminAccountService.resetPassword(eq(existingId), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "NewPass!"));
+                    .thenReturn(new CredentialsResponse("admin.1@yadony.test", "NewPass!"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
@@ -239,7 +239,7 @@ class AdminBootstrapControllerIT {
         // ── Helper ─────────────────────────────────────────────────────────────
 
         private AdminUserEntity buildSuperAdmin(UUID id) {
-            AdminUserEntity entity = new AdminUserEntity("firebase-uid-sa", "admin.1", AdminRole.SUPER_ADMIN);
+            AdminUserEntity entity = new AdminUserEntity("firebase-uid-sa", "admin.1@yadony.test", AdminRole.SUPER_ADMIN);
             entity.setStatus(AdminStatus.ACTIVE);
             entity.setMustChangePassword(false);
             // Set id via reflection (BaseEntity uses UUID field, no setter)

@@ -48,18 +48,14 @@ public class AdminAccountService {
     private final FirebaseAuth firebaseAuth;
     private final AuditService auditService;
     private final AdminAuthService adminAuthService;
-    private final com.yadony.api.auth.FirebaseContactService firebaseContact;
-
     public AdminAccountService(AdminUserRepository adminUserRepository,
                                 @Nullable FirebaseAuth firebaseAuth,
                                 AuditService auditService,
-                                AdminAuthService adminAuthService,
-                                com.yadony.api.auth.FirebaseContactService firebaseContact) {
+                                AdminAuthService adminAuthService) {
         this.adminUserRepository = adminUserRepository;
         this.firebaseAuth = firebaseAuth;
         this.auditService = auditService;
         this.adminAuthService = adminAuthService;
-        this.firebaseContact = firebaseContact;
     }
 
     // -------------------------------------------------------------------------
