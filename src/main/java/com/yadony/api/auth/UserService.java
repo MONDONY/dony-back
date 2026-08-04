@@ -1,5 +1,6 @@
 package com.yadony.api.auth;
 
+import com.yadony.api.auth.dto.DeletionEligibilityResponse;
 import com.yadony.api.auth.dto.UpgradeToProRequest;
 import com.yadony.api.auth.events.AccountDeletionRequestedEvent;
 import com.yadony.api.auth.events.UserSuspendedEvent;
@@ -46,19 +47,47 @@ public class UserService {
         this.accountFinalizationService = accountFinalizationService;
     }
 
-    /** Bloque la suppression tant qu'un solde wallet réel (rechargé par carte, cf.
-     *  WalletTopupOrchestrator) n'a pas été dépensé — sinon cet argent devient orphelin et
-     *  irrécupérable une fois le compte Firebase supprimé (aucun flow de remboursement wallet
-     *  n'existe, contrairement à l'escrow Stripe).
-     *  Point unique de la règle : appelé par {@link #requestDeletion} (soft J+30) ET par
-     *  {@code AuthService#deleteImmediately} (hard) — les deux seuls chemins de suppression. */
-    public void assertNoWalletBalance(UUID userId) {
-        walletAccountRepository.findByUserId(userId)
+    /** Un solde wallet réel (rechargé par carte, cf. WalletTopupOrchestrator) non dépensé bloque
+     *  la suppression : cet argent deviendrait orphelin et irrécupérable une fois le compte
+     *  Firebase supprimé (aucun flow de remboursement wallet n'existe, contrairement à l'escrow). */
+    public boolean hasWalletBalance(UUID userId) {
+        return walletAccountRepository.findByUserId(userId)
                 .filter(w -> w.getBalance().compareTo(BigDecimal.ZERO) > 0)
-                .ifPresent(w -> {
-                    throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
-                            "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord");
-                });
+                .isPresent();
+    }
+
+    /** Variante throwing de {@link #hasWalletBalance}, pour les deux chemins de suppression :
+     *  {@link #requestDeletion} (soft J+30) et {@code AuthService#deleteImmediately} (hard). */
+    public void assertNoWalletBalance(UUID userId) {
+        if (hasWalletBalance(userId)) {
+            throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "wallet-balance-not-empty",
+                    "Unprocessable", "Impossible — vous avez un solde wallet non nul, dépensez-le d'abord");
+        }
+    }
+
+    /** Point unique d'accès à {@link PaymentRepository#hasActiveEscrowForUser} pour la règle de
+     *  suppression — évite que {@code AuthService} dépende directement de {@code PaymentRepository}. */
+    public boolean hasActiveEscrow(UUID userId) {
+        return paymentRepository.hasActiveEscrowForUser(userId);
+    }
+
+    /** Story 9.8 — Vérification en lecture seule (aucune écriture, aucune exception) de
+     *  l'éligibilité à la suppression de compte, pour permettre au front de désactiver le
+     *  bouton et d'expliquer pourquoi *avant* que l'utilisateur ne tente réellement l'action.
+     *  Mêmes règles et même ordre que {@link #requestDeletion} : escrow actif d'abord, puis wallet. */
+    @Transactional(readOnly = true)
+    public DeletionEligibilityResponse checkDeletionEligibility(String firebaseUid) {
+        UserEntity user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new YadonyBusinessException(
+                        HttpStatus.NOT_FOUND, "user-not-found", "Not Found", "Utilisateur introuvable"));
+
+        if (hasActiveEscrow(user.getId())) {
+            return new DeletionEligibilityResponse(false, "active-transactions");
+        }
+        if (hasWalletBalance(user.getId())) {
+            return new DeletionEligibilityResponse(false, "wallet-balance-not-empty");
+        }
+        return new DeletionEligibilityResponse(true, null);
     }
 
     // Story 9.5 — Suspension automatique après trop de refus de colis
@@ -97,7 +126,7 @@ public class UserService {
             return;
         }
 
-        if (paymentRepository.hasActiveEscrowForUser(user.getId())) {
+        if (hasActiveEscrow(user.getId())) {
             throw new YadonyBusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "active-transactions",
                     "Unprocessable", "Impossible — vous avez des transactions en cours");
         }

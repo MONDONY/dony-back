@@ -1,6 +1,7 @@
 package com.yadony.api.auth;
 
 import com.yadony.api.admin.account.AdminAuthService;
+import com.yadony.api.auth.dto.DeletionEligibilityResponse;
 import com.yadony.api.auth.dto.RegisterRequest;
 import com.yadony.api.auth.dto.UpdateProfileRequest;
 import com.yadony.api.auth.dto.UserResponse;
@@ -598,6 +599,23 @@ class AuthServiceTest {
             authService.deleteAccount(FIREBASE_UID);
 
             verify(userService).deleteAccount(FIREBASE_UID);
+        }
+    }
+
+    // ─── checkDeletionEligibility ───────────────────────────────────────────────
+    // Full logic tested in UserServiceTest; AuthService delegates to UserService.
+
+    @Nested
+    @DisplayName("checkDeletionEligibility()")
+    class CheckDeletionEligibilityTests {
+
+        @Test
+        @DisplayName("délègue à UserService.checkDeletionEligibility()")
+        void checkDeletionEligibility_delegatesToUserService() {
+            var expected = new DeletionEligibilityResponse(true, null);
+            when(userService.checkDeletionEligibility(FIREBASE_UID)).thenReturn(expected);
+
+            assertThat(authService.checkDeletionEligibility(FIREBASE_UID)).isEqualTo(expected);
         }
     }
 

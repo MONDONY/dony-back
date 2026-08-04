@@ -2,6 +2,7 @@ package com.yadony.api.auth;
 
 import com.yadony.api.admin.account.AdminPrincipal;
 import com.yadony.api.auth.dto.DeleteImmediatelyRequest;
+import com.yadony.api.auth.dto.DeletionEligibilityResponse;
 import com.yadony.api.auth.dto.FcmTokenRequest;
 import com.yadony.api.auth.dto.RegisterRequest;
 import com.yadony.api.auth.dto.UpdateProfileRequest;
@@ -91,6 +92,12 @@ public class AuthController {
         authService.updateAnalyticsConsent(requireFirebaseUid(),
                 request.granted(), request.policyVersion(), request.source());
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me/deletion-eligibility")
+    public ResponseEntity<DeletionEligibilityResponse> checkDeletionEligibility() {
+        String firebaseUid = requireFirebaseUid();
+        return ResponseEntity.ok(authService.checkDeletionEligibility(firebaseUid));
     }
 
     @DeleteMapping("/me")
