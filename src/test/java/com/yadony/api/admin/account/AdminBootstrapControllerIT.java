@@ -189,10 +189,8 @@ class AdminBootstrapControllerIT {
             var captor = org.mockito.ArgumentCaptor.forClass(CreateAdminRequest.class);
             verify(adminAccountService).createAdmin(captor.capture(), isNull());
             CreateAdminRequest captured = captor.getValue();
-            org.assertj.core.api.Assertions.assertThat(captured.generate()).isTrue();
             org.assertj.core.api.Assertions.assertThat(captured.role()).isEqualTo(AdminRole.SUPER_ADMIN);
-            org.assertj.core.api.Assertions.assertThat(captured.login()).isNull();
-            org.assertj.core.api.Assertions.assertThat(captured.password()).isNull();
+            org.assertj.core.api.Assertions.assertThat(captured.email()).isEqualTo("bootstrap-admin@yadony.invalid");
         }
 
         // ── 200 break-glass mode: super-admin already exists ───────────────────

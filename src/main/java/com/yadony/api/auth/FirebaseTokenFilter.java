@@ -129,7 +129,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
             AdminAuthorities admin = adminOpt.get();
             UsernamePasswordAuthenticationToken adminAuth =
                     new UsernamePasswordAuthenticationToken(
-                            new AdminPrincipal(admin.adminId(), admin.login(), admin.role(), admin.mustChangePassword(), uid),
+                            new AdminPrincipal(admin.adminId(), admin.email(), admin.role(), admin.mustChangePassword(), uid),
                             decoded,
                             admin.authorities()
                     );
@@ -190,7 +190,7 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
         authorities.add(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"));
 
-        AdminPrincipal principal = new AdminPrincipal(DEV_ADMIN_ID, "dev-admin", AdminRole.SUPER_ADMIN, false, "dev-uid");
+        AdminPrincipal principal = new AdminPrincipal(DEV_ADMIN_ID, "dev-admin@yadony.invalid", AdminRole.SUPER_ADMIN, false, "dev-uid");
         UsernamePasswordAuthenticationToken auth =
                 new UsernamePasswordAuthenticationToken(principal, null, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);

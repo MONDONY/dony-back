@@ -20,15 +20,11 @@ public interface AdminUserRepository extends JpaRepository<AdminUserEntity, UUID
      */
     Optional<AdminUserEntity> findByFirebaseUid(String firebaseUid);
 
-    /**
-     * Find admin user by login.
-     */
-    Optional<AdminUserEntity> findByLogin(String login);
+    Optional<AdminUserEntity> findByEmailIgnoreCase(String email);
 
-    /**
-     * Check if an admin user with the given login exists.
-     */
-    boolean existsByLogin(String login);
+    boolean existsByEmailIgnoreCase(String email);
+
+    long countByRole(AdminRole role);
 
     /**
      * Count admin users by role and status (soft-deleted are excluded by @Where).

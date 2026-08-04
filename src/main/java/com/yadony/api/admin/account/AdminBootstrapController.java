@@ -78,11 +78,8 @@ public class AdminBootstrapController {
         if (!superAdminExists) {
             // Create mode: generate new super-admin account
             CreateAdminRequest req = new CreateAdminRequest(
-                    null,   // login — auto-generated
-                    null,   // password — auto-generated
-                    true,   // generate = true
-                    AdminRole.SUPER_ADMIN,
-                    null    // no permission overrides
+                    "bootstrap-admin@yadony.invalid",
+                    AdminRole.SUPER_ADMIN
             );
             // actorId=null: bootstrap is a system operation, not tied to an admin actor
             CredentialsResponse creds = adminAccountService.createAdmin(req, null);

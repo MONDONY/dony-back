@@ -76,7 +76,7 @@ class AdminAccountControllerIT {
     /** SUPER_ADMIN principal — has ADMIN_MANAGE authority. */
     private static UsernamePasswordAuthenticationToken superAdminAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false, "uid-super-admin-001");
+        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1@yadony.test", AdminRole.SUPER_ADMIN, false, "uid-super-admin-001");
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -114,8 +114,8 @@ class AdminAccountControllerIT {
     // Entity builder
     // -------------------------------------------------------------------------
 
-    private AdminUserEntity buildEntity(UUID id, String login, AdminRole role) {
-        AdminUserEntity e = new AdminUserEntity("firebase-" + login, login, role);
+    private AdminUserEntity buildEntity(UUID id, String email, AdminRole role) {
+        AdminUserEntity e = new AdminUserEntity("firebase-" + email, email, role);
         e.setStatus(AdminStatus.ACTIVE);
         e.setMustChangePassword(false);
         ReflectionTestUtils.setField(e, "id", id);
@@ -146,7 +146,7 @@ class AdminAccountControllerIT {
     @DisplayName("GET /admin/admins with ADMIN_MANAGE (SUPER_ADMIN) → 200 + Page<AdminSummary>")
     void listAdmins_withAdminManage_returns200() throws Exception {
         UUID id = UUID.fromString("00000000-0000-0000-0000-000000000010");
-        AdminUserEntity entity = buildEntity(id, "admin.1", AdminRole.SUPER_ADMIN);
+        AdminUserEntity entity = buildEntity(id, "admin.1@yadony.test", AdminRole.SUPER_ADMIN);
         AdminSummary summary = AdminSummary.from(entity);
 
         when(adminUserRepository.findAll(any(org.springframework.data.domain.Pageable.class)))
@@ -156,7 +156,7 @@ class AdminAccountControllerIT {
                         .with(authentication(superAdminAuth())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.content[0].login").value("admin.1"))
+                .andExpect(jsonPath("$.content[0].login").value("admin.1@yadony.test"))
                 .andExpect(jsonPath("$.content[0].role").value("SUPER_ADMIN"))
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
@@ -187,7 +187,7 @@ class AdminAccountControllerIT {
     @Test
     @DisplayName("POST /admin/admins without ADMIN_MANAGE → 403")
     void createAdmin_withoutAdminManage_returns403() throws Exception {
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
 
         mockMvc.perform(post("/admin/admins")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -199,8 +199,8 @@ class AdminAccountControllerIT {
     @Test
     @DisplayName("POST /admin/admins with ADMIN_MANAGE → 201 + CredentialsResponse")
     void createAdmin_withAdminManage_returns201() throws Exception {
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
-        CredentialsResponse creds = new CredentialsResponse("admin.5", "TempPass123!");
+        CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
+        CredentialsResponse creds = new CredentialsResponse("admin.5@yadony.test", "TempPass123!");
 
         when(adminAccountService.createAdmin(any(CreateAdminRequest.class), any()))
                 .thenReturn(creds);
@@ -210,7 +210,7 @@ class AdminAccountControllerIT {
                         .content(objectMapper.writeValueAsString(req))
                         .with(authentication(superAdminAuth())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.login").value("admin.5"))
+                .andExpect(jsonPath("$.email").value("admin.5@yadony.test"))
                 .andExpect(jsonPath("$.temporaryPassword").value("TempPass123!"));
     }
 
@@ -222,7 +222,7 @@ class AdminAccountControllerIT {
     @DisplayName("PATCH /admin/admins/{id} without ADMIN_MANAGE → 403")
     void updateAdmin_withoutAdminManage_returns403() throws Exception {
         UUID targetId = UUID.randomUUID();
-        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, null, null, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, null, null);
 
         mockMvc.perform(patch("/admin/admins/{id}", targetId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -235,7 +235,7 @@ class AdminAccountControllerIT {
     @DisplayName("PATCH /admin/admins/{id} with ADMIN_MANAGE → 200 + AdminSummary")
     void updateAdmin_withAdminManage_returns200() throws Exception {
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000020");
-        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, null, null, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, null, null);
         AdminUserEntity updated = buildEntity(targetId, "admin.2", AdminRole.SUPPORT);
 
         when(adminAccountService.updateAdmin(eq(targetId), any(UpdateAdminRequest.class), any()))
@@ -268,7 +268,7 @@ class AdminAccountControllerIT {
     @DisplayName("POST /admin/admins/{id}/reset-password with ADMIN_MANAGE → 200 + CredentialsResponse")
     void resetPassword_withAdminManage_returns200() throws Exception {
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000030");
-        CredentialsResponse creds = new CredentialsResponse("admin.3", "NewSecure!Pass1");
+        CredentialsResponse creds = new CredentialsResponse("admin.3@yadony.test", "NewSecure!Pass1");
 
         when(adminAccountService.resetPassword(eq(targetId), any()))
                 .thenReturn(creds);
@@ -276,7 +276,7 @@ class AdminAccountControllerIT {
         mockMvc.perform(post("/admin/admins/{id}/reset-password", targetId)
                         .with(authentication(superAdminAuth())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.login").value("admin.3"))
+                .andExpect(jsonPath("$.email").value("admin.3@yadony.test"))
                 .andExpect(jsonPath("$.temporaryPassword").value("NewSecure!Pass1"));
     }
 

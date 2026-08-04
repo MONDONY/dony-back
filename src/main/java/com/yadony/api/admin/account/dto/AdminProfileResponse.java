@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public record AdminProfileResponse(
         UUID id,
-        String login,
+        String email,
         AdminRole role,
         AdminStatus status,
         boolean mustChangePassword,
@@ -18,7 +18,7 @@ public record AdminProfileResponse(
     public static AdminProfileResponse from(AdminUserEntity e) {
         return new AdminProfileResponse(
                 e.getId(),
-                e.getLogin(),
+                e.getEmail(),
                 e.getRole(),
                 e.getStatus(),
                 Boolean.TRUE.equals(e.getMustChangePassword()),

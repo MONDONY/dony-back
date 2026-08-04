@@ -66,41 +66,26 @@ public class AdminAccountService {
     // Create
     // -------------------------------------------------------------------------
 
-    /**
-     * Creates a new admin account.
-     * If req.generate() == true, login and password are auto-generated.
-     * A synthetic email (login@admin.yadony.invalid) is used for Firebase.
-     * Returns the credentials once — password is never stored in plaintext.
-     */
+    /** Creates a new admin account and returns its temporary password once. */
     public CredentialsResponse createAdmin(CreateAdminRequest req, UUID actorId) {
-        String login;
-        String password;
-
-        if (req.generate()) {
-            login = generateLogin();
-            password = generatePassword();
-        } else {
-            login = req.login();
-            password = req.password();
-            if (login == null || login.isBlank()) {
-                throw new YadonyBusinessException(
-                        HttpStatus.BAD_REQUEST,
-                        "ADMIN_LOGIN_REQUIRED",
-                        "Login required",
-                        "login is required when generate=false"
-                );
-            }
-            if (adminUserRepository.existsByLogin(login)) {
-                throw new YadonyBusinessException(
-                        HttpStatus.CONFLICT,
-                        "ADMIN_LOGIN_DUPLICATE",
-                        "Login already in use",
-                        "An admin account with login '" + login + "' already exists"
-                );
-            }
+        String email = req.email();
+        if (email == null || email.isBlank()) {
+            throw new YadonyBusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "ADMIN_EMAIL_REQUIRED",
+                    "Email required",
+                    "email is required"
+            );
         }
-
-        String email = syntheticEmail(login);
+        if (adminUserRepository.existsByEmailIgnoreCase(email)) {
+            throw new YadonyBusinessException(
+                    HttpStatus.CONFLICT,
+                    "ADMIN_EMAIL_DUPLICATE",
+                    "Email already in use",
+                    "An admin account with this email already exists"
+            );
+        }
+        String password = generatePassword();
 
         // Create Firebase user (or recover orphan if email already exists)
         String firebaseUid;
@@ -108,7 +93,7 @@ public class AdminAccountService {
             UserRecord.CreateRequest createRequest = new UserRecord.CreateRequest()
                     .setEmail(email)
                     .setPassword(password)
-                    .setDisplayName(login);
+                    .setDisplayName(email);
             UserRecord userRecord = requireFirebase().createUser(createRequest);
             firebaseUid = userRecord.getUid();
         } catch (FirebaseAuthException e) {
@@ -121,14 +106,14 @@ public class AdminAccountService {
                     firebaseUid = existing.getUid();
                     UserRecord.UpdateRequest resetReq = new UserRecord.UpdateRequest(firebaseUid).setPassword(password);
                     requireFirebase().updateUser(resetReq);
-                    log.warn("Recovered orphan Firebase user uid={} for login={}", firebaseUid, login);
+                    log.warn("Recovered orphan Firebase user uid={}", firebaseUid);
                 } catch (FirebaseAuthException ex) {
-                    log.error("Firebase orphan recovery failed for login={}: {}", login, ex.getMessage());
+                    log.error("Firebase orphan recovery failed: {}", ex.getMessage());
                     throw new YadonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED",
                             "Firebase account creation failed", ex.getMessage());
                 }
             } else {
-                log.error("Firebase createUser failed for login={}: {}", login, e.getMessage());
+                log.error("Firebase createUser failed: {}", e.getMessage());
                 throw new YadonyBusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED",
                         "Firebase account creation failed", e.getMessage());
             }
@@ -144,17 +129,14 @@ public class AdminAccountService {
         }
 
         // Persist admin entity
-        AdminUserEntity entity = new AdminUserEntity(firebaseUid, login, req.role());
+        AdminUserEntity entity = new AdminUserEntity(firebaseUid, email, req.role());
         entity.setMustChangePassword(true);
         entity.setStatus(AdminStatus.ACTIVE);
         entity.setCreatedBy(actorId);
-        if (req.permissionOverrides() != null) {
-            entity.setPermissionOverrides(new HashMap<>(req.permissionOverrides()));
-        }
         try {
             adminUserRepository.save(entity);
         } catch (Exception e) {
-            log.error("DB save failed for admin login={}, rolling back Firebase user uid={}: {}", login, firebaseUid, e.getMessage());
+            log.error("DB save failed for admin, rolling back Firebase user uid={}: {}", firebaseUid, e.getMessage());
             try { requireFirebase().deleteUser(firebaseUid); } catch (Exception ignored) {}
             throw new YadonyBusinessException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -170,11 +152,11 @@ public class AdminAccountService {
                 entity.getId(),
                 "ADMIN_ACCOUNT_CREATED",
                 actorId,
-                Map.of("login", login, "role", req.role().name())
+                Map.of("email", email, "role", req.role().name())
         );
 
-        log.info("Admin account created: login={}, role={}, by={}", login, req.role(), actorId);
-        return new CredentialsResponse(login, password);
+        log.info("Admin account created: role={}, by={}", req.role(), actorId);
+        return new CredentialsResponse(email, password);
     }
 
     // -------------------------------------------------------------------------
@@ -213,10 +195,10 @@ public class AdminAccountService {
                 adminId,
                 "ADMIN_PASSWORD_RESET",
                 actorId,
-                Map.of("login", entity.getLogin())
+                Map.of("email", entity.getEmail())
         );
 
-        return new CredentialsResponse(entity.getLogin(), newPassword);
+        return new CredentialsResponse(entity.getEmail(), newPassword);
     }
 
     // -------------------------------------------------------------------------
@@ -255,7 +237,7 @@ public class AdminAccountService {
                 adminId,
                 "ADMIN_PASSWORD_CHANGED",
                 actorId,
-                Map.of("login", entity.getLogin())
+                Map.of("email", entity.getEmail())
         );
     }
 
@@ -264,7 +246,7 @@ public class AdminAccountService {
     // -------------------------------------------------------------------------
 
     /**
-     * Updates role, permission overrides, status, or login of an admin account.
+     * Updates role, permission overrides, or status of an admin account.
      * Guards: cannot disable/delete the last active SUPER_ADMIN.
      *         Cannot disable yourself.
      */
@@ -308,35 +290,6 @@ public class AdminAccountService {
                 enableFirebaseUser(entity.getFirebaseUid());
             }
         }
-        if (req.login() != null && !req.login().equals(entity.getLogin())) {
-            if (adminUserRepository.existsByLogin(req.login())) {
-                throw new YadonyBusinessException(
-                        HttpStatus.CONFLICT,
-                        "ADMIN_LOGIN_DUPLICATE",
-                        "Login already in use",
-                        "An admin account with login '" + req.login() + "' already exists"
-                );
-            }
-            // Update synthetic email in Firebase too
-            try {
-                UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(entity.getFirebaseUid())
-                        .setEmail(syntheticEmail(req.login()));
-                requireFirebase().updateUser(updateRequest);
-                // Un admin peut aussi être utilisateur Yadony (même firebase_uid) : sans cette
-                // purge, FirebaseContactService servirait l'ancienne adresse jusqu'à 5 min.
-                firebaseContact.evict(entity.getFirebaseUid());
-            } catch (FirebaseAuthException e) {
-                log.error("Firebase updateUser (email) failed for adminId={}: {}", adminId, e.getMessage());
-                throw new YadonyBusinessException(
-                        HttpStatus.INTERNAL_SERVER_ERROR,
-                        "FIREBASE_UPDATE_FAILED",
-                        "Firebase email update failed",
-                        e.getMessage()
-                );
-            }
-            entity.setLogin(req.login());
-        }
-
         String firebaseUidForEvict = entity.getFirebaseUid();
         adminUserRepository.save(entity);
         adminAuthService.evictByFirebaseUid(firebaseUidForEvict);
@@ -346,7 +299,7 @@ public class AdminAccountService {
                 adminId,
                 "ADMIN_ACCOUNT_UPDATED",
                 actorId,
-                Map.of("login", entity.getLogin())
+                Map.of("email", entity.getEmail())
         );
 
         return entity;
@@ -402,31 +355,15 @@ public class AdminAccountService {
                 adminId,
                 "ADMIN_ACCOUNT_DELETED",
                 actorId,
-                Map.of("login", entity.getLogin())
+                Map.of("email", entity.getEmail())
         );
 
-        log.info("Admin account soft-deleted: id={}, login={}, by={}", adminId, entity.getLogin(), actorId);
+        log.info("Admin account soft-deleted: id={}, by={}", adminId, actorId);
     }
 
     // -------------------------------------------------------------------------
     // Public helpers (also used by bootstrap)
     // -------------------------------------------------------------------------
-
-    /**
-     * Generates a unique login of the form "admin.N" (N=1, 2, ...).
-     * If the numeric sequence runs out, falls back to "admin.XXXXXXXX" with a random suffix.
-     */
-    public String generateLogin() {
-        for (int i = 1; i <= 999; i++) {
-            String candidate = "admin." + i;
-            if (!adminUserRepository.existsByLogin(candidate)) {
-                return candidate;
-            }
-        }
-        // Fallback: random suffix
-        String suffix = Long.toHexString(RANDOM.nextLong() & 0xFFFFFFFFL);
-        return "admin." + suffix;
-    }
 
     /**
      * Generates a strong password of at least 20 characters:
@@ -453,13 +390,6 @@ public class AdminAccountService {
             chars[j] = tmp;
         }
         return new String(chars);
-    }
-
-    /**
-     * Returns the synthetic email address used for Firebase authentication.
-     */
-    public String syntheticEmail(String login) {
-        return login + "@admin.yadony.invalid";
     }
 
     // -------------------------------------------------------------------------

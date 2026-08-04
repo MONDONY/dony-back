@@ -17,7 +17,7 @@ import java.util.UUID;
  */
 public record AdminSummary(
         UUID id,
-        String login,
+        String email,
         AdminRole role,
         AdminStatus status,
         boolean mustChangePassword,
@@ -28,7 +28,7 @@ public record AdminSummary(
     public static AdminSummary from(AdminUserEntity e) {
         return new AdminSummary(
                 e.getId(),
-                e.getLogin(),
+                e.getEmail(),
                 e.getRole(),
                 e.getStatus(),
                 Boolean.TRUE.equals(e.getMustChangePassword()),

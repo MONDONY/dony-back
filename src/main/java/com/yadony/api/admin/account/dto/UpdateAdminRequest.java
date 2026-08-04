@@ -12,6 +12,5 @@ import java.util.Map;
 public record UpdateAdminRequest(
         AdminRole role,
         Map<String, Boolean> permissionOverrides,
-        AdminStatus status,
-        String login
+        AdminStatus status
 ) {}

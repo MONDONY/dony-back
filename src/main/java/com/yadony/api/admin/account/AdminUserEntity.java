@@ -26,8 +26,8 @@ public class AdminUserEntity extends BaseEntity {
     @Column(name = "firebase_uid", nullable = false, unique = true, length = 128)
     private String firebaseUid;
 
-    @Column(name = "login", nullable = false, unique = true, length = 64)
-    private String login;
+    @Column(name = "email", nullable = false, length = 320)
+    private String email;
 
     @Column(name = "role", nullable = false, length = 20)
     @Enumerated(EnumType.STRING)
@@ -57,10 +57,10 @@ public class AdminUserEntity extends BaseEntity {
         this.status = AdminStatus.ACTIVE;
     }
 
-    public AdminUserEntity(String firebaseUid, String login, AdminRole role) {
+    public AdminUserEntity(String firebaseUid, String email, AdminRole role) {
         this();
         this.firebaseUid = firebaseUid;
-        this.login = login;
+        this.email = email;
         this.role = role;
     }
 
@@ -68,8 +68,8 @@ public class AdminUserEntity extends BaseEntity {
     public String getFirebaseUid() { return firebaseUid; }
     public void setFirebaseUid(String firebaseUid) { this.firebaseUid = firebaseUid; }
 
-    public String getLogin() { return login; }
-    public void setLogin(String login) { this.login = login; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 
     public AdminRole getRole() { return role; }
     public void setRole(AdminRole role) { this.role = role; }

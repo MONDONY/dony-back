@@ -55,9 +55,9 @@ class AdminAccountServiceTest {
     // Test doubles
     // -------------------------------------------------------------------------
 
-    private AdminUserEntity buildEntity(UUID id, String firebaseUid, String login,
+    private AdminUserEntity buildEntity(UUID id, String firebaseUid, String email,
                                         AdminRole role, AdminStatus status) {
-        AdminUserEntity entity = new AdminUserEntity(firebaseUid, login, role);
+        AdminUserEntity entity = new AdminUserEntity(firebaseUid, email, role);
         entity.setStatus(status);
         entity.setMustChangePassword(false);
         // Reflectively set id since BaseEntity uses @GeneratedValue
@@ -86,9 +86,9 @@ class AdminAccountServiceTest {
     void createAdmin_generate_true_happyPath() throws Exception {
         // Arrange
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
 
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        when(adminUserRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
         UserRecord userRecord = mockUserRecord("firebase-uid-new");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
 
@@ -99,7 +99,7 @@ class AdminAccountServiceTest {
         CredentialsResponse response = adminAccountService.createAdmin(req, actorId);
 
         // Assert
-        assertThat(response.login()).isNotNull().isNotBlank();
+        assertThat(response.email()).isNotNull().isNotBlank();
         assertThat(response.temporaryPassword()).isNotNull().hasSizeGreaterThanOrEqualTo(16);
 
         verify(firebaseAuth).createUser(any(UserRecord.CreateRequest.class));
@@ -118,9 +118,9 @@ class AdminAccountServiceTest {
     @DisplayName("createAdmin(generate=true) → mustChangePassword=true on saved entity")
     void createAdmin_generate_true_mustChangePassword() throws Exception {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.SUPPORT, null);
+        CreateAdminRequest req = new CreateAdminRequest("support@yadony.test", AdminRole.SUPPORT);
 
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        when(adminUserRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
         UserRecord userRecord = mockUserRecord("uid-abc");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
 
@@ -141,9 +141,9 @@ class AdminAccountServiceTest {
     @DisplayName("createAdmin → setCustomUserClaims throws FirebaseAuthException → Firebase user deleted, RuntimeException propagated")
     void createAdmin_claimsFail_rollbackAndPropagate() throws Exception {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
 
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        when(adminUserRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
         UserRecord userRecord = mockUserRecord("firebase-uid-claims-fail");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
         FirebaseAuthException claimsException = mock(FirebaseAuthException.class);
@@ -163,16 +163,16 @@ class AdminAccountServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // 3. createAdmin(login="dup") where existsByLogin("dup")=true → exception
+    // 3. createAdmin(login="dup") where existsByEmailIgnoreCase("dup")=true → exception
     // -------------------------------------------------------------------------
 
     @Test
     @DisplayName("createAdmin(generate=false, login='dup') where login exists → YadonyBusinessException CONFLICT")
     void createAdmin_duplicateLogin_throwsConflict() throws Exception {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest("dup", "P@ssw0rd123456", false, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("dup@yadony.test", AdminRole.ADMIN);
 
-        when(adminUserRepository.existsByLogin("dup")).thenReturn(true);
+        when(adminUserRepository.existsByEmailIgnoreCase("dup")).thenReturn(true);
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -199,7 +199,7 @@ class AdminAccountServiceTest {
         CredentialsResponse response = adminAccountService.resetPassword(adminId, actorId);
 
         assertThat(response.temporaryPassword()).isNotNull().hasSizeGreaterThanOrEqualTo(16);
-        assertThat(response.login()).isEqualTo("admin.1");
+        assertThat(response.email()).isEqualTo("admin.1");
 
         verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
         assertThat(entity.getMustChangePassword()).isTrue();
@@ -320,29 +320,8 @@ class AdminAccountServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // Helper methods: generateLogin, generatePassword, syntheticEmail
+    // Helper methods: generatePassword
     // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("generateLogin → returns 'admin.1' when no login exists")
-    void generateLogin_noExisting() {
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
-
-        String login = adminAccountService.generateLogin();
-
-        assertThat(login).isEqualTo("admin.1");
-    }
-
-    @Test
-    @DisplayName("generateLogin → increments to 'admin.2' when admin.1 exists")
-    void generateLogin_skipsExisting() {
-        when(adminUserRepository.existsByLogin("admin.1")).thenReturn(true);
-        when(adminUserRepository.existsByLogin("admin.2")).thenReturn(false);
-
-        String login = adminAccountService.generateLogin();
-
-        assertThat(login).isEqualTo("admin.2");
-    }
 
     @Test
     @DisplayName("generatePassword → length ≥ 16, contains upper/lower/digit/symbol")
@@ -354,13 +333,6 @@ class AdminAccountServiceTest {
         assertThat(password).matches(".*[a-z].*");
         assertThat(password).matches(".*[0-9].*");
         assertThat(password).matches(".*[!@#$%^&*()\\-_=+\\[\\]{}].*");
-    }
-
-    @Test
-    @DisplayName("syntheticEmail → login@admin.yadony.invalid")
-    void syntheticEmail_format() {
-        assertThat(adminAccountService.syntheticEmail("admin.1"))
-                .isEqualTo("admin.1@admin.yadony.invalid");
     }
 
     // -------------------------------------------------------------------------
@@ -392,14 +364,14 @@ class AdminAccountServiceTest {
     @DisplayName("createAdmin(generate=false, login=null) → YadonyBusinessException ADMIN_LOGIN_REQUIRED")
     void createAdmin_generateFalse_loginNull_throwsLoginRequired() {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest(null, "somePassword", false, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest(null, AdminRole.ADMIN);
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
                 .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
                 .isEqualTo("ADMIN_LOGIN_REQUIRED");
 
-        verify(adminUserRepository, never()).existsByLogin(any());
+        verify(adminUserRepository, never()).existsByEmailIgnoreCase(any());
         verify(adminUserRepository, never()).save(any());
     }
 
@@ -407,7 +379,7 @@ class AdminAccountServiceTest {
     @DisplayName("createAdmin(generate=false, login=blank) → YadonyBusinessException ADMIN_LOGIN_REQUIRED")
     void createAdmin_generateFalse_loginBlank_throwsLoginRequired() {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest("  ", "somePassword", false, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("  ", AdminRole.ADMIN);
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -423,9 +395,9 @@ class AdminAccountServiceTest {
     @DisplayName("createAdmin → Firebase createUser throws FirebaseAuthException → YadonyBusinessException FIREBASE_CREATE_FAILED")
     void createAdmin_firebaseCreateUser_throws_firebaseCreateFailed() throws Exception {
         UUID actorId = UUID.randomUUID();
-        CreateAdminRequest req = new CreateAdminRequest(null, null, true, AdminRole.ADMIN, null);
+        CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
 
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(false);
+        when(adminUserRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
         FirebaseAuthException ex = mock(FirebaseAuthException.class);
         when(ex.getMessage()).thenReturn("firebase create error");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(ex);
@@ -504,7 +476,7 @@ class AdminAccountServiceTest {
         AdminUserEntity entity = buildEntity(adminId, "uid-self-disable", "admin.self", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
 
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED);
 
         assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -528,64 +500,12 @@ class AdminAccountServiceTest {
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
         when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)).thenReturn(1L);
 
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED);
 
         assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
                 .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
                 .isEqualTo("ADMIN_LAST_SUPER_ADMIN");
-
-        verify(adminUserRepository, never()).save(any());
-    }
-
-    // -------------------------------------------------------------------------
-    // updateAdmin → new login already taken → ADMIN_LOGIN_DUPLICATE
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("updateAdmin with new login already taken → YadonyBusinessException ADMIN_LOGIN_DUPLICATE")
-    void updateAdmin_newLoginDuplicate_throws() {
-        UUID adminId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
-
-        AdminUserEntity entity = buildEntity(adminId, "uid-dup-login", "admin.current", AdminRole.ADMIN, AdminStatus.ACTIVE);
-        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.existsByLogin("admin.taken")).thenReturn(true);
-
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, null, "admin.taken");
-
-        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
-                .isInstanceOf(YadonyBusinessException.class)
-                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
-                .isEqualTo("ADMIN_LOGIN_DUPLICATE");
-
-        verify(adminUserRepository, never()).save(any());
-    }
-
-    // -------------------------------------------------------------------------
-    // updateAdmin → new login + Firebase updateUser throws → FIREBASE_UPDATE_FAILED
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("updateAdmin with new login, Firebase updateUser throws → YadonyBusinessException FIREBASE_UPDATE_FAILED")
-    void updateAdmin_newLogin_firebaseUpdateUser_throws_firebaseUpdateFailed() throws Exception {
-        UUID adminId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
-
-        AdminUserEntity entity = buildEntity(adminId, "uid-newlogin-fail", "admin.old", AdminRole.ADMIN, AdminStatus.ACTIVE);
-        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.existsByLogin("admin.new")).thenReturn(false);
-
-        FirebaseAuthException ex = mock(FirebaseAuthException.class);
-        when(ex.getMessage()).thenReturn("firebase email update error");
-        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
-
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, null, "admin.new");
-
-        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
-                .isInstanceOf(YadonyBusinessException.class)
-                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
-                .isEqualTo("FIREBASE_UPDATE_FAILED");
 
         verify(adminUserRepository, never()).save(any());
     }
@@ -604,7 +524,7 @@ class AdminAccountServiceTest {
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
         when(adminUserRepository.save(any())).thenReturn(entity);
 
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE);
 
         adminAccountService.updateAdmin(adminId, req, actorId);
 
@@ -631,7 +551,7 @@ class AdminAccountServiceTest {
         when(ex.getMessage()).thenReturn("firebase enable error");
         when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
 
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE);
 
         assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -658,7 +578,7 @@ class AdminAccountServiceTest {
         when(ex.getMessage()).thenReturn("firebase disable error");
         when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenThrow(ex);
 
-        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED);
 
         assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -666,24 +586,6 @@ class AdminAccountServiceTest {
                 .isEqualTo("FIREBASE_UPDATE_FAILED");
 
         verify(adminUserRepository, never()).save(any());
-    }
-
-    // -------------------------------------------------------------------------
-    // generateLogin → all admin.1..999 taken → returns admin.<hex>
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("generateLogin → all admin.1..999 taken → returns login with hex suffix")
-    void generateLogin_allNumericTaken_returnsHexSuffix() {
-        // All "admin.N" for N=1..999 are taken
-        when(adminUserRepository.existsByLogin(anyString())).thenReturn(true);
-
-        String login = adminAccountService.generateLogin();
-
-        assertThat(login).startsWith("admin.");
-        String suffix = login.substring("admin.".length());
-        // Suffix should be a hex string (parseable as long hex) — not a pure integer 1-999
-        assertThat(suffix).matches("[0-9a-f]+");
     }
 
     // -------------------------------------------------------------------------
@@ -700,7 +602,7 @@ class AdminAccountServiceTest {
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
         when(adminUserRepository.save(any())).thenReturn(entity);
 
-        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, Map.of("MANAGE_USERS", true), null, null);
+        UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, Map.of("MANAGE_USERS", true), null);
 
         AdminUserEntity result = adminAccountService.updateAdmin(adminId, req, actorId);
 
