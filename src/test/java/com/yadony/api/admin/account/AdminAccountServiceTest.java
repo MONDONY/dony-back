@@ -7,6 +7,7 @@ import com.yadony.api.common.AuditService;
 import com.yadony.api.common.YadonyBusinessException;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.UserRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +21,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+
+import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -133,12 +136,95 @@ class AdminAccountServiceTest {
         assertThat(entityCaptor.getValue().getCreatedBy()).isEqualTo(actorId);
     }
 
+    @Test
+    @DisplayName("createAdmin rejects SUPER_ADMIN roles from the panel")
+    void createAdmin_rejectsSuperAdminRole() throws Exception {
+        UUID actorId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(
+                new CreateAdminRequest("other@yadony.test", AdminRole.SUPER_ADMIN), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_ROLE_FORBIDDEN");
+
+        verify(firebaseAuth, never()).createUser(any());
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createAdmin normalizes a valid email and generates exactly 20 complex characters")
+    void createAdmin_normalizesEmailAndGeneratesComplexPassword() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        when(adminUserRepository.existsByEmailIgnoreCase("new.admin@yadony.test")).thenReturn(false);
+        UserRecord userRecord = mockUserRecord("uid-new");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
+        when(adminUserRepository.save(any(AdminUserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CredentialsResponse response = adminAccountService.createAdmin(
+                new CreateAdminRequest(" New.Admin@Yadony.test ", AdminRole.ADMIN), actorId);
+
+        assertThat(response.email()).isEqualTo("new.admin@yadony.test");
+        assertThat(response.temporaryPassword()).hasSize(20)
+                .matches(".*[A-Z].*")
+                .matches(".*[a-z].*")
+                .matches(".*[0-9].*")
+                .matches(".*[!@#$%^&*()\\-_=+\\[\\]{}].*");
+        verify(adminUserRepository).save(argThat(entity ->
+                entity.getEmail().equals("new.admin@yadony.test")
+                        && Boolean.TRUE.equals(entity.getMustChangePassword())));
+    }
+
+    @Test
+    @DisplayName("createAdmin rejects malformed emails")
+    void createAdmin_rejectsMalformedEmail() throws Exception {
+        UUID actorId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(
+                new CreateAdminRequest("not-an-email", AdminRole.ADMIN), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_EMAIL_INVALID");
+
+        verify(firebaseAuth, never()).createUser(any());
+    }
+
+    @Test
+    @DisplayName("createAdmin refuses the canonical root email from the panel")
+    void createAdmin_rejectsCanonicalRootEmail() throws Exception {
+        UUID actorId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(
+                new CreateAdminRequest("aboubakar.diakite@yadony.com", AdminRole.ADMIN), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_ROLE_FORBIDDEN");
+
+        verify(firebaseAuth, never()).createUser(any());
+    }
+
+    @Test
+    @DisplayName("bootstrapSuperAdmin creates the canonical root as the only SUPER_ADMIN")
+    void bootstrapSuperAdmin_createsCanonicalRoot() throws Exception {
+        when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN)).thenReturn(0L);
+        when(adminUserRepository.existsByEmailIgnoreCase("aboubakar.diakite@yadony.com")).thenReturn(false);
+        UserRecord userRecord = mockUserRecord("uid-bootstrap-root");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
+        when(adminUserRepository.save(any(AdminUserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        adminAccountService.bootstrapSuperAdmin(" Aboubakar.Diakite@Yadony.com ", "test-only-value");
+
+        verify(adminUserRepository).save(argThat(entity ->
+                entity.getRole() == AdminRole.SUPER_ADMIN
+                        && entity.getEmail().equals("aboubakar.diakite@yadony.com")
+                        && Boolean.TRUE.equals(entity.getMustChangePassword())));
+    }
+
     // -------------------------------------------------------------------------
     // 2. createAdmin → setCustomUserClaims fails → deleteUser called + exception propagated
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("createAdmin → setCustomUserClaims throws FirebaseAuthException → Firebase user deleted, RuntimeException propagated")
+    @DisplayName("createAdmin rolls back Firebase when claim assignment fails")
     void createAdmin_claimsFail_rollbackAndPropagate() throws Exception {
         UUID actorId = UUID.randomUUID();
         CreateAdminRequest req = new CreateAdminRequest("admin@yadony.test", AdminRole.ADMIN);
@@ -147,18 +233,59 @@ class AdminAccountServiceTest {
         UserRecord userRecord = mockUserRecord("firebase-uid-claims-fail");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
         FirebaseAuthException claimsException = mock(FirebaseAuthException.class);
-        when(claimsException.getMessage()).thenReturn("claims error");
         doThrow(claimsException).when(firebaseAuth).setCustomUserClaims(eq("firebase-uid-claims-fail"), any());
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("firebase-uid-claims-fail");
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("FIREBASE_CREATE_FAILED");
 
         // Firebase user must be rolled back
         verify(firebaseAuth).deleteUser("firebase-uid-claims-fail");
         // Entity must NOT be persisted
         verify(adminUserRepository, never()).save(any());
         // No audit entry
+        verify(auditService, never()).log(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("createAdmin refuses an existing Firebase identity without changing it")
+    void createAdmin_firebaseEmailCollision_refusesWithoutRecovery() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        FirebaseAuthException collision = mock(FirebaseAuthException.class);
+        when(collision.getAuthErrorCode()).thenReturn(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+        when(adminUserRepository.existsByEmailIgnoreCase("existing@yadony.test")).thenReturn(false);
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(collision);
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(
+                new CreateAdminRequest("existing@yadony.test", AdminRole.SUPPORT), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_EMAIL_DUPLICATE");
+
+        verify(firebaseAuth, never()).getUserByEmail(anyString());
+        verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+        verify(firebaseAuth, never()).deleteUser(anyString());
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createAdmin rolls back its Firebase user when the database rejects the email")
+    void createAdmin_databaseEmailCollision_rollsBackFirebaseUser() throws Exception {
+        UUID actorId = UUID.randomUUID();
+        when(adminUserRepository.existsByEmailIgnoreCase("race@yadony.test")).thenReturn(false);
+        UserRecord userRecord = mockUserRecord("uid-race");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
+        when(adminUserRepository.save(any(AdminUserEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("unique email"));
+
+        assertThatThrownBy(() -> adminAccountService.createAdmin(
+                new CreateAdminRequest("race@yadony.test", AdminRole.ADMIN), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_EMAIL_DUPLICATE");
+
+        verify(firebaseAuth).deleteUser("uid-race");
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
 
@@ -213,6 +340,22 @@ class AdminAccountServiceTest {
                 any()
         );
         verify(adminAuthService).evictByFirebaseUid("uid-reset");
+        verify(firebaseAuth).revokeRefreshTokens("uid-reset");
+    }
+
+    @Test
+    @DisplayName("resetPassword rejects every mutation of a root account")
+    void resetPassword_rootAccount_throwsImmutable() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(
+                buildEntity(adminId, "uid-root", "aboubakar.diakite@yadony.com", AdminRole.ADMIN, AdminStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> adminAccountService.resetPassword(adminId, UUID.randomUUID()))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_SUPER_ADMIN_IMMUTABLE");
+
+        verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
     }
 
     // -------------------------------------------------------------------------
@@ -253,6 +396,8 @@ class AdminAccountServiceTest {
     @DisplayName("deleteAdmin where adminId == actorId → YadonyBusinessException (self-delete guard)")
     void deleteAdmin_selfDelete_throws() throws Exception {
         UUID adminId = UUID.randomUUID();
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(
+                buildEntity(adminId, "uid-self-delete", "admin.self@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE)));
 
         assertThatThrownBy(() -> adminAccountService.deleteAdmin(adminId, adminId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -274,7 +419,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-sa", "admin.super@yadony.test", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)).thenReturn(1L);
 
         assertThatThrownBy(() -> adminAccountService.deleteAdmin(adminId, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
@@ -283,19 +427,33 @@ class AdminAccountServiceTest {
         verify(adminUserRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("deleteAdmin rejects every mutation of a root account")
+    void deleteAdmin_rootAccount_throwsImmutable() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(
+                buildEntity(adminId, "uid-root-delete", "root.other@yadony.test", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> adminAccountService.deleteAdmin(adminId, UUID.randomUUID()))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_SUPER_ADMIN_IMMUTABLE");
+
+        verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+    }
+
     // -------------------------------------------------------------------------
-    // 7. deleteAdmin → not last SA → happy path
+    // 7. deleteAdmin → ordinary account → happy path
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("deleteAdmin (not last SA, not self) → soft-delete, Firebase disabled, audit ADMIN_ACCOUNT_DELETED")
-    void deleteAdmin_notLastSA_happyPath() throws Exception {
+    @DisplayName("deleteAdmin on an ordinary account → soft-delete, Firebase disabled, audit ADMIN_ACCOUNT_DELETED")
+    void deleteAdmin_ordinaryAccount_happyPath() throws Exception {
         UUID adminId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
 
-        AdminUserEntity entity = buildEntity(adminId, "uid-del", "admin.del@yadony.test", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
+        AdminUserEntity entity = buildEntity(adminId, "uid-del", "admin.del@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)).thenReturn(2L);
         when(adminUserRepository.save(any())).thenReturn(entity);
 
         adminAccountService.deleteAdmin(adminId, actorId);
@@ -355,14 +513,15 @@ class AdminAccountServiceTest {
         verify(adminUserRepository, never()).countByRoleAndStatus(any(), any());
         assertThat(entity.getDeletedAt()).isNotNull();
         verify(adminAuthService).evictByFirebaseUid("uid-admin-del");
+        verify(firebaseAuth).revokeRefreshTokens("uid-admin-del");
     }
 
     // -------------------------------------------------------------------------
-    // createAdmin(email=null) → ADMIN_EMAIL_REQUIRED
+    // createAdmin(email=null) → ADMIN_EMAIL_INVALID
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("createAdmin(email=null) throws ADMIN_EMAIL_REQUIRED")
+    @DisplayName("createAdmin(email=null) throws ADMIN_EMAIL_INVALID")
     void createAdmin_emailNull_throwsEmailRequired() {
         UUID actorId = UUID.randomUUID();
         CreateAdminRequest req = new CreateAdminRequest(null, AdminRole.ADMIN);
@@ -370,14 +529,14 @@ class AdminAccountServiceTest {
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
                 .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
-                .isEqualTo("ADMIN_EMAIL_REQUIRED");
+                .isEqualTo("ADMIN_EMAIL_INVALID");
 
         verify(adminUserRepository, never()).existsByEmailIgnoreCase(any());
         verify(adminUserRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("createAdmin(email=blank) throws ADMIN_EMAIL_REQUIRED")
+    @DisplayName("createAdmin(email=blank) throws ADMIN_EMAIL_INVALID")
     void createAdmin_emailBlank_throwsEmailRequired() {
         UUID actorId = UUID.randomUUID();
         CreateAdminRequest req = new CreateAdminRequest("  ", AdminRole.ADMIN);
@@ -385,7 +544,7 @@ class AdminAccountServiceTest {
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
                 .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
-                .isEqualTo("ADMIN_EMAIL_REQUIRED");
+                .isEqualTo("ADMIN_EMAIL_INVALID");
     }
 
     // -------------------------------------------------------------------------
@@ -400,7 +559,6 @@ class AdminAccountServiceTest {
 
         when(adminUserRepository.existsByEmailIgnoreCase(anyString())).thenReturn(false);
         FirebaseAuthException ex = mock(FirebaseAuthException.class);
-        when(ex.getMessage()).thenReturn("firebase create error");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenThrow(ex);
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(req, actorId))
@@ -488,25 +646,24 @@ class AdminAccountServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // updateAdmin → status=DISABLED on last active SUPER_ADMIN → ADMIN_LAST_SUPER_ADMIN
+    // updateAdmin → status=DISABLED on SUPER_ADMIN → ADMIN_SUPER_ADMIN_IMMUTABLE
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("updateAdmin with status=DISABLED on last active SUPER_ADMIN → YadonyBusinessException ADMIN_LAST_SUPER_ADMIN")
-    void updateAdmin_lastSuperAdmin_throws() {
+    @DisplayName("updateAdmin with status=DISABLED on SUPER_ADMIN → YadonyBusinessException ADMIN_SUPER_ADMIN_IMMUTABLE")
+    void updateAdmin_superAdmin_throwsImmutable() {
         UUID adminId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
 
         AdminUserEntity entity = buildEntity(adminId, "uid-last-sa", "admin.superadmin@yadony.test", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)).thenReturn(1L);
 
         UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.DISABLED);
 
         assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId, req, actorId))
                 .isInstanceOf(YadonyBusinessException.class)
                 .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
-                .isEqualTo("ADMIN_LAST_SUPER_ADMIN");
+                .isEqualTo("ADMIN_SUPER_ADMIN_IMMUTABLE");
 
         verify(adminUserRepository, never()).save(any());
     }
@@ -587,6 +744,54 @@ class AdminAccountServiceTest {
                 .isEqualTo("FIREBASE_UPDATE_FAILED");
 
         verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateAdmin rejects every mutation of a root account")
+    void updateAdmin_rootAccount_throwsImmutable() {
+        UUID adminId = UUID.randomUUID();
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(
+                buildEntity(adminId, "uid-root-update", "root.other@yadony.test", AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId,
+                new UpdateAdminRequest(AdminRole.ADMIN, null, null), UUID.randomUUID()))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_SUPER_ADMIN_IMMUTABLE");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateAdmin refuses promotions to SUPER_ADMIN")
+    void updateAdmin_rejectsSuperAdminRole() {
+        UUID adminId = UUID.randomUUID();
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(
+                buildEntity(adminId, "uid-update-role", "admin@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId,
+                new UpdateAdminRequest(AdminRole.SUPER_ADMIN, null, null), UUID.randomUUID()))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_ROLE_FORBIDDEN");
+
+        verify(adminUserRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateAdmin revokes refresh tokens after disabling an ordinary account")
+    void updateAdmin_statusDisabled_revokesRefreshTokens() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        AdminUserEntity entity = buildEntity(adminId, "uid-disable", "admin@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        when(adminUserRepository.save(any())).thenReturn(entity);
+
+        adminAccountService.updateAdmin(adminId,
+                new UpdateAdminRequest(null, null, AdminStatus.DISABLED), UUID.randomUUID());
+
+        assertThat(entity.getStatus()).isEqualTo(AdminStatus.DISABLED);
+        verify(firebaseAuth).revokeRefreshTokens("uid-disable");
+        verify(adminAuthService).evictByFirebaseUid("uid-disable");
     }
 
     // -------------------------------------------------------------------------
