@@ -159,8 +159,10 @@ public class PackageRequestService {
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
-        requireTargetPrice(req.totalBudgetEur());
+        // Un brouillon peut rester sans budget décidé — le prix ferme n'est exigé
+        // qu'à la publication (cf. requireTargetPrice appelé dans publish()).
         if (!isDraft) {
+            requireTargetPrice(req.totalBudgetEur());
             long openCount = repository.countBySenderIdAndStatusIn(senderId,
                 List.of(PackageRequestStatus.OPEN, PackageRequestStatus.NEGOTIATING));
             if (openCount >= config.maxOpenRequestsPerSender()) {
@@ -270,7 +272,10 @@ public class PackageRequestService {
         if (req.desiredDate().isAfter(LocalDate.now().plusDays(90))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "request/date-too-far");
         }
-        requireTargetPrice(req.totalBudgetEur());
+        // Même règle qu'à la création : un brouillon n'exige pas de budget décidé.
+        if (entity.getStatus() != PackageRequestStatus.DRAFT) {
+            requireTargetPrice(req.totalBudgetEur());
+        }
 
         BigDecimal netTarget = null;
         if (req.totalBudgetEur() != null) {
@@ -462,19 +467,14 @@ public class PackageRequestService {
 
     // ─── findMine ─────────────────────────────────────────────────────────────────
 
-    @Transactional
+    // Lecture seule : la réconciliation NEGOTIATING → OPEN (plus de thread actif)
+    // est déjà assurée par NegotiationExpiryRunner (scheduler idempotent) et par
+    // reopenRequestWhenNoActiveNegotiation() aux points de transition (reject,
+    // cancelNegotiation). Un GET ne doit pas écrire — ça évitait un N+1 + save
+    // conditionnel à chaque ouverture de "Mes demandes".
     public Page<PackageRequestResponse> findMine(UUID senderId, Pageable pageable) {
-        Page<PackageRequestEntity> requests =
-            repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable);
-        requests.stream()
-            .filter(request -> request.getStatus() == PackageRequestStatus.NEGOTIATING)
-            .filter(request -> threadRepository.findByPackageRequestId(request.getId()).stream()
-                .noneMatch(thread -> thread.getStatus().isActive()))
-            .forEach(request -> {
-                request.setStatus(PackageRequestStatus.OPEN);
-                repository.save(request);
-            });
-        return requests.map(this::toResponse);
+        return repository.findBySenderIdOrderByCreatedAtDesc(senderId, pageable)
+            .map(this::toResponse);
     }
 
     // ─── cancel ──────────────────────────────────────────────────────────────────
