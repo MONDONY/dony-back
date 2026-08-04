@@ -106,7 +106,7 @@ class NegotiationServiceTest {
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
@@ -147,7 +147,7 @@ class NegotiationServiceTest {
         void start_ownRequest_throws403() {
             request.setSenderId(TRAVELER_ID);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> service.start(TRAVELER_ID, validStartReq()))
                 .isInstanceOf(ResponseStatusException.class)
@@ -169,7 +169,7 @@ class NegotiationServiceTest {
         @DisplayName("thread existant → 409 duplicate")
         void start_duplicate_throws409() {
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.of(new NegotiationThreadEntity()));
 
@@ -183,7 +183,7 @@ class NegotiationServiceTest {
         void start_requestExpired_throws410() {
             request.setStatus(PackageRequestStatus.EXPIRED);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> service.start(TRAVELER_ID, validStartReq()))
                 .isInstanceOf(ResponseStatusException.class)
@@ -196,7 +196,7 @@ class NegotiationServiceTest {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
@@ -213,7 +213,7 @@ class NegotiationServiceTest {
         void start_atMaxOpenThreads_throws409() {
             when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
@@ -236,7 +236,7 @@ class NegotiationServiceTest {
             when(config.threadsPerMinuteRateLimit()).thenReturn(1);
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
             when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
             when(threadRepo.findActiveByPackageRequestIdAndTravelerId(any(), any()))
                 .thenReturn(Optional.empty());
             when(threadRepo.countByTravelerIdAndStatus(any(), any())).thenReturn(0L);
@@ -1911,7 +1911,7 @@ class NegotiationServiceTest {
             request.setNegotiable(false);
             request.setTargetPriceEur(new BigDecimal("35"));
             when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
-            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
 
             var bad = new NegotiationStartRequest(REQUEST_ID, new BigDecimal("30"),
                 LocalDate.now().plusDays(5), new BigDecimal("10"), null, "x");

@@ -106,7 +106,10 @@ public class NegotiationService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "kyc/not-verified");
         }
 
-        PackageRequestEntity request = requestRepo.findById(req.packageRequestId())
+        // Verrou pessimiste : sans lui, un unpublish() concurrent (qui verrouille
+        // via findByIdForUpdate) peut être silencieusement annulé par ce start()
+        // qui repasserait la demande à NEGOTIATING juste après.
+        PackageRequestEntity request = requestRepo.findByIdForUpdate(req.packageRequestId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
 
         if (request.getSenderId().equals(travelerId)) {

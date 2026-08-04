@@ -911,7 +911,7 @@ public class AnnouncementService {
             throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/not-unpublishable",
                     "Not Unpublishable", "Seul un trajet actif peut être dépublié");
         }
-        if (bidRepository.countByAnnouncementId(id) > 0) {
+        if (bidRepository.countVisibleByAnnouncementId(id) > 0) {
             throw new YadonyBusinessException(HttpStatus.CONFLICT, "announcement/has-bids",
                     "Has Bids", "Ce trajet a déjà reçu des demandes et ne peut plus être dépublié");
         }
