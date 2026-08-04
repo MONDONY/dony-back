@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  * - Cannot disable/delete the last active SUPER_ADMIN
  */
 @Service
-@Transactional
+@Transactional(noRollbackFor = AdminAccountService.RefreshTokenRevocationPartialException.class)
 public class AdminAccountService {
 
     private static final Logger log = LoggerFactory.getLogger(AdminAccountService.class);
@@ -126,7 +126,7 @@ public class AdminAccountService {
         entity.setStatus(AdminStatus.ACTIVE);
         entity.setCreatedBy(actorId);
         try {
-            adminUserRepository.save(entity);
+            adminUserRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             rollbackFirebaseUser(firebaseUid);
             throw business(HttpStatus.CONFLICT, "ADMIN_EMAIL_DUPLICATE", "Email already in use");
@@ -175,10 +175,8 @@ public class AdminAccountService {
             );
         }
 
-        revokeRefreshTokens(entity.getFirebaseUid());
-
         entity.setMustChangePassword(true);
-        adminUserRepository.save(entity);
+        adminUserRepository.saveAndFlush(entity);
 
         adminAuthService.evictByFirebaseUid(entity.getFirebaseUid());
 
@@ -189,6 +187,8 @@ public class AdminAccountService {
                 actorId,
                 Map.of("email", entity.getEmail())
         );
+
+        revokeRefreshTokens(entity.getFirebaseUid());
 
         return new CredentialsResponse(entity.getEmail(), newPassword);
     }
@@ -265,18 +265,18 @@ public class AdminAccountService {
         if (req.permissionOverrides() != null) {
             entity.setPermissionOverrides(new HashMap<>(req.permissionOverrides()));
         }
+        boolean refreshTokensMustBeRevoked = req.status() == AdminStatus.DISABLED;
         if (req.status() != null) {
             entity.setStatus(req.status());
             // Sync Firebase disabled state
             if (req.status() == AdminStatus.DISABLED) {
                 disableFirebaseUser(entity.getFirebaseUid());
-                revokeRefreshTokens(entity.getFirebaseUid());
             } else if (req.status() == AdminStatus.ACTIVE) {
                 enableFirebaseUser(entity.getFirebaseUid());
             }
         }
         String firebaseUidForEvict = entity.getFirebaseUid();
-        adminUserRepository.save(entity);
+        adminUserRepository.saveAndFlush(entity);
         adminAuthService.evictByFirebaseUid(firebaseUidForEvict);
 
         auditService.log(
@@ -286,6 +286,10 @@ public class AdminAccountService {
                 actorId,
                 Map.of("email", entity.getEmail())
         );
+
+        if (refreshTokensMustBeRevoked) {
+            revokeRefreshTokens(firebaseUidForEvict);
+        }
 
         return entity;
     }
@@ -317,12 +321,11 @@ public class AdminAccountService {
 
         // Disable in Firebase before soft-deleting
         disableFirebaseUser(firebaseUid);
-        revokeRefreshTokens(firebaseUid);
 
         // Soft-delete: use BaseEntity helper
         entity.softDelete();
         entity.setStatus(AdminStatus.DISABLED);
-        adminUserRepository.save(entity);
+        adminUserRepository.saveAndFlush(entity);
 
         adminAuthService.evictByFirebaseUid(firebaseUid);
 
@@ -333,6 +336,8 @@ public class AdminAccountService {
                 actorId,
                 Map.of("email", entity.getEmail())
         );
+
+        revokeRefreshTokens(firebaseUid);
 
         log.info("Admin account soft-deleted: id={}, by={}", adminId, actorId);
     }
@@ -420,7 +425,16 @@ public class AdminAccountService {
             requireFirebase().revokeRefreshTokens(firebaseUid);
         } catch (FirebaseAuthException e) {
             log.error("Firebase refresh-token revocation failed for uid={}", firebaseUid);
-            throw business(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_UPDATE_FAILED", "Firebase account update failed");
+            throw new RefreshTokenRevocationPartialException();
+        }
+    }
+
+    static final class RefreshTokenRevocationPartialException extends YadonyBusinessException {
+        private RefreshTokenRevocationPartialException() {
+            super(HttpStatus.BAD_GATEWAY,
+                    "ADMIN_REFRESH_TOKENS_REVOCATION_FAILED",
+                    "Admin account updated with partial failure",
+                    "Admin security state was persisted but refresh-token revocation failed");
         }
     }
 

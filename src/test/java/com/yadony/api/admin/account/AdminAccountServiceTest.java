@@ -95,9 +95,6 @@ class AdminAccountServiceTest {
         UserRecord userRecord = mockUserRecord("firebase-uid-new");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
 
-        AdminUserEntity savedEntity = buildEntity(UUID.randomUUID(), "firebase-uid-new", "admin@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
-        when(adminUserRepository.save(any(AdminUserEntity.class))).thenReturn(savedEntity);
-
         // Act
         CredentialsResponse response = adminAccountService.createAdmin(req, actorId);
 
@@ -106,7 +103,7 @@ class AdminAccountServiceTest {
         assertThat(response.temporaryPassword()).isNotNull().hasSizeGreaterThanOrEqualTo(16);
 
         verify(firebaseAuth).createUser(any(UserRecord.CreateRequest.class));
-        verify(adminUserRepository).save(any(AdminUserEntity.class));
+        verify(adminUserRepository).saveAndFlush(any(AdminUserEntity.class));
         verify(adminAuthService).evictByFirebaseUid("firebase-uid-new");
         verify(auditService).log(
                 eq("admin_users"),
@@ -128,10 +125,10 @@ class AdminAccountServiceTest {
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
 
         ArgumentCaptor<AdminUserEntity> entityCaptor = ArgumentCaptor.forClass(AdminUserEntity.class);
-        when(adminUserRepository.save(entityCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
 
         adminAccountService.createAdmin(req, actorId);
 
+        verify(adminUserRepository).saveAndFlush(entityCaptor.capture());
         assertThat(entityCaptor.getValue().getMustChangePassword()).isTrue();
         assertThat(entityCaptor.getValue().getCreatedBy()).isEqualTo(actorId);
     }
@@ -158,8 +155,6 @@ class AdminAccountServiceTest {
         when(adminUserRepository.existsByEmailIgnoreCase("new.admin@yadony.test")).thenReturn(false);
         UserRecord userRecord = mockUserRecord("uid-new");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
-        when(adminUserRepository.save(any(AdminUserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         CredentialsResponse response = adminAccountService.createAdmin(
                 new CreateAdminRequest(" New.Admin@Yadony.test ", AdminRole.ADMIN), actorId);
 
@@ -169,7 +164,7 @@ class AdminAccountServiceTest {
                 .matches(".*[a-z].*")
                 .matches(".*[0-9].*")
                 .matches(".*[!@#$%^&*()\\-_=+\\[\\]{}].*");
-        verify(adminUserRepository).save(argThat(entity ->
+        verify(adminUserRepository).saveAndFlush(argThat(entity ->
                 entity.getEmail().equals("new.admin@yadony.test")
                         && Boolean.TRUE.equals(entity.getMustChangePassword())));
     }
@@ -209,11 +204,9 @@ class AdminAccountServiceTest {
         when(adminUserRepository.existsByEmailIgnoreCase("aboubakar.diakite@yadony.com")).thenReturn(false);
         UserRecord userRecord = mockUserRecord("uid-bootstrap-root");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
-        when(adminUserRepository.save(any(AdminUserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         adminAccountService.bootstrapSuperAdmin(" Aboubakar.Diakite@Yadony.com ", "test-only-value");
 
-        verify(adminUserRepository).save(argThat(entity ->
+        verify(adminUserRepository).saveAndFlush(argThat(entity ->
                 entity.getRole() == AdminRole.SUPER_ADMIN
                         && entity.getEmail().equals("aboubakar.diakite@yadony.com")
                         && Boolean.TRUE.equals(entity.getMustChangePassword())));
@@ -270,13 +263,13 @@ class AdminAccountServiceTest {
     }
 
     @Test
-    @DisplayName("createAdmin rolls back its Firebase user when the database rejects the email")
-    void createAdmin_databaseEmailCollision_rollsBackFirebaseUser() throws Exception {
+    @DisplayName("createAdmin rolls back its Firebase user when saveAndFlush detects an email collision")
+    void createAdmin_databaseFlushCollision_rollsBackFirebaseUser() throws Exception {
         UUID actorId = UUID.randomUUID();
         when(adminUserRepository.existsByEmailIgnoreCase("race@yadony.test")).thenReturn(false);
         UserRecord userRecord = mockUserRecord("uid-race");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(userRecord);
-        when(adminUserRepository.save(any(AdminUserEntity.class)))
+        when(adminUserRepository.saveAndFlush(any(AdminUserEntity.class)))
                 .thenThrow(new DataIntegrityViolationException("unique email"));
 
         assertThatThrownBy(() -> adminAccountService.createAdmin(
@@ -286,6 +279,7 @@ class AdminAccountServiceTest {
                 .isEqualTo("ADMIN_EMAIL_DUPLICATE");
 
         verify(firebaseAuth).deleteUser("uid-race");
+        verify(adminUserRepository).saveAndFlush(any(AdminUserEntity.class));
         verify(auditService, never()).log(any(), any(), any(), any(), any());
     }
 
@@ -322,8 +316,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-reset", "admin.1@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
-
         CredentialsResponse response = adminAccountService.resetPassword(adminId, actorId);
 
         assertThat(response.temporaryPassword()).isNotNull().hasSizeGreaterThanOrEqualTo(16);
@@ -341,6 +333,7 @@ class AdminAccountServiceTest {
         );
         verify(adminAuthService).evictByFirebaseUid("uid-reset");
         verify(firebaseAuth).revokeRefreshTokens("uid-reset");
+        verify(adminUserRepository).saveAndFlush(entity);
     }
 
     @Test
@@ -356,6 +349,27 @@ class AdminAccountServiceTest {
                 .isEqualTo("ADMIN_SUPER_ADMIN_IMMUTABLE");
 
         verify(firebaseAuth, never()).updateUser(any(UserRecord.UpdateRequest.class));
+    }
+
+    @Test
+    @DisplayName("resetPassword persists the security state and evicts the cache when refresh-token revocation fails")
+    void resetPassword_revokeFailure_persistsSecurityStateBeforePartialFailure() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        AdminUserEntity entity = buildEntity(adminId, "uid-reset-revoke", "admin.reset@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        FirebaseAuthException revokeFailure = mock(FirebaseAuthException.class);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        doThrow(revokeFailure).when(firebaseAuth).revokeRefreshTokens("uid-reset-revoke");
+
+        assertThatThrownBy(() -> adminAccountService.resetPassword(adminId, actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_REFRESH_TOKENS_REVOCATION_FAILED");
+
+        assertThat(entity.getMustChangePassword()).isTrue();
+        verify(adminUserRepository).saveAndFlush(entity);
+        verify(adminAuthService).evictByFirebaseUid("uid-reset-revoke");
+        verify(auditService).log(eq("admin_users"), eq(adminId), eq("ADMIN_PASSWORD_RESET"), eq(actorId), any());
     }
 
     // -------------------------------------------------------------------------
@@ -454,8 +468,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-del", "admin.del@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
-
         adminAccountService.deleteAdmin(adminId, actorId);
 
         // Soft-delete: deletedAt should be set
@@ -476,6 +488,29 @@ class AdminAccountServiceTest {
 
         // Cache evicted by firebaseUid (not adminId, to survive soft-delete @Where filter)
         verify(adminAuthService).evictByFirebaseUid("uid-del");
+        verify(adminUserRepository).saveAndFlush(entity);
+    }
+
+    @Test
+    @DisplayName("deleteAdmin persists the disabled soft-delete and evicts the cache when refresh-token revocation fails")
+    void deleteAdmin_revokeFailure_persistsSecurityStateBeforePartialFailure() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        AdminUserEntity entity = buildEntity(adminId, "uid-delete-revoke", "admin.delete@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        FirebaseAuthException revokeFailure = mock(FirebaseAuthException.class);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        doThrow(revokeFailure).when(firebaseAuth).revokeRefreshTokens("uid-delete-revoke");
+
+        assertThatThrownBy(() -> adminAccountService.deleteAdmin(adminId, actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_REFRESH_TOKENS_REVOCATION_FAILED");
+
+        assertThat(entity.getDeletedAt()).isNotNull();
+        assertThat(entity.getStatus()).isEqualTo(AdminStatus.DISABLED);
+        verify(adminUserRepository).saveAndFlush(entity);
+        verify(adminAuthService).evictByFirebaseUid("uid-delete-revoke");
+        verify(auditService).log(eq("admin_users"), eq(adminId), eq("ADMIN_ACCOUNT_DELETED"), eq(actorId), any());
     }
 
     // -------------------------------------------------------------------------
@@ -506,8 +541,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-admin-del", "admin.3@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
-
         adminAccountService.deleteAdmin(adminId, actorId);
 
         verify(adminUserRepository, never()).countByRoleAndStatus(any(), any());
@@ -680,8 +713,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-enable", "admin.disabled@yadony.test", AdminRole.ADMIN, AdminStatus.DISABLED);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
-
         UpdateAdminRequest req = new UpdateAdminRequest(null, null, AdminStatus.ACTIVE);
 
         adminAccountService.updateAdmin(adminId, req, actorId);
@@ -690,6 +721,7 @@ class AdminAccountServiceTest {
         verify(firebaseAuth).updateUser(captor.capture());
         assertThat(entity.getStatus()).isEqualTo(AdminStatus.ACTIVE);
         verify(adminAuthService).evictByFirebaseUid("uid-enable");
+        verify(adminUserRepository).saveAndFlush(entity);
     }
 
     // -------------------------------------------------------------------------
@@ -784,7 +816,6 @@ class AdminAccountServiceTest {
         UUID adminId = UUID.randomUUID();
         AdminUserEntity entity = buildEntity(adminId, "uid-disable", "admin@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
 
         adminAccountService.updateAdmin(adminId,
                 new UpdateAdminRequest(null, null, AdminStatus.DISABLED), UUID.randomUUID());
@@ -792,6 +823,29 @@ class AdminAccountServiceTest {
         assertThat(entity.getStatus()).isEqualTo(AdminStatus.DISABLED);
         verify(firebaseAuth).revokeRefreshTokens("uid-disable");
         verify(adminAuthService).evictByFirebaseUid("uid-disable");
+        verify(adminUserRepository).saveAndFlush(entity);
+    }
+
+    @Test
+    @DisplayName("updateAdmin persists a disabled account and evicts the cache when refresh-token revocation fails")
+    void updateAdmin_statusDisabled_revokeFailure_persistsSecurityStateBeforePartialFailure() throws Exception {
+        UUID adminId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        AdminUserEntity entity = buildEntity(adminId, "uid-disable-revoke", "admin.disable@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
+        FirebaseAuthException revokeFailure = mock(FirebaseAuthException.class);
+        when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
+        doThrow(revokeFailure).when(firebaseAuth).revokeRefreshTokens("uid-disable-revoke");
+
+        assertThatThrownBy(() -> adminAccountService.updateAdmin(adminId,
+                new UpdateAdminRequest(null, null, AdminStatus.DISABLED), actorId))
+                .isInstanceOf(YadonyBusinessException.class)
+                .extracting(e -> ((YadonyBusinessException) e).getErrorCode())
+                .isEqualTo("ADMIN_REFRESH_TOKENS_REVOCATION_FAILED");
+
+        assertThat(entity.getStatus()).isEqualTo(AdminStatus.DISABLED);
+        verify(adminUserRepository).saveAndFlush(entity);
+        verify(adminAuthService).evictByFirebaseUid("uid-disable-revoke");
+        verify(auditService).log(eq("admin_users"), eq(adminId), eq("ADMIN_ACCOUNT_UPDATED"), eq(actorId), any());
     }
 
     // -------------------------------------------------------------------------
@@ -806,8 +860,6 @@ class AdminAccountServiceTest {
 
         AdminUserEntity entity = buildEntity(adminId, "uid-update", "admin.update@yadony.test", AdminRole.ADMIN, AdminStatus.ACTIVE);
         when(adminUserRepository.findById(adminId)).thenReturn(Optional.of(entity));
-        when(adminUserRepository.save(any())).thenReturn(entity);
-
         UpdateAdminRequest req = new UpdateAdminRequest(AdminRole.SUPPORT, Map.of("MANAGE_USERS", true), null);
 
         AdminUserEntity result = adminAccountService.updateAdmin(adminId, req, actorId);
@@ -815,7 +867,7 @@ class AdminAccountServiceTest {
         assertThat(result.getRole()).isEqualTo(AdminRole.SUPPORT);
         assertThat(result.getPermissionOverrides()).containsEntry("MANAGE_USERS", true);
 
-        verify(adminUserRepository).save(entity);
+        verify(adminUserRepository).saveAndFlush(entity);
         verify(adminAuthService).evictByFirebaseUid("uid-update");
         verify(auditService).log(
                 eq("admin_users"),
