@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -72,7 +73,8 @@ public class AdminBootstrapController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(pd);
         }
 
-        if (!ROOT_EMAIL.equalsIgnoreCase(bootstrapEmail)) {
+        String normalizedBootstrapEmail = bootstrapEmail.trim().toLowerCase(Locale.ROOT);
+        if (!ROOT_EMAIL.equals(normalizedBootstrapEmail)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -80,7 +82,7 @@ public class AdminBootstrapController {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
 
-        adminAccountService.bootstrapSuperAdmin(bootstrapEmail, bootstrapPassword);
+        adminAccountService.bootstrapSuperAdmin(normalizedBootstrapEmail, bootstrapPassword);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("email", ROOT_EMAIL));
     }
 

@@ -107,6 +107,11 @@ logging:
 # Toutes les valeurs métier sont surchargeables par variable d'environnement
 # (${VAR:défaut}) — provisioning prod sans rebuild.
 yadony:
+  admin:
+    bootstrap:
+      secret: ${ADMIN_BOOTSTRAP_SECRET:}
+      email: ${ADMIN_BOOTSTRAP_EMAIL:}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:}
   commission:
     rate: ${YADONY_COMMISSION_RATE:0.05}
     minimum-amount: ${YADONY_COMMISSION_MINIMUM_AMOUNT:1.00}

@@ -210,4 +210,74 @@ class AdminBootstrapControllerIT {
             verify(adminAccountService, never()).resetPassword(any(), any());
         }
     }
+
+    @Nested
+    @DisplayName("When the configured bootstrap identity is not the root")
+    @SpringBootTest
+    @ActiveProfiles("test")
+    @AutoConfigureMockMvc
+    @TestPropertySource(properties = {
+            "yadony.admin.bootstrap.secret=test-bootstrap-secret-123",
+            "yadony.admin.bootstrap.email=other-admin@yadony.com",
+            "yadony.admin.bootstrap.password=test-only-value"
+    })
+    class WhenBootstrapIdentityIsNotRoot {
+
+        @Autowired
+        MockMvc mockMvc;
+
+        @MockitoBean
+        AdminAccountService adminAccountService;
+
+        @MockitoBean
+        AdminUserRepository adminUserRepository;
+
+        @Test
+        @DisplayName("The configured identity is refused without creating another SUPER_ADMIN")
+        void configuredNonRootEmail_returns403WithoutCreatingSuperAdmin() throws Exception {
+            mockMvc.perform(post("/admin/bootstrap")
+                            .header("X-Bootstrap-Secret", "test-bootstrap-secret-123"))
+                    .andExpect(status().isForbidden());
+
+            verify(adminAccountService, never()).bootstrapSuperAdmin(any(), any());
+            verify(adminUserRepository, never()).countByRole(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("When the configured root identity needs normalization")
+    @SpringBootTest
+    @ActiveProfiles("test")
+    @AutoConfigureMockMvc
+    @TestPropertySource(properties = {
+            "yadony.admin.bootstrap.secret=test-bootstrap-secret-123",
+            "yadony.admin.bootstrap.email= Aboubakar.Diakite@Yadony.com ",
+            "yadony.admin.bootstrap.password=test-only-value"
+    })
+    class WhenBootstrapIdentityNeedsNormalization {
+
+        @Autowired
+        MockMvc mockMvc;
+
+        @MockitoBean
+        AdminAccountService adminAccountService;
+
+        @MockitoBean
+        AdminUserRepository adminUserRepository;
+
+        @Test
+        @DisplayName("The configured root identity is normalized before creation")
+        void configuredRootEmail_isNormalizedBeforeCreatingSuperAdmin() throws Exception {
+            when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN)).thenReturn(0L);
+
+            mockMvc.perform(post("/admin/bootstrap")
+                            .header("X-Bootstrap-Secret", "test-bootstrap-secret-123"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.email").value("aboubakar.diakite@yadony.com"))
+                    .andExpect(jsonPath("$.temporaryPassword").doesNotExist());
+
+            verify(adminAccountService).bootstrapSuperAdmin(
+                    "aboubakar.diakite@yadony.com", "test-only-value");
+        }
+    }
 }
