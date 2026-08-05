@@ -108,15 +108,17 @@ public class AdminAccountService {
             firebaseUid = userRecord.getUid();
         } catch (FirebaseAuthException e) {
             if (e.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
+                log.error("Firebase createUser: EMAIL_ALREADY_EXISTS for email={} (orphaned Firebase user? not in Postgres)", email);
                 throw business(HttpStatus.CONFLICT, "ADMIN_EMAIL_DUPLICATE", "Email already in use");
             }
-            log.error("Firebase createUser failed: {}", e.getAuthErrorCode());
+            log.error("Firebase createUser failed for email={}: {}", email, e.getAuthErrorCode(), e);
             throw business(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED", "Firebase account creation failed");
         }
 
         try {
             requireFirebase().setCustomUserClaims(firebaseUid, Map.of("ROLE_ADMIN", true));
         } catch (FirebaseAuthException e) {
+            log.error("Firebase setCustomUserClaims failed for uid={}: {}", firebaseUid, e.getAuthErrorCode(), e);
             rollbackFirebaseUser(firebaseUid);
             throw business(HttpStatus.INTERNAL_SERVER_ERROR, "FIREBASE_CREATE_FAILED", "Firebase account creation failed");
         }
