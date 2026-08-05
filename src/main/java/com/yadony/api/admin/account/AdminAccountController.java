@@ -91,7 +91,7 @@ public class AdminAccountController {
     // -------------------------------------------------------------------------
 
     /**
-     * Partially updates an admin account (role, status, permissionOverrides, login).
+     * Partially updates an admin account (role, status, permissionOverrides).
      */
     @PatchMapping("/admins/{id}")
     public AdminSummary update(@PathVariable UUID id,

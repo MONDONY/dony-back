@@ -64,7 +64,7 @@ public class AdminAuthService {
                 entity.getRole(),
                 authorities,
                 Boolean.TRUE.equals(entity.getMustChangePassword()),
-                entity.getLogin(),
+                entity.getEmail(),
                 entity.getId()
         ));
     }

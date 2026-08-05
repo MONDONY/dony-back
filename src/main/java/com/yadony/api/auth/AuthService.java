@@ -550,7 +550,7 @@ public class AuthService {
                     .filter(a -> !a.startsWith("ROLE_"))
                     .collect(Collectors.toList());
             adminInfo = new AdminInfo(
-                    auth.login(),
+                    auth.email(),
                     auth.role(),
                     permissions,
                     auth.mustChangePassword()

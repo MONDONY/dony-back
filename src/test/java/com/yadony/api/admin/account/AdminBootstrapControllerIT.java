@@ -82,9 +82,10 @@ class AdminBootstrapControllerIT {
                             .header("X-Bootstrap-Secret", "whatever"))
                     .andExpect(status().isNotFound());
 
+            verify(adminAccountService, never()).bootstrapSuperAdmin(any(), any());
             verify(adminAccountService, never()).createAdmin(any(), any());
             verify(adminAccountService, never()).resetPassword(any(), any());
-            verify(adminUserRepository, never()).countByRoleAndStatus(any(), any());
+            verify(adminUserRepository, never()).countByRole(any());
         }
     }
 
@@ -97,7 +98,11 @@ class AdminBootstrapControllerIT {
     @SpringBootTest
     @ActiveProfiles("test")
     @AutoConfigureMockMvc
-    @TestPropertySource(properties = "yadony.admin.bootstrap.secret=test-bootstrap-secret-123")
+    @TestPropertySource(properties = {
+            "yadony.admin.bootstrap.secret=test-bootstrap-secret-123",
+            "yadony.admin.bootstrap.email=aboubakar.diakite@yadony.com",
+            "yadony.admin.bootstrap.password=test-only-value"
+    })
     class WhenSecretConfigured {
 
         static final String VALID_SECRET = "test-bootstrap-secret-123";
@@ -151,102 +156,128 @@ class AdminBootstrapControllerIT {
                             .header("X-Bootstrap-Secret", "wrong"))
                     .andExpect(status().isForbidden());
 
+            verify(adminAccountService, never()).bootstrapSuperAdmin(any(), any());
             verify(adminAccountService, never()).createAdmin(any(), any());
             verify(adminAccountService, never()).resetPassword(any(), any());
-            verify(adminUserRepository, never()).countByRoleAndStatus(any(), any());
+            verify(adminUserRepository, never()).countByRole(any());
         }
 
         // ── 201 create mode: no super-admin exists ─────────────────────────────
 
         @Test
-        @DisplayName("Secret OK, no super-admin → 201 with login and temporaryPassword")
-        void secretOk_noSuperAdmin_returns201WithCredentials() throws Exception {
-            when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
+        @DisplayName("Secret OK, no super-admin → 201 with the canonical root email")
+        void secretOk_noSuperAdmin_returns201WithCanonicalEmail() throws Exception {
+            when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN))
                     .thenReturn(0L);
-            when(adminAccountService.createAdmin(any(CreateAdminRequest.class), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "Abc123!XYZ@qwerty0987"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.login").value("admin.1"))
-                    .andExpect(jsonPath("$.temporaryPassword").value("Abc123!XYZ@qwerty0987"));
+                    .andExpect(jsonPath("$.email").value("aboubakar.diakite@yadony.com"))
+                    .andExpect(jsonPath("$.temporaryPassword").doesNotExist());
         }
 
         @Test
-        @DisplayName("Secret OK, no super-admin → createAdmin called with SUPER_ADMIN role, generate=true, actorId=null")
-        void secretOk_noSuperAdmin_createAdminCalledCorrectly() throws Exception {
-            when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
+        @DisplayName("Secret OK, no super-admin → calls the dedicated bootstrap service")
+        void secretOk_noSuperAdmin_callsDedicatedBootstrapService() throws Exception {
+            when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN))
                     .thenReturn(0L);
-            when(adminAccountService.createAdmin(any(CreateAdminRequest.class), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "SomePass123!"));
 
             mockMvc.perform(post("/admin/bootstrap")
                             .header("X-Bootstrap-Secret", VALID_SECRET))
                     .andExpect(status().isCreated());
 
-            // Verify createAdmin was called with generate=true and SUPER_ADMIN role
-            var captor = org.mockito.ArgumentCaptor.forClass(CreateAdminRequest.class);
-            verify(adminAccountService).createAdmin(captor.capture(), isNull());
-            CreateAdminRequest captured = captor.getValue();
-            org.assertj.core.api.Assertions.assertThat(captured.generate()).isTrue();
-            org.assertj.core.api.Assertions.assertThat(captured.role()).isEqualTo(AdminRole.SUPER_ADMIN);
-            org.assertj.core.api.Assertions.assertThat(captured.login()).isNull();
-            org.assertj.core.api.Assertions.assertThat(captured.password()).isNull();
-        }
-
-        // ── 200 break-glass mode: super-admin already exists ───────────────────
-
-        @Test
-        @DisplayName("Secret OK, super-admin exists → 200 break-glass with login and temporaryPassword")
-        void secretOk_superAdminExists_returns200WithCredentials() throws Exception {
-            UUID existingId = UUID.randomUUID();
-            AdminUserEntity existing = buildSuperAdmin(existingId);
-
-            when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
-                    .thenReturn(1L);
-            when(adminUserRepository.findFirstByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
-                    .thenReturn(Optional.of(existing));
-            when(adminAccountService.resetPassword(eq(existingId), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "NewPass456!@XY"));
-
-            mockMvc.perform(post("/admin/bootstrap")
-                            .header("X-Bootstrap-Secret", VALID_SECRET))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.login").value("admin.1"))
-                    .andExpect(jsonPath("$.temporaryPassword").value("NewPass456!@XY"));
-        }
-
-        @Test
-        @DisplayName("Secret OK, super-admin exists → resetPassword called with super-admin id, actorId=null")
-        void secretOk_superAdminExists_resetPasswordCalledCorrectly() throws Exception {
-            UUID existingId = UUID.randomUUID();
-            AdminUserEntity existing = buildSuperAdmin(existingId);
-
-            when(adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
-                    .thenReturn(1L);
-            when(adminUserRepository.findFirstByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE))
-                    .thenReturn(Optional.of(existing));
-            when(adminAccountService.resetPassword(eq(existingId), isNull()))
-                    .thenReturn(new CredentialsResponse("admin.1", "NewPass!"));
-
-            mockMvc.perform(post("/admin/bootstrap")
-                            .header("X-Bootstrap-Secret", VALID_SECRET))
-                    .andExpect(status().isOk());
-
-            verify(adminAccountService).resetPassword(eq(existingId), isNull());
+            verify(adminAccountService).bootstrapSuperAdmin(
+                    "aboubakar.diakite@yadony.com", "test-only-value");
             verify(adminAccountService, never()).createAdmin(any(), any());
+            verify(adminAccountService, never()).resetPassword(any(), any());
         }
 
-        // ── Helper ─────────────────────────────────────────────────────────────
+        // ── 409 existing root: no break-glass reset ─────────────────────────────
 
-        private AdminUserEntity buildSuperAdmin(UUID id) {
-            AdminUserEntity entity = new AdminUserEntity("firebase-uid-sa", "admin.1", AdminRole.SUPER_ADMIN);
-            entity.setStatus(AdminStatus.ACTIVE);
-            entity.setMustChangePassword(false);
-            // Set id via reflection (BaseEntity uses UUID field, no setter)
-            org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", id);
-            return entity;
+        @Test
+        @DisplayName("Secret OK, existing super-admin → 409 without resetting credentials")
+        void secretOk_existingSuperAdmin_returns409WithoutReset() throws Exception {
+            when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN))
+                    .thenReturn(1L);
+
+            mockMvc.perform(post("/admin/bootstrap")
+                            .header("X-Bootstrap-Secret", VALID_SECRET))
+                    .andExpect(status().isConflict());
+
+            verify(adminAccountService, never()).bootstrapSuperAdmin(any(), any());
+            verify(adminAccountService, never()).createAdmin(any(), any());
+            verify(adminAccountService, never()).resetPassword(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("When the configured bootstrap identity is not the root")
+    @SpringBootTest
+    @ActiveProfiles("test")
+    @AutoConfigureMockMvc
+    @TestPropertySource(properties = {
+            "yadony.admin.bootstrap.secret=test-bootstrap-secret-123",
+            "yadony.admin.bootstrap.email=other-admin@yadony.com",
+            "yadony.admin.bootstrap.password=test-only-value"
+    })
+    class WhenBootstrapIdentityIsNotRoot {
+
+        @Autowired
+        MockMvc mockMvc;
+
+        @MockitoBean
+        AdminAccountService adminAccountService;
+
+        @MockitoBean
+        AdminUserRepository adminUserRepository;
+
+        @Test
+        @DisplayName("The configured identity is refused without creating another SUPER_ADMIN")
+        void configuredNonRootEmail_returns403WithoutCreatingSuperAdmin() throws Exception {
+            mockMvc.perform(post("/admin/bootstrap")
+                            .header("X-Bootstrap-Secret", "test-bootstrap-secret-123"))
+                    .andExpect(status().isForbidden());
+
+            verify(adminAccountService, never()).bootstrapSuperAdmin(any(), any());
+            verify(adminUserRepository, never()).countByRole(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("When the configured root identity needs normalization")
+    @SpringBootTest
+    @ActiveProfiles("test")
+    @AutoConfigureMockMvc
+    @TestPropertySource(properties = {
+            "yadony.admin.bootstrap.secret=test-bootstrap-secret-123",
+            "yadony.admin.bootstrap.email= Aboubakar.Diakite@Yadony.com ",
+            "yadony.admin.bootstrap.password=test-only-value"
+    })
+    class WhenBootstrapIdentityNeedsNormalization {
+
+        @Autowired
+        MockMvc mockMvc;
+
+        @MockitoBean
+        AdminAccountService adminAccountService;
+
+        @MockitoBean
+        AdminUserRepository adminUserRepository;
+
+        @Test
+        @DisplayName("The configured root identity is normalized before creation")
+        void configuredRootEmail_isNormalizedBeforeCreatingSuperAdmin() throws Exception {
+            when(adminUserRepository.countByRole(AdminRole.SUPER_ADMIN)).thenReturn(0L);
+
+            mockMvc.perform(post("/admin/bootstrap")
+                            .header("X-Bootstrap-Secret", "test-bootstrap-secret-123"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.email").value("aboubakar.diakite@yadony.com"))
+                    .andExpect(jsonPath("$.temporaryPassword").doesNotExist());
+
+            verify(adminAccountService).bootstrapSuperAdmin(
+                    "aboubakar.diakite@yadony.com", "test-only-value");
         }
     }
 }

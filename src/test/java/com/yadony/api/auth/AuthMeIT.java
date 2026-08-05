@@ -100,7 +100,7 @@ class AuthMeIT {
 
     private UsernamePasswordAuthenticationToken superAdminUserAuth() {
         UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1", AdminRole.SUPER_ADMIN, false, FIREBASE_UID_ADMIN);
+        AdminPrincipal principal = new AdminPrincipal(adminId, "admin.1@yadony.test", AdminRole.SUPER_ADMIN, false, FIREBASE_UID_ADMIN);
         return new UsernamePasswordAuthenticationToken(
                 principal, null,
                 List.of(
@@ -156,7 +156,7 @@ class AuthMeIT {
                 AdminRole.SUPER_ADMIN,
                 authorities,
                 false, // mustChangePassword
-                "admin.1",
+                "admin.1@yadony.test",
                 adminId
         );
 
@@ -168,7 +168,7 @@ class AuthMeIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phoneNumber").value("+33612000002"))
                 .andExpect(jsonPath("$.admin").exists())
-                .andExpect(jsonPath("$.admin.login").value("admin.1"))
+                .andExpect(jsonPath("$.admin.email").value("admin.1@yadony.test"))
                 .andExpect(jsonPath("$.admin.role").value("SUPER_ADMIN"))
                 .andExpect(jsonPath("$.admin.mustChangePassword").value(false))
                 .andExpect(jsonPath("$.admin.permissions").isArray())

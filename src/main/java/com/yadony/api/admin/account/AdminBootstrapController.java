@@ -1,7 +1,5 @@
 package com.yadony.api.admin.account;
 
-import com.yadony.api.admin.account.dto.CreateAdminRequest;
-import com.yadony.api.admin.account.dto.CredentialsResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -14,18 +12,16 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * Bootstrap endpoint for initial super-admin creation and break-glass password reset.
+ * Bootstrap endpoint for one-time SUPER_ADMIN creation.
  *
  * Task 8 — AdminBootstrapController
  *
- * Two modes:
- * - Create mode: no active SUPER_ADMIN exists → creates one, returns credentials (201)
- * - Break-glass mode: active SUPER_ADMIN exists → resets password (200)
- *
  * Security:
- * - If {@code admin.bootstrap.secret} is blank, the endpoint returns 404 (disabled)
+ * - If one bootstrap setting is blank, the endpoint returns 404 (disabled)
  * - The secret is compared in constant time (MessageDigest.isEqual) to prevent timing attacks
  * - The endpoint is permit-all in SecurityConfig (no Firebase token required)
  */
@@ -33,8 +29,16 @@ import java.security.MessageDigest;
 @RequestMapping("/admin/bootstrap")
 public class AdminBootstrapController {
 
+    private static final String ROOT_EMAIL = "aboubakar.diakite@yadony.com";
+
     @Value("${yadony.admin.bootstrap.secret:}")
     private String bootstrapSecret;
+
+    @Value("${yadony.admin.bootstrap.email:}")
+    private String bootstrapEmail;
+
+    @Value("${yadony.admin.bootstrap.password:}")
+    private String bootstrapPassword;
 
     private final AdminAccountService adminAccountService;
     private final AdminUserRepository adminUserRepository;
@@ -46,23 +50,21 @@ public class AdminBootstrapController {
     }
 
     /**
-     * Bootstrap or break-glass reset of the SUPER_ADMIN account.
+     * Creates the root account once; existing SUPER_ADMIN accounts are never modified.
      *
      * @param providedSecret value of the {@code X-Bootstrap-Secret} header
      * @return 404 if bootstrap is disabled, 403 if secret is wrong,
-     *         201 with credentials if super-admin was created,
-     *         200 with credentials if super-admin password was reset
+     *         201 with the root email if super-admin was created,
+     *         409 if a super-admin already exists
      */
     @PostMapping
     public ResponseEntity<?> bootstrap(
             @RequestHeader(value = "X-Bootstrap-Secret", required = false) String providedSecret) {
 
-        // 1. Bootstrap disabled — return 404
-        if (bootstrapSecret == null || bootstrapSecret.isBlank()) {
+        if (!bootstrapConfigured()) {
             return ResponseEntity.notFound().build();
         }
 
-        // 2. Invalid secret — return 403 RFC 7807
         if (!constantTimeEquals(bootstrapSecret, providedSecret)) {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(
                     HttpStatus.FORBIDDEN, "Invalid bootstrap secret");
@@ -71,31 +73,23 @@ public class AdminBootstrapController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(pd);
         }
 
-        // 3. Check if an active SUPER_ADMIN already exists
-        boolean superAdminExists =
-                adminUserRepository.countByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE) > 0;
-
-        if (!superAdminExists) {
-            // Create mode: generate new super-admin account
-            CreateAdminRequest req = new CreateAdminRequest(
-                    null,   // login — auto-generated
-                    null,   // password — auto-generated
-                    true,   // generate = true
-                    AdminRole.SUPER_ADMIN,
-                    null    // no permission overrides
-            );
-            // actorId=null: bootstrap is a system operation, not tied to an admin actor
-            CredentialsResponse creds = adminAccountService.createAdmin(req, null);
-            return ResponseEntity.status(HttpStatus.CREATED).body(creds);
-        } else {
-            // Break-glass mode: reset the existing super-admin's password
-            AdminUserEntity superAdmin = adminUserRepository
-                    .findFirstByRoleAndStatus(AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE)
-                    .orElseThrow();
-            // actorId=null: break-glass is a system operation
-            CredentialsResponse creds = adminAccountService.resetPassword(superAdmin.getId(), null);
-            return ResponseEntity.ok(creds);
+        String normalizedBootstrapEmail = bootstrapEmail.trim().toLowerCase(Locale.ROOT);
+        if (!ROOT_EMAIL.equals(normalizedBootstrapEmail)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+
+        if (adminUserRepository.countByRole(AdminRole.SUPER_ADMIN) > 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
+        adminAccountService.bootstrapSuperAdmin(normalizedBootstrapEmail, bootstrapPassword);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("email", ROOT_EMAIL));
+    }
+
+    private boolean bootstrapConfigured() {
+        return bootstrapSecret != null && !bootstrapSecret.isBlank()
+                && bootstrapEmail != null && !bootstrapEmail.isBlank()
+                && bootstrapPassword != null && !bootstrapPassword.isBlank();
     }
 
     /**

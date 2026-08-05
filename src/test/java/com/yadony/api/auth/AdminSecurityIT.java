@@ -121,7 +121,7 @@ class AdminSecurityIT {
 
         AdminPrincipal principal = (AdminPrincipal) auth.getPrincipal();
         assertThat(principal.role()).isEqualTo(AdminRole.SUPPORT);
-        assertThat(principal.login()).isEqualTo("support@yadony.app");
+        assertThat(principal.email()).isEqualTo("support@yadony.app");
         assertThat(principal.mustChangePassword()).isFalse();
 
         Set<String> authorityNames = auth.getAuthorities().stream()

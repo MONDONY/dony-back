@@ -11,7 +11,7 @@ import java.util.UUID;
  */
 public record AdminPrincipal(
         UUID adminId,
-        String login,
+        String email,
         AdminRole role,
         boolean mustChangePassword,
         String firebaseUid

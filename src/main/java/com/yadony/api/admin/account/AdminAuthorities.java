@@ -14,13 +14,13 @@ import java.util.UUID;
  * @param role               The admin's role
  * @param authorities        Effective granted authorities (permissions + role authorities)
  * @param mustChangePassword Whether the admin must change their password on next login
- * @param login              The admin's login identifier
+ * @param email              The admin's email identifier
  * @param adminId            The admin's UUID (from BaseEntity.getId())
  */
 public record AdminAuthorities(
         AdminRole role,
         Set<GrantedAuthority> authorities,
         boolean mustChangePassword,
-        String login,
+        String email,
         UUID adminId
 ) {}

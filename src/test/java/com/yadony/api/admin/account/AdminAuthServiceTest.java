@@ -40,9 +40,9 @@ class AdminAuthServiceTest {
     // -------------------------------------------------------------------------
 
     /** Build a minimal AdminUserEntity without going through JPA. */
-    private AdminUserEntity buildEntity(String firebaseUid, String login,
+    private AdminUserEntity buildEntity(String firebaseUid, String email,
                                         AdminRole role, AdminStatus status) {
-        AdminUserEntity entity = new AdminUserEntity(firebaseUid, login, role);
+        AdminUserEntity entity = new AdminUserEntity(firebaseUid, email, role);
         entity.setStatus(status);
         entity.setMustChangePassword(false);
         return entity;
@@ -90,7 +90,7 @@ class AdminAuthServiceTest {
         AdminAuthorities auth = adminAuthService.resolve("uid-support2").orElseThrow();
 
         assertEquals(AdminRole.SUPPORT, auth.role());
-        assertEquals("agent01", auth.login());
+        assertEquals("agent01", auth.email());
         assertTrue(auth.mustChangePassword());
     }
 

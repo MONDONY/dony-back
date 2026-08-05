@@ -11,7 +11,7 @@ import java.util.List;
  * Task 10 — /auth/me enriched with admin data
  */
 public record AdminInfo(
-        String login,
+        String email,
         AdminRole role,
         List<String> permissions,
         boolean mustChangePassword
