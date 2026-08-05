@@ -205,6 +205,10 @@ public class AdminAccountService {
      * Back: just updates Firebase + sets mustChangePassword=false.
      */
     public void changeOwnPassword(UUID adminId, String newPassword, UUID actorId) {
+        if (newPassword == null || newPassword.length() < 12) {
+            throw business(HttpStatus.BAD_REQUEST, "ADMIN_PASSWORD_TOO_SHORT",
+                    "Password must contain at least 12 characters");
+        }
         AdminUserEntity entity = findOrThrow(adminId);
 
         try {

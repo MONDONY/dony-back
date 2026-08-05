@@ -127,6 +127,10 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         Optional<AdminAuthorities> adminOpt = adminAuthService.resolve(uid);
         if (adminOpt.isPresent()) {
             AdminAuthorities admin = adminOpt.get();
+            if (admin.mustChangePassword() && !isPasswordChangeAllowed(request)) {
+                writeForbidden(response, "PASSWORD_CHANGE_REQUIRED", "Password change required");
+                return true;
+            }
             UsernamePasswordAuthenticationToken adminAuth =
                     new UsernamePasswordAuthenticationToken(
                             new AdminPrincipal(admin.adminId(), admin.email(), admin.role(), admin.mustChangePassword(), uid),
@@ -203,10 +207,33 @@ public class FirebaseTokenFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
+    /**
+     * True only for the two routes a {@code mustChangePassword} admin may still call:
+     * {@code GET /admin/me} and {@code POST /admin/me/change-password}. The URI includes
+     * the servlet context path (/api/v1), which must be stripped before comparing.
+     */
+    private boolean isPasswordChangeAllowed(HttpServletRequest request) {
+        String contextPath = request.getContextPath() == null ? "" : request.getContextPath();
+        String path = request.getRequestURI();
+        if (path != null && path.startsWith(contextPath)) {
+            path = path.substring(contextPath.length());
+        }
+        String method = request.getMethod();
+        return ("GET".equals(method) && "/admin/me".equals(path))
+                || ("POST".equals(method) && "/admin/me/change-password".equals(path));
+    }
+
     private void writeForbidden(HttpServletResponse response, String detail) throws IOException {
+        writeForbidden(response, null, detail);
+    }
+
+    private void writeForbidden(HttpServletResponse response, String code, String detail) throws IOException {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, detail);
         problem.setType(URI.create("https://yadony.app/errors/access-denied"));
         problem.setTitle("Access Denied");
+        if (code != null) {
+            problem.setProperty("code", code);
+        }
 
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

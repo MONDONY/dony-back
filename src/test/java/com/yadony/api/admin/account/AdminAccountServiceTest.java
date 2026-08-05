@@ -402,6 +402,35 @@ class AdminAccountServiceTest {
         verify(adminAuthService).evictByFirebaseUid("uid-own");
     }
 
+    @Test
+    @DisplayName("changeOwnPassword → mot de passe < 12 caracteres → ADMIN_PASSWORD_TOO_SHORT, aucun appel Firebase")
+    void changeOwnPassword_rejectsShortPassword() {
+        UUID adminId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> adminAccountService.changeOwnPassword(adminId, "short1", adminId))
+                .isInstanceOfSatisfying(YadonyBusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo("ADMIN_PASSWORD_TOO_SHORT"));
+
+        verifyNoInteractions(firebaseAuth);
+        verifyNoInteractions(adminUserRepository);
+    }
+
+    @Test
+    @DisplayName("changeOwnPassword → SUPER_ADMIN racine peut changer son propre mot de passe")
+    void rootCanChangeOwnPassword() throws Exception {
+        UUID rootId = UUID.randomUUID();
+        AdminUserEntity root = buildEntity(rootId, "uid-root", "aboubakar.diakite@yadony.com",
+                AdminRole.SUPER_ADMIN, AdminStatus.ACTIVE);
+        root.setMustChangePassword(true);
+        when(adminUserRepository.findById(rootId)).thenReturn(Optional.of(root));
+        when(adminUserRepository.save(any())).thenReturn(root);
+
+        adminAccountService.changeOwnPassword(rootId, "NewSecurePass123!", rootId);
+
+        verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
+        assertThat(root.getMustChangePassword()).isFalse();
+    }
+
     // -------------------------------------------------------------------------
     // 5. deleteAdmin(adminId, actorId=adminId) → guard: cannot delete yourself
     // -------------------------------------------------------------------------
