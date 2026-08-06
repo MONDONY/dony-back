@@ -441,25 +441,38 @@ public class AuthService {
                 }
             }
             case "custom" -> {
-                // Pour les custom tokens, l'UID Firebase est l'email utilisé dans createCustomToken(email)
-                // On vérifie que l'email du body correspond à l'UID pour éviter l'usurpation
-                if (request.email() == null) {
-                    throw new YadonyBusinessException(
-                            HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
-                            "Email Required", "L'adresse email est requise");
+                if ("sms".equals(extractOtpChannelClaim(decodedToken))) {
+                    // Custom token issu de SmsOtpService.verifyOtp() : l'UID a déjà été
+                    // résolu via getUserByPhoneNumber()/createUser() (même UID que le SDK
+                    // natif aurait attribué à ce numéro), et le numéro est donc déjà écrit
+                    // sur le UserRecord Firebase — rien à comparer à request.email(), ce
+                    // champ est d'ailleurs naturellement absent du body pour ce flow.
+                    if (firebaseContact.getContact(firebaseUid).phoneNumber() == null) {
+                        throw new YadonyBusinessException(
+                                HttpStatus.UNPROCESSABLE_ENTITY, "phone-required",
+                                "Phone Required", "Le numéro de téléphone est introuvable");
+                    }
+                } else {
+                    // Pour les custom tokens email, l'UID Firebase est l'email utilisé dans createCustomToken(email)
+                    // On vérifie que l'email du body correspond à l'UID pour éviter l'usurpation
+                    if (request.email() == null) {
+                        throw new YadonyBusinessException(
+                                HttpStatus.UNPROCESSABLE_ENTITY, "email-required",
+                                "Email Required", "L'adresse email est requise");
+                    }
+                    if (!firebaseUid.equalsIgnoreCase(request.email())) {
+                        throw new YadonyBusinessException(
+                                HttpStatus.UNPROCESSABLE_ENTITY, "email-mismatch",
+                                "Email Mismatch", "L'email fourni ne correspond pas au token Firebase");
+                    }
+                    Optional<UserResponse> existing = findLocalAccountByEmail(request.email(), firebaseUid);
+                    if (existing.isPresent()) {
+                        return existing.get();
+                    }
+                    // Un compte créé par custom token ne porte aucune adresse côté Firebase :
+                    // on l'y écrit pour que Firebase reste la seule source de vérité.
+                    firebaseContact.updateEmail(firebaseUid, request.email());
                 }
-                if (!firebaseUid.equalsIgnoreCase(request.email())) {
-                    throw new YadonyBusinessException(
-                            HttpStatus.UNPROCESSABLE_ENTITY, "email-mismatch",
-                            "Email Mismatch", "L'email fourni ne correspond pas au token Firebase");
-                }
-                Optional<UserResponse> existing = findLocalAccountByEmail(request.email(), firebaseUid);
-                if (existing.isPresent()) {
-                    return existing.get();
-                }
-                // Un compte créé par custom token ne porte aucune adresse côté Firebase :
-                // on l'y écrit pour que Firebase reste la seule source de vérité.
-                firebaseContact.updateEmail(firebaseUid, request.email());
             }
             default -> throw new YadonyBusinessException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "invalid-provider",
@@ -497,6 +510,21 @@ public class AuthService {
             return null;
         }
         Object claim = decodedToken.getClaims().get("phone_number");
+        return claim instanceof String s ? s : null;
+    }
+
+    /**
+     * Developer claim posé par {@code SmsOtpService.verifyOtp()} au moment du
+     * {@code createCustomToken(uid, claims)}, propagé tel quel (top-level, pas
+     * nested sous {@code firebase}) dans l'ID token produit par
+     * {@code signInWithCustomToken()}. Distingue un custom-token SMS OTP (uid =
+     * UID Firebase natif du numéro) d'un custom-token email OTP (uid = email).
+     */
+    private static String extractOtpChannelClaim(FirebaseToken decodedToken) {
+        if (decodedToken == null) {
+            return null;
+        }
+        Object claim = decodedToken.getClaims().get("otp_channel");
         return claim instanceof String s ? s : null;
     }
 

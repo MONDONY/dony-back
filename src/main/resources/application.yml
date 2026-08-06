@@ -181,6 +181,8 @@ yadony:
     resend-api-key: ${RESEND_API_KEY:}
     from-address: ${YADONY_EMAIL_FROM_ADDRESS:noreply@yadony.com}
     otp-template: "Ton code Yadony est : %s. Valable 10 minutes."
+  sms:
+    otp-template: "Ton code Yadony est : %s. Valable 10 minutes."
 
 # Encryption (AES-256 for KYC sensitive data)
 app:
@@ -192,6 +194,9 @@ app:
     africastalking:
       api-key: ${AT_API_KEY:}
       username: ${AT_USERNAME:sandbox}
+      # SN, CI, ML, CM — cf. SmsService.isAfricasTalkingCorridor(). Tout autre
+      # indicatif (France comprise) part directement sur Twilio.
+      corridor-calling-codes: ${AT_CORRIDOR_CALLING_CODES:221,225,223,237}
     twilio:
       account-sid: ${TWILIO_ACCOUNT_SID:}
       auth-token: ${TWILIO_AUTH_TOKEN:}

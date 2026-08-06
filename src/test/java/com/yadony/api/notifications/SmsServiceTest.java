@@ -29,9 +29,40 @@ class SmsServiceTest {
         ReflectionTestUtils.setField(smsService, "smsEnabled", true);
         ReflectionTestUtils.setField(smsService, "atApiKey", "test-at-key");
         ReflectionTestUtils.setField(smsService, "atUsername", "sandbox");
+        ReflectionTestUtils.setField(smsService, "atCorridorCallingCodes",
+                java.util.List.of("221", "225", "223", "237"));
         ReflectionTestUtils.setField(smsService, "twilioAccountSid", "ACtest");
         ReflectionTestUtils.setField(smsService, "twilioAuthToken", "token");
         ReflectionTestUtils.setField(smsService, "twilioFrom", "+15005550006");
+    }
+
+    @Test
+    void isEnabled_reflectsSmsEnabledField() {
+        assertThat(smsService.isEnabled()).isTrue();
+        ReflectionTestUtils.setField(smsService, "smsEnabled", false);
+        assertThat(smsService.isEnabled()).isFalse();
+    }
+
+    @Test
+    void isAfricasTalkingCorridor_matchesConfiguredCallingCodes() {
+        assertThat(smsService.isAfricasTalkingCorridor("+221701234567")).isTrue(); // Sénégal
+        assertThat(smsService.isAfricasTalkingCorridor("+2250712345678")).isTrue(); // Côte d'Ivoire
+        assertThat(smsService.isAfricasTalkingCorridor("+22370123456")).isTrue(); // Mali
+        assertThat(smsService.isAfricasTalkingCorridor("+237612345678")).isTrue(); // Cameroun
+        assertThat(smsService.isAfricasTalkingCorridor("+33612345678")).isFalse(); // France
+        assertThat(smsService.isAfricasTalkingCorridor(null)).isFalse();
+        assertThat(smsService.isAfricasTalkingCorridor("0612345678")).isFalse(); // pas E.164
+    }
+
+    @Test
+    void send_frenchNumber_goesDirectlyToTwilio_noAfricasTalkingCall() {
+        when(restTemplate.postForEntity(contains("twilio.com"), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{}"));
+
+        smsService.send("+33612345678", "Ton code Yadony est : 123456");
+
+        verify(restTemplate, times(1)).postForEntity(anyString(), any(), eq(String.class));
+        verify(restTemplate, never()).postForEntity(contains("africastalking"), any(), eq(String.class));
     }
 
     @Test

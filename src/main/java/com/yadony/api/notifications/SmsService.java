@@ -12,6 +12,8 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+
 @Service
 public class SmsService {
 
@@ -26,6 +28,14 @@ public class SmsService {
 
     @Value("${app.sms.africastalking.username:sandbox}")
     private String atUsername;
+
+    // Indicatifs des corridors couverts par Africa's Talking (connexions opérateur
+    // directes, tarifs locaux) : Sénégal, Côte d'Ivoire, Mali, Cameroun. Tout autre
+    // indicatif (France comprise) part directement sur Twilio — Africa's Talking
+    // n'a pas vocation à couvrir l'Europe, et un aller-retour voué à l'échec avant
+    // le fallback ajouterait latence et risque d'échec silencieux pour rien.
+    @Value("${app.sms.africastalking.corridor-calling-codes:221,225,223,237}")
+    private List<String> atCorridorCallingCodes = List.of("221", "225", "223", "237");
 
     @Value("${app.sms.twilio.account-sid:}")
     private String twilioAccountSid;
@@ -42,15 +52,32 @@ public class SmsService {
         this.restTemplate = restTemplate;
     }
 
+    public boolean isEnabled() {
+        return smsEnabled;
+    }
+
     public void send(String phoneNumber, String message) {
         if (!smsEnabled) {
             log.info("[SMS-DEV] To=*** | [message redacted]");
             return;
         }
-        if (!sendViaAfricasTalking(phoneNumber, message)) {
-            log.warn("[SMS] Africa's Talking failed, falling back to Twilio");
+        if (isAfricasTalkingCorridor(phoneNumber)) {
+            if (!sendViaAfricasTalking(phoneNumber, message)) {
+                log.warn("[SMS] Africa's Talking failed, falling back to Twilio");
+                sendViaTwilio(phoneNumber, message);
+            }
+        } else {
             sendViaTwilio(phoneNumber, message);
         }
+    }
+
+    /** Numéro E.164 (ex: +2250712345678) dont l'indicatif fait partie des corridors Africa's Talking. */
+    boolean isAfricasTalkingCorridor(String phoneNumber) {
+        if (phoneNumber == null || !phoneNumber.startsWith("+")) {
+            return false;
+        }
+        String digits = phoneNumber.substring(1);
+        return atCorridorCallingCodes.stream().anyMatch(digits::startsWith);
     }
 
     boolean sendViaAfricasTalking(String phoneNumber, String message) {
