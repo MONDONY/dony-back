@@ -3,7 +3,9 @@ package com.yadony.api.config;
 import com.yadony.api.config.dto.CommissionRateResponse;
 import com.yadony.api.config.dto.ContentCategoryResponse;
 import com.yadony.api.config.dto.ReimbursementCapResponse;
+import com.yadony.api.config.dto.SmsEnabledResponse;
 import com.yadony.api.config.dto.UrgencyThresholdResponse;
+import com.yadony.api.notifications.SmsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,9 +18,11 @@ import java.util.List;
 public class ConfigController {
 
     private final YadonyConfigProperties config;
+    private final SmsService smsService;
 
-    public ConfigController(YadonyConfigProperties config) {
+    public ConfigController(YadonyConfigProperties config, SmsService smsService) {
         this.config = config;
+        this.smsService = smsService;
     }
 
     @GetMapping("/commission-rate")
@@ -39,5 +43,10 @@ public class ConfigController {
     @GetMapping("/content-categories")
     public ResponseEntity<List<ContentCategoryResponse>> getContentCategories() {
         return ResponseEntity.ok(ContentCatalog.CATEGORIES);
+    }
+
+    @GetMapping("/sms-enabled")
+    public ResponseEntity<SmsEnabledResponse> getSmsEnabled() {
+        return ResponseEntity.ok(new SmsEnabledResponse(smsService.isEnabled()));
     }
 }

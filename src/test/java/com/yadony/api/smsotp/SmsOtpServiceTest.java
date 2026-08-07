@@ -88,6 +88,41 @@ class SmsOtpServiceTest {
             verify(smsOtpRepository, never()).save(any());
             verify(smsService, never()).send(any(), any());
         }
+
+        @Test
+        @DisplayName("503 — SMS désactivé en prod (flag pas encore activé alors que l'écran reste accessible)")
+        void smsDisabledInProd() {
+            Environment prodEnvironment = mock(Environment.class);
+            when(prodEnvironment.getActiveProfiles()).thenReturn(new String[] {"prod"});
+            SmsOtpService service = new SmsOtpService(smsOtpRepository, passwordEncoder, smsService,
+                    properties, firebaseAuth, userRepository, firebaseContact, auditService, prodEnvironment);
+            when(smsService.isEnabled()).thenReturn(false);
+
+            assertThatThrownBy(() -> service.sendOtp(PHONE))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .extracting(e -> ((YadonyBusinessException) e).getStatus())
+                    .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+
+            verify(smsOtpRepository, never()).countByPhoneSince(any(), any());
+            verify(smsOtpRepository, never()).save(any());
+            verify(smsService, never()).send(any(), any());
+        }
+
+        @Test
+        @DisplayName("succès — SMS désactivé en dev/test (repli log, pas de blocage)")
+        void smsDisabledInDevStillSucceeds() {
+            SmsOtpService service = newService();
+            when(smsOtpRepository.countByPhoneSince(eq(PHONE), any())).thenReturn(0L);
+            when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hashed");
+            when(smsOtpRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(properties.getOtpTemplate()).thenReturn("Code : %s");
+            when(smsService.isEnabled()).thenReturn(false);
+
+            var result = service.sendOtp(PHONE);
+
+            assertThat(result).isNotNull();
+            verify(smsService).send(eq(PHONE), anyString());
+        }
     }
 
     @Nested

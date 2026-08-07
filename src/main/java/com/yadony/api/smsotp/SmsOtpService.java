@@ -73,6 +73,16 @@ public class SmsOtpService {
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public Instant sendOtp(String phoneNumber) {
+        // En dev/test, SMS désactivé est le réglage normal (voir le relais de log
+        // plus bas) : on ne bloque qu'en prod, où un flag resté à false alors que
+        // l'écran est accessible (build client périgé, deep link) enverrait
+        // sinon un "code envoyé" silencieux qui n'arrive jamais.
+        if (!smsService.isEnabled() && !devProfile) {
+            throw new YadonyBusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "sms-otp-disabled",
+                    "SMS OTP Disabled", "L'authentification par SMS n'est pas encore disponible");
+        }
+
         LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(RATE_WINDOW_MINUTES);
         if (smsOtpRepository.countByPhoneSince(phoneNumber, since) >= MAX_SENDS_PER_WINDOW) {
             throw new YadonyBusinessException(

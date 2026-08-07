@@ -129,6 +129,9 @@ jobs:
           GRAFANA_CLOUD_TOKEN=${{ secrets.GRAFANA_CLOUD_TOKEN }}
           RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
           INTERNAL_SHARED_SECRET=${{ secrets.INTERNAL_SHARED_SECRET }}
+          TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }}
+          AT_API_KEY=${{ secrets.AT_API_KEY }}
 
           # Config métier (non sensible) — modifiable dans Settings > Environments > staging > Variables
           CORS_ALLOWED_ORIGINS=${{ vars.CORS_ALLOWED_ORIGINS }}
@@ -137,6 +140,7 @@ jobs:
           SWAGGER_ENABLED=${{ vars.SWAGGER_ENABLED }}
           SMS_ENABLED=${{ vars.SMS_ENABLED }}
           AT_USERNAME=${{ vars.AT_USERNAME }}
+          TWILIO_FROM=${{ vars.TWILIO_FROM }}
           WAVE_API_URL=${{ vars.WAVE_API_URL }}
           ORANGE_MONEY_API_URL=${{ vars.ORANGE_MONEY_API_URL }}
           YADONY_COMMISSION_RATE=${{ vars.YADONY_COMMISSION_RATE }}
