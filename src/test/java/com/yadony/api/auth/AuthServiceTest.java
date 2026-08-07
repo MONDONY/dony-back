@@ -882,6 +882,64 @@ class AuthServiceTest {
                         assertThat(ex.getErrorCode()).isEqualTo("email-required");
                     });
         }
+
+        /**
+         * Token custom avec le developer claim {@code otp_channel=sms} posé par
+         * SmsOtpService.verifyOtp() — top-level, PAS nested sous {@code firebase}
+         * (contrairement à {@code sign_in_provider}), exactement comme Firebase le
+         * propage depuis {@code createCustomToken(uid, claims)}.
+         */
+        private com.google.firebase.auth.FirebaseToken mockSmsOtpCustomToken(String uid) {
+            com.google.firebase.auth.FirebaseToken token = mock(com.google.firebase.auth.FirebaseToken.class);
+            java.util.Map<String, Object> claims = new java.util.HashMap<>();
+            claims.put("firebase", java.util.Map.of("sign_in_provider", "custom"));
+            claims.put("otp_channel", "sms");
+            lenient().when(token.getClaims()).thenReturn(claims);
+            return token;
+        }
+
+        @Test
+        @DisplayName("provider custom (SMS OTP) — uid déjà résolu par SmsOtpService, numéro lu sur Firebase")
+        void custom_smsOtp_success() {
+            String uid = "native-phone-uid";
+            com.google.firebase.auth.FirebaseToken token = mockSmsOtpCustomToken(uid);
+            // request.email() est naturellement null pour ce flow (le client envoie phoneNumber)
+            RegisterRequest req = new RegisterRequest(PHONE, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.empty());
+            // @BeforeEach stub par défaut : firebaseContact.getContact(*) → Contact(PHONE, null)
+            when(userRepository.save(any())).thenAnswer(i -> {
+                UserEntity u = i.getArgument(0);
+                setId(u, UUID.randomUUID());
+                return u;
+            });
+
+            UserResponse result = authService.register(uid, token, req);
+
+            assertThat(result).isNotNull();
+            verify(userRepository).save(any(UserEntity.class));
+            // Régression : le branchement SMS ne doit jamais écrire d'email (chemin
+            // réservé au custom-token email, où l'UID == l'adresse).
+            verify(firebaseContact, never()).updateEmail(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("provider custom (SMS OTP) — aucun numéro sur le UserRecord Firebase → 422 phone-required")
+        void custom_smsOtp_missingPhone_rejected() {
+            String uid = "native-phone-uid";
+            com.google.firebase.auth.FirebaseToken token = mockSmsOtpCustomToken(uid);
+            RegisterRequest req = new RegisterRequest(null, null, Set.of("SENDER"));
+            when(userRepository.findByFirebaseUid(uid)).thenReturn(Optional.empty());
+            when(firebaseContact.getContact(uid)).thenReturn(FirebaseContactService.Contact.EMPTY);
+
+            assertThatThrownBy(() -> authService.register(uid, token, req))
+                    .isInstanceOf(YadonyBusinessException.class)
+                    .satisfies(e -> {
+                        YadonyBusinessException ex = (YadonyBusinessException) e;
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                        assertThat(ex.getErrorCode()).isEqualTo("phone-required");
+                    });
+            verify(userRepository, never()).save(any());
+        }
     }
 
     // ─── SENDER-par-défaut ─────────────────────────────────────────────────────

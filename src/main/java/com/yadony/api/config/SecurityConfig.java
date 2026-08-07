@@ -75,6 +75,7 @@ public class SecurityConfig {
                 // être portée par la chaîne de sécurité, pas par une garde écrite dans
                 // le controller, qu'un refactor pourrait retirer sans aucun signal.
                 .requestMatchers("/auth/email-otp/attach").authenticated()
+                .requestMatchers("/auth/sms-otp/attach").authenticated()
                 .requestMatchers(
                     "/auth/**",
                     "/actuator/health",
