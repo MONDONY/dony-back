@@ -144,23 +144,35 @@ public class BidService {
         BigDecimal netEur = gridNet.add(kgNet).setScale(2, java.math.RoundingMode.HALF_UP);
 
         // Résolution du taux — promo validé strictement (exceptions propagées en RFC 7807).
+        // Le promo est résolu EN PREMIER : s'il est invalide, on propage avant même de
+        // toucher au taux de base (pas d'appel superflu si le devis échoue de toute façon).
+        // La ligne "Commission Yadony" affichée reste TOUJOURS au taux de base (non affecté
+        // par le promo) — la remise apparaît séparément, sur le total. Un promo qui écraserait
+        // silencieusement le taux (ancien comportement) pouvait égaler le taux courant et ne
+        // faire gagner aucune remise réelle (régression WELCOME05, 5 % promo = 5 % global).
         String promoCode = request.promoCode() != null ? request.promoCode().strip() : null;
-        BigDecimal rate;
         boolean promoApplied = false;
+        String promoLabel = null;
+        BigDecimal rate;
+        BigDecimal commissionEur;
+        BigDecimal totalEur;
+
         if (promoCode != null && !promoCode.isBlank()) {
-            rate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId(), promoCode);
+            BigDecimal finalRate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId(), promoCode);
             promoApplied = true;
+
+            rate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId());
+            commissionEur = netEur.multiply(rate).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal finalCommissionEur = netEur.multiply(finalRate).setScale(2, java.math.RoundingMode.HALF_UP);
+            totalEur = netEur.add(finalCommissionEur).setScale(2, java.math.RoundingMode.HALF_UP);
+
+            BigDecimal discountPoints = rate.subtract(finalRate).max(BigDecimal.ZERO);
+            long pct = discountPoints.multiply(java.math.BigDecimal.valueOf(100)).longValue();
+            promoLabel = "Code " + promoCode.toUpperCase() + " : " + pct + " % de réduction";
         } else {
             rate = commissionRateResolver.resolve(ann.getTravelerId(), sender.getId());
-        }
-
-        BigDecimal commissionEur = netEur.multiply(rate).setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal totalEur = netEur.add(commissionEur).setScale(2, java.math.RoundingMode.HALF_UP);
-
-        String promoLabel = null;
-        if (promoApplied) {
-            long pct = rate.multiply(java.math.BigDecimal.valueOf(100)).longValue();
-            promoLabel = "Code " + promoCode.toUpperCase() + " : " + pct + " % de commission";
+            commissionEur = netEur.multiply(rate).setScale(2, java.math.RoundingMode.HALF_UP);
+            totalEur = netEur.add(commissionEur).setScale(2, java.math.RoundingMode.HALF_UP);
         }
 
         return new BidQuoteResponse(netEur, gridNet, kgNet, rate, commissionEur, totalEur, promoApplied, promoLabel);
