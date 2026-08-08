@@ -91,15 +91,40 @@ class CommissionRateResolverTest {
     // ── Phase 2 : code promo ─────────────────────────────────────────────────
 
     @Test
-    void promo_overrides_min_rate_when_valid() {
+    void promo_subtracts_points_from_base_rate() {
         UUID t = UUID.randomUUID();
         UUID s = UUID.randomUUID();
-        // Override traveler 0.10 < global 0.12, mais le promo à 0.06 doit écraser tout.
+        // Base = min(global 0.12, override voyageur 0.10) = 0.10 ; promo 0.06 retranché → 0.04.
         lenient().when(userRepository.findById(t)).thenReturn(Optional.of(withOverride(new BigDecimal("0.10"))));
         lenient().when(userRepository.findById(s)).thenReturn(Optional.of(withOverride(null)));
         when(promoService.validateAndGetRate(eq("PROMO6"), eq(s), any())).thenReturn(new BigDecimal("0.06"));
 
-        assertThat(resolver().resolve(t, s, "PROMO6")).isEqualByComparingTo("0.06");
+        assertThat(resolver().resolve(t, s, "PROMO6")).isEqualByComparingTo("0.04");
+    }
+
+    @Test
+    void promo_equal_to_base_rate_zeroes_commission() {
+        UUID t = UUID.randomUUID();
+        UUID s = UUID.randomUUID();
+        // Régression WELCOME05 : promo à 0.12 = taux global 0.12 → commission nulle,
+        // pas un taux inchangé (l'ancien comportement écrasait par la même valeur : 0 remise).
+        lenient().when(userRepository.findById(t)).thenReturn(Optional.of(withOverride(null)));
+        lenient().when(userRepository.findById(s)).thenReturn(Optional.of(withOverride(null)));
+        when(promoService.validateAndGetRate(eq("WELCOME12"), eq(s), any())).thenReturn(new BigDecimal("0.12"));
+
+        assertThat(resolver().resolve(t, s, "WELCOME12")).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void promo_above_base_rate_floors_at_zero_never_negative() {
+        UUID t = UUID.randomUUID();
+        UUID s = UUID.randomUUID();
+        // Promo 0.20 > taux global 0.12 → plancher 0, jamais de commission négative.
+        lenient().when(userRepository.findById(t)).thenReturn(Optional.of(withOverride(null)));
+        lenient().when(userRepository.findById(s)).thenReturn(Optional.of(withOverride(null)));
+        when(promoService.validateAndGetRate(eq("BIGPROMO"), eq(s), any())).thenReturn(new BigDecimal("0.20"));
+
+        assertThat(resolver().resolve(t, s, "BIGPROMO")).isEqualByComparingTo("0.00");
     }
 
     @Test

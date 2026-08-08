@@ -20,8 +20,12 @@ import java.util.UUID;
  *
  * <p>Règle (cf. {@code docs/specs/commission-rate-overrides-and-promo.md}) :
  * <ol>
- *   <li><b>Phase 2</b> — si {@code promoCode} non null et valide → taux promo (priorité 1, écrase tout).</li>
- *   <li><b>Phase 1</b> — sinon : {@code min( override(voyageur), override(expéditeur), global )}.</li>
+ *   <li><b>Phase 1</b> — taux de base : {@code min( override(voyageur), override(expéditeur), global )}.</li>
+ *   <li><b>Phase 2</b> — si {@code promoCode} non null et valide : le taux du promo est
+ *       retranché en points du taux de base (plancher 0), pas substitué. Un promo dont le
+ *       taux égale ou dépasse le taux de base annule donc entièrement la commission au lieu
+ *       de rester sans effet (régression WELCOME05 : 5 % de promo = 5 % de taux global
+ *       depuis le passage 12 %→5 % ne faisait auparavant gagner aucune remise réelle).</li>
  * </ol>
  */
 @Service
@@ -76,19 +80,21 @@ public class CommissionRateResolver {
      * Résolution complète avec contexte utilisateur explicite pour la validation promo.
      * <p>Utilisé dans les contextes où l'ID de l'utilisateur qui entre le code promo
      * diffère du senderId (rare, mais couvert pour extensibilité Phase 3+).
-     * <p>Si {@code promoCode} est non null : valide strictement et retourne le taux promo
-     * (lève {@link com.yadony.api.common.YadonyBusinessException} si invalide — laisser remonter
-     * dans le contexte devis, attraper et logger dans le contexte paiement).
+     * <p>Si {@code promoCode} est non null : valide strictement (lève
+     * {@link com.yadony.api.common.YadonyBusinessException} si invalide — laisser remonter
+     * dans le contexte devis, attraper et logger dans le contexte paiement), puis retranche
+     * le taux du promo en points du taux de base (plancher 0 — un promo ne peut jamais rendre
+     * la commission négative).
      */
     public BigDecimal resolve(UUID travelerId, UUID senderId, String promoCode, UUID promoUserId) {
-        if (promoCode != null && !promoCode.isBlank() && promoUserId != null) {
-            BigDecimal promoRate = promoService.validateAndGetRate(
-                    promoCode, promoUserId, PromoCodeTarget.SENDER);
-            return promoRate;
-        }
         BigDecimal rate = globalRate();
         rate = minNullable(rate, overrideOf(travelerId));
         rate = minNullable(rate, overrideOf(senderId));
+        if (promoCode != null && !promoCode.isBlank() && promoUserId != null) {
+            BigDecimal promoRate = promoService.validateAndGetRate(
+                    promoCode, promoUserId, PromoCodeTarget.SENDER);
+            rate = rate.subtract(promoRate).max(BigDecimal.ZERO);
+        }
         return rate;
     }
 

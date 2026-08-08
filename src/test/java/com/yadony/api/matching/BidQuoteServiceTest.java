@@ -110,21 +110,43 @@ class BidQuoteServiceTest {
     }
 
     @Test
-    @DisplayName("KG avec promo valide : taux réduit, promoApplied=true, label présent")
+    @DisplayName("KG avec promo valide : commission affichée au taux de base, total reflète le taux final réduit")
     void quote_kgWithPromo_appliesPromoRate() {
         when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender()));
         when(announcementRepository.findById(ANN_ID)).thenReturn(Optional.of(announcement()));
+        // 0.06 = taux FINAL déjà réduit par le promo (résolu par CommissionRateResolver) ;
+        // 0.12 = taux de base, toujours affiché sur la ligne "Commission Yadony".
         when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "PROMO6")).thenReturn(new BigDecimal("0.06"));
+        when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.12"));
 
         BidQuoteRequest req = new BidQuoteRequest(ANN_ID, new BigDecimal("5"), "PROMO6", null);
         BidQuoteResponse resp = bidService.quote(SENDER_UID, req);
 
         assertThat(resp.netEur()).isEqualByComparingTo("100.00");
-        assertThat(resp.rate()).isEqualByComparingTo("0.06");
-        assertThat(resp.commissionEur()).isEqualByComparingTo("6.00");
-        assertThat(resp.totalEur()).isEqualByComparingTo("106.00");
+        assertThat(resp.rate()).isEqualByComparingTo("0.12");
+        assertThat(resp.commissionEur()).isEqualByComparingTo("12.00");
+        assertThat(resp.totalEur()).isEqualByComparingTo("106.00"); // 100 + 100×0.06 (taux final)
         assertThat(resp.promoApplied()).isTrue();
         assertThat(resp.promoLabel()).contains("PROMO6");
+        assertThat(resp.promoLabel()).contains("6 % de réduction");
+    }
+
+    @Test
+    @DisplayName("promo au même taux que le taux global : commission finale nulle (régression WELCOME05)")
+    void quote_kgWithPromo_sameRateAsGlobal_zeroesFinalCommission() {
+        when(userRepository.findByFirebaseUid(SENDER_UID)).thenReturn(Optional.of(sender()));
+        when(announcementRepository.findById(ANN_ID)).thenReturn(Optional.of(announcement()));
+        // CommissionRateResolver a déjà retranché le promo du taux de base (0.12 - 0.12 = 0).
+        when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "WELCOME12")).thenReturn(BigDecimal.ZERO);
+        when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.12"));
+
+        BidQuoteRequest req = new BidQuoteRequest(ANN_ID, new BigDecimal("5"), "WELCOME12", null);
+        BidQuoteResponse resp = bidService.quote(SENDER_UID, req);
+
+        assertThat(resp.rate()).isEqualByComparingTo("0.12"); // ligne commission inchangée
+        assertThat(resp.commissionEur()).isEqualByComparingTo("12.00");
+        assertThat(resp.totalEur()).isEqualByComparingTo("100.00"); // commission finale nulle → total = net
+        assertThat(resp.promoLabel()).contains("12 % de réduction");
     }
 
     @Test
@@ -193,15 +215,16 @@ class BidQuoteServiceTest {
         when(annGridItemRepository.findById(itemA))
                 .thenReturn(Optional.of(gridItem(itemA, ANN_ID, "Chaussures", "25.00")));
         when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "PROMO6")).thenReturn(new BigDecimal("0.06"));
+        when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.12"));
 
         BidQuoteRequest req = new BidQuoteRequest(ANN_ID, null, "PROMO6",
                 List.of(new BidGridItemRequest(itemA, 2))); // 2 × 25 = 50
         BidQuoteResponse resp = bidService.quote(SENDER_UID, req);
 
         assertThat(resp.netEur()).isEqualByComparingTo("50.00");
-        assertThat(resp.rate()).isEqualByComparingTo("0.06");
-        assertThat(resp.commissionEur()).isEqualByComparingTo("3.00");  // 50 × 0.06
-        assertThat(resp.totalEur()).isEqualByComparingTo("53.00");
+        assertThat(resp.rate()).isEqualByComparingTo("0.12");
+        assertThat(resp.commissionEur()).isEqualByComparingTo("6.00");  // 50 × 0.12 (base, affiché)
+        assertThat(resp.totalEur()).isEqualByComparingTo("53.00");  // 50 + 50×0.06 (taux final)
         assertThat(resp.promoApplied()).isTrue();
         assertThat(resp.promoLabel()).contains("PROMO6");
     }
