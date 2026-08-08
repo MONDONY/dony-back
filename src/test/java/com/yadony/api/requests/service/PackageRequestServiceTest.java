@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.lang.reflect.Field;
@@ -52,6 +53,7 @@ class PackageRequestServiceTest {
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private com.yadony.api.matching.MatchingService matchingService;
     @Mock private com.yadony.api.matching.AnnouncementRepository announcementRepository;
+    @Mock private com.yadony.api.common.CommissionRateResolver commissionRateResolver;
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (yadony.urgency.threshold-days). */
     private final YadonyConfigProperties yadonyConfig =
             new YadonyConfigProperties(null, null, new YadonyConfigProperties.Urgency(3), null);
@@ -102,7 +104,7 @@ class PackageRequestServiceTest {
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
                 storageService, photoService, favoriteRepository, realMapper, matchingService,
-                yadonyConfig, announcementRepository);
+                yadonyConfig, announcementRepository, commissionRateResolver);
     }
 
     // ========== Task 12: create() tests ==========
@@ -151,6 +153,90 @@ class PackageRequestServiceTest {
             service.create(SENDER_ID, req);
 
             verify(photoService).replacePhotos(reqId, SENDER_ID, keys);
+        }
+
+        @Test @DisplayName("promoCode fourni → persisté normalisé (trim + upper), validation différée au paiement")
+        void create_withPromoCode_persistsNormalized() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> {
+                PackageRequestEntity e = inv.getArgument(0);
+                setId(e, UUID.randomUUID());
+                return e;
+            });
+
+            var req = new PackageRequestCreateRequest(
+                "Paris", "Dakar", LocalDate.now().plusDays(5), 2,
+                new BigDecimal("5"), "vetements", null, new BigDecimal("28.00"),
+                null, null, null, true, EnumSet.of(PaymentMethod.STRIPE), List.of(),
+                null, " welcome6 ");
+
+            service.create(SENDER_ID, req);
+
+            ArgumentCaptor<PackageRequestEntity> captor = ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            assertThat(captor.getValue().getPromoCode()).isEqualTo("WELCOME6");
+        }
+
+        @Test @DisplayName("promoCode absent → null persisté (pas de code promo requis)")
+        void create_withoutPromoCode_persistsNull() {
+            when(config.maxOpenRequestsPerSender()).thenReturn(10);
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(sender));
+            when(repository.countBySenderIdAndStatusIn(eq(SENDER_ID), any())).thenReturn(0L);
+            when(repository.save(any(PackageRequestEntity.class))).thenAnswer(inv -> {
+                PackageRequestEntity e = inv.getArgument(0);
+                setId(e, UUID.randomUUID());
+                return e;
+            });
+
+            service.create(SENDER_ID, validRequest());
+
+            ArgumentCaptor<PackageRequestEntity> captor = ArgumentCaptor.forClass(PackageRequestEntity.class);
+            verify(repository).save(captor.capture());
+            assertThat(captor.getValue().getPromoCode()).isNull();
+        }
+    }
+
+    @Nested @DisplayName("quote() — devis budget transparent (avant tout voyageur)")
+    class QuoteTests {
+        @Test @DisplayName("sans promo — commission au taux de base, net dérivé du budget")
+        void quote_noPromo_baseRate() {
+            when(commissionRateResolver.resolve(isNull(), eq(SENDER_ID))).thenReturn(new BigDecimal("0.05"));
+
+            var quote = service.quote(SENDER_ID, new BigDecimal("40.00"), null);
+
+            assertThat(quote.totalEur()).isEqualByComparingTo("40.00");
+            assertThat(quote.rate()).isEqualByComparingTo("0.05");
+            assertThat(quote.commissionEur()).isEqualByComparingTo("1.90");
+            assertThat(quote.netEur()).isEqualByComparingTo("38.10");
+            assertThat(quote.promoApplied()).isFalse();
+        }
+
+        @Test @DisplayName("promo valide — commission toujours au taux de base, net du voyageur augmente")
+        void quote_validPromo_increasesNet() {
+            when(commissionRateResolver.resolve(isNull(), eq(SENDER_ID))).thenReturn(new BigDecimal("0.12"));
+            when(commissionRateResolver.resolve(isNull(), eq(SENDER_ID), eq("WELCOME6")))
+                .thenReturn(new BigDecimal("0.06"));
+
+            var quote = service.quote(SENDER_ID, new BigDecimal("40.00"), "WELCOME6");
+
+            assertThat(quote.rate()).isEqualByComparingTo("0.12"); // base, jamais affecté
+            assertThat(quote.commissionEur()).isEqualByComparingTo("4.29"); // 40 - 40/1.12
+            assertThat(quote.totalEur()).isEqualByComparingTo("40.00"); // budget fixe
+            assertThat(quote.netEur()).isEqualByComparingTo("37.74"); // 40/1.06 > 40/1.12
+            assertThat(quote.promoApplied()).isTrue();
+            assertThat(quote.promoLabel()).contains("6 % de réduction");
+        }
+
+        @Test @DisplayName("promo invalide — propage l'exception")
+        void quote_invalidPromo_propagates() {
+            when(commissionRateResolver.resolve(isNull(), eq(SENDER_ID), eq("BADCODE")))
+                .thenThrow(new com.yadony.api.common.YadonyBusinessException(
+                    HttpStatus.NOT_FOUND, "promo-not-found", "Promo Not Found", "Introuvable"));
+
+            assertThatThrownBy(() -> service.quote(SENDER_ID, new BigDecimal("40.00"), "BADCODE"))
+                .isInstanceOf(com.yadony.api.common.YadonyBusinessException.class);
         }
     }
 

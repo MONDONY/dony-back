@@ -57,6 +57,19 @@ public class PackageRequestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(userId, req));
     }
 
+    /**
+     * Devis transparent pendant que l'expéditeur fixe son budget (étape 3) :
+     * commission Yadony (taux + montant) et prévisualisation d'un code promo
+     * optionnel, avant même qu'un voyageur/thread existe.
+     */
+    @GetMapping("/quote")
+    @PreAuthorize("hasRole('SENDER')")
+    public NegotiationQuoteResponse quote(
+            @RequestParam BigDecimal budgetEur,
+            @RequestParam(required = false) String promoCode) {
+        return service.quote(requireUserId(), budgetEur, promoCode);
+    }
+
     @GetMapping("/me")
     @PreAuthorize("hasRole('SENDER')")
     public Page<PackageRequestResponse> findMine(

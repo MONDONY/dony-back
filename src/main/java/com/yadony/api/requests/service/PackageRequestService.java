@@ -4,6 +4,7 @@ import com.yadony.api.auth.KycStatus;
 import com.yadony.api.auth.UserEntity;
 import com.yadony.api.auth.UserRepository;
 import com.yadony.api.common.AuditService;
+import com.yadony.api.common.CommissionRateResolver;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.config.ContentCategoryNormalizer;
 import com.yadony.api.config.YadonyConfigProperties;
@@ -64,6 +65,7 @@ public class PackageRequestService {
     private final MatchingService matchingService;
     private final YadonyConfigProperties yadonyConfig;
     private final AnnouncementRepository announcementRepository;
+    private final CommissionRateResolver commissionRateResolver;
 
     public PackageRequestService(PackageRequestRepository repository,
                                   UserRepository userRepository,
@@ -79,7 +81,8 @@ public class PackageRequestService {
                                   PackageRequestSearchMapper packageRequestSearchMapper,
                                   MatchingService matchingService,
                                   YadonyConfigProperties yadonyConfig,
-                                  AnnouncementRepository announcementRepository) {
+                                  AnnouncementRepository announcementRepository,
+                                  CommissionRateResolver commissionRateResolver) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
@@ -95,6 +98,48 @@ public class PackageRequestService {
         this.matchingService = matchingService;
         this.yadonyConfig = yadonyConfig;
         this.announcementRepository = announcementRepository;
+        this.commissionRateResolver = commissionRateResolver;
+    }
+
+    /**
+     * Devis transparent pour l'expéditeur pendant qu'il fixe son budget (étape 3
+     * de publication) : aucun voyageur/thread n'existe encore, donc pas d'override
+     * voyageur possible — seuls override expéditeur + global + promo entrent en
+     * jeu. [budgetEur] est le montant que l'expéditeur est prêt à payer (gross,
+     * même sens que {@code totalBudgetEur}), FIXE : la commission affichée reste
+     * toujours au taux de base (transparence, jamais faussée par le promo — même
+     * contrat que {@link NegotiationService#quote}). Le promo, lui, ne réduit pas
+     * ce budget mais AUGMENTE ce que le voyageur toucherait pour ce même budget
+     * (net = seul champ que le promo fait bouger ici) — plus attractif pour les
+     * voyageurs, à dépense égale pour l'expéditeur.
+     */
+    @Transactional(readOnly = true)
+    public NegotiationQuoteResponse quote(UUID senderId, BigDecimal budgetEur, String promoCode) {
+        String code = promoCode != null ? promoCode.strip() : null;
+
+        // Résolu EN PREMIER : promo invalide → propage avant tout autre appel
+        // (même contrat que NegotiationService.quote / BidService.quote).
+        BigDecimal finalRate = null;
+        boolean promoApplied = false;
+        if (code != null && !code.isBlank()) {
+            finalRate = commissionRateResolver.resolve(null, senderId, code);
+            promoApplied = true;
+        }
+
+        BigDecimal baseRate = commissionRateResolver.resolve(null, senderId);
+        BigDecimal netBase = budgetEur.divide(BigDecimal.ONE.add(baseRate), 2, RoundingMode.HALF_UP);
+        BigDecimal commissionEur = budgetEur.subtract(netBase).setScale(2, RoundingMode.HALF_UP);
+
+        String promoLabel = null;
+        BigDecimal net = netBase;
+        if (promoApplied) {
+            net = budgetEur.divide(BigDecimal.ONE.add(finalRate), 2, RoundingMode.HALF_UP);
+            BigDecimal discountPoints = baseRate.subtract(finalRate).max(BigDecimal.ZERO);
+            long pct = discountPoints.multiply(BigDecimal.valueOf(100)).longValue();
+            promoLabel = "Code " + code.toUpperCase() + " : " + pct + " % de réduction";
+        }
+
+        return new NegotiationQuoteResponse(net, baseRate, commissionEur, budgetEur, promoApplied, promoLabel);
     }
 
     // ─── create ─────────────────────────────────────────────────────────────────
@@ -197,6 +242,7 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
+        entity.setPromoCode(normalizePromoCode(req.promoCode()));
         entity.setStatus(isDraft ? PackageRequestStatus.DRAFT : PackageRequestStatus.OPEN);
         // Le disclaimer douanier est accepté à la publication. Tant que la demande
         // est un brouillon, l'expéditeur n'a rien publié — donc rien signé.
@@ -306,6 +352,7 @@ public class PackageRequestService {
         entity.setDeliveryNeighborhood(req.deliveryNeighborhood());
         entity.setNegotiable(req.negotiable());
         entity.setAcceptedPaymentMethods(req.acceptedPaymentMethods());
+        entity.setPromoCode(normalizePromoCode(req.promoCode()));
         // Repasser en OPEN sert à sortir d'une négociation dont les termes ont
         // changé. Un brouillon n'a pas de négociation et ne doit pas être publié
         // par une simple édition.
@@ -774,7 +821,8 @@ public class PackageRequestService {
             grossPriceEur,
             photos,
             viewerThreadId,
-            viewerThreadStatus
+            viewerThreadStatus,
+            e.getPromoCode()
         );
     }
 
@@ -818,5 +866,12 @@ public class PackageRequestService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "request/target-price-required");
         }
+    }
+
+    /** Trim + uppercase ; null/blank → null. Validation stricte différée au paiement réel. */
+    private static String normalizePromoCode(String promoCode) {
+        if (promoCode == null) return null;
+        String trimmed = promoCode.strip();
+        return trimmed.isEmpty() ? null : trimmed.toUpperCase();
     }
 }

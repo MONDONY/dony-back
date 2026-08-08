@@ -26,5 +26,15 @@ public record PackageRequestAcceptedEvent(
      * (STRIPE — pas de prélèvement commission ici). Permet au bid matérialisé de savoir
      * comment rembourser si le bid est annulé avant remise (cf. BidCancelledCommissionRefundListener).
      */
-    String commissionChargedVia
+    String commissionChargedVia,
+    /**
+     * Code promo appliqué par l'expéditeur au paiement (null si aucun) et taux de
+     * commission effectivement retenu — stampés sur le thread par
+     * {@code NegotiationService.recordAppliedPromo}. Consommés par
+     * {@code ThreadAcceptedBidListener} pour déclencher le rachat (redeem) une fois
+     * le bid matérialisé, seul point où un bid_id existe pour la contrainte
+     * UNIQUE(promo_code_id, bid_id) de {@code promo_redemptions}.
+     */
+    String promoCode,
+    BigDecimal commissionRate
 ) {}

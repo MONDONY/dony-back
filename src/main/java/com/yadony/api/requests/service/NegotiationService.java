@@ -5,6 +5,7 @@ import com.yadony.api.auth.StripeAccountStatus;
 import com.yadony.api.auth.UserEntity;
 import com.yadony.api.auth.UserRepository;
 import com.yadony.api.common.AuditService;
+import com.yadony.api.common.CommissionRateResolver;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.payments.PriceBreakdown;
 import com.yadony.api.payments.cash.CommissionProperties;
@@ -52,6 +53,7 @@ public class NegotiationService {
     private final NegotiationEscrowPort escrowPort;
     private final StorageService storageService;
     private final PackageRequestPhotoService photoService;
+    private final CommissionRateResolver commissionRateResolver;
 
     public NegotiationService(PackageRequestRepository requestRepo,
                                NegotiationThreadRepository threadRepo,
@@ -65,7 +67,8 @@ public class NegotiationService {
                                CashGatePort cashGatePort,
                                NegotiationEscrowPort escrowPort,
                                StorageService storageService,
-                               PackageRequestPhotoService photoService) {
+                               PackageRequestPhotoService photoService,
+                               CommissionRateResolver commissionRateResolver) {
         this.requestRepo = requestRepo;
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -79,6 +82,7 @@ public class NegotiationService {
         this.escrowPort = escrowPort;
         this.storageService = storageService;
         this.photoService = photoService;
+        this.commissionRateResolver = commissionRateResolver;
     }
 
     /**
@@ -167,6 +171,10 @@ public class NegotiationService {
         thread.setCurrentPriceEur(req.proposedPriceEur());
         thread.setRoundsCount((short) 1);
         thread.setLastActivityAt(LocalDateTime.now(ZoneOffset.UTC));
+        // Code promo saisi par l'expéditeur à la publication de sa demande (étape 3)
+        // → appliqué automatiquement au paiement, sans re-saisie (cf. javadoc
+        // NegotiationThreadEntity.promoCode).
+        thread.setPromoCode(request.getPromoCode());
 
         NegotiationThreadEntity saved = threadRepo.save(thread);
 
@@ -907,7 +915,9 @@ public class NegotiationService {
             request.getDisclaimerSignedIp(),
             thread.getPaymentMethod(),
             photoService.objectKeys(request.getId()),
-            thread.getCommissionChargedVia()
+            thread.getCommissionChargedVia(),
+            thread.getPromoCode(),
+            thread.getCommissionRate()
         ));
         auditService.log("NEGOTIATION_THREAD", threadId, "ACCEPTED", callerId,
             Map.of("price", thread.getCurrentPriceEur().toString(),
@@ -1130,6 +1140,73 @@ public class NegotiationService {
         com.yadony.api.matching.AnnouncementEntity linkedAnn = thread.getTravelerAnnouncementId() != null
             ? announcementRepo.findById(thread.getTravelerAnnouncementId()).orElse(null) : null;
         return toResponse(thread, msgs, null, travelerEntity, request, callerId, senderName, linkedAnn);
+    }
+
+    /**
+     * Devis transparent pour l'expéditeur avant paiement : net voyageur, commission
+     * Yadony (taux de base, jamais affecté par le promo — la remise n'apparaît que
+     * sur le total, cf. {@code BidService.quote}), et prévisualisation d'un code
+     * promo optionnel. Sender-only : seul celui qui paie peut appliquer un promo.
+     */
+    @Transactional(readOnly = true)
+    public NegotiationQuoteResponse quote(UUID callerId, UUID threadId, String promoCode) {
+        NegotiationThreadEntity thread = threadRepo.findById(threadId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "thread/not-found"));
+        PackageRequestEntity request = requestRepo.findById(thread.getPackageRequestId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "request/not-found"));
+        if (!callerId.equals(request.getSenderId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "negotiation/not-thread-participant");
+        }
+
+        BigDecimal net = thread.getCurrentPriceEur();
+        UUID travelerId = thread.getTravelerId();
+        // Auto-appliqué : à défaut d'un override explicite, reflète le code porté par
+        // le thread depuis la publication de la demande (jamais resaisi par défaut).
+        String rawCode = promoCode != null ? promoCode : thread.getPromoCode();
+        String code = rawCode != null ? rawCode.strip() : null;
+
+        boolean promoApplied = false;
+        String promoLabel = null;
+        BigDecimal rate;
+        BigDecimal commissionEur;
+        BigDecimal totalEur;
+
+        if (code != null && !code.isBlank()) {
+            // Résolu EN PREMIER : promo invalide → propage avant de calculer quoi que ce
+            // soit d'autre (même contrat que BidService.quote — cf. régression WELCOME05).
+            BigDecimal finalRate = commissionRateResolver.resolve(travelerId, callerId, code);
+            promoApplied = true;
+
+            rate = commissionRateResolver.resolve(travelerId, callerId);
+            commissionEur = net.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal finalCommissionEur = net.multiply(finalRate).setScale(2, RoundingMode.HALF_UP);
+            totalEur = net.add(finalCommissionEur).setScale(2, RoundingMode.HALF_UP);
+
+            BigDecimal discountPoints = rate.subtract(finalRate).max(BigDecimal.ZERO);
+            long pct = discountPoints.multiply(BigDecimal.valueOf(100)).longValue();
+            promoLabel = "Code " + code.toUpperCase() + " : " + pct + " % de réduction";
+        } else {
+            rate = commissionRateResolver.resolve(travelerId, callerId);
+            commissionEur = net.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            totalEur = net.add(commissionEur).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        return new NegotiationQuoteResponse(net, rate, commissionEur, totalEur, promoApplied, promoLabel);
+    }
+
+    /**
+     * Stamp le code promo et le taux appliqués sur le thread après une création
+     * d'escrow réussie (initiate-payment) — voir {@link #quote} et le javadoc de
+     * {@code NegotiationThreadEntity.promoCode}. Consommé par {@code ThreadAcceptedBidListener}
+     * pour déclencher le rachat une fois le bid matérialisé.
+     */
+    @Transactional
+    public void recordAppliedPromo(UUID threadId, String promoCode, BigDecimal rate) {
+        threadRepo.findById(threadId).ifPresent(thread -> {
+            thread.setPromoCode(promoCode != null ? promoCode.strip().toUpperCase() : null);
+            thread.setCommissionRate(rate);
+            threadRepo.save(thread);
+        });
     }
 
     @Transactional
@@ -1375,7 +1452,8 @@ public class NegotiationService {
             cashCommissionAvailable,
             t.getAvailablePaymentMethods(),
             canNudge,
-            hasUnread
+            hasUnread,
+            t.getPromoCode()
         );
     }
 

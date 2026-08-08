@@ -63,6 +63,7 @@ class PackageRequestServiceMatchingTest {
     @Mock private FavoriteRepository favoriteRepository;
     @Mock private MatchingService matchingService;
     @Mock private com.yadony.api.matching.AnnouncementRepository announcementRepository;
+    @Mock private com.yadony.api.common.CommissionRateResolver commissionRateResolver;
 
     /** Real record (not mocked) — threshold-days=3 mirrors application-test.yml (yadony.urgency.threshold-days). */
     private final YadonyConfigProperties yadonyConfig =
@@ -152,7 +153,7 @@ class PackageRequestServiceMatchingTest {
                 repository, userRepository, eventPublisher, auditService, config,
                 threadRepository, cityRepository, commissionProperties,
                 storageService, photoService, favoriteRepository, realMapper, matchingService,
-                yadonyConfig, announcementRepository);
+                yadonyConfig, announcementRepository, commissionRateResolver);
     }
 
     @Test

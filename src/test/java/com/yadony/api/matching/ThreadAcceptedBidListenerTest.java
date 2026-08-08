@@ -3,6 +3,7 @@ package com.yadony.api.matching;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.matching.events.BidMaterializedEvent;
+import com.yadony.api.promo.PromoService;
 import com.yadony.api.requests.event.PackageRequestAcceptedEvent;
 import com.yadony.api.requests.event.PackageRequestDetailsCompletedEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,7 @@ class ThreadAcceptedBidListenerTest {
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock StorageService storageService;
     @Mock BidPhotoService bidPhotoService;
+    @Mock PromoService promoService;
     @InjectMocks ThreadAcceptedBidListener listener;
 
     private static final UUID THREAD_ID = UUID.randomUUID();
@@ -57,6 +59,12 @@ class ThreadAcceptedBidListenerTest {
 
     private PackageRequestAcceptedEvent buildEvent(
             com.yadony.api.payments.cash.PaymentMethod paymentMethod, String commissionChargedVia) {
+        return buildEvent(paymentMethod, commissionChargedVia, null, null);
+    }
+
+    private PackageRequestAcceptedEvent buildEvent(
+            com.yadony.api.payments.cash.PaymentMethod paymentMethod, String commissionChargedVia,
+            String promoCode, BigDecimal commissionRate) {
         return new PackageRequestAcceptedEvent(
                 THREAD_ID, PACKAGE_REQUEST_ID,
                 SENDER_ID, TRAVELER_ID,
@@ -66,7 +74,8 @@ class ThreadAcceptedBidListenerTest {
                 "Vêtements", "CLOTHING", "pi_test",
                 "Fatou Diop", "+221771234567",
                 DISCLAIMER_AT, "1.2.3.4",
-                paymentMethod, java.util.List.of(), commissionChargedVia);
+                paymentMethod, java.util.List.of(), commissionChargedVia,
+                promoCode, commissionRate);
     }
 
     @Nested
@@ -102,6 +111,58 @@ class ThreadAcceptedBidListenerTest {
             verify(auditService).log(eq("BID"), any(), eq("CREATED_FROM_THREAD"), eq(SENDER_ID), any());
         }
 
+        @Test
+        @DisplayName("promoCode présent → redeem appelé avec le bid_id fraîchement matérialisé, rate stampé sur le bid")
+        void promoCodePresent_redeemsAndStampsRate() {
+            UUID bidId = UUID.randomUUID();
+            saveSetsId(bidId);
+
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.yadony.api.payments.cash.PaymentMethod.STRIPE, null, "WELCOME6", new BigDecimal("0.06")));
+
+            verify(promoService).redeem("WELCOME6", SENDER_ID, bidId, new BigDecimal("0.06"));
+            ArgumentCaptor<BidEntity> captor = ArgumentCaptor.forClass(BidEntity.class);
+            verify(bidRepository, times(2)).save(captor.capture());
+            assertThat(captor.getValue().getCommissionRate()).isEqualByComparingTo("0.06");
+        }
+
+        @Test
+        @DisplayName("promoCode absent → jamais de redeem")
+        void noPromoCode_neverRedeems() {
+            listener.onPackageRequestAccepted(buildEvent());
+
+            verify(promoService, never()).redeem(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("promoCode présent mais commissionRate null (fallback tarif de base) → jamais de redeem, "
+                + "évite la violation NOT NULL sur promo_redemptions.applied_rate")
+        void promoCodePresentButNullCommissionRate_neverRedeems() {
+            UUID bidId = UUID.randomUUID();
+            saveSetsId(bidId);
+
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.yadony.api.payments.cash.PaymentMethod.STRIPE, null, "WELCOME6", null));
+
+            verify(promoService, never()).redeem(any(), any(), any(), any());
+            // Un seul save : pas de re-save pour stamper un commissionRate absent.
+            verify(bidRepository, times(1)).save(any());
+        }
+
+        @Test
+        @DisplayName("redeem échoue → matérialisation du bid non impactée (best-effort)")
+        void redeemFailure_doesNotBreakMaterialization() {
+            UUID bidId = UUID.randomUUID();
+            saveSetsId(bidId);
+            when(promoService.redeem(any(), any(), any(), any()))
+                    .thenThrow(new RuntimeException("boom"));
+
+            listener.onPackageRequestAccepted(
+                    buildEvent(com.yadony.api.payments.cash.PaymentMethod.STRIPE, null, "WELCOME6", new BigDecimal("0.06")));
+
+            verify(bidRepository, atLeastOnce()).save(any());
+        }
+
         private PackageRequestAcceptedEvent buildEventWithPhotos(java.util.List<String> keys) {
             return new PackageRequestAcceptedEvent(
                     THREAD_ID, PACKAGE_REQUEST_ID, SENDER_ID, TRAVELER_ID,
@@ -109,7 +170,7 @@ class ThreadAcceptedBidListenerTest {
                     "Vêtements", "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, keys, null);
+                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, keys, null, null, null);
         }
 
         private void saveSetsId(UUID bidId) {
@@ -211,7 +272,7 @@ class ThreadAcceptedBidListenerTest {
                     "desc", "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
+                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null, null, null);
 
             listener.onPackageRequestAccepted(event);
 
@@ -230,7 +291,7 @@ class ThreadAcceptedBidListenerTest {
                     null, "CLOTHING", "pi_test",
                     "Fatou Diop", "+221771234567",
                     DISCLAIMER_AT, "1.2.3.4",
-                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null);
+                    com.yadony.api.payments.cash.PaymentMethod.STRIPE, java.util.List.of(), null, null, null);
 
             listener.onPackageRequestAccepted(event);
 

@@ -48,5 +48,42 @@ public record NegotiationThreadResponse(
     // son tour, attente > 1h depuis la dernière activité, et pas de relance déjà envoyée < 1h).
     boolean canNudge,
     // Une réponse de l'autre participant est arrivée depuis la dernière ouverture du fil.
-    boolean hasUnread
-) {}
+    boolean hasUnread,
+    // Code promo auto-porté depuis la demande (PackageRequestEntity.promoCode) dès la
+    // création du thread — appliqué automatiquement au paiement, jamais resaisi. Null
+    // si l'expéditeur n'en avait pas renseigné à la publication.
+    String promoCode
+) {
+    /** Constructeur de compatibilité (sans promoCode) — évite de retoucher tous les tests. */
+    public NegotiationThreadResponse(
+            UUID id, UUID packageRequestId, UUID travelerId,
+            UUID travelerAnnouncementId, LocalDate travelerTravelDate, BigDecimal travelerAvailableKg,
+            String travelerCapacityUnit,
+            NegotiationThreadStatus status, BigDecimal currentPriceEur, int roundsCount,
+            LocalDateTime lastActivityAt, LocalDateTime createdAt,
+            List<NegotiationMessageResponse> messages,
+            String paymentIntentClientSecret,
+            String travelerName, BigDecimal travelerRating, Integer travelerTripsCount, String travelerPhotoUrl,
+            String departureCity, String arrivalCity, BigDecimal weightKg,
+            String senderName,
+            String senderPhotoUrl,
+            boolean isMyTurn,
+            boolean canAccept,
+            boolean canCounter,
+            int roundsRemaining,
+            LinkedTripSummary linkedTrip,
+            BigDecimal grossPriceEur,
+            PaymentMethod paymentMethod,
+            UUID materializedBidId,
+            boolean cashCommissionAvailable,
+            Set<PaymentMethod> availablePaymentMethods,
+            boolean canNudge,
+            boolean hasUnread) {
+        this(id, packageRequestId, travelerId, travelerAnnouncementId, travelerTravelDate, travelerAvailableKg,
+            travelerCapacityUnit, status, currentPriceEur, roundsCount, lastActivityAt, createdAt, messages,
+            paymentIntentClientSecret, travelerName, travelerRating, travelerTripsCount, travelerPhotoUrl,
+            departureCity, arrivalCity, weightKg, senderName, senderPhotoUrl, isMyTurn, canAccept, canCounter,
+            roundsRemaining, linkedTrip, grossPriceEur, paymentMethod, materializedBidId, cashCommissionAvailable,
+            availablePaymentMethods, canNudge, hasUnread, null);
+    }
+}

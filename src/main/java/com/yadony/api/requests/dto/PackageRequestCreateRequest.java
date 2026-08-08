@@ -28,5 +28,22 @@ public record PackageRequestCreateRequest(
     @Size(max = 4) List<String> photoKeys,
     // null/false → publication directe (comportement historique) ; true → brouillon.
     // Nullable et non primitif pour que l'absence du champ reste distincte de false.
-    Boolean saveAsDraft
-) {}
+    Boolean saveAsDraft,
+    // Code promo brut (nullable), saisi à la publication — validation paresseuse
+    // au paiement réel, même contrat que BidRequest.promoCode.
+    @Size(max = 50) String promoCode
+) {
+    /**
+     * Constructeur de compatibilité (sans promoCode) — évite de retoucher tous
+     * les sites d'appel de test existants pour l'ajout de ce champ optionnel.
+     */
+    public PackageRequestCreateRequest(
+            String departureCity, String arrivalCity, LocalDate desiredDate, int dateToleranceDays,
+            BigDecimal weightKg, String contentCategory, String description, BigDecimal totalBudgetEur,
+            String photoUrl, String pickupNeighborhood, String deliveryNeighborhood, boolean negotiable,
+            Set<PaymentMethod> acceptedPaymentMethods, List<String> photoKeys, Boolean saveAsDraft) {
+        this(departureCity, arrivalCity, desiredDate, dateToleranceDays, weightKg, contentCategory,
+            description, totalBudgetEur, photoUrl, pickupNeighborhood, deliveryNeighborhood, negotiable,
+            acceptedPaymentMethods, photoKeys, saveAsDraft, null);
+    }
+}

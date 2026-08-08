@@ -71,6 +71,20 @@ public class NegotiationThreadEntity extends BaseEntity {
     @Column(name = "payment_intent_id", length = 255)
     private String paymentIntentId;
 
+    /**
+     * Code promo appliqué par l'expéditeur à l'initiation du paiement
+     * (initiate-payment) — {@code null} si aucun. Persisté ici pour survivre
+     * jusqu'à {@code finalizeAfterPayment} (webhook OU /checkout synchrone),
+     * seul point où le rachat (redeem) peut être déclenché avec le bid_id
+     * fraîchement matérialisé.
+     */
+    @Column(name = "promo_code", length = 50)
+    private String promoCode;
+
+    /** Taux de commission effectif retenu au paiement (promo déjà appliqué si présent). */
+    @Column(name = "commission_rate", precision = 4, scale = 3)
+    private BigDecimal commissionRate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 20)
     private PaymentMethod paymentMethod;  // null until trip-linking
@@ -138,6 +152,10 @@ public class NegotiationThreadEntity extends BaseEntity {
 
     public String getPaymentIntentId() { return paymentIntentId; }
 
+    public String getPromoCode() { return promoCode; }
+
+    public BigDecimal getCommissionRate() { return commissionRate; }
+
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
 
     public Set<PaymentMethod> getAvailablePaymentMethods() { return availablePaymentMethods; }
@@ -177,6 +195,10 @@ public class NegotiationThreadEntity extends BaseEntity {
     public void setTravelerLastReadAt(LocalDateTime travelerLastReadAt) { this.travelerLastReadAt = travelerLastReadAt; }
 
     public void setPaymentIntentId(String paymentIntentId) { this.paymentIntentId = paymentIntentId; }
+
+    public void setPromoCode(String promoCode) { this.promoCode = promoCode; }
+
+    public void setCommissionRate(BigDecimal commissionRate) { this.commissionRate = commissionRate; }
 
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
 
