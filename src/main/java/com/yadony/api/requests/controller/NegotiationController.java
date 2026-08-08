@@ -111,6 +111,18 @@ public class NegotiationController {
         return service.createDedicatedTrip(requireUserId(), id, req);
     }
 
+    /**
+     * Devis transparent avant paiement : net voyageur, commission Yadony (taux et
+     * montant), total, et prévisualisation d'un code promo optionnel. Sender-only.
+     */
+    @GetMapping("/{id}/quote")
+    @PreAuthorize("hasRole('SENDER')")
+    public NegotiationQuoteResponse quote(
+            @PathVariable UUID id,
+            @RequestParam(required = false) String promoCode) {
+        return service.quote(requireUserId(), id, promoCode);
+    }
+
     /** Sender confirms payment for an AWAITING_PAYMENT thread → finalize as ACCEPTED. */
     @PostMapping("/{id}/checkout")
     @PreAuthorize("hasRole('SENDER')")
@@ -141,7 +153,9 @@ public class NegotiationController {
      */
     @PostMapping("/{id}/initiate-payment")
     @PreAuthorize("hasRole('SENDER')")
-    public com.yadony.api.payments.dto.PaymentResponse initiatePayment(@PathVariable UUID id) {
+    public com.yadony.api.payments.dto.PaymentResponse initiatePayment(
+            @PathVariable UUID id,
+            @RequestParam(required = false) String promoCode) {
         UUID senderId = requireUserId();
         var thread = service.getById(senderId, id);
         // Defensive: only allowed if thread status = AWAITING_PAYMENT
@@ -150,8 +164,25 @@ public class NegotiationController {
                 org.springframework.http.HttpStatus.CONFLICT,
                 "thread/not-awaiting-payment");
         }
-        return paymentService.createNegotiationEscrow(
-            id, senderId, thread.travelerId(), thread.currentPriceEur());
+        // Auto-appliqué : le code a été saisi par l'expéditeur à la publication de
+        // sa demande (étape budget) et porté sur le thread dès sa création — jamais
+        // resaisi ici. Le param reste un override défensif (tests, cas futurs).
+        String code = promoCode != null ? promoCode : thread.promoCode();
+        var response = paymentService.createNegotiationEscrow(
+            id, senderId, thread.travelerId(), thread.currentPriceEur(), code);
+        // Persiste le taux réellement appliqué pour que le rachat (redeem, décompte
+        // per-user-limit) puisse se raccrocher au bid_id une fois matérialisé après
+        // paiement confirmé (ThreadAcceptedBidListener) — createNegotiationEscrow ne
+        // peut pas le faire lui-même, aucun bid n'existe encore à cet instant.
+        if (response.isPromoApplied()) {
+            service.recordAppliedPromo(id, code, response.getCommissionRate());
+        } else if (thread.promoCode() != null) {
+            // Le code portait un promoCode mais createNegotiationEscrow est retombé sur le
+            // tarif de base (code expiré, limite atteinte…) : nettoyer l'état pour que
+            // ThreadAcceptedBidListener ne tente pas un rachat sur un code jamais appliqué.
+            service.recordAppliedPromo(id, null, null);
+        }
+        return response;
     }
 
     /**

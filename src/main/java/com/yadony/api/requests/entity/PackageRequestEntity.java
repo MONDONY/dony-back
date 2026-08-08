@@ -60,6 +60,16 @@ public class PackageRequestEntity extends BaseEntity {
     @Column(name = "target_price_eur", precision = 10, scale = 2)
     private BigDecimal targetPriceEur;
 
+    /**
+     * Code promo saisi par l'expéditeur à la création/publication (brut,
+     * non validé ici — validation paresseuse au moment du paiement réel,
+     * même contrat que {@code BidEntity.promoCode}). Copié sur le thread de
+     * négociation dès sa création ({@code NegotiationService.start}) pour
+     * être appliqué automatiquement au paiement, sans re-saisie.
+     */
+    @Column(name = "promo_code", length = 50)
+    private String promoCode;
+
     @Column(name = "photo_url", length = 500)
     private String photoUrl;
 
@@ -141,6 +151,7 @@ public class PackageRequestEntity extends BaseEntity {
     public String getDescription() { return description; }
 
     public BigDecimal getTargetPriceEur() { return targetPriceEur; }
+    public String getPromoCode() { return promoCode; }
 
     public String getPhotoUrl() { return photoUrl; }
 
@@ -199,6 +210,7 @@ public class PackageRequestEntity extends BaseEntity {
     public void setDescription(String description) { this.description = description; }
 
     public void setTargetPriceEur(BigDecimal targetPriceEur) { this.targetPriceEur = targetPriceEur; }
+    public void setPromoCode(String promoCode) { this.promoCode = promoCode; }
 
     public void setPhotoUrl(String photoUrl) { this.photoUrl = photoUrl; }
 

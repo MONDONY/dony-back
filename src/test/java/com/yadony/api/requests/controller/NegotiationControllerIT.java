@@ -390,7 +390,7 @@ class NegotiationControllerIT {
             false  // hasUnread
         );
         when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
-        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any()))
+        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any(), isNull()))
             .thenReturn(new com.yadony.api.payments.dto.PaymentResponse(
                 UUID.randomUUID(), null, "pi_test_secret",
                 new java.math.BigDecimal("33.60"), new java.math.BigDecimal("3.60"),
@@ -399,6 +399,150 @@ class NegotiationControllerIT {
         mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
                 .with(authentication(authAs("uid-sender", "SENDER"))))
             .andExpect(status().isOk());
+        verify(service, org.mockito.Mockito.never()).recordAppliedPromo(any(), any(), any());
+    }
+
+    @Test
+    void post_initiatePayment_withPromoCode_persistsAppliedPromoOnThread() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        NegotiationThreadResponse awaitingPaymentThread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new java.math.BigDecimal("10"),
+            null,
+            NegotiationThreadStatus.AWAITING_PAYMENT, new java.math.BigDecimal("30"), 1,
+            LocalDateTime.now(), LocalDateTime.now(),
+            java.util.List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new java.math.BigDecimal("5"),
+            "Chaka D.",
+            null,
+            false, false, false, 4, null,
+            new java.math.BigDecimal("33.60"), null,
+            null,
+            true,
+            null,
+            false,
+            false
+        );
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
+        var promoResponse = new com.yadony.api.payments.dto.PaymentResponse(
+                UUID.randomUUID(), null, "pi_test_secret",
+                new java.math.BigDecimal("31.80"), new java.math.BigDecimal("1.80"),
+                "PENDING", "pi_test_id");
+        promoResponse.setCommissionRate(new java.math.BigDecimal("0.06"));
+        promoResponse.setPromoApplied(true);
+        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any(), eq("WELCOME6")))
+            .thenReturn(promoResponse);
+
+        mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
+                .param("promoCode", "WELCOME6")
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.commissionRate").value(0.06))
+            .andExpect(jsonPath("$.promoApplied").value(true));
+        verify(service).recordAppliedPromo(threadId, "WELCOME6", new java.math.BigDecimal("0.06"));
+    }
+
+    @Test
+    void post_initiatePayment_noExplicitPromoCode_autoAppliesThreadStoredCode() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        // Code déjà porté par le thread (copié depuis la demande à start()) — le
+        // client n'envoie AUCUN promoCode ; le backend doit l'appliquer seul.
+        NegotiationThreadResponse awaitingPaymentThread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new java.math.BigDecimal("10"),
+            null,
+            NegotiationThreadStatus.AWAITING_PAYMENT, new java.math.BigDecimal("30"), 1,
+            LocalDateTime.now(), LocalDateTime.now(),
+            java.util.List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new java.math.BigDecimal("5"),
+            "Chaka D.",
+            null,
+            false, false, false, 4, null,
+            new java.math.BigDecimal("33.60"), null,
+            null,
+            true,
+            null,
+            false,
+            false,
+            "AUTOCODE"
+        );
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(awaitingPaymentThread);
+        var promoResponse = new com.yadony.api.payments.dto.PaymentResponse(
+                UUID.randomUUID(), null, "pi_test_secret",
+                new java.math.BigDecimal("31.80"), new java.math.BigDecimal("1.80"),
+                "PENDING", "pi_test_id");
+        promoResponse.setCommissionRate(new java.math.BigDecimal("0.06"));
+        promoResponse.setPromoApplied(true);
+        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any(), eq("AUTOCODE")))
+            .thenReturn(promoResponse);
+
+        mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.promoApplied").value(true));
+        verify(service).recordAppliedPromo(threadId, "AUTOCODE", new java.math.BigDecimal("0.06"));
+    }
+
+    @Test
+    void post_initiatePayment_promoFallsBackToBaseRate_clearsStaleThreadPromoCode() throws Exception {
+        // Le thread porte encore un promoCode auto-appliqué (copié depuis la demande), mais
+        // createNegotiationEscrow retombe sur le tarif de base (code expiré, limite atteinte…).
+        // Le controller doit nettoyer l'état stale du thread, sinon ThreadAcceptedBidListener
+        // tentera plus tard un rachat sur un code jamais réellement appliqué.
+        UUID threadId = UUID.randomUUID();
+        NegotiationThreadResponse staleAppliedPromoThread = new NegotiationThreadResponse(
+            threadId, UUID.randomUUID(), TRAVELER_UUID, null,
+            LocalDate.now().plusDays(5), new java.math.BigDecimal("10"),
+            null,
+            NegotiationThreadStatus.AWAITING_PAYMENT, new java.math.BigDecimal("30"), 1,
+            LocalDateTime.now(), LocalDateTime.now(),
+            java.util.List.of(), null,
+            "Test T.", null, 0, null,
+            "Paris", "Dakar", new java.math.BigDecimal("5"),
+            "Chaka D.",
+            null,
+            false, false, false, 4, null,
+            new java.math.BigDecimal("33.60"), null,
+            null,
+            true,
+            null,
+            false,
+            false,
+            "WELCOME6"
+        );
+        when(service.getById(eq(SENDER_UUID), eq(threadId))).thenReturn(staleAppliedPromoThread);
+        var baseRateResponse = new com.yadony.api.payments.dto.PaymentResponse(
+                UUID.randomUUID(), null, "pi_test_secret",
+                new java.math.BigDecimal("33.60"), new java.math.BigDecimal("3.60"),
+                "PENDING", "pi_test_id");
+        // promoApplied reste false par défaut : le fallback tarif de base.
+        when(paymentService.createNegotiationEscrow(eq(threadId), eq(SENDER_UUID), eq(TRAVELER_UUID), any(), eq("WELCOME6")))
+            .thenReturn(baseRateResponse);
+
+        mockMvc.perform(post("/negotiations/{id}/initiate-payment", threadId)
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.promoApplied").value(false));
+        verify(service).recordAppliedPromo(threadId, null, null);
+    }
+
+    @Test
+    void get_quote_withPromoCode_returnsBreakdown() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        var quote = new NegotiationQuoteResponse(
+            new java.math.BigDecimal("40.00"), new java.math.BigDecimal("0.12"),
+            new java.math.BigDecimal("4.80"), new java.math.BigDecimal("42.40"),
+            true, "Code WELCOME6 : 6 % de réduction");
+        when(service.quote(eq(SENDER_UUID), eq(threadId), eq("WELCOME6"))).thenReturn(quote);
+
+        mockMvc.perform(get("/negotiations/{id}/quote", threadId)
+                .param("promoCode", "WELCOME6")
+                .with(authentication(authAs("uid-sender", "SENDER"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalEur").value(42.40))
+            .andExpect(jsonPath("$.promoApplied").value(true));
     }
 
     @Test

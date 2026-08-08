@@ -56,7 +56,7 @@ class RequestEventsListenerTest {
             "Fatou Diop", "+221771234567",
             java.time.LocalDateTime.now(), "1.2.3.4",
             com.yadony.api.payments.cash.PaymentMethod.STRIPE
-        , java.util.List.of(), null);
+        , java.util.List.of(), null, null, null);
 
         listener.onPackageRequestAccepted(event);
 

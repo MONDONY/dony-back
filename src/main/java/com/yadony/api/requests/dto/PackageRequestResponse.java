@@ -32,5 +32,31 @@ public record PackageRequestResponse(
     /** Thread de négociation ACTIF du voyageur appelant sur cette demande (null s'il n'en a pas). */
     UUID viewerThreadId,
     /** Statut de ce thread (OPEN, AWAITING_TRIP, AWAITING_PAYMENT, ACCEPTED) — null sinon. */
-    String viewerThreadStatus
-) {}
+    String viewerThreadStatus,
+    /** Code promo saisi à la publication (brut, null si aucun) — pré-remplit l'édition. */
+    String promoCode
+) {
+    /** Constructeur de compatibilité (sans promoCode) — évite de retoucher tous les tests. */
+    public PackageRequestResponse(
+            UUID id, UUID senderId,
+            String departureCity, String arrivalCity,
+            LocalDate desiredDate, int dateToleranceDays,
+            BigDecimal weightKg, ParcelSize parcelSize,
+            TransportMode transportMode,
+            String contentCategory,
+            String description, BigDecimal targetPriceEur, String photoUrl,
+            String pickupNeighborhood, String deliveryNeighborhood,
+            PackageRequestStatus status,
+            LocalDateTime createdAt,
+            boolean negotiable,
+            Set<PaymentMethod> acceptedPaymentMethods,
+            BigDecimal grossPriceEur,
+            List<PackageRequestPhotoResponse> photos,
+            UUID viewerThreadId,
+            String viewerThreadStatus) {
+        this(id, senderId, departureCity, arrivalCity, desiredDate, dateToleranceDays, weightKg, parcelSize,
+            transportMode, contentCategory, description, targetPriceEur, photoUrl, pickupNeighborhood,
+            deliveryNeighborhood, status, createdAt, negotiable, acceptedPaymentMethods, grossPriceEur, photos,
+            viewerThreadId, viewerThreadStatus, null);
+    }
+}

@@ -59,6 +59,8 @@ class PaymentServiceTest {
     @Mock ApplicationEventPublisher eventPublisher;
 
     PaymentService service;
+    com.yadony.api.common.CommissionRateResolver commissionRateResolver;
+    com.yadony.api.promo.PromoService promoService;
 
     private final UUID senderId   = UUID.randomUUID();
     private final UUID travelerId = UUID.randomUUID();
@@ -67,13 +69,15 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        commissionRateResolver = PaymentServiceTestFactory.stubbedResolver();
+        promoService = org.mockito.Mockito.mock(com.yadony.api.promo.PromoService.class);
         service = new PaymentService(
                 userRepository, bidRepository, mock(com.yadony.api.matching.BidGridItemRepository.class), announcementRepository,
                 paymentRepository, auditService, eventPublisher,
                 PaymentServiceTestFactory.defaultConnectProperties(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 org.mockito.Mockito.mock(com.yadony.api.common.stripe.AdminAlertService.class),
-                PaymentServiceTestFactory.stubbedResolver(), org.mockito.Mockito.mock(com.yadony.api.promo.PromoService.class), new StripeGatewayImpl(),
+                commissionRateResolver, promoService, new StripeGatewayImpl(),
                 PaymentServiceTestFactory.stubbedContacts()
 );
     }
@@ -1060,6 +1064,87 @@ class PaymentServiceTest {
             assertThat(stale.getStripePaymentIntentId()).isEqualTo("pi_fresh3");
             assertThat(stale.getStatus()).isEqualTo(PaymentStatus.PENDING);
             verify(paymentRepository).save(stale);
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_validPromo_reducesGrossAndReportsAppliedRate() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        // Base 0.12 (stubbedResolver) ; promo WELCOME6 retranche 6 points → 0.06.
+        when(commissionRateResolver.resolve(eq(travelerId), eq(senderId), eq("WELCOME6")))
+                .thenReturn(new BigDecimal("0.06"));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_promo_1");
+            when(mockPi.getClientSecret()).thenReturn("pi_promo_1_secret");
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+
+            // net = 35 € ; rate promo 0.06 → gross = 37.10, commission = 2.10 (vs 39.20/4.20 sans promo).
+            PaymentResponse resp = service.createNegotiationEscrow(
+                    threadId, senderId, travelerId, new BigDecimal("35.00"), "WELCOME6");
+
+            assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("37.10"));
+            assertThat(resp.getCommissionAmount()).isEqualByComparingTo(new BigDecimal("2.10"));
+            assertThat(resp.getCommissionRate()).isEqualByComparingTo(new BigDecimal("0.06"));
+            assertThat(resp.isPromoApplied()).isTrue();
+        }
+    }
+
+    @Test
+    void createNegotiationEscrow_invalidPromo_fallsBackSilentlyToBaseRate() throws Exception {
+        UUID threadId = UUID.randomUUID();
+        UserEntity sender = buildUser(senderId, "uid-sender");
+        sender.setStripeCustomerId("cus_existing");
+        UserEntity traveler = buildUser(travelerId, "uid-traveler");
+        traveler.setStripeAccountId("acct_traveler");
+        traveler.setStripeAccountStatus(StripeAccountStatus.ONBOARDING_COMPLETE);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(travelerId)).thenReturn(Optional.of(traveler));
+        when(paymentRepository.findByNegotiationThreadId(threadId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(commissionRateResolver.resolve(eq(travelerId), eq(senderId), eq("EXPIRED")))
+                .thenThrow(new com.yadony.api.common.YadonyBusinessException(
+                        org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                        "promo-expired", "Promo Expired", "Ce code promo a expiré"));
+
+        try (MockedStatic<Account> acctStatic = mockStatic(Account.class);
+             MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            Account mockAccount = mock(Account.class);
+            com.stripe.model.Account.Capabilities caps = mock(com.stripe.model.Account.Capabilities.class);
+            when(caps.getCardPayments()).thenReturn("active");
+            when(mockAccount.getCapabilities()).thenReturn(caps);
+            acctStatic.when(() -> Account.retrieve("acct_traveler")).thenReturn(mockAccount);
+
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getId()).thenReturn("pi_promo_2");
+            when(mockPi.getClientSecret()).thenReturn("pi_promo_2_secret");
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class))).thenReturn(mockPi);
+
+            // Promo expiré → jamais bloquant : repli sur le taux de base (0.12), le
+            // paiement continue au lieu de faire échouer l'expéditeur au checkout.
+            PaymentResponse resp = service.createNegotiationEscrow(
+                    threadId, senderId, travelerId, new BigDecimal("35.00"), "EXPIRED");
+
+            assertThat(resp.getAmount()).isEqualByComparingTo(new BigDecimal("39.20"));
+            assertThat(resp.getCommissionRate()).isEqualByComparingTo(new BigDecimal("0.12"));
+            assertThat(resp.isPromoApplied()).isFalse();
         }
     }
 

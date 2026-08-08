@@ -3,6 +3,7 @@ package com.yadony.api.matching;
 import com.yadony.api.common.AuditService;
 import com.yadony.api.common.StorageService;
 import com.yadony.api.matching.events.BidMaterializedEvent;
+import com.yadony.api.promo.PromoService;
 import com.yadony.api.requests.event.PackageRequestAcceptedEvent;
 import com.yadony.api.requests.event.PackageRequestDetailsCompletedEvent;
 import org.slf4j.Logger;
@@ -42,19 +43,22 @@ public class ThreadAcceptedBidListener {
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
     private final BidPhotoService bidPhotoService;
+    private final PromoService promoService;
 
     public ThreadAcceptedBidListener(BidRepository bidRepository,
                                      AnnouncementRepository announcementRepository,
                                      AuditService auditService,
                                      ApplicationEventPublisher eventPublisher,
                                      StorageService storageService,
-                                     BidPhotoService bidPhotoService) {
+                                     BidPhotoService bidPhotoService,
+                                     PromoService promoService) {
         this.bidRepository = bidRepository;
         this.announcementRepository = announcementRepository;
         this.auditService = auditService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
         this.bidPhotoService = bidPhotoService;
+        this.promoService = promoService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -136,6 +140,22 @@ public class ThreadAcceptedBidListener {
             announcementRepository.save(announcement);
         });
         BidEntity saved = bidRepository.save(bid);
+
+        // Rachat (redeem) du code promo appliqué au paiement, si présent — le bid_id vient
+        // d'être créé, c'est le SEUL point où promo_redemptions (UNIQUE(promo_code_id, bid_id))
+        // peut être écrit pour un thread de négociation (aucun bid n'existait avant). Best-effort :
+        // un échec ne doit pas casser la matérialisation, l'argent a déjà été correctement
+        // débité au taux promo par PaymentService.createNegotiationEscrow.
+        if (e.promoCode() != null && e.commissionRate() != null) {
+            saved.setCommissionRate(e.commissionRate());
+            bidRepository.save(saved);
+            try {
+                promoService.redeem(e.promoCode(), e.senderId(), saved.getId(), e.commissionRate());
+            } catch (Exception ex) {
+                log.error("Échec rachat promo {} pour bid {} (thread {}): {}",
+                    e.promoCode(), saved.getId(), e.threadId(), ex.toString());
+            }
+        }
 
         // Les photos colis de la demande (package_requests/…) sont copiées vers bids/ pour
         // donner au bid sa propre copie (lifecycle/cleanup indépendants), puis attachées.

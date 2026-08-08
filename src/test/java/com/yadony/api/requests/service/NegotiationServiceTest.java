@@ -54,6 +54,7 @@ class NegotiationServiceTest {
     @Mock private com.yadony.api.requests.NegotiationEscrowPort escrowPort;
     @Mock private StorageService storageService;
     @Mock private PackageRequestPhotoService photoService;
+    @Mock private com.yadony.api.common.CommissionRateResolver commissionRateResolver;
 
     @InjectMocks private NegotiationService service;
 
@@ -136,6 +137,46 @@ class NegotiationServiceTest {
             assertThat(response.currentPriceEur()).isEqualByComparingTo("30");
             verify(messageRepo).save(argThat(m -> m.getKind() == NegotiationMessageKind.PROPOSAL));
             verify(eventPublisher).publishEvent(any(NegotiationStartedEvent.class));
+        }
+
+        @Test
+        @DisplayName("demande avec promoCode → copié sur le thread créé (auto-application au paiement)")
+        void start_requestHasPromoCode_copiedOntoThread() {
+            request.setPromoCode("WELCOME6");
+
+            when(config.maxOpenThreadsPerTraveler()).thenReturn(5);
+            when(config.threadsPerMinuteRateLimit()).thenReturn(1);
+            when(userRepository.findById(TRAVELER_ID)).thenReturn(Optional.of(traveler));
+            when(userRepository.findById(SENDER_ID)).thenReturn(Optional.of(traveler));
+            when(requestRepo.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(threadRepo.findActiveByPackageRequestIdAndTravelerId(REQUEST_ID, TRAVELER_ID))
+                .thenReturn(Optional.empty());
+            when(threadRepo.countByTravelerIdAndStatus(eq(TRAVELER_ID), eq(NegotiationThreadStatus.OPEN)))
+                .thenReturn(0L);
+            when(threadRepo.countCreatedBy(eq(TRAVELER_ID), any())).thenReturn(0L);
+            when(threadRepo.save(any())).thenAnswer(inv -> {
+                NegotiationThreadEntity t = inv.getArgument(0);
+                try {
+                    var idField = com.yadony.api.common.BaseEntity.class.getDeclaredField("id");
+                    idField.setAccessible(true);
+                    idField.set(t, UUID.randomUUID());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return t;
+            });
+
+            var req = new NegotiationStartRequest(
+                REQUEST_ID, new BigDecimal("30"),
+                LocalDate.now().plusDays(5), new BigDecimal("10"),
+                null, "Pas de problème"
+            );
+            service.start(TRAVELER_ID, req);
+
+            ArgumentCaptor<NegotiationThreadEntity> captor =
+                ArgumentCaptor.forClass(NegotiationThreadEntity.class);
+            verify(threadRepo).save(captor.capture());
+            assertThat(captor.getValue().getPromoCode()).isEqualTo("WELCOME6");
         }
     }
 
@@ -969,6 +1010,138 @@ class NegotiationServiceTest {
             var resp = service.getById(TRAVELER_ID, THREAD_ID);
 
             assertThat(resp.cashCommissionAvailable()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("quote() — devis transparent expéditeur (breakdown + promo)")
+    class QuoteTests {
+        private NegotiationThreadEntity threadFor(UUID threadId, BigDecimal net) {
+            var thread = new NegotiationThreadEntity();
+            thread.setPackageRequestId(REQUEST_ID);
+            thread.setTravelerId(TRAVELER_ID);
+            thread.setStatus(NegotiationThreadStatus.AWAITING_PAYMENT);
+            thread.setCurrentPriceEur(net);
+            thread.setRoundsCount((short) 1);
+            thread.setLastActivityAt(java.time.LocalDateTime.now());
+            try {
+                var idField = com.yadony.api.common.BaseEntity.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                idField.set(thread, threadId);
+            } catch (Exception e) { throw new RuntimeException(e); }
+            return thread;
+        }
+
+        @Test
+        @DisplayName("sans promo — commission au taux de base")
+        void quote_noPromo_baseRate() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, new BigDecimal("40.00"));
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.05"));
+
+            var quote = service.quote(SENDER_ID, threadId, null);
+
+            assertThat(quote.netEur()).isEqualByComparingTo("40.00");
+            assertThat(quote.rate()).isEqualByComparingTo("0.05");
+            assertThat(quote.commissionEur()).isEqualByComparingTo("2.00");
+            assertThat(quote.totalEur()).isEqualByComparingTo("42.00");
+            assertThat(quote.promoApplied()).isFalse();
+        }
+
+        @Test
+        @DisplayName("promo valide — remise réelle en points, base toujours affichée")
+        void quote_validPromo_discountsTotal() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, new BigDecimal("40.00"));
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "WELCOME6"))
+                    .thenReturn(new BigDecimal("0.06"));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.12"));
+
+            var quote = service.quote(SENDER_ID, threadId, "WELCOME6");
+
+            assertThat(quote.rate()).isEqualByComparingTo("0.12");       // base, jamais affecté
+            assertThat(quote.commissionEur()).isEqualByComparingTo("4.80");
+            assertThat(quote.totalEur()).isEqualByComparingTo("42.40"); // 40 + 40*0.06
+            assertThat(quote.promoApplied()).isTrue();
+            assertThat(quote.promoLabel()).contains("6 % de réduction");
+        }
+
+        @Test
+        @DisplayName("promo invalide — propage l'exception avant tout calcul")
+        void quote_invalidPromo_propagates() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, new BigDecimal("40.00"));
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "BADCODE"))
+                    .thenThrow(new com.yadony.api.common.YadonyBusinessException(
+                            HttpStatus.NOT_FOUND, "promo-not-found", "Promo Not Found", "Introuvable"));
+
+            assertThatThrownBy(() -> service.quote(SENDER_ID, threadId, "BADCODE"))
+                    .isInstanceOf(com.yadony.api.common.YadonyBusinessException.class);
+        }
+
+        @Test
+        @DisplayName("traveler (non-payeur) — 403")
+        void quote_travelerCaller_throws403() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, new BigDecimal("40.00"));
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.quote(TRAVELER_ID, threadId, null))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("not-thread-participant");
+        }
+
+        @Test
+        @DisplayName("aucun param explicite → applique le code déjà porté par le thread")
+        void quote_noExplicitPromo_usesThreadStoredCode() {
+            UUID threadId = UUID.randomUUID();
+            var thread = threadFor(threadId, new BigDecimal("40.00"));
+            thread.setPromoCode("AUTOCODE");
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+            when(requestRepo.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID, "AUTOCODE"))
+                    .thenReturn(new BigDecimal("0.06"));
+            when(commissionRateResolver.resolve(TRAVELER_ID, SENDER_ID)).thenReturn(new BigDecimal("0.12"));
+
+            var quote = service.quote(SENDER_ID, threadId, null);
+
+            assertThat(quote.promoApplied()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("recordAppliedPromo() — persistance promo/rate sur le thread")
+    class RecordAppliedPromoTests {
+        @Test
+        @DisplayName("thread existant — promoCode normalisé (upper/strip) et rate stampés")
+        void recordAppliedPromo_persistsNormalizedCode() {
+            UUID threadId = UUID.randomUUID();
+            var thread = new NegotiationThreadEntity();
+            when(threadRepo.findById(threadId)).thenReturn(Optional.of(thread));
+
+            service.recordAppliedPromo(threadId, " welcome6 ", new BigDecimal("0.06"));
+
+            assertThat(thread.getPromoCode()).isEqualTo("WELCOME6");
+            assertThat(thread.getCommissionRate()).isEqualByComparingTo("0.06");
+            verify(threadRepo).save(thread);
+        }
+
+        @Test
+        @DisplayName("thread introuvable — no-op silencieux")
+        void recordAppliedPromo_threadNotFound_noop() {
+            UUID threadId = UUID.randomUUID();
+            when(threadRepo.findById(threadId)).thenReturn(Optional.empty());
+
+            service.recordAppliedPromo(threadId, "WELCOME6", new BigDecimal("0.06"));
+
+            verify(threadRepo, never()).save(any());
         }
     }
 

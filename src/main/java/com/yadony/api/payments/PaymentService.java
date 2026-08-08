@@ -1354,6 +1354,15 @@ public class PaymentService {
             UUID senderId,
             UUID travelerId,
             BigDecimal amountEur) {
+        return createNegotiationEscrow(threadId, senderId, travelerId, amountEur, null);
+    }
+
+    public PaymentResponse createNegotiationEscrow(
+            UUID threadId,
+            UUID senderId,
+            UUID travelerId,
+            BigDecimal amountEur,
+            String promoCode) {
         log.info("createNegotiationEscrow(threadId={}, senderId={}, travelerId={}, amount={})",
                 threadId, senderId, travelerId, amountEur);
 
@@ -1418,7 +1427,27 @@ public class PaymentService {
         }
 
         // Taux effectif (override voyageur/expéditeur ; min le plus favorable) — SOURCE UNIQUE.
-        BigDecimal rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        // Promo optionnel : résolu strictement (invalide/expiré → repli silencieux sur le
+        // taux sans promo, même contrat que le flux bid — cf. BidService.quote et
+        // PaymentService.createEscrow). Le rachat (redeem) n'a PAS lieu ici : aucun bid_id
+        // n'existe encore pour ce thread, il n'est matérialisé qu'après paiement confirmé
+        // (ThreadAcceptedBidListener). L'appelant (NegotiationController) persiste le promo
+        // sur le thread quand promoApplied=true pour que le rachat puisse s'y raccrocher.
+        BigDecimal rate;
+        boolean promoApplied = false;
+        String code = promoCode != null ? promoCode.strip() : null;
+        if (code != null && !code.isBlank()) {
+            try {
+                rate = commissionRateResolver.resolve(traveler.getId(), sender.getId(), code);
+                promoApplied = true;
+            } catch (com.yadony.api.common.YadonyBusinessException e) {
+                log.warn("Promo {} invalide pour la négociation {} ({}): repli sur le taux sans promo",
+                        code, threadId, e.getErrorCode());
+                rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+            }
+        } else {
+            rate = commissionRateResolver.resolve(traveler.getId(), sender.getId());
+        }
         // Modèle B : amountEur = NET voyageur. L'expéditeur paie gross = net*(1+rate).
         PriceBreakdown b = PriceBreakdown.fromNet(amountEur, rate);
 
@@ -1472,7 +1501,10 @@ public class PaymentService {
 
             log.info("PaymentIntent {} created for negotiation thread {} (sender={})",
                     pi.getId(), threadId, sender.getId());
-            return toPaymentResponse(payment, pi);
+            PaymentResponse response = toPaymentResponse(payment, pi);
+            response.setCommissionRate(rate);
+            response.setPromoApplied(promoApplied);
+            return response;
         } catch (StripeException e) {
             log.error("Stripe PaymentIntent creation failed for negotiation thread {}", threadId, e);
             throw new YadonyBusinessException(HttpStatus.BAD_GATEWAY,
